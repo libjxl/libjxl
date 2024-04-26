@@ -834,7 +834,7 @@ float ComputeBlockL2Distance(const Image3F& a, const Image3F& b,
   Rect rect(bx * kBlockDim, by * kBlockDim, kBlockDim, kBlockDim, a.xsize(),
             a.ysize());
   float err2 = 0.0f;
-  static const float kXYBWeights[] = {36.0f, 1.0f, 0.3f};
+  static const float kXYBWeights[] = {36.0f, 1.0f, 0.2f};
   for (size_t y = 0; y < rect.ysize(); ++y) {
     const float* row_a_x = rect.ConstPlaneRow(a, 0, y);
     const float* row_a_y = rect.ConstPlaneRow(a, 1, y);
@@ -843,6 +843,7 @@ float ComputeBlockL2Distance(const Image3F& a, const Image3F& b,
     const float* row_b_y = rect.ConstPlaneRow(b, 1, y);
     const float* row_b_b = rect.ConstPlaneRow(b, 2, y);
     const float* row_mask = rect.ConstRow(mask1x1, y);
+
     for (size_t x = 0; x < rect.xsize(); ++x) {
       float mask = row_mask[x];
       for (size_t c = 0; c < 3; ++c) {
@@ -852,7 +853,7 @@ float ComputeBlockL2Distance(const Image3F& a, const Image3F& b,
         err2 += (kXYBWeights[0] * diff_x * diff_x +
                  kXYBWeights[1] * diff_y * diff_y +
                  kXYBWeights[2] * diff_b * diff_b) *
-                mask;
+                mask * mask;
       }
     }
   }
