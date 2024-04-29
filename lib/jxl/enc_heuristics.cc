@@ -854,7 +854,10 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
     return true;
   }
 
+  static const int kNumEPFVals = 8;
   std::vector<uint8_t> epf_steps;
+  // Map from the smoothing strength [0..7] to error image index.
+  std::vector<uint8_t> val_to_image_index(kNumEPFVals);
   if (cparams.butteraugli_distance > 4.5f) {
     epf_steps.push_back(0);
     epf_steps.push_back(4);
@@ -863,18 +866,20 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
     epf_steps.push_back(3);
     epf_steps.push_back(7);
   }
-  static const int kNumEPFVals = 8;
-  std::array<ImageF, kNumEPFVals> error_images;
-  for (uint8_t val : epf_steps) {
-    FillPlane(val, &epf_sharpness, Rect(epf_sharpness));
+  for (size_t ii = 0; ii < epf_steps.size(); ++ii) {
+    val_to_image_index[epf_steps[ii]] = ii;
+  }
+  std::vector<ImageF> error_images(epf_steps.size());
+  for (size_t ii = 0; ii < epf_steps.size(); ++ii) {
+    FillPlane(epf_steps[ii], &epf_sharpness, Rect(epf_sharpness));
     JXL_ASSIGN_OR_RETURN(
         Image3F decoded,
         ReconstructImage(frame_header, shared, enc_state->coeffs, pool));
     JXL_ASSIGN_OR_RETURN(
-        error_images[val],
+        error_images[ii],
         ImageF::Create(frame_dim.xsize_blocks, frame_dim.ysize_blocks));
     for (size_t by = 0; by < frame_dim.ysize_blocks; by++) {
-      float* error_row = error_images[val].Row(by);
+      float* error_row = error_images[ii].Row(by);
       for (size_t bx = 0; bx < frame_dim.xsize_blocks; bx++) {
         error_row[bx] = ComputeBlockL2Distance(
             orig_opsin, decoded, initial_quant_masking1x1, by, bx);
@@ -889,12 +894,12 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
     for (size_t bx = 0; bx < frame_dim.xsize_blocks; bx++) {
       uint8_t best_val = 0;
       float best_error = std::numeric_limits<float>::max();
-      uint8_t top_val = by > 0 ? prev_row[bx] : 0;
-      uint8_t left_val = bx > 0 ? out_row[bx - 1] : 0;
+      uint8_t top_val = val_to_image_index[by > 0 ? prev_row[bx] : 0];
+      uint8_t left_val = val_to_image_index[bx > 0 ? out_row[bx - 1] : 0];
       float top_error = error_images[top_val].Row(by)[bx];
       float left_error = error_images[left_val].Row(by)[bx];
       for (uint8_t val : epf_steps) {
-        float error = error_images[val].Row(by)[bx];
+        float error = error_images[val_to_image_index[val]].Row(by)[bx];
         if (val == 0) {
           error *= 0.97f;
         }
@@ -929,7 +934,7 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       const auto& ctx_histo = histo[context];
       for (uint8_t val : epf_steps) {
         float error =
-            error_images[val].Row(by)[bx] /
+            error_images[val_to_image_index[val]].Row(by)[bx] /
             (1 + std::log1p(ctx_histo[val] * context_weight / totals[context]));
         if (val == 0) error *= 0.93f;
         if (error < best_error) {
