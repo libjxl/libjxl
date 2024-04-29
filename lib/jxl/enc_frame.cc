@@ -1516,7 +1516,7 @@ Status ComputeEncodingData(
     bool lossless = cparams.IsLossless();
     if (alpha && !alpha_eci->alpha_associated &&
         frame_header.frame_type == FrameType::kRegularFrame &&
-        !ApplyOverride(cparams.keep_invisible, cparams.IsLossless()) &&
+        !ApplyOverride(cparams.keep_invisible, true) &&
         cparams.ec_resampling == cparams.resampling &&
         !cparams.disable_percepeptual_optimizations) {
       // simplify invisible pixels
