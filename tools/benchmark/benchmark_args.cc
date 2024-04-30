@@ -211,6 +211,13 @@ Status BenchmarkArgs::AddCommandLineOptions() {
       "Distance numbers and compression speeds shown in the table are invalid.",
       false);
 
+  AddUnsigned(
+      &generations, "generations",
+      "If nonzero, enables generation loss testing with this number of "
+      "intermediate generations. "
+      "That is, the decoded image gets re-encoded, iteratively, N times.",
+      0);
+
   if (!AddCommandLineOptionsCustomCodec(this)) return false;
   if (!AddCommandLineOptionsJxlCodec(this)) return false;
   if (!AddCommandLineOptionsJPEGCodec(this)) return false;

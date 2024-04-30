@@ -148,64 +148,65 @@ void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
     // this function to indicate it as error in the stats.
     valid = false;
   }
+  const PackedPixelFile* ppf1 = &ppf;
+  PackedPixelFile ppf2;
 
-  std::string ext = FileExtension(filename);
-  if (valid && !Args()->decode_only) {
-    for (size_t i = 0; i < Args()->encode_reps; ++i) {
-      if (codec->CanRecompressJpeg() && (ext == ".jpg" || ext == ".jpeg")) {
-        std::vector<uint8_t> data_in;
-        JXL_CHECK(ReadFile(filename, &data_in));
-        JXL_CHECK(
-            codec->RecompressJpeg(filename, data_in, compressed, &speed_stats));
-      } else {
-        Status status = codec->Compress(filename, ppf, inner_pool, compressed,
-                                        &speed_stats);
-        if (!status) {
-          valid = false;
-          if (!Args()->silent_errors) {
-            std::string message = codec->GetErrorMessage();
-            if (!message.empty()) {
-              fprintf(stderr, "Error in %s codec: %s\n",
-                      codec->description().c_str(), message.c_str());
-            } else {
-              fprintf(stderr, "Error in %s codec\n",
-                      codec->description().c_str());
+  for (size_t generation = 0; generation <= Args()->generations; generation++) {
+    std::string ext = FileExtension(filename);
+    if (valid && !Args()->decode_only) {
+      for (size_t i = 0; i < Args()->encode_reps; ++i) {
+        if (codec->CanRecompressJpeg() && (ext == ".jpg" || ext == ".jpeg")) {
+          std::vector<uint8_t> data_in;
+          JXL_CHECK(ReadFile(filename, &data_in));
+          JXL_CHECK(codec->RecompressJpeg(filename, data_in, compressed,
+                                          &speed_stats));
+        } else {
+          Status status = codec->Compress(filename, *ppf1, inner_pool,
+                                          compressed, &speed_stats);
+          if (!status) {
+            valid = false;
+            if (!Args()->silent_errors) {
+              std::string message = codec->GetErrorMessage();
+              if (!message.empty()) {
+                fprintf(stderr, "Error in %s codec: %s\n",
+                        codec->description().c_str(), message.c_str());
+              } else {
+                fprintf(stderr, "Error in %s codec\n",
+                        codec->description().c_str());
+              }
             }
           }
         }
       }
+      JXL_CHECK(speed_stats.GetSummary(&summary));
+      s->total_time_encode += summary.central_tendency;
     }
-    JXL_CHECK(speed_stats.GetSummary(&summary));
-    s->total_time_encode += summary.central_tendency;
-  }
 
-  if (valid && Args()->decode_only) {
-    std::vector<uint8_t> data_in;
-    JXL_CHECK(ReadFile(filename, &data_in));
-    compressed->insert(compressed->end(), data_in.begin(), data_in.end());
-  }
+    if (valid && Args()->decode_only) {
+      std::vector<uint8_t> data_in;
+      JXL_CHECK(ReadFile(filename, &data_in));
+      compressed->insert(compressed->end(), data_in.begin(), data_in.end());
+    }
 
-  // Decompress
-  PackedPixelFile ppf2;
-  if (valid) {
-    speed_stats = jpegxl::tools::SpeedStats();
-    for (size_t i = 0; i < Args()->decode_reps; ++i) {
-      if (!codec->Decompress(filename, Bytes(*compressed), inner_pool, &ppf2,
-                             &speed_stats)) {
-        if (!Args()->silent_errors) {
-          fprintf(stderr,
-                  "%s failed to decompress encoded image. Original source:"
-                  " %s\n",
-                  codec->description().c_str(), filename.c_str());
+    // Decompress
+    if (valid) {
+      speed_stats = jpegxl::tools::SpeedStats();
+      for (size_t i = 0; i < Args()->decode_reps; ++i) {
+        if (!codec->Decompress(filename, Bytes(*compressed), inner_pool, &ppf2,
+                               &speed_stats)) {
+          if (!Args()->silent_errors) {
+            fprintf(stderr,
+                    "%s failed to decompress encoded image. Original source:"
+                    " %s\n",
+                    codec->description().c_str(), filename.c_str());
+          }
+          valid = false;
         }
-        valid = false;
       }
+      JXL_CHECK(speed_stats.GetSummary(&summary));
+      s->total_time_decode += summary.central_tendency;
     }
-    for (const auto& frame : ppf2.frames) {
-      s->total_input_pixels += frame.color.xsize * frame.color.ysize;
-    }
-    JXL_CHECK(speed_stats.GetSummary(&summary));
-    s->total_time_decode += summary.central_tendency;
+    ppf1 = &ppf2;
   }
 
   std::string name = FileBaseName(filename);
@@ -213,6 +214,12 @@ void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
 
   if (!valid) {
     s->total_errors++;
+  }
+
+  if (valid) {
+    for (const auto& frame : ppf2.frames) {
+      s->total_input_pixels += frame.color.xsize * frame.color.ysize;
+    }
   }
 
   if (ppf.frames.size() != ppf2.frames.size()) {
@@ -795,7 +802,12 @@ class Benchmark {
       std::unique_ptr<ThreadPoolInternal> pool;
       std::vector<std::unique_ptr<ThreadPoolInternal>> inner_pools;
       InitThreads(tasks.size(), &pool, &inner_pools);
-
+      if (Args()->generations > 0) {
+        fprintf(stderr,
+                "Generation loss testing with %" PRIuS
+                " intermediate generations\n",
+                Args()->generations);
+      }
       std::vector<PackedPixelFile> loaded_images =
           LoadImages(fnames, pool->get());
 
