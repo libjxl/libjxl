@@ -424,6 +424,21 @@ typedef struct {
   JxlLayerInfo layer_info;
 } JxlFrameHeader;
 
+/** Gain map information. This information is ...TODO
+ */
+typedef struct {
+  /* TODO : fill this with the stuff that is in ISO 21496-1,
+  for now we only store the binary blob
+  */
+
+  uint32_t version;
+
+  uint32_t size;
+
+
+} JxlGainMapInfo;
+
+
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif

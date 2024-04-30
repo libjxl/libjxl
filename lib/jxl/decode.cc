@@ -553,6 +553,9 @@ struct JxlDecoderStruct {
   }
 #endif
 
+  // Set to true after the JXL_DEC_GAIN_MAP event only.
+  bool gain_map_event;
+
   const uint8_t* next_in;
   size_t avail_in;
   bool input_closed;
