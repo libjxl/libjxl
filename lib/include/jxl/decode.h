@@ -869,7 +869,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  *
  * This function must not be called before @ref JxlDecoderSetCms.
  *
- * @param dec decoder orbject
+ * @param dec decoder object
  * @param color_encoding the output color encoding
  * @param icc_data bytes of the icc profile
  * @param icc_size size of the icc profile in bytes
