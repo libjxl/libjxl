@@ -318,6 +318,24 @@ typedef enum {
    * unprocessed.
    */
   JXL_DEC_FRAME_PROGRESSION = 0x8000,
+
+  /**
+   * TODO: add documentation
+   *
+   */
+  JXL_DEC_GAIN_MAP_INFO = 0x10000,
+
+  /**
+   * @brief Get raw bytes of the gain map
+   *
+   */
+  JXL_DEC_GAIN_MAP_RAW = 0x20000,
+
+  /**
+   * @brief Get gain map as pixel buffer
+   *
+   */
+  JXL_DEC_GAIN_MAP = 0x40000,
 } JxlDecoderStatus;
 
 /** Types of progressive detail.
@@ -1456,6 +1474,39 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec);
  */
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetImageOutBitDepth(JxlDecoder* dec, const JxlBitDepth* bit_depth);
+
+/**
+ * Outputs the size in bytes of the gain map info @ref
+ * JxlDecoderGetGainMapInfo, if available, or indicates there is none
+ * available.
+ *
+ * @param dec decoder object
+ * @param size variable to output the size into, or NULL to only check the
+ *     return status.
+ * @return ::JXL_DEC_SUCCESS if the gain map info is available, @ref
+ *     JXL_DEC_NEED_MORE_INPUT if the decoder has not yet received enough
+ *     input data to determine whether a gain map is available or what its
+ *     size is, ::JXL_DEC_ERROR in case the gain map info is not available.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetGainMapInfoSize(const JxlDecoder* dec,
+                                                         size_t* size);
+
+/**
+ * Outputs gain map info if available. The gain map info is only available if
+ * @ref JxlDecoderGetGainMapInfoSize returns success. The output buffer must
+ * have at least as many bytes as given by @ref JxlDecoderGetGainMapInfoSize.
+ *
+ * @param dec decoder object
+ * @param gain_map_info buffer to copy the gain map info info
+ * @param size size of the gain map info buffer in bytes
+ * @return @ref JXL_DEC_NEED_MORE_INPUT if the decoder has not yet received
+ * enough input data to determine whether a gain map is available,
+ * ::JXL_DEC_ERROR in case the gain map info is not available or the provided
+ * buffer is too small, otherwise ::JXL_DEC_SUCCESS.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetGainMapInfo(const JxlDecoder* dec,
+                                                     uint8_t* gain_map_info,
+                                                     size_t size);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }
