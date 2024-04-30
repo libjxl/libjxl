@@ -1222,7 +1222,7 @@ TEST(JxlTest, RoundtripNoise) {
             JXL_TRANSFER_FUNCTION_SRGB);
 
   JXLCompressParams cparams;
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSkirrel
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
   cparams.AddOption(JXL_ENC_FRAME_SETTING_NOISE, 1);
 
   PackedPixelFile ppf_out;
