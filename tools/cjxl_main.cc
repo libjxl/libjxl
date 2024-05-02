@@ -1135,7 +1135,8 @@ int main(int argc, char** argv) {
   }
 
   if (!ppf.metadata.exif.empty() || !ppf.metadata.xmp.empty() ||
-      !ppf.metadata.jumbf.empty() || !ppf.metadata.iptc.empty() ||
+      !ppf.metadata.jhgm.empty() || !ppf.metadata.jumbf.empty() ||
+      !ppf.metadata.iptc.empty() ||
       (FROM_JXL_BOOL(args.lossless_jpeg) &&
        FROM_JXL_BOOL(args.allow_jpeg_reconstruction))) {
     if (args.container == jxl::Override::kDefault) {
@@ -1146,6 +1147,7 @@ int main(int argc, char** argv) {
       ppf.metadata.exif.clear();
       ppf.metadata.xmp.clear();
       ppf.metadata.jumbf.clear();
+      ppf.metadata.jhgm.clear();
       ppf.metadata.iptc.clear();
       args.allow_jpeg_reconstruction = JXL_FALSE;
     }

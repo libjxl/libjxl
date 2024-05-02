@@ -161,7 +161,8 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
 
   bool has_jpeg_bytes = (jpeg_bytes != nullptr);
   bool use_boxes = !ppf.metadata.exif.empty() || !ppf.metadata.xmp.empty() ||
-                   !ppf.metadata.jumbf.empty() || !ppf.metadata.iptc.empty();
+                   !ppf.metadata.jhgm.empty() || !ppf.metadata.jumbf.empty() ||
+                   !ppf.metadata.iptc.empty();
   bool use_container = params.use_container || use_boxes ||
                        (has_jpeg_bytes && params.jpeg_store_metadata);
 
@@ -305,12 +306,11 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       const struct BoxInfo {
         const char* type;
         const std::vector<uint8_t>& bytes;
-      } boxes[] = {
-          {"Exif", exif_with_offset},
-          {"xml ", ppf.metadata.xmp},
-          {"jumb", ppf.metadata.jumbf},
-          {"xml ", ppf.metadata.iptc},
-      };
+      } boxes[] = {{.type = "Exif", .bytes = exif_with_offset},
+                   {.type = "xml ", .bytes = ppf.metadata.xmp},
+                   {.type = "jumb", .bytes = ppf.metadata.jumbf},
+                   {.type = "xml ", .bytes = ppf.metadata.iptc},
+                   {.type = "jhgm", .bytes = ppf.metadata.jhgm}};
       for (auto box : boxes) {
         if (!box.bytes.empty()) {
           if (JXL_ENC_SUCCESS !=
