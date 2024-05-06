@@ -38,9 +38,7 @@
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/loop_filter.h"
 #include "lib/jxl/memory_manager_internal.h"
-#include "lib/jxl/sanitizers.h"
 #include "lib/jxl/toc.h"
 
 namespace {

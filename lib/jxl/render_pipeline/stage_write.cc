@@ -9,12 +9,12 @@
 
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/sanitizers.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_write.cc"
