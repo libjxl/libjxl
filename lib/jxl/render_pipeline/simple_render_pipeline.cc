@@ -13,10 +13,10 @@
 #include <vector>
 
 #include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
-#include "lib/jxl/sanitizers.h"
 
 namespace jxl {
 

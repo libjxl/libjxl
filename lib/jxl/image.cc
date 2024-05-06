@@ -15,7 +15,7 @@
 
 #if defined(MEMORY_SANITIZER)
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/sanitizers.h"
+#include "lib/jxl/base/sanitizers.h"
 #endif
 
 namespace jxl {

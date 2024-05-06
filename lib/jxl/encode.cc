@@ -20,13 +20,13 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/exif.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_fast_lossless.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
@@ -37,7 +37,6 @@
 #include "lib/jxl/luminance.h"
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/padded_bytes.h"
-#include "lib/jxl/sanitizers.h"
 
 struct JxlErrorOrStatus {
   // NOLINTNEXTLINE(google-explicit-constructor)

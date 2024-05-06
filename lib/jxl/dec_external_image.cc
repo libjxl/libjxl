@@ -6,9 +6,9 @@
 #include "lib/jxl/dec_external_image.h"
 
 #include <jxl/types.h>
-#include <string.h>
 
 #include <algorithm>
+#include <cstring>
 #include <utility>
 #include <vector>
 
@@ -24,7 +24,7 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/sanitizers.h"
+#include "lib/jxl/base/sanitizers.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
