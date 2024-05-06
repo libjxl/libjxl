@@ -3,13 +3,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/packed_image_convert.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
+#include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 
 using jxl::Image3F;
@@ -40,7 +41,9 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
-  JXL_ASSIGN_OR_RETURN(Image3F image, Image3F::Create(N * N, N));
+  JXL_ASSIGN_OR_RETURN(
+      Image3F image,
+      Image3F::Create(jpegxl::tools::NoMemoryManager(), N * N, N));
   const float scale = 1.0 / (N - 1);
   JXL_CHECK(jxl::RunOnPool(
       pool.get(), 0, N, jxl::ThreadPool::NoInit,

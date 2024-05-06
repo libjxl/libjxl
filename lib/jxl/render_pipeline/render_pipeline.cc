@@ -5,6 +5,8 @@
 
 #include "lib/jxl/render_pipeline/render_pipeline.h"
 
+#include <jxl/memory_manager.h>
+
 #include <memory>
 #include <utility>
 
@@ -35,9 +37,9 @@ StatusOr<std::unique_ptr<RenderPipeline>> RenderPipeline::Builder::Finalize(
 
   std::unique_ptr<RenderPipeline> res;
   if (use_simple_implementation_) {
-    res = jxl::make_unique<SimpleRenderPipeline>();
+    res = jxl::make_unique<SimpleRenderPipeline>(memory_manager_);
   } else {
-    res = jxl::make_unique<LowMemoryRenderPipeline>();
+    res = jxl::make_unique<LowMemoryRenderPipeline>(memory_manager_);
   }
 
   res->padding_.resize(stages_.size());

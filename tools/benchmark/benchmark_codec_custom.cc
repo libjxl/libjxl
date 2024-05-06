@@ -6,9 +6,9 @@
 #include "tools/benchmark/benchmark_codec_custom.h"
 
 #include <jxl/types.h>
-#include <stdio.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,6 +19,7 @@
 #include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
+#include "tools/no_memory_manager.h"
 #include "tools/speed_stats.h"
 
 // Not supported on Windows due to Linux-specific functions.
@@ -160,7 +161,7 @@ class CustomCodec : public ImageCodec {
                     const Span<const uint8_t> compressed, ThreadPool* pool,
                     PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io;
+    CodecInOut io{jpegxl::tools::NoMemoryManager()};
     JXL_RETURN_IF_ERROR(
         Decompress(filename, compressed, pool, &io, speed_stats));
     JxlPixelFormat format{0, JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};

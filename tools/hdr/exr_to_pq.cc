@@ -3,10 +3,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 
-#include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/tone_mapping.h"
@@ -16,6 +15,7 @@
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/hdr/image_utils.h"
+#include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 
 namespace {
@@ -85,7 +85,7 @@ int main(int argc, const char** argv) {
   JXL_CHECK(jxl::extras::DecodeBytes(jxl::Bytes(input_bytes),
                                      jxl::extras::ColorHints(), &ppf));
 
-  jxl::CodecInOut image;
+  jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
   JXL_CHECK(
       jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool.get(), &image));
   image.metadata.m.bit_depth.exponent_bits_per_sample = 0;

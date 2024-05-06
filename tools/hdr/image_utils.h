@@ -9,6 +9,14 @@
 #include <jxl/cms.h>
 #include <jxl/cms_interface.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include "lib/extras/dec/decode.h"  // Codec enum
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/exr.h"

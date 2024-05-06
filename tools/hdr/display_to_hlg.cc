@@ -3,17 +3,17 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/span.h"
-#include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/hdr/image_utils.h"
+#include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 
 int main(int argc, const char** argv) {
@@ -68,7 +68,7 @@ int main(int argc, const char** argv) {
 
   std::vector<uint8_t> encoded;
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  jxl::CodecInOut image;
+  jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
   JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
                               &image, pool.get()));
   image.metadata.m.SetIntensityTarget(max_nits);

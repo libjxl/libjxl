@@ -28,6 +28,7 @@
 #include "lib/jxl/image_metadata.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
+#include "tools/no_memory_manager.h"
 #include "tools/speed_stats.h"
 #include "tools/thread_pool_internal.h"
 
@@ -96,7 +97,7 @@ class WebPCodec : public ImageCodec {
   Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io;
+    CodecInOut io{jpegxl::tools::NoMemoryManager()};
     JXL_RETURN_IF_ERROR(
         jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, &io));
     return Compress(filename, &io, pool, compressed, speed_stats);
@@ -114,7 +115,7 @@ class WebPCodec : public ImageCodec {
 
     size_t num_chans = (ib.HasAlpha() ? 4 : 3);
     ImageMetadata metadata = io->metadata.m;
-    ImageBundle store(&metadata);
+    ImageBundle store(jpegxl::tools::NoMemoryManager(), &metadata);
     const ImageBundle* transformed;
     const ColorEncoding& c_desired = ColorEncoding::SRGB(false);
     JXL_RETURN_IF_ERROR(jxl::TransformIfNeeded(
@@ -180,7 +181,7 @@ class WebPCodec : public ImageCodec {
                     const Span<const uint8_t> compressed, ThreadPool* pool,
                     PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io;
+    CodecInOut io{jpegxl::tools::NoMemoryManager()};
     JXL_RETURN_IF_ERROR(
         Decompress(filename, compressed, pool, &io, speed_stats));
     JxlPixelFormat format{0, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};

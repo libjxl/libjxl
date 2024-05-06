@@ -65,6 +65,7 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
                                ModularFrameEncoder* modular_frame_encoder,
                                AuxOut* aux_out) {
   PassesSharedState& JXL_RESTRICT shared = enc_state->shared;
+  JxlMemoryManager* memory_manager = enc_state->memory_manager();
 
   enc_state->x_qm_multiplier = std::pow(1.25f, frame_header.x_qm_scale - 2.0f);
   enc_state->b_qm_multiplier = std::pow(1.25f, frame_header.b_qm_scale - 2.0f);
@@ -76,7 +77,7 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
       // Allocate enough coefficients for each group on every row.
       JXL_ASSIGN_OR_RETURN(
           std::unique_ptr<ACImageT<int32_t>> coeffs,
-          ACImageT<int32_t>::Make(kGroupDim * kGroupDim,
+          ACImageT<int32_t>::Make(memory_manager, kGroupDim * kGroupDim,
                                   shared.frame_dim.num_groups));
       enc_state->coeffs.emplace_back(std::move(coeffs));
     }
@@ -92,9 +93,9 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     shared.quantizer.RecomputeFromGlobalScale();
   }
 
-  JXL_ASSIGN_OR_RETURN(Image3F dc,
-                       Image3F::Create(shared.frame_dim.xsize_blocks,
-                                       shared.frame_dim.ysize_blocks));
+  JXL_ASSIGN_OR_RETURN(
+      Image3F dc, Image3F::Create(memory_manager, shared.frame_dim.xsize_blocks,
+                                  shared.frame_dim.ysize_blocks));
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, shared.frame_dim.num_groups, ThreadPool::NoInit,
       [&](size_t group_idx, size_t _) {
@@ -135,7 +136,7 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
           std::max(kMinButteraugliDistance,
                    enc_state->cparams.butteraugli_distance * 0.1f);
     }
-    ImageBundle ib(&shared.metadata->m);
+    ImageBundle ib(memory_manager, &shared.metadata->m);
     // This is a lie - dc is in XYB
     // (but EncodeFrame will skip RGB->XYB conversion anyway)
     ib.SetFromImage(
@@ -149,7 +150,8 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
       std::vector<ImageF> extra_channels;
       extra_channels.reserve(ib.metadata()->extra_channel_info.size());
       for (size_t i = 0; i < ib.metadata()->extra_channel_info.size(); i++) {
-        JXL_ASSIGN_OR_RETURN(ImageF ch, ImageF::Create(ib.xsize(), ib.ysize()));
+        JXL_ASSIGN_OR_RETURN(
+            ImageF ch, ImageF::Create(memory_manager, ib.xsize(), ib.ysize()));
         extra_channels.emplace_back(std::move(ch));
         // Must initialize the image with data to not affect blending with
         // uninitialized memory.
@@ -166,8 +168,8 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     dc_frame_info.ib_needs_color_transform = false;
     dc_frame_info.save_before_color_transform = true;  // Implicitly true
     AuxOut dc_aux_out;
-    JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib, cms,
-                          pool, special_frame.get(),
+    JXL_CHECK(EncodeFrame(memory_manager, cparams, dc_frame_info,
+                          shared.metadata, ib, cms, pool, special_frame.get(),
                           aux_out ? &dc_aux_out : nullptr));
     if (aux_out) {
       for (const auto& l : dc_aux_out.layers) {
@@ -177,9 +179,9 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     const Span<const uint8_t> encoded = special_frame->GetSpan();
     enc_state->special_frames.emplace_back(std::move(special_frame));
 
-    ImageBundle decoded(&shared.metadata->m);
+    ImageBundle decoded(memory_manager, &shared.metadata->m);
     std::unique_ptr<PassesDecoderState> dec_state =
-        jxl::make_unique<PassesDecoderState>();
+        jxl::make_unique<PassesDecoderState>(memory_manager);
     JXL_CHECK(
         dec_state->output_encoding_info.SetFromMetadata(*shared.metadata));
     const uint8_t* frame_start = encoded.data();
@@ -198,8 +200,9 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     // outputs multiple frames, this assumption could be wrong.
     const Image3F& dc_frame =
         dec_state->shared->dc_frames[frame_header.dc_level];
-    JXL_ASSIGN_OR_RETURN(shared.dc_storage,
-                         Image3F::Create(dc_frame.xsize(), dc_frame.ysize()));
+    JXL_ASSIGN_OR_RETURN(
+        shared.dc_storage,
+        Image3F::Create(memory_manager, dc_frame.xsize(), dc_frame.ysize()));
     CopyImageTo(dc_frame, &shared.dc_storage);
     ZeroFillImage(&shared.quant_dc);
     shared.dc = &shared.dc_storage;
@@ -228,8 +231,8 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     if (has_error) return JXL_FAILURE("Compute DC coeffs failed");
     // TODO(veluca): this is only useful in tests and if inspection is enabled.
     if (!(frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing)) {
-      JXL_RETURN_IF_ERROR(AdaptiveDCSmoothing(shared.quantizer.MulDC(),
-                                              &shared.dc_storage, pool));
+      JXL_RETURN_IF_ERROR(AdaptiveDCSmoothing(
+          memory_manager, shared.quantizer.MulDC(), &shared.dc_storage, pool));
     }
   }
   return true;

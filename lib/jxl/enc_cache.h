@@ -7,6 +7,7 @@
 #define LIB_JXL_ENC_CACHE_H_
 
 #include <jxl/cms_interface.h>
+#include <jxl/memory_manager.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -32,6 +33,9 @@ struct AuxOut;
 
 // Contains encoder state.
 struct PassesEncoderState {
+  explicit PassesEncoderState(JxlMemoryManager* memory_manager)
+      : shared(memory_manager) {}
+
   PassesSharedState shared;
 
   bool streaming_mode = false;
@@ -68,6 +72,8 @@ struct PassesEncoderState {
   float b_qm_multiplier = 1.0f;
 
   ImageF initial_quant_masking1x1;
+
+  JxlMemoryManager* memory_manager() const { return shared.memory_manager; }
 };
 
 // Initialize per-frame information.

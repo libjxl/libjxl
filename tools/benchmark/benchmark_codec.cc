@@ -6,10 +6,10 @@
 #include "tools/benchmark/benchmark_codec.h"
 
 #include <jxl/types.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,6 +26,7 @@
 #include "tools/benchmark/benchmark_codec_jpeg.h"
 #include "tools/benchmark/benchmark_codec_jxl.h"
 #include "tools/benchmark/benchmark_stats.h"
+#include "tools/no_memory_manager.h"
 #include "tools/speed_stats.h"
 #include "tools/thread_pool_internal.h"
 
@@ -111,7 +112,7 @@ class NoneCodec : public ImageCodec {
                     const Span<const uint8_t> compressed, ThreadPool* pool,
                     PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io;
+    CodecInOut io{jpegxl::tools::NoMemoryManager()};
     JXL_RETURN_IF_ERROR(
         Decompress(filename, compressed, pool, &io, speed_stats));
     JxlPixelFormat format{0, JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};
@@ -129,7 +130,9 @@ class NoneCodec : public ImageCodec {
     uint32_t ysize;
     memcpy(&xsize, compressed.data(), 4);
     memcpy(&ysize, compressed.data() + 4, 4);
-    JXL_ASSIGN_OR_RETURN(Image3F image, Image3F::Create(xsize, ysize));
+    JXL_ASSIGN_OR_RETURN(
+        Image3F image,
+        Image3F::Create(jpegxl::tools::NoMemoryManager(), xsize, ysize));
     ZeroFillImage(&image);
     io->metadata.m.SetFloat32Samples();
     io->metadata.m.color_encoding = ColorEncoding::SRGB();

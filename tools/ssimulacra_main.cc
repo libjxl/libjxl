@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/memory_manager.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -17,6 +19,7 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/file_io.h"
+#include "tools/no_memory_manager.h"
 #include "tools/ssimulacra.h"
 
 namespace ssimulacra {
@@ -28,6 +31,7 @@ int PrintUsage(char** argv) {
 }
 
 int Run(int argc, char** argv) {
+  JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
   if (argc < 2) return PrintUsage(argv);
 
   bool verbose = false;
@@ -43,15 +47,17 @@ int Run(int argc, char** argv) {
   }
   if (argc < input_arg + 2) return PrintUsage(argv);
 
-  jxl::CodecInOut io[2];
+  jxl::CodecInOut io1{memory_manager};
+  jxl::CodecInOut io2{memory_manager};
+  jxl::CodecInOut* io[2] = {&io1, &io2};
   for (size_t i = 0; i < 2; ++i) {
     std::vector<uint8_t> encoded;
     JXL_CHECK(jpegxl::tools::ReadFile(argv[input_arg + i], &encoded));
     JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
-                                &io[i]));
+                                io[i]));
   }
-  jxl::ImageBundle& ib1 = io[0].Main();
-  jxl::ImageBundle& ib2 = io[1].Main();
+  jxl::ImageBundle& ib1 = io1.Main();
+  jxl::ImageBundle& ib2 = io2.Main();
   JXL_CHECK(ib1.TransformTo(jxl::ColorEncoding::LinearSRGB(ib1.IsGray()),
                             *JxlGetDefaultCms(), nullptr));
   JXL_CHECK(ib2.TransformTo(jxl::ColorEncoding::LinearSRGB(ib2.IsGray()),

@@ -3,12 +3,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/memory_manager.h>
 #include <jxl/types.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/stat.h>
 
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -22,6 +23,7 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/modular/options.h"
+#include "tools/no_memory_manager.h"
 #if defined(_WIN32) || defined(_WIN64)
 #include "third_party/dirent.h"
 #else
@@ -149,6 +151,7 @@ static_assert(sizeof(ImageSpec) % 4 == 0, "Add padding to ImageSpec.");
 
 bool GenerateFile(const char* output_dir, const ImageSpec& spec,
                   bool regenerate, bool quiet) {
+  JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
   // Compute a checksum of the ImageSpec to name the file. This is just to keep
   // the output of this program repeatable.
   uint8_t checksum[16];
@@ -174,7 +177,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
               << std::flush;
   }
 
-  jxl::CodecInOut io;
+  jxl::CodecInOut io{memory_manager};
   if (spec.bit_depth == 32) {
     io.metadata.m.SetFloat32Samples();
   } else {
@@ -209,7 +212,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   ppf.info.num_color_channels = spec.num_channels ? 1 : 3;
   ppf.info.bits_per_sample = spec.bit_depth;
   for (uint32_t frame = 0; frame < spec.num_frames; frame++) {
-    jxl::ImageBundle ib(&io.metadata.m);
+    jxl::ImageBundle ib(memory_manager, &io.metadata.m);
     const bool has_alpha = (spec.alpha_bit_depth != 0);
     const int alpha_channels = (has_alpha ? 1 : 0);
     const size_t bytes_per_sample =

@@ -6,24 +6,15 @@
 #ifndef TOOLS_BENCHMARK_BENCHMARK_CODEC_H_
 #define TOOLS_BENCHMARK_BENCHMARK_CODEC_H_
 
-#include <stdint.h>
-
-#include <deque>
+#include <cstdint>
 #include <string>
 #include <vector>
 
 #include "lib/extras/packed_image.h"
-#include "lib/extras/packed_image_convert.h"
-#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/image.h"
-#include "tools/args.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_stats.h"
-#include "tools/cmdline.h"
 #include "tools/speed_stats.h"
 #include "tools/thread_pool_internal.h"
 

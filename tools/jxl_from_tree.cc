@@ -4,10 +4,11 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/memory_manager.h>
 #include <jxl/types.h>
-#include <stdio.h>
-#include <string.h>
 
+#include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <istream>
@@ -24,6 +25,7 @@
 #include "lib/jxl/splines.h"
 #include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
+#include "tools/no_memory_manager.h"
 
 namespace jpegxl {
 namespace tools {
@@ -239,7 +241,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
   } else if (t == "Alpha") {
     io.metadata.m.SetAlphaBits(io.metadata.m.bit_depth.bits_per_sample);
-    JXL_ASSIGN_OR_RETURN(ImageF alpha, ImageF::Create(W, H));
+    JXL_ASSIGN_OR_RETURN(
+        ImageF alpha, ImageF::Create(jpegxl::tools::NoMemoryManager(), W, H));
     io.frames[0].SetAlpha(std::move(alpha));
   } else if (t == "Bitdepth") {
     t = tok();
@@ -449,7 +452,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   cparams.ec_resampling = 1;
   cparams.modular_group_size_shift = 3;
   cparams.colorspace = 0;
-  CodecInOut io;
+  JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
+  CodecInOut io{memory_manager};
   int have_next = JXL_FALSE;
 
   std::istream* f = &std::cin;
@@ -474,8 +478,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     PrintTree(tree, tree_out);
   }
   JXL_ASSIGN_OR_RETURN(
-      Image3F image,
-      Image3F::Create(width * cparams.resampling, height * cparams.resampling));
+      Image3F image, Image3F::Create(memory_manager, width * cparams.resampling,
+                                     height * cparams.resampling));
   io.SetFromImage(std::move(image), ColorEncoding::SRGB());
   io.SetSize((width + x0) * cparams.resampling,
              (height + y0) * cparams.resampling);
@@ -508,7 +512,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
       metadata->m.extra_channel_info.emplace_back();
       auto& eci = metadata->m.extra_channel_info.back();
       eci.type = jxl::ExtraChannel::kOptional;
-      JXL_ASSIGN_OR_DIE(ImageF ch, ImageF::Create(io.xsize(), io.ysize()));
+      JXL_ASSIGN_OR_DIE(ImageF ch,
+                        ImageF::Create(memory_manager, io.xsize(), io.ysize()));
       io.frames[0].extra_channels().emplace_back(std::move(ch));
     }
   }
@@ -525,9 +530,9 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     io.frames[0].origin.y0 = y0;
     info.clamp = false;
 
-    JXL_RETURN_IF_ERROR(jxl::EncodeFrame(cparams, info, metadata.get(),
-                                         io.frames[0], *JxlGetDefaultCms(),
-                                         nullptr, &writer, nullptr));
+    JXL_RETURN_IF_ERROR(jxl::EncodeFrame(
+        memory_manager, cparams, info, metadata.get(), io.frames[0],
+        *JxlGetDefaultCms(), nullptr, &writer, nullptr));
     if (!have_next) break;
     tree.clear();
     spline_data.splines.clear();
@@ -538,7 +543,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
       return 1;
     }
     cparams.custom_fixed_tree = tree;
-    JXL_ASSIGN_OR_RETURN(Image3F image, Image3F::Create(width, height));
+    JXL_ASSIGN_OR_RETURN(Image3F image,
+                         Image3F::Create(memory_manager, width, height));
     io.SetFromImage(std::move(image), ColorEncoding::SRGB());
     io.frames[0].blend = true;
   }

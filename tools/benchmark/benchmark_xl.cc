@@ -6,6 +6,7 @@
 #include <jxl/cms.h>
 #include <jxl/cms_interface.h>
 #include <jxl/decode.h>
+#include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
 #include <algorithm>
@@ -52,6 +53,7 @@
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/codec_config.h"
 #include "tools/file_io.h"
+#include "tools/no_memory_manager.h"
 #include "tools/speed_stats.h"
 #include "tools/ssimulacra2.h"
 #include "tools/thread_pool_internal.h"
@@ -83,12 +85,14 @@ Status WriteImage(const Image3F& image, ThreadPool* pool,
 }
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
-  CodecInOut io;
+  JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
+  CodecInOut io{memory_manager};
   std::vector<uint8_t> encoded;
   JXL_CHECK(ReadFile(filename, &encoded));
   JXL_CHECK(
       jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(), &io));
-  JXL_ASSIGN_OR_DIE(*image, Image3F::Create(io.xsize(), io.ysize()));
+  JXL_ASSIGN_OR_DIE(*image,
+                    Image3F::Create(memory_manager, io.xsize(), io.ysize()));
   CopyImageTo(*io.Main().color(), image);
   return true;
 }
@@ -123,6 +127,7 @@ void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
                 const std::vector<std::string>& extra_metrics_commands,
                 ImageCodec* codec, ThreadPool* inner_pool,
                 std::vector<uint8_t>* compressed, BenchmarkStats* s) {
+  JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
   ++s->total_input_files;
 
   if (ppf.frames.size() != 1) {
@@ -232,9 +237,9 @@ void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
   float distance = 1.0f;
 
   if (valid && !skip_butteraugli) {
-    CodecInOut ppf_io;
+    CodecInOut ppf_io{memory_manager};
     JXL_CHECK(ConvertPackedPixelFileToCodecInOut(ppf, inner_pool, &ppf_io));
-    CodecInOut ppf2_io;
+    CodecInOut ppf2_io{memory_manager};
     JXL_CHECK(ConvertPackedPixelFileToCodecInOut(ppf2, inner_pool, &ppf2_io));
     const ImageBundle& ib1 = ppf_io.Main();
     const ImageBundle& ib2 = ppf2_io.Main();
@@ -253,7 +258,7 @@ void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
     } else {
       // TODO(veluca): re-upsample and compute proper distance.
       distance = 1e+4f;
-      JXL_ASSIGN_OR_DIE(distmap, ImageF::Create(1, 1));
+      JXL_ASSIGN_OR_DIE(distmap, ImageF::Create(memory_manager, 1, 1));
       distmap.Row(0)[0] = distance;
     }
     // Update stats
@@ -947,7 +952,9 @@ class Benchmark {
       const Image3F& img = images[idx];
       int x0 = rng.UniformI(0, img.xsize() - size);
       int y0 = rng.UniformI(0, img.ysize() - size);
-      JXL_ASSIGN_OR_DIE(Image3F sample, Image3F::Create(size, size));
+      JXL_ASSIGN_OR_DIE(
+          Image3F sample,
+          Image3F::Create(jpegxl::tools::NoMemoryManager(), size, size));
       for (size_t c = 0; c < 3; ++c) {
         for (size_t y = 0; y < size; ++y) {
           const float* JXL_RESTRICT row_in = img.PlaneRow(c, y0 + y);

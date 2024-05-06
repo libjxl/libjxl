@@ -690,6 +690,7 @@ Status DecodeGroup(const FrameHeader& frame_header,
                    RenderPipelineInput& render_pipeline_input,
                    jpeg::JPEGData* JXL_RESTRICT jpeg_data, size_t first_pass,
                    bool force_draw, bool dc_only, bool* should_run_pipeline) {
+  JxlMemoryManager* memory_manager = dec_state->memory_manager();
   DrawMode draw =
       (num_passes + first_pass == frame_header.passes.num_passes) || force_draw
           ? kDraw
@@ -700,7 +701,7 @@ Status DecodeGroup(const FrameHeader& frame_header,
   }
 
   if (draw == kDraw && num_passes == 0 && first_pass == 0) {
-    JXL_RETURN_IF_ERROR(group_dec_cache->InitDCBufferOnce());
+    JXL_RETURN_IF_ERROR(group_dec_cache->InitDCBufferOnce(memory_manager));
     const YCbCrChromaSubsampling& cs = frame_header.chroma_subsampling;
     for (size_t c : {0, 1, 2}) {
       size_t hs = cs.HShift(c);
@@ -796,8 +797,10 @@ Status DecodeGroupForRoundtrip(const FrameHeader& frame_header,
                                RenderPipelineInput& render_pipeline_input,
                                jpeg::JPEGData* JXL_RESTRICT jpeg_data,
                                AuxOut* aux_out) {
+  JxlMemoryManager* memory_manager = dec_state->memory_manager();
   GetBlockFromEncoder get_block(ac, group_idx, frame_header.passes.shift);
   JXL_RETURN_IF_ERROR(group_dec_cache->InitOnce(
+      memory_manager,
       /*num_passes=*/0,
       /*used_acs=*/(1u << AcStrategy::kNumValidStrategies) - 1));
 

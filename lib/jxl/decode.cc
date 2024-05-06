@@ -1085,7 +1085,7 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
   dec->codestream_bits_ahead = 0;
 
   if (!dec->passes_state) {
-    dec->passes_state.reset(new jxl::PassesDecoderState());
+    dec->passes_state.reset(new jxl::PassesDecoderState(&dec->memory_manager));
   }
 
   JXL_API_RETURN_IF_ERROR(
@@ -1231,7 +1231,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       }
 #endif
       if (!dec->ib) {
-        dec->ib.reset(new jxl::ImageBundle(&dec->image_metadata));
+        dec->ib.reset(
+            new jxl::ImageBundle(&dec->memory_manager, &dec->image_metadata));
       }
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
       // If JPEG reconstruction is wanted and possible, set the jpeg_data of
@@ -2343,7 +2344,7 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec,
                                              const JxlCmsInterface cms) {
   if (!dec->passes_state) {
-    dec->passes_state.reset(new jxl::PassesDecoderState());
+    dec->passes_state.reset(new jxl::PassesDecoderState(&dec->memory_manager));
   }
   dec->passes_state->output_encoding_info.color_management_system = cms;
   dec->passes_state->output_encoding_info.cms_set = true;

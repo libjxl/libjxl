@@ -943,8 +943,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       frame_info.timecode = timecode;
       frame_info.name = input_frame->option_values.frame_name;
 
-      if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
-                            &metadata, input_frame->frame_data, cms,
+      if (!jxl::EncodeFrame(&memory_manager, input_frame->option_values.cparams,
+                            frame_info, &metadata, input_frame->frame_data, cms,
                             thread_pool.get(), &output_processor,
                             input_frame->option_values.aux_out)) {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
@@ -2042,7 +2042,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
                          "Frame input is already closed");
   }
 
-  jxl::CodecInOut io;
+  jxl::CodecInOut io{&frame_settings->enc->memory_manager};
   if (!jxl::jpeg::DecodeImageJPG(jxl::Bytes(buffer, size), &io)) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
                          "Error during decode of input JPEG");

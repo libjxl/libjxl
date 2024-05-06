@@ -11,12 +11,13 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/test_utils.h"
+#include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 
 namespace {
 
 int DoTestOneInput(const uint8_t* data, size_t size) {
-  jxl::CodecInOut io;
+  jxl::CodecInOut io{jpegxl::tools::NoMemoryManager()};
   jxl::SizeConstraints constraints;
   constraints.dec_max_xsize = 1u << 16;
   constraints.dec_max_ysize = 1u << 16;

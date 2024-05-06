@@ -18,6 +18,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
 #include "tools/file_io.h"
+#include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 #include "tools/viewer/load_jxl.h"
 
@@ -69,7 +70,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   }
   static ThreadPoolInternal pool(QThread::idealThreadCount());
 
-  CodecInOut decoded;
+  CodecInOut decoded{jpegxl::tools::NoMemoryManager()};
   ColorHints color_hints;
   if (!sourceColorSpaceHint.isEmpty()) {
     color_hints.Add("color_space", sourceColorSpaceHint.toStdString());
