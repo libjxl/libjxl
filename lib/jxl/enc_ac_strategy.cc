@@ -5,6 +5,8 @@
 
 #include "lib/jxl/enc_ac_strategy.h"
 
+#include <jxl/memory_manager.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -213,7 +215,9 @@ const uint8_t* TypeMask(const uint8_t& raw_strategy) {
 Status DumpAcStrategy(const AcStrategyImage& ac_strategy, size_t xsize,
                       size_t ysize, const char* tag, AuxOut* aux_out,
                       const CompressParams& cparams) {
-  JXL_ASSIGN_OR_RETURN(Image3F color_acs, Image3F::Create(xsize, ysize));
+  JxlMemoryManager* memory_manager = ac_strategy.memory_manager();
+  JXL_ASSIGN_OR_RETURN(Image3F color_acs,
+                       Image3F::Create(memory_manager, xsize, ysize));
   for (size_t y = 0; y < ysize; y++) {
     float* JXL_RESTRICT rows[3] = {
         color_acs.PlaneRow(0, y),

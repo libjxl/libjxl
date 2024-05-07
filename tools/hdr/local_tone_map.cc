@@ -24,6 +24,7 @@
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/cmdline.h"
+#include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -58,7 +59,8 @@ ImageF DownsampledLuminances(const Image3F& image,
                              const float intensity_target) {
   HWY_CAPPED(float, kDownsampling) d;
   JXL_ASSIGN_OR_DIE(ImageF result,
-                    ImageF::Create(DivCeil(image.xsize(), kDownsampling),
+                    ImageF::Create(jpegxl::tools::NoMemoryManager(),
+                                   DivCeil(image.xsize(), kDownsampling),
                                    DivCeil(image.ysize(), kDownsampling)));
   FillImage(.5f * kDefaultIntensityTarget, &result);
   for (size_t y = 0; y < image.ysize(); ++y) {
@@ -91,7 +93,8 @@ ImageF DownsampledLuminances(const Image3F& image,
 
 ImageF Upsample(const ImageF& image, ThreadPool* pool) {
   JXL_ASSIGN_OR_DIE(ImageF upsampled_horizontally,
-                    ImageF::Create(2 * image.xsize(), image.ysize()));
+                    ImageF::Create(jpegxl::tools::NoMemoryManager(),
+                                   2 * image.xsize(), image.ysize()));
   const auto BoundX = [&image](ssize_t x) {
     return Clamp1<ssize_t>(x, 0, image.xsize() - 1);
   };
@@ -112,7 +115,8 @@ ImageF Upsample(const ImageF& image, ThreadPool* pool) {
 
   HWY_FULL(float) df;
   JXL_ASSIGN_OR_DIE(ImageF upsampled,
-                    ImageF::Create(2 * image.xsize(), 2 * image.ysize()));
+                    ImageF::Create(jpegxl::tools::NoMemoryManager(),
+                                   2 * image.xsize(), 2 * image.ysize()));
   const auto BoundY = [&image](ssize_t y) {
     return Clamp1<ssize_t>(y, 0, image.ysize() - 1);
   };
@@ -218,7 +222,8 @@ void Blur(ImageF* image) {
       {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)},
       {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)}};
   JXL_ASSIGN_OR_DIE(ImageF blurred_once,
-                    ImageF::Create(image->xsize(), image->ysize()));
+                    ImageF::Create(jpegxl::tools::NoMemoryManager(),
+                                   image->xsize(), image->ysize()));
   Separable5(*image, Rect(*image), kBlurFilter, nullptr, &blurred_once);
   Separable5(blurred_once, Rect(blurred_once), kBlurFilter, nullptr, image);
 }
@@ -302,7 +307,7 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
-  jxl::CodecInOut image;
+  jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
   jxl::extras::ColorHints color_hints;
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;

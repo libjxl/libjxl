@@ -36,6 +36,7 @@ if(benchmark_FOUND)
   target_link_libraries(jxl_gbench
     jxl_extras-internal
     jxl-internal
+    jxl_tool
     benchmark::benchmark
   )
 else()

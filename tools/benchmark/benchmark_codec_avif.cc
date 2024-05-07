@@ -6,13 +6,16 @@
 
 #include <avif/avif.h>
 #include <jxl/cms.h>
+#include <jxl/types.h>
 
+#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
 #include "tools/cmdline.h"
+#include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 
 #define JXL_RETURN_IF_AVIF_ERROR(result)                                       \
@@ -244,7 +247,7 @@ class AvifCodec : public ImageCodec {
   Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io;
+    CodecInOut io{jpegxl::tools::NoMemoryManager()};
     JXL_RETURN_IF_ERROR(
         jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, &io));
     return Compress(filename, &io, pool, compressed, speed_stats);
@@ -310,7 +313,7 @@ class AvifCodec : public ImageCodec {
         JXL_RETURN_IF_ERROR(ConvertToExternal(
             ib, depth, /*float_out=*/false,
             /*num_channels=*/ib.HasAlpha() ? 4 : 3, JXL_NATIVE_ENDIAN,
-            /*stride=*/rgb_image.rowBytes, pool, rgb_image.pixels,
+            /*stride_out=*/rgb_image.rowBytes, pool, rgb_image.pixels,
             rgb_image.rowBytes * rgb_image.height,
             /*out_callback=*/{}, jxl::Orientation::kIdentity));
         const double end_convert_image = jxl::Now();
@@ -333,7 +336,7 @@ class AvifCodec : public ImageCodec {
                     const Span<const uint8_t> compressed, ThreadPool* pool,
                     PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io;
+    CodecInOut io{jpegxl::tools::NoMemoryManager()};
     JXL_RETURN_IF_ERROR(
         Decompress(filename, compressed, pool, &io, speed_stats));
     JxlPixelFormat format{0, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
@@ -356,7 +359,7 @@ class AvifCodec : public ImageCodec {
       JXL_RETURN_IF_AVIF_ERROR(avifDecoderSetIOMemory(
           decoder.get(), compressed.data(), compressed.size()));
       JXL_RETURN_IF_AVIF_ERROR(avifDecoderParse(decoder.get()));
-      const bool has_alpha = decoder->alphaPresent;
+      const bool has_alpha = FROM_JXL_BOOL(decoder->alphaPresent);
       io->metadata.m.have_animation = decoder->imageCount > 1;
       io->metadata.m.animation.tps_numerator = decoder->timescale;
       io->metadata.m.animation.tps_denominator = 1;
@@ -381,7 +384,7 @@ class AvifCodec : public ImageCodec {
               (has_alpha ? 4u : 3u),
               (rgb_image.depth <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16),
               JXL_NATIVE_ENDIAN, 0};
-          ImageBundle ib(&io->metadata.m);
+          ImageBundle ib(jpegxl::tools::NoMemoryManager(), &io->metadata.m);
           JXL_RETURN_IF_ERROR(ConvertFromExternal(
               Bytes(rgb_image.pixels, rgb_image.height * rgb_image.rowBytes),
               rgb_image.width, rgb_image.height, color, rgb_image.depth, format,

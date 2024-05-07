@@ -19,6 +19,7 @@
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/test_utils.h"
+#include "tools/no_memory_manager.h"
 
 namespace {
 
@@ -97,7 +98,8 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   }
 
   JXL_ASSIGN_OR_DIE(Image image,
-                    Image::Create(w, h, bit_depth, nb_chans + nb_extra));
+                    Image::Create(jpegxl::tools::NoMemoryManager(), w, h,
+                                  bit_depth, nb_chans + nb_extra));
 
   for (size_t c = 0; c < nb_chans; c++) {
     Channel& ch = image.channel[c];

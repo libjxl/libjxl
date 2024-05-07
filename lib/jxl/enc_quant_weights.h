@@ -6,6 +6,8 @@
 #ifndef LIB_JXL_ENC_QUANT_WEIGHTS_H_
 #define LIB_JXL_ENC_QUANT_WEIGHTS_H_
 
+#include <jxl/memory_manager.h>
+
 #include <cstddef>
 #include <vector>
 
@@ -18,8 +20,9 @@ struct AuxOut;
 struct BitWriter;
 
 Status DequantMatricesEncode(
-    const DequantMatrices& matrices, BitWriter* writer, size_t layer,
-    AuxOut* aux_out, ModularFrameEncoder* modular_frame_encoder = nullptr);
+    JxlMemoryManager* memory_manager, const DequantMatrices& matrices,
+    BitWriter* writer, size_t layer, AuxOut* aux_out,
+    ModularFrameEncoder* modular_frame_encoder = nullptr);
 Status DequantMatricesEncodeDC(const DequantMatrices& matrices,
                                BitWriter* writer, size_t layer,
                                AuxOut* aux_out);
@@ -34,7 +37,8 @@ Status DequantMatricesSetCustom(DequantMatrices* matrices,
                                 ModularFrameEncoder* encoder);
 
 // Roundtrip encode/decode the matrices to ensure same values as decoder.
-void DequantMatricesRoundtrip(DequantMatrices* matrices);
+void DequantMatricesRoundtrip(JxlMemoryManager* memory_manager,
+                              DequantMatrices* matrices);
 
 }  // namespace jxl
 

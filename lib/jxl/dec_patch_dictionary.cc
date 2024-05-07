@@ -58,14 +58,14 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
     PatchReferencePosition ref_pos;
     ref_pos.ref = read_num(kReferenceFrameContext);
     if (ref_pos.ref >= kMaxNumReferenceFrames ||
-        shared_->reference_frames[ref_pos.ref].frame.xsize() == 0) {
+        shared_->reference_frames[ref_pos.ref].frame->xsize() == 0) {
       return JXL_FAILURE("Invalid reference frame ID");
     }
     if (!shared_->reference_frames[ref_pos.ref].ib_is_in_xyb) {
       return JXL_FAILURE(
           "Patches cannot use frames saved post color transforms");
     }
-    const ImageBundle& ib = shared_->reference_frames[ref_pos.ref].frame;
+    const ImageBundle& ib = *shared_->reference_frames[ref_pos.ref].frame;
     ref_pos.x0 = read_num(kPatchReferencePositionContext);
     ref_pos.y0 = read_num(kPatchReferencePositionContext);
     ref_pos.xsize = read_num(kPatchSizeContext) + 1;
@@ -318,6 +318,7 @@ Status PatchDictionary::AddOneRow(float* const* inout, size_t y, size_t x0,
                                   size_t xsize) const {
   size_t num_ec = shared_->metadata->m.num_extra_channels;
   std::vector<const float*> fg_ptrs(3 + num_ec);
+  JxlMemoryManager* memory_manager = shared_->memory_manager;
   for (size_t pos_idx : GetPatchesForRow(y)) {
     const size_t blending_idx = pos_idx * (num_ec + 1);
     const PatchPosition& pos = positions_[pos_idx];
@@ -334,19 +335,20 @@ Status PatchDictionary::AddOneRow(float* const* inout, size_t y, size_t x0,
     size_t patch_x0 = std::max(bx, x0);
     size_t patch_x1 = std::min(bx + patch_xsize, x0 + xsize);
     for (size_t c = 0; c < 3; c++) {
-      fg_ptrs[c] = shared_->reference_frames[ref].frame.color().ConstPlaneRow(
+      fg_ptrs[c] = shared_->reference_frames[ref].frame->color()->ConstPlaneRow(
                        c, ref_pos.y0 + iy) +
                    ref_pos.x0 + x0 - bx;
     }
     for (size_t i = 0; i < num_ec; i++) {
       fg_ptrs[3 + i] =
-          shared_->reference_frames[ref].frame.extra_channels()[i].ConstRow(
+          shared_->reference_frames[ref].frame->extra_channels()[i].ConstRow(
               ref_pos.y0 + iy) +
           ref_pos.x0 + x0 - bx;
     }
     JXL_RETURN_IF_ERROR(PerformBlending(
-        inout, fg_ptrs.data(), inout, patch_x0 - x0, patch_x1 - patch_x0,
-        blendings_[blending_idx], blendings_.data() + blending_idx + 1,
+        memory_manager, inout, fg_ptrs.data(), inout, patch_x0 - x0,
+        patch_x1 - patch_x0, blendings_[blending_idx],
+        blendings_.data() + blending_idx + 1,
         shared_->metadata->m.extra_channel_info));
   }
   return true;

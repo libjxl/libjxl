@@ -5,9 +5,10 @@
 
 #include "lib/jxl/modular/encoding/encoding.h"
 
-#include <stdint.h>
-#include <stdlib.h>
+#include <jxl/memory_manager.h>
 
+#include <cstdint>
+#include <cstdlib>
 #include <queue>
 
 #include "lib/jxl/base/printf_macros.h"
@@ -140,6 +141,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  pixel_type chan, size_t group_id,
                                  TreeLut<uint8_t, true> &tree_lut,
                                  Image *image) {
+  JxlMemoryManager *memory_manager = image->memory_manager();
   Channel &channel = image->channel[chan];
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
@@ -380,7 +382,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     const intptr_t onerow = channel.plane.PixelsPerRow();
     JXL_ASSIGN_OR_RETURN(
         Channel references,
-        Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
+        Channel::Create(memory_manager,
+                        properties.size() - kNumNonrefProperties, channel.w));
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
       PrecomputeReferences(channel, y, *image, chan, &references);
@@ -428,7 +431,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     const intptr_t onerow = channel.plane.PixelsPerRow();
     JXL_ASSIGN_OR_RETURN(
         Channel references,
-        Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
+        Channel::Create(memory_manager,
+                        properties.size() - kNumNonrefProperties, channel.w));
     weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);

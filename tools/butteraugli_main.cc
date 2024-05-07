@@ -5,10 +5,11 @@
 
 #include <jxl/cms.h>
 #include <jxl/cms_interface.h>
+#include <jxl/memory_manager.h>
 #include <jxl/types.h>
-#include <stdint.h>
-#include <stdio.h>
 
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -28,6 +29,7 @@
 #include "lib/jxl/enc_comparator.h"
 #include "lib/jxl/image.h"
 #include "tools/file_io.h"
+#include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 
 namespace {
@@ -56,13 +58,17 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
                       const std::string& raw_distmap_filename,
                       const std::string& colorspace_hint, double p,
                       float intensity_target) {
+  JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
   jxl::extras::ColorHints color_hints;
   if (!colorspace_hint.empty()) {
     color_hints.Add("color_space", colorspace_hint);
   }
 
   const char* pathname[2] = {pathname1, pathname2};
-  CodecInOut io[2];
+  CodecInOut io1{memory_manager};
+  CodecInOut io2{memory_manager};
+
+  CodecInOut* io[2] = {&io1, &io2};
   ThreadPoolInternal pool(4);
   for (size_t i = 0; i < 2; ++i) {
     std::vector<uint8_t> encoded;
@@ -70,15 +76,13 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
       fprintf(stderr, "Failed to read image from %s\n", pathname[i]);
       return false;
     }
-    if (!jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &io[i],
+    if (!jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, io[i],
                            pool.get())) {
       fprintf(stderr, "Failed to decode image from %s\n", pathname[i]);
       return false;
     }
   }
 
-  CodecInOut& io1 = io[0];
-  CodecInOut& io2 = io[1];
   if (io1.xsize() != io2.xsize()) {
     fprintf(stderr, "Width mismatch: %" PRIuS " %" PRIuS "\n", io1.xsize(),
             io2.xsize());

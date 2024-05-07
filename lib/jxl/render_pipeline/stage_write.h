@@ -6,6 +6,8 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_WRITE_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_WRITE_H_
 
+#include <jxl/memory_manager.h>
+
 #include <cstddef>
 #include <memory>
 #include <vector>
@@ -23,7 +25,8 @@ std::unique_ptr<RenderPipelineStage> GetWriteToImageBundleStage(
     ImageBundle* image_bundle, const OutputEncodingInfo& output_encoding_info);
 
 // Gets a stage to write color channels to an Image3F.
-std::unique_ptr<RenderPipelineStage> GetWriteToImage3FStage(Image3F* image);
+std::unique_ptr<RenderPipelineStage> GetWriteToImage3FStage(
+    JxlMemoryManager* memory_manager, Image3F* image);
 
 // Gets a stage to write to a pixel callback or image buffer.
 std::unique_ptr<RenderPipelineStage> GetWriteToOutputStage(

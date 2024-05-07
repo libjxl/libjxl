@@ -8,6 +8,7 @@
 #include <jxl/cms.h>
 #include <jxl/color_encoding.h>
 #include <jxl/encode.h>
+#include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
 #include <algorithm>
@@ -300,9 +301,10 @@ TEST(JxlTest, RoundtripMultiGroup) {
 }
 
 TEST(JxlTest, RoundtripRGBToGrayscale) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   ThreadPoolForTests pool(4);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
-  CodecInOut io;
+  CodecInOut io{memory_manager};
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, pool.get()));
   io.ShrinkTo(600, 1024);
 
@@ -313,7 +315,7 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
   JXLDecompressParams dparams;
   dparams.color_space = "Gra_D65_Rel_SRG";
 
-  CodecInOut io2;
+  CodecInOut io2{memory_manager};
   EXPECT_FALSE(io.Main().IsGray());
   size_t compressed_size;
   JXL_EXPECT_OK(
@@ -599,10 +601,11 @@ TEST(JxlTest, RoundtripSmallPatches) {
 // are preserved.
 #if JXL_FALSE
 TEST(JxlTest, RoundtripImageBundleOriginalBits) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   // Image does not matter, only io.metadata.m and io2.metadata.m are tested.
-  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(1, 1));
+  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(memory_manager, 1, 1));
   ZeroFillImage(&image);
-  CodecInOut io;
+  CodecInOut io{memory_manager};
   io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
   io.SetFromImage(std::move(image), ColorEncoding::LinearSRGB());
 
@@ -618,7 +621,7 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
     }
 
     io.metadata.m.SetUintSamples(bit_depth);
-    CodecInOut io2;
+    CodecInOut io2{memory_manager};
     JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
 
     EXPECT_EQ(bit_depth, io2.metadata.m.bit_depth.bits_per_sample);
@@ -655,7 +658,7 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
     io.metadata.m.bit_depth.floating_point_sample = true;
     io.metadata.m.bit_depth.exponent_bits_per_sample = exponent_bit_depth;
 
-    CodecInOut io2;
+    CodecInOut io2{memory_manager};
     JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2));
 
     EXPECT_EQ(bit_depth, io2.metadata.m.bit_depth.bits_per_sample);
@@ -668,9 +671,10 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
 #endif
 
 TEST(JxlTest, RoundtripGrayscale) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig = ReadTestData(
       "external/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
-  CodecInOut io;
+  CodecInOut io{memory_manager};
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
   ASSERT_NE(io.xsize(), 0u);
   io.ShrinkTo(128, 128);
@@ -686,7 +690,7 @@ TEST(JxlTest, RoundtripGrayscale) {
 
     std::vector<uint8_t> compressed;
     EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
-    CodecInOut io2;
+    CodecInOut io2{memory_manager};
     EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2));
     EXPECT_TRUE(io2.Main().IsGray());
 
@@ -706,7 +710,7 @@ TEST(JxlTest, RoundtripGrayscale) {
 
     std::vector<uint8_t> compressed;
     EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
-    CodecInOut io2;
+    CodecInOut io2{memory_manager};
     EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2));
     EXPECT_TRUE(io2.Main().IsGray());
 
@@ -725,7 +729,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     std::vector<uint8_t> compressed;
     EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
 
-    CodecInOut io2;
+    CodecInOut io2{memory_manager};
     JXLDecompressParams dparams;
     dparams.color_space = "RGB_D65_SRG_Rel_SRG";
     EXPECT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &io2));
@@ -741,9 +745,10 @@ TEST(JxlTest, RoundtripGrayscale) {
 }
 
 TEST(JxlTest, RoundtripAlpha) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
-  CodecInOut io;
+  CodecInOut io{memory_manager};
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
 
   ASSERT_NE(io.xsize(), 0u);
@@ -765,7 +770,7 @@ TEST(JxlTest, RoundtripAlpha) {
 
   for (bool use_image_callback : {false, true}) {
     for (bool unpremul_alpha : {false, true}) {
-      CodecInOut io2;
+      CodecInOut io2{memory_manager};
       JXLDecompressParams dparams;
       dparams.use_image_callback = use_image_callback;
       dparams.unpremultiply_alpha = unpremul_alpha;
@@ -835,10 +840,11 @@ bool UnpremultiplyAlpha(CodecInOut& io) {
 }  // namespace
 
 TEST(JxlTest, RoundtripAlphaPremultiplied) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
-  CodecInOut io;
-  CodecInOut io_nopremul;
+  CodecInOut io{memory_manager};
+  CodecInOut io_nopremul{memory_manager};
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_nopremul));
 
@@ -871,7 +877,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
             use_uint8 ? "uint8" : "float",
             use_image_callback ? "image callback" : "image_buffer",
             unpremul_alpha ? "un" : "");
-        CodecInOut io2;
+        CodecInOut io2{memory_manager};
         JXLDecompressParams dparams;
         dparams.use_image_callback = use_image_callback;
         dparams.unpremultiply_alpha = unpremul_alpha;

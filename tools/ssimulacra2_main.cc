@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/memory_manager.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -14,6 +16,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "tools/file_io.h"
+#include "tools/no_memory_manager.h"
 #include "tools/ssimulacra2.h"
 
 int PrintUsage(char** argv) {
@@ -46,8 +49,11 @@ int PrintUsage(char** argv) {
 
 int main(int argc, char** argv) {
   if (argc != 3) return PrintUsage(argv);
+  JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
 
-  jxl::CodecInOut io[2];
+  jxl::CodecInOut io1{memory_manager};
+  jxl::CodecInOut io2{memory_manager};
+  jxl::CodecInOut* io[2] = {&io1, &io2};
   const char* purpose[] = {"original", "distorted"};
   for (size_t i = 0; i < 2; ++i) {
     std::vector<uint8_t> encoded;
@@ -56,18 +62,16 @@ int main(int argc, char** argv) {
       return 1;
     }
     if (!jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
-                           &io[i])) {
+                           io[i])) {
       fprintf(stderr, "Could not decode %s image: %s\n", purpose[i],
               argv[1 + i]);
       return 1;
     }
-    if (io[i].xsize() < 8 || io[i].ysize() < 8) {
+    if (io[i]->xsize() < 8 || io[i]->ysize() < 8) {
       fprintf(stderr, "Minimum image size is 8x8 pixels\n");
       return 1;
     }
   }
-  jxl::CodecInOut& io1 = io[0];
-  jxl::CodecInOut& io2 = io[1];
 
   if (io1.xsize() != io2.xsize() || io1.ysize() != io2.ysize()) {
     fprintf(stderr, "Image size mismatch\n");

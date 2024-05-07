@@ -6,11 +6,12 @@
 #include "lib/jxl/dec_frame.h"
 
 #include <jxl/decode.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <jxl/memory_manager.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <utility>
@@ -339,12 +340,13 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
 Status FrameDecoder::FinalizeDC() {
   // Do Adaptive DC smoothing if enabled. This *must* happen between all the
   // ProcessDCGroup and ProcessACGroup.
+  JxlMemoryManager* memory_manager = dec_state_->memory_manager();
   if (frame_header_.encoding == FrameEncoding::kVarDCT &&
       !(frame_header_.flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
       !(frame_header_.flags & FrameHeader::kUseDcFrame)) {
-    JXL_RETURN_IF_ERROR(
-        AdaptiveDCSmoothing(dec_state_->shared->quantizer.MulDC(),
-                            &dec_state_->shared_storage.dc_storage, pool_));
+    JXL_RETURN_IF_ERROR(AdaptiveDCSmoothing(
+        memory_manager, dec_state_->shared->quantizer.MulDC(),
+        &dec_state_->shared_storage.dc_storage, pool_));
   }
 
   finalized_dc_ = true;
@@ -363,11 +365,12 @@ Status FrameDecoder::AllocateOutput() {
 
 Status FrameDecoder::ProcessACGlobal(BitReader* br) {
   JXL_CHECK(finalized_dc_);
+  JxlMemoryManager* memory_manager = dec_state_->memory_manager();
 
   // Decode AC group.
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(dec_state_->shared_storage.matrices.Decode(
-        br, &modular_frame_decoder_));
+        memory_manager, br, &modular_frame_decoder_));
     JXL_RETURN_IF_ERROR(dec_state_->shared_storage.matrices.EnsureComputed(
         dec_state_->used_acs));
 
@@ -414,10 +417,10 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
     size_t ys = store ? frame_dim_.num_groups : 0;
     if (use_16_bit) {
       JXL_ASSIGN_OR_RETURN(dec_state_->coefficients,
-                           ACImageT<int16_t>::Make(xs, ys));
+                           ACImageT<int16_t>::Make(memory_manager, xs, ys));
     } else {
       JXL_ASSIGN_OR_RETURN(dec_state_->coefficients,
-                           ACImageT<int32_t>::Make(xs, ys));
+                           ACImageT<int32_t>::Make(memory_manager, xs, ys));
     }
     if (store) {
       dec_state_->coefficients->ZeroFill();
@@ -475,6 +478,7 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   const size_t gy = ac_group_id / frame_dim_.xsize_groups;
   const size_t x = gx * group_dim;
   const size_t y = gy * group_dim;
+  JxlMemoryManager* memory_manager = dec_state_->memory_manager();
   JXL_DEBUG_V(3,
               "Processing AC group %" PRIuS "(%" PRIuS ",%" PRIuS
               ") group_dim: %" PRIuS " decoded passes: %u new passes: %" PRIuS,
@@ -488,7 +492,7 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
 
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(group_dec_caches_[thread].InitOnce(
-        frame_header_.passes.num_passes, dec_state_->used_acs));
+        memory_manager, frame_header_.passes.num_passes, dec_state_->used_acs));
     JXL_RETURN_IF_ERROR(DecodeGroup(
         frame_header_, br, num_passes, ac_group_id, dec_state_,
         &group_dec_caches_[thread], thread, render_pipeline_input,
@@ -893,7 +897,7 @@ Status FrameDecoder::FinalizeFrame() {
   if (frame_header_.CanBeReferenced()) {
     auto& info = dec_state_->shared_storage
                      .reference_frames[frame_header_.save_as_reference];
-    info.frame = std::move(dec_state_->frame_storage_for_referencing);
+    *info.frame = std::move(dec_state_->frame_storage_for_referencing);
     info.ib_is_in_xyb = frame_header_.save_before_color_transform;
   }
   return true;

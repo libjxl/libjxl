@@ -3,9 +3,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdint.h>
-#include <stdlib.h>
+#include <jxl/memory_manager.h>
 
+#include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <queue>
 
@@ -95,6 +96,7 @@ Status GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
                       const ModularOptions &options, TreeSamples &tree_samples,
                       size_t *total_pixels) {
   const Channel &channel = image.channel[chan];
+  JxlMemoryManager *memory_manager = channel.memory_manager();
 
   JXL_DEBUG_V(7, "Learning %" PRIuS "x%" PRIuS " channel %d", channel.w,
               channel.h, chan);
@@ -128,7 +130,8 @@ Status GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
   const intptr_t onerow = channel.plane.PixelsPerRow();
   JXL_ASSIGN_OR_RETURN(
       Channel references,
-      Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
+      Channel::Create(memory_manager, properties.size() - kNumNonrefProperties,
+                      channel.w));
   weighted::State wp_state(wp_header, channel.w, channel.h);
   tree_samples.PrepareForSamples(pixel_fraction * channel.h * channel.w + 64);
   const bool multiple_predictors = tree_samples.NumPredictors() != 1;
@@ -304,12 +307,14 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                                  AuxOut *aux_out, size_t group_id,
                                  bool skip_encoder_fast_path) {
   const Channel &channel = image.channel[chan];
+  JxlMemoryManager *memory_manager = channel.memory_manager();
   Token *tokenp = *tokenpp;
   JXL_ASSERT(channel.w != 0 && channel.h != 0);
 
   Image3F predictor_img;
   if (kWantDebug) {
-    JXL_ASSIGN_OR_RETURN(predictor_img, Image3F::Create(channel.w, channel.h));
+    JXL_ASSIGN_OR_RETURN(predictor_img,
+                         Image3F::Create(memory_manager, channel.w, channel.h));
   }
 
   JXL_DEBUG_V(6,
@@ -452,7 +457,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     const intptr_t onerow = channel.plane.PixelsPerRow();
     JXL_ASSIGN_OR_RETURN(
         Channel references,
-        Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
+        Channel::Create(memory_manager,
+                        properties.size() - kNumNonrefProperties, channel.w));
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
       PrecomputeReferences(channel, y, image, chan, &references);
@@ -481,7 +487,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     const intptr_t onerow = channel.plane.PixelsPerRow();
     JXL_ASSIGN_OR_RETURN(
         Channel references,
-        Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
+        Channel::Create(memory_manager,
+                        properties.size() - kNumNonrefProperties, channel.w));
     weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);

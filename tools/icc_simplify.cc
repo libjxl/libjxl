@@ -3,16 +3,17 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <jxl/cms.h>
+
+#include <cstdio>
+#include <cstdlib>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_description.h"
 #include "lib/jxl/codec_in_out.h"
-#include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
-#include "tools/hdr/image_utils.h"
+#include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 
 int main(int argc, const char** argv) {
@@ -52,7 +53,7 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
-  jxl::CodecInOut io;
+  jxl::CodecInOut io{jpegxl::tools::NoMemoryManager()};
   std::vector<uint8_t> encoded;
   JxlColorEncoding c_descr;
   if (jpegxl::tools::ReadFile(input_filename, &encoded)) {

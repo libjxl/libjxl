@@ -5,6 +5,8 @@
 
 #include "lib/jxl/dec_cache.h"
 
+#include <jxl/memory_manager.h>
+
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
@@ -31,6 +33,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
                                            const ImageMetadata* metadata,
                                            ImageBundle* decoded,
                                            PipelineOptions options) {
+  JxlMemoryManager* memory_manager = this->memory_manager();
   size_t num_c = 3 + frame_header.nonserialized_metadata->m.num_extra_channels;
   if (options.render_noise && (frame_header.flags & FrameHeader::kNoise) != 0) {
     num_c += 3;
@@ -38,10 +41,10 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
 
   if (frame_header.CanBeReferenced()) {
     // Necessary so that SetInputSizes() can allocate output buffers as needed.
-    frame_storage_for_referencing = ImageBundle(metadata);
+    frame_storage_for_referencing = ImageBundle(memory_manager, metadata);
   }
 
-  RenderPipeline::Builder builder(num_c);
+  RenderPipeline::Builder builder(memory_manager, num_c);
 
   if (options.use_slow_render_pipeline) {
     builder.UseSimpleImplementation();
@@ -121,7 +124,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
   }
   if (frame_header.dc_level != 0) {
     builder.AddStage(GetWriteToImage3FStage(
-        &shared_storage.dc_frames[frame_header.dc_level - 1]));
+        memory_manager, &shared_storage.dc_frames[frame_header.dc_level - 1]));
   }
 
   if (frame_header.CanBeReferenced() &&
