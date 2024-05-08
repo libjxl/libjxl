@@ -32,6 +32,7 @@ target_link_libraries(image_loading PUBLIC
   jxl-internal
   jxl_threads
   jxl_extras-internal
+  jxl_tool
   lcms2
 )
 
