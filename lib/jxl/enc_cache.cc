@@ -89,7 +89,7 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
   if (enc_state->initialize_global_state) {
     float scale =
         shared.quantizer.ScaleGlobalScale(enc_state->cparams.quant_ac_rescale);
-    DequantMatricesScaleDC(&shared.matrices, scale);
+    DequantMatricesScaleDC(memory_manager, &shared.matrices, scale);
     shared.quantizer.RecomputeFromGlobalScale();
   }
 
@@ -161,7 +161,8 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
       }
       ib.SetExtraChannels(std::move(extra_channels));
     }
-    auto special_frame = std::unique_ptr<BitWriter>(new BitWriter());
+    auto special_frame =
+        std::unique_ptr<BitWriter>(new BitWriter(memory_manager));
     FrameInfo dc_frame_info;
     dc_frame_info.frame_type = FrameType::kDCFrame;
     dc_frame_info.dc_level = frame_header.dc_level + 1;

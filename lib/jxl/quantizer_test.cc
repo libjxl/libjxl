@@ -42,6 +42,7 @@ TEST(QuantizerTest, QuantizerParams) {
 }
 
 TEST(QuantizerTest, BitStreamRoundtripSameQuant) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const int qxsize = 8;
   const int qysize = 8;
   DequantMatrices dequant;
@@ -49,7 +50,7 @@ TEST(QuantizerTest, BitStreamRoundtripSameQuant) {
   JXL_ASSIGN_OR_DIE(ImageI raw_quant_field,
                     ImageI::Create(jxl::test::MemoryManager(), qxsize, qysize));
   quantizer1.SetQuant(0.17f, 0.17f, &raw_quant_field);
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   QuantizerParams params = quantizer1.GetParams();
   EXPECT_TRUE(WriteQuantizerParams(params, &writer, 0, nullptr));
   writer.ZeroPadToByte();
@@ -76,7 +77,7 @@ TEST(QuantizerTest, BitStreamRoundtripRandomQuant) {
   JXL_ASSIGN_OR_DIE(ImageF qf, ImageF::Create(memory_manager, qxsize, qysize));
   RandomFillImage(&qf, 0.0f, 1.0f);
   quantizer1.SetQuantField(quant_dc, qf, &raw_quant_field);
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   QuantizerParams params = quantizer1.GetParams();
   EXPECT_TRUE(WriteQuantizerParams(params, &writer, 0, nullptr));
   writer.ZeroPadToByte();

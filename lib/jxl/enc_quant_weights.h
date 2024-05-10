@@ -28,9 +28,11 @@ Status DequantMatricesEncodeDC(const DequantMatrices& matrices,
                                AuxOut* aux_out);
 // For consistency with QuantEncoding, higher values correspond to more
 // precision.
-void DequantMatricesSetCustomDC(DequantMatrices* matrices, const float* dc);
+void DequantMatricesSetCustomDC(JxlMemoryManager* memory_manager,
+                                DequantMatrices* matrices, const float* dc);
 
-void DequantMatricesScaleDC(DequantMatrices* matrices, float scale);
+void DequantMatricesScaleDC(JxlMemoryManager* memory_manager,
+                            DequantMatrices* matrices, float scale);
 
 Status DequantMatricesSetCustom(DequantMatrices* matrices,
                                 const std::vector<QuantEncoding>& encodings,

@@ -7,6 +7,7 @@
 
 #include <jxl/memory_manager.h>
 
+#include <cstdint>
 #include <type_traits>
 
 #include "lib/jxl/alpha.h"
@@ -116,7 +117,8 @@ class WriteToOutputStage : public RenderPipelineStage {
   WriteToOutputStage(const ImageOutput& main_output, size_t width,
                      size_t height, bool has_alpha, bool unpremul_alpha,
                      size_t alpha_c, Orientation undo_orientation,
-                     const std::vector<ImageOutput>& extra_output)
+                     const std::vector<ImageOutput>& extra_output,
+                     JxlMemoryManager* memory_manager)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         width_(width),
         height_(height),
@@ -539,10 +541,10 @@ constexpr size_t WriteToOutputStage::kMaxPixelsPerCall;
 std::unique_ptr<RenderPipelineStage> GetWriteToOutputStage(
     const ImageOutput& main_output, size_t width, size_t height, bool has_alpha,
     bool unpremul_alpha, size_t alpha_c, Orientation undo_orientation,
-    std::vector<ImageOutput>& extra_output) {
+    std::vector<ImageOutput>& extra_output, JxlMemoryManager* memory_manager) {
   return jxl::make_unique<WriteToOutputStage>(
       main_output, width, height, has_alpha, unpremul_alpha, alpha_c,
-      undo_orientation, extra_output);
+      undo_orientation, extra_output, memory_manager);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -681,10 +683,10 @@ std::unique_ptr<RenderPipelineStage> GetWriteToImage3FStage(
 std::unique_ptr<RenderPipelineStage> GetWriteToOutputStage(
     const ImageOutput& main_output, size_t width, size_t height, bool has_alpha,
     bool unpremul_alpha, size_t alpha_c, Orientation undo_orientation,
-    std::vector<ImageOutput>& extra_output) {
+    std::vector<ImageOutput>& extra_output, JxlMemoryManager* memory_manager) {
   return HWY_DYNAMIC_DISPATCH(GetWriteToOutputStage)(
       main_output, width, height, has_alpha, unpremul_alpha, alpha_c,
-      undo_orientation, extra_output);
+      undo_orientation, extra_output, memory_manager);
 }
 
 }  // namespace jxl

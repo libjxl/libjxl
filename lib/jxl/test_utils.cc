@@ -721,9 +721,10 @@ bool SamePixels(const extras::PackedPixelFile& a,
 
 Status ReadICC(BitReader* JXL_RESTRICT reader,
                std::vector<uint8_t>* JXL_RESTRICT icc, size_t output_limit) {
+  JxlMemoryManager* memort_manager = jxl::test::MemoryManager();
   icc->clear();
-  ICCReader icc_reader;
-  PaddedBytes icc_buffer;
+  ICCReader icc_reader{memort_manager};
+  PaddedBytes icc_buffer{memort_manager};
   JXL_RETURN_IF_ERROR(icc_reader.Init(reader, output_limit));
   JXL_RETURN_IF_ERROR(icc_reader.Process(reader, &icc_buffer));
   Bytes(icc_buffer).AppendTo(*icc);
@@ -759,7 +760,7 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
                      const CodecMetadata* metadata, const JxlCmsInterface& cms,
                      ThreadPool* pool, BitWriter* JXL_RESTRICT writer) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  BitWriter preview_writer;
+  BitWriter preview_writer{memory_manager};
   // TODO(janwas): also support generating preview by downsampling
   if (ib.HasColor()) {
     AuxOut aux_out;
@@ -790,7 +791,7 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
   compressed->clear();
   const JxlCmsInterface& cms = *JxlGetDefaultCms();
   io->CheckMetadata();
-  BitWriter writer;
+  BitWriter writer{memory_manager};
 
   CompressParams cparams = params;
   if (io->Main().color_transform != ColorTransform::kNone) {

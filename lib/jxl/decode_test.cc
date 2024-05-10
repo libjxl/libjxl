@@ -259,6 +259,7 @@ struct TestCodestreamParams {
 std::vector<uint8_t> CreateTestJXLCodestream(
     Span<const uint8_t> pixels, size_t xsize, size_t ysize, size_t num_channels,
     const TestCodestreamParams& params) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   // Compress the pixels with JPEG XL.
   bool grayscale = (num_channels <= 2);
   bool have_alpha = ((num_channels & 1) == 0);
@@ -317,8 +318,8 @@ std::vector<uint8_t> CreateTestJXLCodestream(
       Bytes(jpeg_bytes).AppendTo(*params.jpeg_codestream);
       EXPECT_TRUE(jxl::jpeg::DecodeImageJPG(
           jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), &io));
-      EXPECT_TRUE(
-          EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data, params.cparams));
+      EXPECT_TRUE(EncodeJPEGData(memory_manager, *io.Main().jpeg_data,
+                                 &jpeg_data, params.cparams));
       io.metadata.m.xyb_encoded = false;
     } else {
       JXL_ABORT(
@@ -722,7 +723,8 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
                                    bool have_container, bool metadata_default,
                                    bool insert_extra_box,
                                    const jxl::IccBytes& icc_profile) {
-  jxl::BitWriter writer;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  jxl::BitWriter writer{memory_manager};
   jxl::BitWriter::Allotment allotment(&writer, 65536);  // Large enough
 
   if (have_container) {
@@ -3854,6 +3856,7 @@ struct StreamPositions {
 
 void AnalyzeCodestream(const std::vector<uint8_t>& data,
                        StreamPositions* streampos) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   // Unbox data to codestream and mark where it is broken up by boxes.
   std::vector<uint8_t> codestream;
   std::vector<std::pair<size_t, size_t>> breakpoints;
@@ -3939,8 +3942,9 @@ void AnalyzeCodestream(const std::vector<uint8_t>& data,
                            frame_header.passes.num_passes);
     std::vector<uint64_t> section_offsets;
     std::vector<uint32_t> section_sizes;
-    ASSERT_TRUE(ReadGroupOffsets(toc_entries, &br, &section_offsets,
-                                 &section_sizes, &groups_total_size));
+    ASSERT_TRUE(ReadGroupOffsets(memory_manager, toc_entries, &br,
+                                 &section_offsets, &section_sizes,
+                                 &groups_total_size));
     EXPECT_EQ(br.TotalBitsConsumed() % jxl::kBitsPerByte, 0);
     size_t sections_start = br.TotalBitsConsumed() / jxl::kBitsPerByte;
     p.toc_end = add_offset(sections_start);
@@ -5015,7 +5019,7 @@ JXL_TRANSCODE_JPEG_TEST(DecodeTest, JPEGReconstructionTest) {
   jxl::CodecInOut orig_io{memory_manager};
   ASSERT_TRUE(jxl::jpeg::DecodeImageJPG(jxl::Bytes(orig), &orig_io));
   orig_io.metadata.m.xyb_encoded = false;
-  jxl::BitWriter writer;
+  jxl::BitWriter writer{memory_manager};
   ASSERT_TRUE(WriteCodestreamHeaders(&orig_io.metadata, &writer, nullptr));
   writer.ZeroPadToByte();
   jxl::CompressParams cparams;
@@ -5027,8 +5031,8 @@ JXL_TRANSCODE_JPEG_TEST(DecodeTest, JPEGReconstructionTest) {
                                /*aux_out=*/nullptr));
 
   std::vector<uint8_t> jpeg_data;
-  ASSERT_TRUE(
-      EncodeJPEGData(*orig_io.Main().jpeg_data.get(), &jpeg_data, cparams));
+  ASSERT_TRUE(EncodeJPEGData(memory_manager, *orig_io.Main().jpeg_data.get(),
+                             &jpeg_data, cparams));
   std::vector<uint8_t> container;
   jxl::Bytes(jxl::kContainerHeader).AppendTo(container);
   jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_data.size(), false,

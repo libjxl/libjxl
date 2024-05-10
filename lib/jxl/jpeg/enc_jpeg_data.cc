@@ -303,7 +303,8 @@ Status SetColorTransformFromJpegData(const JPEGData& jpg,
   return true;
 }
 
-Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
+Status EncodeJPEGData(JxlMemoryManager* memory_manager, JPEGData& jpeg_data,
+                      std::vector<uint8_t>* bytes,
                       const CompressParams& cparams) {
   bytes->clear();
   jpeg_data.app_marker_type.resize(jpeg_data.app_data.size(),
@@ -327,7 +328,7 @@ Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
   total_data += jpeg_data.tail_data.size();
   size_t brotli_capacity = BrotliEncoderMaxCompressedSize(total_data);
 
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   JXL_RETURN_IF_ERROR(Bundle::Write(jpeg_data, &writer, 0, nullptr));
   writer.ZeroPadToByte();
   {

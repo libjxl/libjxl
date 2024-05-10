@@ -5,11 +5,12 @@
 
 #include "lib/jxl/dec_patch_dictionary.h"
 
-#include <stdint.h>
-#include <stdlib.h>
+#include <jxl/memory_manager.h>
 #include <sys/types.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
 #include <utility>
 #include <vector>
 
@@ -25,14 +26,16 @@
 
 namespace jxl {
 
-Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
+Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
+                               size_t xsize, size_t ysize,
                                bool* uses_extra_channels) {
   positions_.clear();
   std::vector<uint8_t> context_map;
   ANSCode code;
-  JXL_RETURN_IF_ERROR(
-      DecodeHistograms(br, kNumPatchDictionaryContexts, &code, &context_map));
-  ANSSymbolReader decoder(&code, br);
+  JXL_RETURN_IF_ERROR(DecodeHistograms(
+      memory_manager, br, kNumPatchDictionaryContexts, &code, &context_map));
+  JXL_ASSIGN_OR_RETURN(ANSSymbolReader decoder,
+                       ANSSymbolReader::Create(&code, br));
 
   auto read_num = [&](size_t context) {
     size_t r = decoder.ReadHybridUint(context, br, context_map);

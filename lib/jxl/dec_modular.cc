@@ -197,9 +197,10 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
           std::min(static_cast<size_t>(1 << 22),
                    1024 + frame_dim.xsize * frame_dim.ysize *
                               (nb_chans + nb_extra) / 16);
-      JXL_RETURN_IF_ERROR(DecodeTree(reader, &tree, tree_size_limit));
       JXL_RETURN_IF_ERROR(
-          DecodeHistograms(reader, (tree.size() + 1) / 2, &code, &context_map));
+          DecodeTree(memory_manager, reader, &tree, tree_size_limit));
+      JXL_RETURN_IF_ERROR(DecodeHistograms(
+          memory_manager, reader, (tree.size() + 1) / 2, &code, &context_map));
     }
   }
   if (!do_color) nb_chans = 0;

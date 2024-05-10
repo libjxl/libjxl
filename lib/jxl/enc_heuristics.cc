@@ -196,7 +196,8 @@ void FindBestBlockEntropyModel(const CompressParams& cparams, const ImageI& rqf,
 
 namespace {
 
-Status FindBestDequantMatrices(const CompressParams& cparams,
+Status FindBestDequantMatrices(JxlMemoryManager* memory_manager,
+                               const CompressParams& cparams,
                                ModularFrameEncoder* modular_frame_encoder,
                                DequantMatrices* dequant_matrices) {
   // TODO(veluca): quant matrices for no-gaborish.
@@ -215,7 +216,7 @@ Status FindBestDequantMatrices(const CompressParams& cparams,
     JXL_RETURN_IF_ERROR(DequantMatricesSetCustom(dequant_matrices, encodings,
                                                  modular_frame_encoder));
     float dc_weights[3] = {1.0f / wp[0], 1.0f / wp[1], 1.0f / wp[2]};
-    DequantMatricesSetCustomDC(dequant_matrices, dc_weights);
+    DequantMatricesSetCustomDC(memory_manager, dequant_matrices, dc_weights);
   }
   return true;
 }
@@ -1088,8 +1089,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   }
 
   if (initialize_global_state) {
-    JXL_RETURN_IF_ERROR(
-        FindBestDequantMatrices(cparams, modular_frame_encoder, &matrices));
+    JXL_RETURN_IF_ERROR(FindBestDequantMatrices(
+        memory_manager, cparams, modular_frame_encoder, &matrices));
   }
 
   JXL_RETURN_IF_ERROR(cfl_heuristics.Init(memory_manager, rect));

@@ -606,8 +606,10 @@ struct GetBlockFromBitstream : public GetBlock {
       }
       ctx_offset[pass] = cur_histogram * block_ctx_map->NumACContexts();
 
-      decoders[pass] =
-          ANSSymbolReader(&dec_state->code[pass + first_pass], readers[pass]);
+      JXL_ASSIGN_OR_RETURN(
+          decoders[pass],
+          ANSSymbolReader::Create(&dec_state->code[pass + first_pass],
+                                  readers[pass]));
     }
     nzeros_stride = group_dec_cache->num_nzeroes[0].PixelsPerRow();
     for (size_t i = 0; i < num_passes; i++) {

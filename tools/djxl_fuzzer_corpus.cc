@@ -201,7 +201,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   std::mt19937 mt(spec.seed);
 
   // Compress the image.
-  jxl::PaddedBytes compressed;
+  jxl::PaddedBytes compressed{memory_manager};
 
   std::uniform_int_distribution<> dis(1, 6);
   PixelGenerator gen = [&]() -> uint8_t { return dis(mt); };
@@ -264,8 +264,8 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
         jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), &io));
     std::vector<uint8_t> jpeg_data;
-    JXL_RETURN_IF_ERROR(
-        EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data, params));
+    JXL_RETURN_IF_ERROR(EncodeJPEGData(memory_manager, *io.Main().jpeg_data,
+                                       &jpeg_data, params));
     std::vector<uint8_t> header;
     header.insert(header.end(), jxl::kContainerHeader.begin(),
                   jxl::kContainerHeader.end());

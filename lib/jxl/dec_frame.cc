@@ -64,8 +64,8 @@ Status DecodeGlobalDCInfo(BitReader* reader, bool is_jpeg,
                           PassesDecoderState* state, ThreadPool* pool) {
   JXL_RETURN_IF_ERROR(state->shared_storage.quantizer.Decode(reader));
 
-  JXL_RETURN_IF_ERROR(
-      DecodeBlockCtxMap(reader, &state->shared_storage.block_ctx_map));
+  JXL_RETURN_IF_ERROR(DecodeBlockCtxMap(state->memory_manager(), reader,
+                                        &state->shared_storage.block_ctx_map));
 
   JXL_RETURN_IF_ERROR(state->shared_storage.cmap.DecodeDC(reader));
 
@@ -136,6 +136,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
                                bool is_preview) {
   decoded_ = decoded;
   JXL_ASSERT(is_finalized_);
+  JxlMemoryManager* memory_manager = decoded_->memory_manager();
 
   // Reset the dequantization matrices to their default values.
   dec_state_->shared_storage.matrices = DequantMatrices();
@@ -171,7 +172,8 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
       NumTocEntries(num_groups, frame_dim_.num_dc_groups, num_passes);
   std::vector<uint32_t> sizes;
   std::vector<coeff_order_t> permutation;
-  JXL_RETURN_IF_ERROR(ReadToc(toc_entries, br, &sizes, &permutation));
+  JXL_RETURN_IF_ERROR(
+      ReadToc(memory_manager, toc_entries, br, &sizes, &permutation));
   bool have_permutation = !permutation.empty();
   toc_.resize(toc_entries);
   section_sizes_sum_ = 0;
@@ -265,10 +267,11 @@ Status FrameDecoder::InitFrameOutput() {
 
 Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   PassesSharedState& shared = dec_state_->shared_storage;
+  JxlMemoryManager* memory_manager = shared.memory_manager;
   if (frame_header_.flags & FrameHeader::kPatches) {
     bool uses_extra_channels = false;
     JXL_RETURN_IF_ERROR(shared.image_features.patches.Decode(
-        br, frame_dim_.xsize_padded, frame_dim_.ysize_padded,
+        memory_manager, br, frame_dim_.xsize_padded, frame_dim_.ysize_padded,
         &uses_extra_channels));
     if (uses_extra_channels && frame_header_.upsampling != 1) {
       for (size_t ecups : frame_header_.extra_channel_upsampling) {
@@ -285,7 +288,7 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   shared.image_features.splines.Clear();
   if (frame_header_.flags & FrameHeader::kSplines) {
     JXL_RETURN_IF_ERROR(shared.image_features.splines.Decode(
-        br, frame_dim_.xsize * frame_dim_.ysize));
+        memory_manager, br, frame_dim_.xsize * frame_dim_.ysize));
   }
   if (frame_header_.flags & FrameHeader::kNoise) {
     JXL_RETURN_IF_ERROR(DecodeNoise(br, &shared.image_features.noise_params));
@@ -392,15 +395,16 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
     for (size_t i = 0; i < frame_header_.passes.num_passes; i++) {
       uint16_t used_orders = U32Coder::Read(kOrderEnc, br);
       JXL_RETURN_IF_ERROR(DecodeCoeffOrders(
-          used_orders, dec_state_->used_acs,
+          memory_manager, used_orders, dec_state_->used_acs,
           &dec_state_->shared_storage
                .coeff_orders[i * dec_state_->shared_storage.coeff_order_size],
           br));
       size_t num_contexts =
           dec_state_->shared->num_histograms *
           dec_state_->shared_storage.block_ctx_map.NumACContexts();
-      JXL_RETURN_IF_ERROR(DecodeHistograms(
-          br, num_contexts, &dec_state_->code[i], &dec_state_->context_map[i]));
+      JXL_RETURN_IF_ERROR(DecodeHistograms(memory_manager, br, num_contexts,
+                                           &dec_state_->code[i],
+                                           &dec_state_->context_map[i]));
       // Add extra values to enable the cheat in hot loop of DecodeACVarBlock.
       dec_state_->context_map[i].resize(
           num_contexts + kZeroDensityContextLimit - kZeroDensityContextCount);

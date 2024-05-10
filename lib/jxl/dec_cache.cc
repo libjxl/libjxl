@@ -252,9 +252,9 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
     (void)linear;
 
     if (main_output.callback.IsPresent() || main_output.buffer) {
-      builder.AddStage(GetWriteToOutputStage(main_output, width, height,
-                                             has_alpha, unpremul_alpha, alpha_c,
-                                             undo_orientation, extra_output));
+      builder.AddStage(GetWriteToOutputStage(
+          main_output, width, height, has_alpha, unpremul_alpha, alpha_c,
+          undo_orientation, extra_output, memory_manager));
     } else {
       builder.AddStage(
           GetWriteToImageBundleStage(decoded, output_encoding_info));
