@@ -181,7 +181,9 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     }
     int nbcomp = cinfo.num_components;
     if (nbcomp != 1 && nbcomp != 3) {
-      return failure("unsupported number of components in JPEG");
+      std::string msg =
+          "unsupported number of components in JPEG: " + std::to_string(nbcomp);
+      return failure(msg.c_str());
     }
     if (dparams.force_rgb) {
       cinfo.out_color_space = JCS_RGB;
