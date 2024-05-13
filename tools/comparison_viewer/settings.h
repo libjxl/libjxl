@@ -22,6 +22,8 @@ class SettingsDialog : public QDialog {
   explicit SettingsDialog(QWidget* parent = nullptr);
   ~SettingsDialog() override = default;
 
+  void setLastZoomLevel(int level);
+
   SplitImageRenderingSettings renderingSettings() const;
 
  private slots:

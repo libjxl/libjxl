@@ -19,7 +19,7 @@ class SplitImageView : public QWidget {
 
  public:
   explicit SplitImageView(QWidget* parent = nullptr);
-  ~SplitImageView() override = default;
+  ~SplitImageView() override;
 
   void setLeftImage(QImage image);
   void setRightImage(QImage image);
