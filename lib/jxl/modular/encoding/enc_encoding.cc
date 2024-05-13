@@ -535,6 +535,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
                      GroupHeader *header, std::vector<Token> *tokens,
                      size_t *width) {
   if (image.error) return JXL_FAILURE("Invalid image");
+  JxlMemoryManager *memory_manager = image.memory_manager();
   size_t nb_channels = image.channel.size();
   JXL_DEBUG_V(
       2, "Encoding %" PRIuS "-channel, %i-bit, %" PRIuS "x%" PRIuS " image.",
@@ -641,9 +642,9 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     } */
 
     // Write tree
-    BuildAndEncodeHistograms(options.histogram_params, kNumTreeContexts,
-                             tree_tokens, &code, &context_map, writer,
-                             kLayerModularTree, aux_out);
+    BuildAndEncodeHistograms(memory_manager, options.histogram_params,
+                             kNumTreeContexts, tree_tokens, &code, &context_map,
+                             writer, kLayerModularTree, aux_out);
     WriteTokens(tree_tokens[0], code, context_map, 0, writer, kLayerModularTree,
                 aux_out);
   }
@@ -690,9 +691,9 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     std::vector<uint8_t> context_map;
     HistogramParams histo_params = options.histogram_params;
     histo_params.image_widths.push_back(image_width);
-    BuildAndEncodeHistograms(histo_params, (tree->size() + 1) / 2,
-                             tokens_storage, &code, &context_map, writer, layer,
-                             aux_out);
+    BuildAndEncodeHistograms(memory_manager, histo_params,
+                             (tree->size() + 1) / 2, tokens_storage, &code,
+                             &context_map, writer, layer, aux_out);
     WriteTokens(tokens_storage[0], code, context_map, 0, writer, layer,
                 aux_out);
   } else {

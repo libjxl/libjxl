@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -21,6 +22,7 @@
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/random.h"
@@ -234,7 +236,7 @@ TEST(ModularTest, RoundtripExtraProperties) {
     }
   }
   ZeroFillImage(&image.channel[1].plane);
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   ASSERT_TRUE(ModularGenericCompress(image, options, &writer));
   writer.ZeroPadToByte();
   JXL_ASSIGN_OR_DIE(Image decoded,
@@ -458,24 +460,26 @@ void WriteHistograms(BitWriter* writer) {
 }
 
 TEST(ModularTest, PredictorIntegerOverflow) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const size_t xsize = 1;
   const size_t ysize = 1;
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   WriteHeaders(&writer, xsize, ysize);
-  std::vector<BitWriter> group_codes(1);
+  std::vector<std::unique_ptr<BitWriter>> group_codes;
+  group_codes.emplace_back(jxl::make_unique<BitWriter>(memory_manager));
   {
-    BitWriter* bw = group_codes.data();
-    BitWriter::Allotment allotment(bw, 1 << 20);
-    WriteHistograms(bw);
+    std::unique_ptr<BitWriter>& bw = group_codes[0];
+    BitWriter::Allotment allotment(bw.get(), 1 << 20);
+    WriteHistograms(bw.get());
     GroupHeader header;
     header.use_global_tree = true;
-    EXPECT_TRUE(Bundle::Write(header, bw, 0, nullptr));
+    EXPECT_TRUE(Bundle::Write(header, bw.get(), 0, nullptr));
     // After UnpackSigned this becomes (1 << 31) - 1, the largest pixel_type,
     // and after adding the offset we get -(1 << 31).
     bw->Write(8, 119);
     bw->Write(28, 0xfffffff);
     bw->ZeroPadToByte();
-    allotment.ReclaimAndCharge(bw, 0, nullptr);
+    allotment.ReclaimAndCharge(bw.get(), 0, nullptr);
   }
   EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
   writer.AppendByteAligned(group_codes);
@@ -493,16 +497,18 @@ TEST(ModularTest, PredictorIntegerOverflow) {
 }
 
 TEST(ModularTest, UnsqueezeIntegerOverflow) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   // Image width is 9 so we can test both the SIMD and non-vector code paths.
   const size_t xsize = 9;
   const size_t ysize = 2;
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   WriteHeaders(&writer, xsize, ysize);
-  std::vector<BitWriter> group_codes(1);
+  std::vector<std::unique_ptr<BitWriter>> group_codes;
+  group_codes.emplace_back(jxl::make_unique<BitWriter>(memory_manager));
   {
-    BitWriter* bw = group_codes.data();
-    BitWriter::Allotment allotment(bw, 1 << 20);
-    WriteHistograms(bw);
+    std::unique_ptr<BitWriter>& bw = group_codes[0];
+    BitWriter::Allotment allotment(bw.get(), 1 << 20);
+    WriteHistograms(bw.get());
     GroupHeader header;
     header.use_global_tree = true;
     header.transforms.emplace_back();
@@ -513,7 +519,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
     params.begin_c = 0;
     params.num_c = 1;
     header.transforms[0].squeezes.emplace_back(params);
-    EXPECT_TRUE(Bundle::Write(header, bw, 0, nullptr));
+    EXPECT_TRUE(Bundle::Write(header, bw.get(), 0, nullptr));
     for (size_t i = 0; i < xsize * ysize; ++i) {
       // After UnpackSigned and adding offset, this becomes (1 << 31) - 1, both
       // in the image and in the residual channels, and unsqueeze makes them
@@ -523,7 +529,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
       bw->Write(28, 0xffffffe);
     }
     bw->ZeroPadToByte();
-    allotment.ReclaimAndCharge(bw, 0, nullptr);
+    allotment.ReclaimAndCharge(bw.get(), 0, nullptr);
   }
   EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
   writer.AppendByteAligned(group_codes);

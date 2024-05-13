@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/memory_manager.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -44,6 +46,7 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   data++;
   size--;
 #endif
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
 
 #ifdef JXL_ICC_FUZZER_SLOW_TEST
   // Including JPEG XL LZ77 and ANS compression. These are already fuzzed
@@ -57,9 +60,9 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     (void)br.Close();
   } else {
     // Writing parses the original ICC profile.
-    PaddedBytes icc;
+    PaddedBytes icc{memory_manager};
     icc.assign(data, data + size);
-    BitWriter writer;
+    BitWriter writer{memory_manager};
     // Writing should support any random bytestream so must succeed, make
     // fuzzer fail if not.
     JXL_ASSERT(jxl::WriteICC(icc, &writer, 0, nullptr));
@@ -67,15 +70,15 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
 #else  // JXL_ICC_FUZZER_SLOW_TEST
   if (read) {
     // Reading (unpredicting) parses the compressed format.
-    PaddedBytes result;
+    PaddedBytes result{memory_manager};
     (void)jxl::UnpredictICC(data, size, &result);
   } else {
     // Writing (predicting) parses the original ICC profile.
-    PaddedBytes result;
+    PaddedBytes result{memory_manager};
     // Writing should support any random bytestream so must succeed, make
     // fuzzer fail if not.
     JXL_ASSERT(jxl::PredictICC(data, size, &result));
-    PaddedBytes reconstructed;
+    PaddedBytes reconstructed{memory_manager};
     JXL_ASSERT(jxl::UnpredictICC(result.data(), result.size(), &reconstructed));
     JXL_ASSERT(reconstructed.size() == size);
     JXL_ASSERT(memcmp(data, reconstructed.data(), size) == 0);

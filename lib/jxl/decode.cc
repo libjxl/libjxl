@@ -26,9 +26,7 @@
 #if JPEGXL_ENABLE_BOXES || JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/box_content_decoder.h"
 #endif
-#include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/dec_frame.h"
-#include "lib/jxl/dec_modular.h"
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/decode_to_jpeg.h"
 #endif
@@ -39,7 +37,6 @@
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/memory_manager_internal.h"
-#include "lib/jxl/toc.h"
 
 namespace {
 
@@ -362,7 +359,7 @@ struct JxlDecoderStruct {
   bool got_transform_data;  // To skip everything before ICC.
   bool got_all_headers;     // Codestream metadata headers.
   bool post_headers;        // Already decoding pixels.
-  jxl::ICCReader icc_reader;
+  std::unique_ptr<jxl::ICCReader> icc_reader;
   jxl::JxlDecoderFrameIndexBox frame_index_box;
   // This means either we actually got the preview image, or determined we
   // cannot get it or there is none.
@@ -685,7 +682,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->got_transform_data = false;
   dec->got_all_headers = false;
   dec->post_headers = false;
-  dec->icc_reader.Reset();
+  if (dec->icc_reader) dec->icc_reader->Reset();
   dec->got_preview_image = false;
   dec->preview_frame = false;
   dec->file_pos = 0;
@@ -1048,7 +1045,7 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
 
   if (dec->metadata.m.color_encoding.WantICC()) {
     jxl::Status status =
-        dec->icc_reader.Init(reader.get(), dec->memory_limit_base);
+        dec->icc_reader->Init(reader.get(), dec->memory_limit_base);
     // Always check AllReadsWithinBounds, not all the C++ decoder implementation
     // handles reader out of bounds correctly  yet (e.g. context map). Not
     // checking AllReadsWithinBounds can cause reader->Close() to trigger an
@@ -1061,8 +1058,8 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
       // Other non-successful status is an error
       return JXL_DEC_ERROR;
     }
-    PaddedBytes decoded_icc;
-    status = dec->icc_reader.Process(reader.get(), &decoded_icc);
+    PaddedBytes decoded_icc{&dec->memory_manager};
+    status = dec->icc_reader->Process(reader.get(), &decoded_icc);
     if (status.code() == StatusCode::kNotEnoughBytes) {
       return dec->RequestMoreInput();
     }
@@ -1184,6 +1181,10 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
   if (!dec->events_wanted) {
     dec->stage = DecoderStage::kCodestreamFinished;
     return JXL_DEC_SUCCESS;
+  }
+
+  if (!dec->icc_reader) {
+    dec->icc_reader.reset(new ICCReader(&dec->memory_manager));
   }
 
   if (!dec->got_all_headers) {

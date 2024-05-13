@@ -704,11 +704,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
       cparams_.butteraugli_distance = 0;
     }
     if (cparams_.manual_xyb_factors.size() == 3) {
-      DequantMatricesSetCustomDC(&enc_state->shared.matrices,
+      DequantMatricesSetCustomDC(memory_manager, &enc_state->shared.matrices,
                                  cparams_.manual_xyb_factors.data());
       // TODO(jon): update max_bitdepth in this case
     } else {
-      DequantMatricesSetCustomDC(&enc_state->shared.matrices, enc_factors);
+      DequantMatricesSetCustomDC(memory_manager, &enc_state->shared.matrices,
+                                 enc_factors);
       max_bitdepth = 12;
     }
   }
@@ -1246,6 +1247,7 @@ Status ModularFrameEncoder::ComputeTokens(ThreadPool* pool) {
 Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
                                              BitWriter* writer,
                                              AuxOut* aux_out) {
+  JxlMemoryManager* memory_manager = writer->memory_manager();
   BitWriter::Allotment allotment(writer, 1);
   // If we are using brotli, or not using modular mode.
   if (tree_tokens_.empty() || tree_tokens_[0].empty()) {
@@ -1262,9 +1264,9 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
   {
     EntropyEncodingData tree_code;
     std::vector<uint8_t> tree_context_map;
-    BuildAndEncodeHistograms(params, kNumTreeContexts, tree_tokens_, &tree_code,
-                             &tree_context_map, writer, kLayerModularTree,
-                             aux_out);
+    BuildAndEncodeHistograms(memory_manager, params, kNumTreeContexts,
+                             tree_tokens_, &tree_code, &tree_context_map,
+                             writer, kLayerModularTree, aux_out);
     WriteTokens(tree_tokens_[0], tree_code, tree_context_map, 0, writer,
                 kLayerModularTree, aux_out);
   }
@@ -1272,8 +1274,9 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
   params.add_missing_symbols = streaming_mode;
   params.image_widths = image_widths_;
   // Write histograms.
-  BuildAndEncodeHistograms(params, (tree_.size() + 1) / 2, tokens_, &code_,
-                           &context_map_, writer, kLayerModularGlobal, aux_out);
+  BuildAndEncodeHistograms(memory_manager, params, (tree_.size() + 1) / 2,
+                           tokens_, &code_, &context_map_, writer,
+                           kLayerModularGlobal, aux_out);
   return true;
 }
 

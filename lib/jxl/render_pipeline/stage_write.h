@@ -32,7 +32,7 @@ std::unique_ptr<RenderPipelineStage> GetWriteToImage3FStage(
 std::unique_ptr<RenderPipelineStage> GetWriteToOutputStage(
     const ImageOutput& main_output, size_t width, size_t height, bool has_alpha,
     bool unpremul_alpha, size_t alpha_c, Orientation undo_orientation,
-    std::vector<ImageOutput>& extra_output);
+    std::vector<ImageOutput>& extra_output, JxlMemoryManager* memory_manager);
 
 }  // namespace jxl
 

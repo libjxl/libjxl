@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/memory_manager.h>
+
 #include <cstddef>
 #include <cstdint>
 
@@ -29,14 +31,16 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   size -= 2;
 
   std::vector<uint8_t> context_map;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   Status ret = true;
   {
     BitReader br(Bytes(data, size));
     BitReaderScopedCloser br_closer(&br, &ret);
     ANSCode code;
-    JXL_RETURN_IF_ERROR(
-        DecodeHistograms(&br, numContexts, &code, &context_map));
-    ANSSymbolReader ansreader(&code, &br);
+    JXL_RETURN_IF_ERROR(DecodeHistograms(memory_manager, &br, numContexts,
+                                         &code, &context_map));
+    JXL_ASSIGN_OR_DIE(ANSSymbolReader ansreader,
+                      ANSSymbolReader::Create(&code, &br));
 
     // Limit the maximum amount of reads to avoid (valid) infinite loops.
     const size_t maxreads = size * 8;

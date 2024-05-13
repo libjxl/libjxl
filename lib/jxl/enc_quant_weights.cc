@@ -161,10 +161,11 @@ Status DequantMatricesEncodeDC(const DequantMatrices& matrices,
   return true;
 }
 
-void DequantMatricesSetCustomDC(DequantMatrices* matrices, const float* dc) {
+void DequantMatricesSetCustomDC(JxlMemoryManager* memory_manager,
+                                DequantMatrices* matrices, const float* dc) {
   matrices->SetDCQuant(dc);
   // Roundtrip encode/decode DC to ensure same values as decoder.
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   JXL_CHECK(DequantMatricesEncodeDC(*matrices, &writer, 0, nullptr));
   writer.ZeroPadToByte();
   BitReader br(writer.GetSpan());
@@ -173,19 +174,20 @@ void DequantMatricesSetCustomDC(DequantMatrices* matrices, const float* dc) {
   JXL_CHECK(br.Close());
 }
 
-void DequantMatricesScaleDC(DequantMatrices* matrices, const float scale) {
+void DequantMatricesScaleDC(JxlMemoryManager* memory_manager,
+                            DequantMatrices* matrices, const float scale) {
   float dc[3];
   for (size_t c = 0; c < 3; ++c) {
     dc[c] = matrices->InvDCQuant(c) * (1.0f / scale);
   }
-  DequantMatricesSetCustomDC(matrices, dc);
+  DequantMatricesSetCustomDC(memory_manager, matrices, dc);
 }
 
 void DequantMatricesRoundtrip(JxlMemoryManager* memory_manager,
                               DequantMatrices* matrices) {
   // Do not pass modular en/decoder, as they only change entropy and not
   // values.
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   JXL_CHECK(
       DequantMatricesEncode(memory_manager, *matrices, &writer, 0, nullptr));
   writer.ZeroPadToByte();

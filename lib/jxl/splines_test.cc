@@ -73,6 +73,7 @@ std::vector<Spline> DequantizeSplines(const Splines& splines) {
 }  // namespace
 
 TEST(SplinesTest, Serialization) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   Spline spline1{
       /*control_points=*/{
           {109, 54}, {218, 159}, {80, 3}, {110, 274}, {94, 185}, {17, 277}},
@@ -166,7 +167,7 @@ TEST(SplinesTest, Serialization) {
     }
   }
 
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   EncodeSplines(splines, &writer, kLayerSplines, HistogramParams(), nullptr);
   writer.ZeroPadToByte();
   const size_t bits_written = writer.BitsWritten();
@@ -175,7 +176,8 @@ TEST(SplinesTest, Serialization) {
 
   BitReader reader(writer.GetSpan());
   Splines decoded_splines;
-  ASSERT_TRUE(decoded_splines.Decode(&reader, /*num_pixels=*/1000));
+  ASSERT_TRUE(
+      decoded_splines.Decode(memory_manager, &reader, /*num_pixels=*/1000));
   ASSERT_TRUE(reader.JumpToByteBoundary());
   EXPECT_EQ(reader.TotalBitsConsumed(), bits_written);
   ASSERT_TRUE(reader.Close());
@@ -211,6 +213,7 @@ TEST(SplinesTest, DISABLED_TooManySplinesTest) {
 #else
 TEST(SplinesTest, TooManySplinesTest) {
 #endif
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   // This is more than the limit for 1000 pixels.
   const size_t kNumSplines = 300;
 
@@ -229,14 +232,15 @@ TEST(SplinesTest, TooManySplinesTest) {
 
   Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
                   std::move(starting_points));
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   EncodeSplines(splines, &writer, kLayerSplines,
                 HistogramParams(SpeedTier::kFalcon, 1), nullptr);
   writer.ZeroPadToByte();
   // Re-read splines.
   BitReader reader(writer.GetSpan());
   Splines decoded_splines;
-  EXPECT_FALSE(decoded_splines.Decode(&reader, /*num_pixels=*/1000));
+  EXPECT_FALSE(
+      decoded_splines.Decode(memory_manager, &reader, /*num_pixels=*/1000));
   EXPECT_TRUE(reader.Close());
 }
 

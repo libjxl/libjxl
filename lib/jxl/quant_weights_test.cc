@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file.
 #include "lib/jxl/quant_weights.h"
 
+#include <jxl/memory_manager.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -56,9 +58,10 @@ void CheckSimilar(float a, float b) {
 }
 
 TEST(QuantWeightsTest, DC) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   DequantMatrices mat;
   float dc_quant[3] = {1e+5, 1e+3, 1e+1};
-  DequantMatricesSetCustomDC(&mat, dc_quant);
+  DequantMatricesSetCustomDC(memory_manager, &mat, dc_quant);
   for (size_t c = 0; c < 3; c++) {
     CheckSimilar(mat.InvDCQuant(c), dc_quant[c]);
   }
@@ -182,6 +185,7 @@ class QuantWeightsTargetTest : public hwy::TestWithParamTarget {};
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(QuantWeightsTargetTest);
 
 TEST_P(QuantWeightsTargetTest, DCTUniform) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   constexpr float kUniformQuant = 4;
   float weights[3][2] = {{1.0f / kUniformQuant, 0},
                          {1.0f / kUniformQuant, 0},
@@ -199,7 +203,7 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
 
   const float dc_quant[3] = {1.0f / kUniformQuant, 1.0f / kUniformQuant,
                              1.0f / kUniformQuant};
-  DequantMatricesSetCustomDC(&dequant_matrices, dc_quant);
+  DequantMatricesSetCustomDC(memory_manager, &dequant_matrices, dc_quant);
 
   HWY_ALIGN_MAX float scratch_space[16 * 16 * 5];
 

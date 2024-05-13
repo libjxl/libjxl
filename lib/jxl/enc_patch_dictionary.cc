@@ -47,6 +47,7 @@ void PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
                                     BitWriter* writer, size_t layer,
                                     AuxOut* aux_out) {
   JXL_ASSERT(pdic.HasAny());
+  JxlMemoryManager* memory_manager = writer->memory_manager();
   std::vector<std::vector<Token>> tokens(1);
   size_t num_ec = pdic.shared_->metadata->m.num_extra_channels;
 
@@ -107,9 +108,9 @@ void PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
 
   EntropyEncodingData codes;
   std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(HistogramParams(), kNumPatchDictionaryContexts,
-                           tokens, &codes, &context_map, writer, layer,
-                           aux_out);
+  BuildAndEncodeHistograms(memory_manager, HistogramParams(),
+                           kNumPatchDictionaryContexts, tokens, &codes,
+                           &context_map, writer, layer, aux_out);
   WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out);
 }
 
@@ -804,7 +805,8 @@ Status RoundtripPatchFrame(Image3F* reference_frame,
     }
     ib.SetExtraChannels(std::move(extra_channels));
   }
-  auto special_frame = std::unique_ptr<BitWriter>(new BitWriter());
+  auto special_frame =
+      std::unique_ptr<BitWriter>(new BitWriter(memory_manager));
   AuxOut patch_aux_out;
   JXL_CHECK(EncodeFrame(
       memory_manager, cparams, patch_frame_info, state->shared.metadata, ib,

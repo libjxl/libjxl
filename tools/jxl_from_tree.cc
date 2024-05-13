@@ -492,10 +492,10 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   cparams.already_downsampled = true;
   cparams.custom_fixed_tree = tree;
   cparams.custom_splines = SplinesFromSplineData(spline_data);
-  PaddedBytes compressed;
+  PaddedBytes compressed{memory_manager};
 
   io.CheckMetadata();
-  BitWriter writer;
+  BitWriter writer{memory_manager};
 
   std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();
   *metadata = io.metadata;
