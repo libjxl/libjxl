@@ -146,6 +146,7 @@ struct BenchmarkArgs {
   int inner_threads;
   size_t decode_reps;
   size_t encode_reps;
+  size_t generations;
 
   std::string sample_tmp_dir;
 
