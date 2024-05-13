@@ -180,7 +180,7 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
       return failure("arithmetic code JPEGs are not supported");
     }
     int nbcomp = cinfo.num_components;
-    if (nbcomp != 1 && nbcomp != 3) {
+    if (nbcomp != 1 && nbcomp != 3 && nbcomp != 4) {
       std::string msg =
           "unsupported number of components in JPEG: " + std::to_string(nbcomp);
       return failure(msg.c_str());

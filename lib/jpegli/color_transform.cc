@@ -169,6 +169,33 @@ void CMYKToYCCK(float* row[kMaxComponents], size_t xsize) {
   RGBToYCbCr(row, xsize);
 }
 
+void CMYKToRGB(float* row[kMaxComponents], size_t xsize) {
+  const HWY_CAPPED(float, 8) df;
+  float* JXL_RESTRICT row_c = row[0];
+  float* JXL_RESTRICT row_m = row[1];
+  float* JXL_RESTRICT row_y = row[2];
+  float* JXL_RESTRICT row_k = row[3];
+  float* JXL_RESTRICT row_r = row[0];
+  float* JXL_RESTRICT row_g = row[1];
+  float* JXL_RESTRICT row_b = row[2];
+
+  const auto kOne = Set(df, 1.0f);
+  for (size_t x = 0; x < xsize; x += Lanes(df)) {
+    const auto c = Load(df, row_c + x);
+    const auto m = Load(df, row_m + x);
+    const auto y = Load(df, row_y + x);
+    const auto k = Load(df, row_k + x);
+
+    const auto r = Mul(Sub(kOne, c), Sub(kOne, k));
+    const auto g = Mul(Sub(kOne, m), Sub(kOne, k));
+    const auto b = Mul(Sub(kOne, y), Sub(kOne, k));
+
+    Store(r, df, row_r + x);
+    Store(g, df, row_g + x);
+    Store(b, df, row_b + x);
+  }
+}
+
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace jpegli
@@ -177,6 +204,7 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jpegli {
 
+HWY_EXPORT(CMYKToRGB);
 HWY_EXPORT(CMYKToYCCK);
 HWY_EXPORT(YCCKToCMYK);
 HWY_EXPORT(YCbCrToRGB);
@@ -533,6 +561,10 @@ void ChooseColorTransform(j_decompress_ptr cinfo) {
   } else if (cinfo->jpeg_color_space == JCS_YCCK) {
     if (cinfo->out_color_space == JCS_CMYK) {
       m->color_transform = HWY_DYNAMIC_DISPATCH(YCCKToCMYK);
+    }
+  } else if (cinfo->jpeg_color_space == JCS_CMYK) {
+    if (cinfo->out_color_space == JCS_RGB) {
+      m->color_transform = HWY_DYNAMIC_DISPATCH(CMYKToRGB);
     }
   }
 
