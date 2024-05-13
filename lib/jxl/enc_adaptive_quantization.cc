@@ -172,30 +172,28 @@ V GammaModulation(const D d, const size_t x, const size_t y,
   JXL_DASSERT(kBias > jxl::cms::kOpsinAbsorbanceBias[2]);
   auto overall_ratio = Zero(d);
   auto bias = Set(d, kBias);
-  auto half = Set(d, 0.5f);
   for (size_t dy = 0; dy < 8; ++dy) {
     const float* const JXL_RESTRICT row_in_x = rect.ConstRow(xyb_x, y + dy);
     const float* const JXL_RESTRICT row_in_y = rect.ConstRow(xyb_y, y + dy);
     for (size_t dx = 0; dx < 8; dx += Lanes(d)) {
       const auto iny = Add(Load(d, row_in_y + x + dx), bias);
       const auto inx = Load(d, row_in_x + x + dx);
+
       const auto r = Sub(iny, inx);
-      const auto g = Add(iny, inx);
       const auto ratio_r =
           RatioOfDerivativesOfCubicRootToSimpleGamma</*invert=*/true>(d, r);
+      overall_ratio = Add(overall_ratio, ratio_r);
+
+      const auto g = Add(iny, inx);
       const auto ratio_g =
           RatioOfDerivativesOfCubicRootToSimpleGamma</*invert=*/true>(d, g);
-      const auto avg_ratio = Mul(half, Add(ratio_r, ratio_g));
-
-      overall_ratio = Add(overall_ratio, avg_ratio);
+      overall_ratio = Add(overall_ratio, ratio_g);
     }
   }
-  overall_ratio = Mul(SumOfLanes(d, overall_ratio), Set(d, 1.0f / 64));
+  overall_ratio = Mul(SumOfLanes(d, overall_ratio), Set(d, 0.5f / 64));
   // ideally -1.0, but likely optimal correction adds some entropy, so slightly
   // less than that.
-  // ln(2) constant folded in because we want std::log but have FastLog2f.
-  static const float v = 0.14507933746197058f;
-  const auto kGam = Set(d, v * 0.693147180559945f);
+  const auto kGam = Set(d, 0.1005613337192697f);
   return MulAdd(kGam, FastLog2f(d, overall_ratio), out_val);
 }
 
