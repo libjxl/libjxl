@@ -1941,9 +1941,15 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->intensity_target_set = false;
   enc->use_container = false;
   enc->use_boxes = false;
+  enc->store_jpeg_metadata = false;
   enc->codestream_level = -1;
   enc->output_processor = JxlEncoderOutputProcessorWrapper();
   JxlEncoderInitBasicInfo(&enc->basic_info);
+
+  // jxl::JxlEncoderFrameIndexBox frame_index_box;
+  // JxlEncoderError error = JxlEncoderError::JXL_ENC_ERR_OK;
+  // bool allow_expert_options = false;
+  // int brotli_effort = -1;
 }
 
 void JxlEncoderDestroy(JxlEncoder* enc) {
