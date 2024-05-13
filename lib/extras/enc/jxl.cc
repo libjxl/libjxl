@@ -202,7 +202,7 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
         fprintf(stderr,
                 "JPEG bitstream reconstruction data could not be created. "
                 "Possibly there is too much tail data.\n"
-                "Try using --jpeg_store_metadata 0, to losslessly "
+                "Try using --allow_jpeg_reconstruction 0, to losslessly "
                 "recompress the JPEG image data without bitstream "
                 "reconstruction data.\n");
       } else {
