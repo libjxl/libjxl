@@ -49,6 +49,18 @@ SplitImageView::SplitImageView(QWidget* const parent) : QWidget(parent) {
 
   connect(ui_.splitImageRenderer, &SplitImageRenderer::renderingModeChanged,
           this, &SplitImageView::renderingModeChanged);
+
+  const SplitImageRenderingSettings renderingSettings =
+      settings_.renderingSettings();
+  if (renderingSettings.restoreLastZoomLevel) {
+    ui_.zoomLevelSlider->setValue(renderingSettings.lastLog2ZoomLevel);
+  } else {
+    ui_.zoomLevelSlider->setValue(renderingSettings.defaultLog2ZoomLevel);
+  }
+}
+
+SplitImageView::~SplitImageView() {
+  settings_.setLastZoomLevel(ui_.zoomLevelSlider->value());
 }
 
 void SplitImageView::setLeftImage(QImage image) {

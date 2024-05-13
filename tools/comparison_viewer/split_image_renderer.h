@@ -22,6 +22,9 @@ struct SplitImageRenderingSettings {
   int fadingMSecs;
   bool gray;
   int grayMSecs;
+  bool restoreLastZoomLevel;
+  int defaultLog2ZoomLevel;
+  int lastLog2ZoomLevel;
 };
 
 class SplitImageRenderer : public QWidget {
