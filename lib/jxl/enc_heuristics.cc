@@ -1080,11 +1080,10 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
 
   // Apply inverse-gaborish.
   if (frame_header.loop_filter.gab) {
-    // Unsure why better to do some more gaborish on X and B than Y.
     float weight[3] = {
-        1.0036278514398933f,
-        0.99406123118127299f,
-        0.99719338015886894f,
+        0.985f,
+        0.985f,
+        0.985f,
     };
     JXL_RETURN_IF_ERROR(GaborishInverse(opsin, rect, weight, pool));
   }
