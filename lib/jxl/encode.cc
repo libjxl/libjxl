@@ -1943,7 +1943,8 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->use_boxes = false;
   enc->store_jpeg_metadata = false;
   enc->codestream_level = -1;
-  enc->output_processor = JxlEncoderOutputProcessorWrapper();
+  enc->output_processor =
+      JxlEncoderOutputProcessorWrapper(&enc->memory_manager);
   JxlEncoderInitBasicInfo(&enc->basic_info);
 
   // jxl::JxlEncoderFrameIndexBox frame_index_box;

@@ -48,9 +48,9 @@ namespace {
 using test::ReadTestData;
 
 constexpr int kQuantizationAdjustment = 0;
-const ColorCorrelationMap* const cmap = new ColorCorrelationMap;
-const float kYToX = cmap->YtoXRatio(0);
-const float kYToB = cmap->YtoBRatio(0);
+const ColorCorrelation color_correlation{};
+const float kYToX = color_correlation.YtoXRatio(0);
+const float kYToB = color_correlation.YtoBRatio(0);
 
 constexpr float kTolerance = 0.003125;
 
@@ -271,8 +271,8 @@ TEST(SplinesTest, DuplicatePoints) {
 
   JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(memory_manager, 320, 320));
   ZeroFillImage(&image);
-  EXPECT_FALSE(
-      splines.InitializeDrawCache(image.xsize(), image.ysize(), *cmap));
+  EXPECT_FALSE(splines.InitializeDrawCache(image.xsize(), image.ysize(),
+                                           color_correlation));
 }
 
 TEST(SplinesTest, Drawing) {
@@ -308,7 +308,8 @@ TEST(SplinesTest, Drawing) {
 
   JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(memory_manager, 320, 320));
   ZeroFillImage(&image);
-  ASSERT_TRUE(splines.InitializeDrawCache(image.xsize(), image.ysize(), *cmap));
+  ASSERT_TRUE(splines.InitializeDrawCache(image.xsize(), image.ysize(),
+                                          color_correlation));
   splines.AddTo(&image, Rect(image), Rect(image));
 
   CodecInOut io_actual{memory_manager};

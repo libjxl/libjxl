@@ -120,7 +120,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
   if (options.render_noise && (frame_header.flags & FrameHeader::kNoise) != 0) {
     builder.AddStage(GetConvolveNoiseStage(num_c - 3));
     builder.AddStage(GetAddNoiseStage(shared->image_features.noise_params,
-                                      shared->cmap, num_c - 3));
+                                      shared->cmap.base(), num_c - 3));
   }
   if (frame_header.dc_level != 0) {
     builder.AddStage(GetWriteToImage3FStage(

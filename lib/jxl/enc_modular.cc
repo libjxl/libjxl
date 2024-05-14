@@ -19,6 +19,7 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -1532,13 +1533,14 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
   JXL_ASSIGN_OR_RETURN(
       stream_images_[stream_id],
       Image::Create(memory_manager, r.xsize(), r.ysize(), 8, 3));
+  const ColorCorrelation& color_correlation = enc_state->shared.cmap.base();
   if (nl_dc && stream_options_[stream_id].tree_kind ==
                    ModularOptions::TreeKind::kGradientFixedDC) {
     JXL_ASSERT(frame_header.chroma_subsampling.Is444());
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
-      float cfl_factor = enc_state->shared.cmap.DCFactors()[c];
+      float cfl_factor = color_correlation.DCFactors()[c];
       for (size_t y = 0; y < r.ysize(); y++) {
         int32_t* quant_row =
             stream_images_[stream_id].channel[c < 2 ? c ^ 1 : c].plane.Row(y);
@@ -1567,7 +1569,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
-      float cfl_factor = enc_state->shared.cmap.DCFactors()[c];
+      float cfl_factor = color_correlation.DCFactors()[c];
       weighted::Header header;
       weighted::State wp_state(header, r.xsize(), r.ysize());
       for (size_t y = 0; y < r.ysize(); y++) {
@@ -1599,7 +1601,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
-      float cfl_factor = enc_state->shared.cmap.DCFactors()[c];
+      float cfl_factor = color_correlation.DCFactors()[c];
       for (size_t y = 0; y < r.ysize(); y++) {
         int32_t* quant_row =
             stream_images_[stream_id].channel[c < 2 ? c ^ 1 : c].plane.Row(y);
@@ -1644,7 +1646,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
 
   DequantDC(r, &enc_state->shared.dc_storage, &enc_state->shared.quant_dc,
             stream_images_[stream_id], enc_state->shared.quantizer.MulDC(),
-            1.0 / mul, enc_state->shared.cmap.DCFactors(),
+            1.0 / mul, color_correlation.DCFactors(),
             frame_header.chroma_subsampling, enc_state->shared.block_ctx_map);
   return true;
 }
