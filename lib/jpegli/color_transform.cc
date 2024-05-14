@@ -179,15 +179,16 @@ void CMYKToRGB(float* row[kMaxComponents], size_t xsize) {
   float* JXL_RESTRICT row_g = row[1];
   float* JXL_RESTRICT row_b = row[2];
   const auto kHalf = Set(df, .5f);
+  const auto kNegHalf = Set(df, -.5f);
   for (size_t x = 0; x < xsize; x += Lanes(df)) {
     const auto c = Load(df, row_c + x);
     const auto m = Load(df, row_m + x);
     const auto y = Load(df, row_y + x);
     const auto k = Load(df, row_k + x);
 
-    const auto r = Sub(Mul(Add(kHalf, c), Add(kHalf, k)), kHalf);
-    const auto g = Sub(Mul(Add(kHalf, m), Add(kHalf, k)), kHalf);
-    const auto b = Sub(Mul(Add(kHalf, y), Add(kHalf, k)), kHalf);
+    const auto r = MulAdd(Add(kHalf, c), Add(kHalf, k), kNegHalf);
+    const auto g = MulAdd(Add(kHalf, m), Add(kHalf, k), kNegHalf);
+    const auto b = MulAdd(Add(kHalf, y), Add(kHalf, k), kNegHalf);
 
     Store(r, df, row_r + x);
     Store(g, df, row_g + x);
