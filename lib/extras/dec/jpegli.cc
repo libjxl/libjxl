@@ -185,7 +185,7 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
           "unsupported number of components in JPEG: " + std::to_string(nbcomp);
       return failure(msg.c_str());
     }
-    if (dparams.force_rgb) {
+    if (dparams.force_rgb || nbcomp == 4) {
       cinfo.out_color_space = JCS_RGB;
     } else if (dparams.force_grayscale) {
       cinfo.out_color_space = JCS_GRAYSCALE;

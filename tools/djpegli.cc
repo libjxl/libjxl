@@ -161,7 +161,7 @@ int DJpegliMain(int argc, const char* argv[]) {
   }
 
   if (extension == ".pnm") {
-    extension = ppf.info.num_color_channels == 3 ? ".ppm" : ".pgm";
+    extension = ppf.info.num_color_channels >= 3 ? ".ppm" : ".pgm";
   }
 
   std::unique_ptr<jxl::extras::Encoder> encoder =
