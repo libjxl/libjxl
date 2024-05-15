@@ -1080,11 +1080,12 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
 
   // Apply inverse-gaborish.
   if (frame_header.loop_filter.gab) {
-    // Unsure why better to do some more gaborish on X and B than Y.
+    // Changing the weight here to 0.99f would help to reduce ringing in
+    // generation loss.
     float weight[3] = {
-        1.0036278514398933f,
-        0.99406123118127299f,
-        0.99719338015886894f,
+        1.0f,
+        1.0f,
+        1.0f,
     };
     JXL_RETURN_IF_ERROR(GaborishInverse(opsin, rect, weight, pool));
   }

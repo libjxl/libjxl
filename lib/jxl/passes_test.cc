@@ -105,7 +105,7 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
         target_distance + threshold);
   };
 
-  auto run1 = std::async(std::launch::async, test, 1.0f, 0.15f);
+  auto run1 = std::async(std::launch::async, test, 1.0f, 0.25f);
   auto run2 = std::async(std::launch::async, test, 2.0f, 0.0f);
 }
 
