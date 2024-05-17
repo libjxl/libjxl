@@ -6,11 +6,17 @@
 #include "lib/extras/dec/jxl.h"
 
 #include <jxl/cms.h>
+#include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/types.h>
 
 #include <cinttypes>  // PRIu32
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <limits>
+#include <vector>
 
 #include "lib/extras/common.h"
 #include "lib/extras/dec/color_description.h"
@@ -118,7 +124,7 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
   // silently return false if this is not a JXL file
   if (sig == JXL_SIG_INVALID) return false;
 
-  auto decoder = JxlDecoderMake(/*memory_manager=*/nullptr);
+  auto decoder = JxlDecoderMake(dparams.memory_manager);
   JxlDecoder* dec = decoder.get();
   ppf->frames.clear();
 

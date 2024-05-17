@@ -303,7 +303,7 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   if (frame_header_.flags & FrameHeader::kSplines) {
     JXL_RETURN_IF_ERROR(shared.image_features.splines.InitializeDrawCache(
         frame_dim_.xsize_upsampled, frame_dim_.ysize_upsampled,
-        dec_state_->shared->cmap));
+        dec_state_->shared->cmap.base()));
   }
   Status dec_status = modular_frame_decoder_.DecodeGlobalInfo(
       br, frame_header_, /*allow_truncated_group=*/false);

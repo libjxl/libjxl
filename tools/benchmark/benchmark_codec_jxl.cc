@@ -6,6 +6,7 @@
 
 #include <jxl/color_encoding.h>
 #include <jxl/encode.h>
+#include <jxl/memory_manager.h>
 #include <jxl/stats.h>
 #include <jxl/types.h>
 
@@ -125,8 +126,10 @@ inline bool ParseEffort(const std::string& s, int* out) {
 
 class JxlCodec : public ImageCodec {
  public:
-  explicit JxlCodec(const BenchmarkArgs& args)
-      : ImageCodec(args), stats_(nullptr, JxlEncoderStatsDestroy) {}
+  JxlCodec(const BenchmarkArgs& args, JxlMemoryManager* memory_manager)
+      : ImageCodec(args),
+        memory_manager_(memory_manager),
+        stats_(nullptr, JxlEncoderStatsDestroy) {}
 
   Status ParseParam(const std::string& param) override {
     const std::string kMaxPassesPrefix = "max_passes=";
@@ -261,6 +264,7 @@ class JxlCodec : public ImageCodec {
                   jpegxl::tools::SpeedStats* speed_stats) override {
     cparams_.runner = pool->runner();
     cparams_.runner_opaque = pool->runner_opaque();
+    cparams_.memory_manager = memory_manager_;
     cparams_.distance = butteraugli_target_;
     cparams_.AddOption(JXL_ENC_FRAME_SETTING_NOISE,
                        static_cast<int>(jxlargs->noise));
@@ -298,6 +302,7 @@ class JxlCodec : public ImageCodec {
                     jpegxl::tools::SpeedStats* speed_stats) override {
     dparams_.runner = pool->runner();
     dparams_.runner_opaque = pool->runner_opaque();
+    dparams_.memory_manager = memory_manager_;
     JxlDataType data_type = uint8_ ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
     for (uint32_t c = 1; c <= 4; ++c) {
       dparams_.accepted_formats.push_back({c, data_type, JXL_LITTLE_ENDIAN, 0});
@@ -328,6 +333,7 @@ class JxlCodec : public ImageCodec {
   bool modular_mode_ = false;
   JXLDecompressParams dparams_;
   bool uint8_ = false;
+  JxlMemoryManager* memory_manager_;
   std::unique_ptr<JxlEncoderStats, decltype(JxlEncoderStatsDestroy)*> stats_;
 
  private:
@@ -365,8 +371,9 @@ class JxlCodec : public ImageCodec {
   }
 };
 
-ImageCodec* CreateNewJxlCodec(const BenchmarkArgs& args) {
-  return new JxlCodec(args);
+ImageCodec* CreateNewJxlCodec(const BenchmarkArgs& args,
+                              JxlMemoryManager* memory_manager) {
+  return new JxlCodec(args, memory_manager);
 }
 
 }  // namespace tools

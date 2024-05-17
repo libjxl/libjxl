@@ -601,8 +601,9 @@ Status FindBestPatchDictionary(const Image3F& opsin,
               !state->cparams.disable_percepeptual_optimizations)) {
     Rect rect(0, 0, state->shared.frame_dim.xsize,
               state->shared.frame_dim.ysize);
-    JXL_ASSIGN_OR_RETURN(info, FindDotDictionary(state->cparams, opsin, rect,
-                                                 state->shared.cmap, pool));
+    JXL_ASSIGN_OR_RETURN(info,
+                         FindDotDictionary(state->cparams, opsin, rect,
+                                           state->shared.cmap.base(), pool));
   }
 
   if (info.empty()) return true;

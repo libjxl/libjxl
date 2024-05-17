@@ -999,7 +999,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
       image_features.splines = FindSplines(*opsin);
     }
     JXL_RETURN_IF_ERROR(image_features.splines.InitializeDrawCache(
-        opsin->xsize(), opsin->ysize(), cmap));
+        opsin->xsize(), opsin->ysize(), cmap.base()));
     image_features.splines.SubtractFrom(opsin);
   }
 

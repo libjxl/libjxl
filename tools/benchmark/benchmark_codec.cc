@@ -5,6 +5,7 @@
 
 #include "tools/benchmark/benchmark_codec.h"
 
+#include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
 #include <cstdint>
@@ -145,7 +146,8 @@ class NoneCodec : public ImageCodec {
   void GetMoreStats(BenchmarkStats* stats) override {}
 };
 
-ImageCodecPtr CreateImageCodec(const std::string& description) {
+ImageCodecPtr CreateImageCodec(const std::string& description,
+                               JxlMemoryManager* memory_manager) {
   std::string name = description;
   std::string parameters;
   size_t colon = description.find(':');
@@ -155,7 +157,7 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   }
   ImageCodecPtr result;
   if (name == "jxl") {
-    result.reset(CreateNewJxlCodec(*Args()));
+    result.reset(CreateNewJxlCodec(*Args(), memory_manager));
 #if !defined(__wasm__)
   } else if (name == "custom") {
     result.reset(CreateNewCustomCodec(*Args()));

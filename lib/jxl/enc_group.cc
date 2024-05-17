@@ -434,9 +434,9 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
       for (size_t tx = 0; tx < DivCeil(xsize_blocks, kColorTileDimInBlocks);
            tx++) {
         const auto x_factor =
-            Set(d, enc_state->shared.cmap.YtoXRatio(row_cmap[0][tx]));
+            Set(d, enc_state->shared.cmap.base().YtoXRatio(row_cmap[0][tx]));
         const auto b_factor =
-            Set(d, enc_state->shared.cmap.YtoBRatio(row_cmap[2][tx]));
+            Set(d, enc_state->shared.cmap.base().YtoBRatio(row_cmap[2][tx]));
         for (size_t bx = tx * kColorTileDimInBlocks;
              bx < xsize_blocks && bx < (tx + 1) * kColorTileDimInBlocks; ++bx) {
           const AcStrategy acs = ac_strategy_row[bx];
