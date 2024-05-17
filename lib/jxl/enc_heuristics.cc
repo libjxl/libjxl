@@ -819,6 +819,11 @@ StatusOr<Image3F> ReconstructImage(
     JXL_CHECK(DecodeGroupForRoundtrip(frame_header, coeffs, group_index,
                                       &dec_state, &group_dec_caches[thread],
                                       thread, input, nullptr, nullptr));
+    for (size_t c = 0;
+         c < frame_header.nonserialized_metadata->m.num_extra_channels; c++) {
+      std::pair<ImageF*, Rect> ri = input.GetBuffer(3 + c);
+      FillPlane(0.0f, ri.first, ri.second);
+    }
     if (!input.Done()) {
       has_error = true;
       return;
