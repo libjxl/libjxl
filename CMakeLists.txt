@@ -226,7 +226,16 @@ find_package(Threads REQUIRED)
 
 # These settings are important to drive check_cxx_source_compiles
 # See CMP0067 (min cmake version is 3.10 anyway)
-set(CMAKE_CXX_STANDARD 11)
+
+if ("cxx_std_17" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+  set(CMAKE_CXX_STANDARD 17)
+else()
+  if ("cxx_std_14" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 14)
+  else()
+    set(CMAKE_CXX_STANDARD 11)
+  endif()
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
