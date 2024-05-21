@@ -5,10 +5,18 @@
 
 #include "lib/extras/enc/jxl.h"
 
+#include <jxl/codestream_header.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 #include <jxl/types.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <vector>
+
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/exif.h"
 
 namespace jxl {
@@ -112,7 +120,7 @@ bool ReadCompressedOutput(JxlEncoder* enc, std::vector<uint8_t>* compressed) {
 bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
                     const std::vector<uint8_t>* jpeg_bytes,
                     std::vector<uint8_t>* compressed) {
-  auto encoder = JxlEncoderMake(/*memory_manager=*/nullptr);
+  auto encoder = JxlEncoderMake(params.memory_manager);
   JxlEncoder* enc = encoder.get();
 
   if (params.allow_expert_options) {

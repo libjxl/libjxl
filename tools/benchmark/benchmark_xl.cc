@@ -20,6 +20,7 @@
 #include <numeric>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -37,7 +38,6 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
-#include "lib/jxl/cache_aligned.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
@@ -46,6 +46,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 #include "tools/benchmark/benchmark_file_io.h"
@@ -74,6 +75,64 @@ using ::jxl::Rng;
 using ::jxl::Status;
 using ::jxl::ThreadPool;
 using ::jxl::extras::PackedPixelFile;
+
+class TrackingMemoryManager {
+ public:
+  explicit TrackingMemoryManager(JxlMemoryManager* inner) : inner_(inner) {
+    outer_.opaque = reinterpret_cast<void*>(this);
+    outer_.alloc = &Alloc;
+    outer_.free = &Free;
+  }
+
+  JxlMemoryManager* get() { return &outer_; }
+
+  void PrintStats() const {
+    fprintf(stderr, "Allocations: %" PRIuS " (max bytes in use: %E)\n",
+            static_cast<size_t>(num_allocations_),
+            static_cast<double>(max_bytes_in_use_));
+  }
+
+ private:
+  static void* Alloc(void* opaque, size_t size) {
+    JXL_CHECK(opaque != nullptr);
+    TrackingMemoryManager* self =
+        reinterpret_cast<TrackingMemoryManager*>(opaque);
+    void* result = self->inner_->alloc(self->inner_->opaque, size);
+    if (result != nullptr) {
+      std::lock_guard<std::mutex> guard(self->mutex_);
+      self->num_allocations_++;
+      self->bytes_in_use_ += size;
+      self->max_bytes_in_use_ =
+          std::max(self->max_bytes_in_use_, self->bytes_in_use_);
+      self->allocations_[result] = size;
+    }
+    return result;
+  }
+
+  static void Free(void* opaque, void* address) {
+    JXL_CHECK(opaque != nullptr);
+    if (address == nullptr) return;
+    TrackingMemoryManager* self =
+        reinterpret_cast<TrackingMemoryManager*>(opaque);
+    {
+      std::lock_guard<std::mutex> guard(self->mutex_);
+      auto entry = self->allocations_.find(address);
+      JXL_CHECK(entry != self->allocations_.end());
+      self->num_allocations_--;
+      self->bytes_in_use_ -= entry->second;
+      self->allocations_.erase(entry);
+    }
+    self->inner_->free(self->inner_->opaque, address);
+  }
+
+  std::unordered_map<void*, size_t> allocations_;
+  std::mutex mutex_;
+  uint64_t bytes_in_use_ = 0;
+  uint64_t max_bytes_in_use_ = 0;
+  uint64_t num_allocations_ = 0;
+  JxlMemoryManager outer_;
+  JxlMemoryManager* inner_;
+};
 
 Status WriteImage(const Image3F& image, ThreadPool* pool,
                   const std::string& filename) {
@@ -796,13 +855,17 @@ class Benchmark {
   // Return the exit code of the program.
   static int Run() {
     int ret = EXIT_SUCCESS;
+    JxlMemoryManager default_memory_manager;
+    JXL_CHECK(jxl::MemoryManagerInit(&default_memory_manager, nullptr));
+    TrackingMemoryManager memory_manager(&default_memory_manager);
     {
       const StringVec methods = GetMethods();
       const StringVec extra_metrics_names = GetExtraMetricsNames();
       const StringVec extra_metrics_commands = GetExtraMetricsCommands();
       const StringVec fnames = GetFilenames();
       // (non-const because Task.stats are updated)
-      std::vector<Task> tasks = CreateTasks(methods, fnames);
+      std::vector<Task> tasks =
+          CreateTasks(methods, fnames, memory_manager.get());
 
       std::unique_ptr<ThreadPoolInternal> pool;
       std::vector<std::unique_ptr<ThreadPoolInternal>> inner_pools;
@@ -825,7 +888,7 @@ class Benchmark {
       }
     }
 
-    jxl::CacheAligned::PrintStats();
+    memory_manager.PrintStats();
     return ret;
   }
 
@@ -1044,14 +1107,15 @@ class Benchmark {
   }
 
   static std::vector<Task> CreateTasks(const StringVec& methods,
-                                       const StringVec& fnames) {
+                                       const StringVec& fnames,
+                                       JxlMemoryManager* memory_manager) {
     std::vector<Task> tasks;
     tasks.reserve(methods.size() * fnames.size());
     for (size_t idx_image = 0; idx_image < fnames.size(); ++idx_image) {
       for (size_t idx_method = 0; idx_method < methods.size(); ++idx_method) {
         tasks.emplace_back();
         Task& t = tasks.back();
-        t.codec = CreateImageCodec(methods[idx_method]);
+        t.codec = CreateImageCodec(methods[idx_method], memory_manager);
         t.idx_image = idx_image;
         t.idx_method = idx_method;
         // t.stats is default-initialized.

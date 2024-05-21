@@ -812,9 +812,9 @@ void ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   size_t tx = bx / kColorTileDimInBlocks;
   size_t ty = by / kColorTileDimInBlocks;
   const float cmap_factors[3] = {
-      cmap.YtoXRatio(cmap.ytox_map.ConstRow(ty)[tx]),
+      cmap.base().YtoXRatio(cmap.ytox_map.ConstRow(ty)[tx]),
       0.0f,
-      cmap.YtoBRatio(cmap.ytob_map.ConstRow(ty)[tx]),
+      cmap.base().YtoBRatio(cmap.ytob_map.ConstRow(ty)[tx]),
   };
   if (cparams.speed_tier > SpeedTier::kHare) return;
   // First compute the best 8x8 transform for each square. Later, we do not

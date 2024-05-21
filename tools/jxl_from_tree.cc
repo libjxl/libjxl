@@ -34,7 +34,6 @@ using ::jxl::BitWriter;
 using ::jxl::BlendMode;
 using ::jxl::CodecInOut;
 using ::jxl::CodecMetadata;
-using ::jxl::ColorCorrelationMap;
 using ::jxl::ColorEncoding;
 using ::jxl::ColorTransform;
 using ::jxl::CompressParams;

@@ -7,7 +7,6 @@
 
 #include <jxl/memory_manager.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 

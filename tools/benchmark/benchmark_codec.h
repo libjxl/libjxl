@@ -6,6 +6,8 @@
 #ifndef TOOLS_BENCHMARK_BENCHMARK_CODEC_H_
 #define TOOLS_BENCHMARK_BENCHMARK_CODEC_H_
 
+#include <jxl/memory_manager.h>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -82,7 +84,8 @@ using ImageCodecPtr = std::unique_ptr<ImageCodec>;
 // Creates an image codec by name, e.g. "jxl" to get a new instance of the
 // jxl codec. Optionally, behind a colon, parameters can be specified,
 // then ParseParameters of the codec gets called with the part behind the colon.
-ImageCodecPtr CreateImageCodec(const std::string& description);
+ImageCodecPtr CreateImageCodec(const std::string& description,
+                               JxlMemoryManager* memory_manager);
 
 }  // namespace tools
 }  // namespace jpegxl
