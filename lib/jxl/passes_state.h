@@ -9,7 +9,6 @@
 #include <jxl/memory_manager.h>
 
 #include <array>
-#include <memory>
 
 #include "lib/jxl/ac_context.h"
 #include "lib/jxl/ac_strategy.h"
@@ -18,7 +17,6 @@
 #include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
 #include "lib/jxl/noise.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
@@ -30,6 +28,8 @@
 namespace jxl {
 
 struct ImageFeatures {
+  explicit ImageFeatures(JxlMemoryManager* memory_manager_)
+      : patches(memory_manager_) {}
   NoiseParams noise_params;
   PatchDictionary patches;
   Splines splines;
@@ -39,7 +39,7 @@ struct ImageFeatures {
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct PassesSharedState {
   explicit PassesSharedState(JxlMemoryManager* memory_manager_)
-      : memory_manager(memory_manager_) {
+      : memory_manager(memory_manager_), image_features(memory_manager_) {
     for (auto& reference_frame : reference_frames) {
       reference_frame.frame = jxl::make_unique<ImageBundle>(memory_manager_);
     }
@@ -81,11 +81,6 @@ struct PassesSharedState {
 
   Image3F dc_frames[4];
 
-  struct ReferceFrame {
-    std::unique_ptr<ImageBundle> frame;
-    // ImageBundle doesn't yet have a simple way to state it is in XYB.
-    bool ib_is_in_xyb = false;
-  };
   std::array<ReferceFrame, 4> reference_frames;
 
   // Number of pre-clustered set of histograms (with the same ctx map), per

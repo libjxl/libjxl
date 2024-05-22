@@ -15,7 +15,8 @@ namespace jxl {
 
 // Draws patches if applicable.
 std::unique_ptr<RenderPipelineStage> GetPatchesStage(
-    const PatchDictionary* patches, size_t num_channels);
+    const PatchDictionary* patches,
+    const std::vector<ExtraChannelInfo>* extra_channel_info);
 
 }  // namespace jxl
 
