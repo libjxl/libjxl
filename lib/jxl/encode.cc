@@ -1788,9 +1788,9 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                              "Option value has to be 0 or 1");
       }
-      frame_settings->values.cparams.disable_percepeptual_optimizations =
+      frame_settings->values.cparams.disable_perceptual_optimizations =
           default_to_false(value);
-      if (frame_settings->values.cparams.disable_percepeptual_optimizations &&
+      if (frame_settings->values.cparams.disable_perceptual_optimizations &&
           frame_settings->enc->basic_info_set &&
           frame_settings->enc->metadata.m.xyb_encoded) {
         return JXL_API_ERROR(
@@ -2272,7 +2272,7 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
         frame_settings->enc, JXL_ENC_ERR_API_USAGE,
         "Set uses_original_profile=true for lossless encoding");
   }
-  if (frame_settings->values.cparams.disable_percepeptual_optimizations &&
+  if (frame_settings->values.cparams.disable_perceptual_optimizations &&
       frame_settings->enc->metadata.m.xyb_encoded) {
     return JXL_API_ERROR(
         frame_settings->enc, JXL_ENC_ERR_API_USAGE,

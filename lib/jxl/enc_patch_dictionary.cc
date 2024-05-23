@@ -598,7 +598,7 @@ Status FindBestPatchDictionary(const Image3F& opsin,
           state->cparams.dots,
           state->cparams.speed_tier <= SpeedTier::kSquirrel &&
               state->cparams.butteraugli_distance >= kMinButteraugliForDots &&
-              !state->cparams.disable_percepeptual_optimizations)) {
+              !state->cparams.disable_perceptual_optimizations)) {
     Rect rect(0, 0, state->shared.frame_dim.xsize,
               state->shared.frame_dim.ysize);
     JXL_ASSIGN_OR_RETURN(info,
