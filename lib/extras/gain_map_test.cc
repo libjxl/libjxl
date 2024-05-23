@@ -93,7 +93,7 @@ TEST_F(GainMapTest, TestGetBundleSize) {
   bundle.gain_map = gain_map.data();
 
   // Call the function and verify the result
-  size_t bundle_size = 777; // JxlGainMapGetBundleSize(&bundle); TODO: fix linking problem!
+  size_t bundle_size = JxlGainMapGetBundleSize(&bundle);// TODO: fix linking problem!
   //
   EXPECT_GT(bundle_size, 777);  
 }

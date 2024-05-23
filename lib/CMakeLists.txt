@@ -161,8 +161,6 @@ endif()
 
 # The jxl_cms library definition.
 include(jxl_cms.cmake)
-# The jxl_gain_map library definition
-include(jxl_gain_map.cmake)
 # The jxl library definition.
 include(jxl.cmake)
 
