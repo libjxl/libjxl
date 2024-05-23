@@ -205,9 +205,9 @@ Status FindBestDequantMatrices(JxlMemoryManager* memory_manager,
   // TODO(veluca): quant matrices for no-gaborish.
   // TODO(veluca): heuristics for in-bitstream quant tables.
   *dequant_matrices = DequantMatrices();
-  if (cparams.max_error_mode || cparams.disable_percepeptual_optimizations) {
+  if (cparams.max_error_mode || cparams.disable_perceptual_optimizations) {
     constexpr float kMSEWeights[3] = {0.001, 0.001, 0.001};
-    const float* wp = cparams.disable_percepeptual_optimizations
+    const float* wp = cparams.disable_perceptual_optimizations
                           ? kMSEWeights
                           : cparams.max_error;
     // Set numerators of all quantization matrices to constant values.
@@ -1055,7 +1055,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   // on simple heuristics in FindBestAcStrategy, or set a constant for Falcon
   // mode.
   if (cparams.speed_tier > SpeedTier::kHare ||
-      cparams.disable_percepeptual_optimizations) {
+      cparams.disable_perceptual_optimizations) {
     JXL_ASSIGN_OR_RETURN(initial_quant_field,
                          ImageF::Create(memory_manager, frame_dim.xsize_blocks,
                                         frame_dim.ysize_blocks));
@@ -1066,7 +1066,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     FillImage(q, &initial_quant_field);
     float masking = 1.0f / (q + 0.001f);
     FillImage(masking, &initial_quant_masking);
-    if (cparams.disable_percepeptual_optimizations) {
+    if (cparams.disable_perceptual_optimizations) {
       JXL_ASSIGN_OR_RETURN(
           initial_quant_masking1x1,
           ImageF::Create(memory_manager, frame_dim.xsize, frame_dim.ysize));
@@ -1165,7 +1165,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   JXL_RETURN_IF_ERROR(acs_heuristics.Finalize(frame_dim, ac_strategy, aux_out));
 
   // Refine quantization levels.
-  if (!streaming_mode && !cparams.disable_percepeptual_optimizations) {
+  if (!streaming_mode && !cparams.disable_perceptual_optimizations) {
     ImageB& epf_sharpness = shared.epf_sharpness;
     FillPlane(static_cast<uint8_t>(4), &epf_sharpness, Rect(epf_sharpness));
     JXL_RETURN_IF_ERROR(FindBestQuantizer(frame_header, linear, *opsin,
