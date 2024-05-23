@@ -43,6 +43,10 @@ set(JPEGXL_INTERNAL_CMS_SOURCES
   jxl/cms/transfer_functions.h
 )
 
+set(JPEGXL_INTERNAL_GAIN_MAP_SOURCES
+  jxl/gain_map/jxl_gain_map.cc
+)
+
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
   extras/dec/apng.cc
   extras/dec/apng.h
@@ -549,6 +553,7 @@ set(JPEGXL_INTERNAL_PUBLIC_HEADERS
   include/jxl/decode_cxx.h
   include/jxl/encode.h
   include/jxl/encode_cxx.h
+  include/jxl/gain_map.h
   include/jxl/memory_manager.h
   include/jxl/parallel_runner.h
   include/jxl/stats.h
@@ -601,6 +606,7 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/fast_dct_test.cc
   jxl/fast_math_test.cc
   jxl/fields_test.cc
+  jxl/gain_map/jxl_gain_map_test.cc
   jxl/gamma_correct_test.cc
   jxl/gradient_test.cc
   jxl/iaca_test.cc
