@@ -262,11 +262,11 @@ Status LoopFilterFromParams(const CompressParams& cparams, bool streaming_mode,
       cparams.gaborish, cparams.speed_tier <= SpeedTier::kHare &&
                             frame_header->encoding == FrameEncoding::kVarDCT &&
                             cparams.decoding_speed_tier < 4 &&
-                            !cparams.disable_percepeptual_optimizations);
+                            !cparams.disable_perceptual_optimizations);
 
   if (cparams.epf != -1) {
     loop_filter->epf_iters = cparams.epf;
-  } else if (cparams.disable_percepeptual_optimizations) {
+  } else if (cparams.disable_perceptual_optimizations) {
     loop_filter->epf_iters = 0;
     return true;
   } else {
@@ -1541,7 +1541,7 @@ Status ComputeEncodingData(
         frame_header.frame_type == FrameType::kRegularFrame &&
         !ApplyOverride(cparams.keep_invisible, cparams.IsLossless()) &&
         cparams.ec_resampling == cparams.resampling &&
-        !cparams.disable_percepeptual_optimizations) {
+        !cparams.disable_perceptual_optimizations) {
       // simplify invisible pixels
       SimplifyInvisible(&color, *alpha, lossless);
       if (linear) {
