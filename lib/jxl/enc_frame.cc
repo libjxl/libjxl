@@ -1442,7 +1442,7 @@ Status ComputeEncodingData(
     shared.frame_dim = frame_header.ToFrameDimensions();
   }
 
-  shared.image_features.patches.SetPassesSharedState(&shared);
+  shared.image_features.patches.SetShared(&shared.reference_frames);
   const FrameDimensions& frame_dim = shared.frame_dim;
   JXL_ASSIGN_OR_RETURN(
       shared.ac_strategy,
@@ -1512,7 +1512,6 @@ Status ComputeEncodingData(
                                         metadata->m, has_interleaved_alpha,
                                         pool, &extra_channels));
 
-  shared.image_features.patches.SetPassesSharedState(&shared);
   enc_state.cparams = cparams;
 
   Image3F linear_storage;

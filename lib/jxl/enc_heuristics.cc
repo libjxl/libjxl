@@ -33,6 +33,7 @@
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_group.h"
+#include "lib/jxl/dec_noise.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_ac_strategy.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
@@ -49,6 +50,7 @@
 #include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
@@ -772,6 +774,12 @@ StatusOr<Image3F> ReconstructImage(
                           FrameHeader::kSplines);
   frame_header.color_transform = ColorTransform::kNone;
 
+  CodecMetadata metadata = *frame_header.nonserialized_metadata;
+  metadata.m.extra_channel_info.clear();
+  metadata.m.num_extra_channels = metadata.m.extra_channel_info.size();
+  frame_header.nonserialized_metadata = &metadata;
+  frame_header.extra_channel_upsampling.clear();
+
   const bool is_gray = shared.metadata->m.color_encoding.IsGray();
   PassesDecoderState dec_state(memory_manager);
   JXL_RETURN_IF_ERROR(
@@ -819,6 +827,10 @@ StatusOr<Image3F> ReconstructImage(
     JXL_CHECK(DecodeGroupForRoundtrip(frame_header, coeffs, group_index,
                                       &dec_state, &group_dec_caches[thread],
                                       thread, input, nullptr, nullptr));
+    if ((frame_header.flags & FrameHeader::kNoise) != 0) {
+      PrepareNoiseInput(dec_state, shared.frame_dim, frame_header, group_index,
+                        thread);
+    }
     if (!input.Done()) {
       has_error = true;
       return;
