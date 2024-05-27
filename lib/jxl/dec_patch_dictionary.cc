@@ -31,6 +31,7 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
                                size_t num_extra_channels,
                                bool* uses_extra_channels) {
   positions_.clear();
+  blendings_stride_ = num_extra_channels + 1;
   std::vector<uint8_t> context_map;
   ANSCode code;
   JXL_RETURN_IF_ERROR(DecodeHistograms(
@@ -92,7 +93,6 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
       next_size *= 2;
       next_size = std::min<size_t>(next_size, max_patches);
     }
-    blendings_stride_ = num_extra_channels + 1;
     if (next_size * blendings_stride_ > max_blending_infos) {
       return JXL_FAILURE("Too many patches in dictionary");
     }
