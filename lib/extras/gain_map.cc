@@ -169,34 +169,18 @@ void JxlGainMapGetBufferSizes(JxlGainMapBundle *map_bundle,
     fprintf(stderr, "Failed to read the bundle\n");
     return;
   }
-#if 0
-    //jxl::ICCReader icc_reader;
-    fprintf(stderr, "internal_bundle.compressed_icc.size : %zu\n",
-      internal_bundle.compressed_icc.size());
-    //jxl::BitReader bit_reader(internal_bundle.compressed_icc);
-    jxl::BitReader bit_reader(jxl::Span<const uint8_t>(internal_bundle.compressed_icc.data(),
-      internal_bundle.compressed_icc.size()));
+  jxl::Status error = (reader.Close());
 
-    jxl::PaddedBytes icc_buffer;
-    fprintf(stderr, "init: %d\n", static_cast<int>(icc_reader.Init(&bit_reader, 12133)));
-
-    fprintf(stderr, "process: %d\n", static_cast<int>(icc_reader.Process(&reader, &icc_buffer)));
-    (void) bit_reader.Close();
-    fprintf(stderr, "icc_buffer.size : %zu\n", icc_buffer.size());
-    //jxl::Bytes(icc_buffer).AppendTo(*icc);
-    //if (map_bundle->alt_icc) {
-    //  jxl::IccBytes icc_bytes(map_bundle->alt_icc, map_bundle->alt_icc + map_bundle->alt_icc_size);
-    //  JXL_RETURN_IF_ERROR(jxl::ICC(icc_bytes, &icc_writer, 0, nullptr));
-    //  icc_writer.ZeroPadToByte();
-    //  internal_bundle.compressed_icc.assign(icc_writer.GetSpan().begin(), icc_writer.GetSpan().end());
-    //}
-    map_bundle->alt_icc_size = icc_buffer.size();
-#endif
-  map_bundle->alt_icc_size = internal_bundle.compressed_icc.size();
+  jxl::BitReader bit_reader(internal_bundle.compressed_icc);
+  jxl::ICCReader icc_reader;
+  jxl::PaddedBytes icc_buffer;
+  (void)icc_reader.Init(&bit_reader, 0UL);
+  (void)icc_reader.Process(&bit_reader, &icc_buffer);
+  (void)bit_reader.Close();
+  map_bundle->alt_icc_size = icc_buffer.size();
   map_bundle->gain_map_metadata_size = internal_bundle.gain_map_metadata.size();
   map_bundle->has_color_encoding = internal_bundle.has_color_encoding;
   map_bundle->gain_map_size = internal_bundle.gain_map.size();
-  jxl::Status error = (reader.Close());
   (void)error;
 }
 

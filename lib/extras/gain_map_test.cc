@@ -137,7 +137,7 @@ TEST(GainMapTest, TestGetBundleSize) {
   EXPECT_EQ(output_bundle.gain_map_size, gain_map.size());
   EXPECT_EQ(output_bundle.gain_map_metadata_size, gain_map_metadata.size());
   // TODO: decode compressed icc!
-  // EXPECT_EQ(output_bundle.alt_icc_size, icc_profile.size());
+  EXPECT_EQ(output_bundle.alt_icc_size, icc_profile.size());
   std::vector<uint8_t> output_metadata(output_bundle.gain_map_metadata_size);
   std::vector<uint8_t> output_gain_map(output_bundle.gain_map_size);
   std::vector<uint8_t> output_alt_icc(output_bundle.alt_icc_size);
