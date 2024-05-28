@@ -17,13 +17,6 @@
 #include "lib/jxl/testing.h"
 
 namespace {
-// TODO: copied from decode_test.cc, move it somewhere so it can be re-used?
-
-// Returns an ICC profile output by the JPEG XL decoder for RGB_D65_SRG_Rel_Lin,
-// but with, on purpose, rXYZ, bXYZ and gXYZ (the RGB primaries) switched to a
-// different order to ensure the profile does not match any known profile, so
-// the encoder cannot encode it in a compact struct instead.
-
 bool ColorEncodingsEqual(const JxlColorEncoding& lhs,
                          const JxlColorEncoding& rhs) {
   return lhs.color_space == rhs.color_space &&
@@ -45,7 +38,7 @@ bool ColorEncodingsEqual(const JxlColorEncoding& lhs,
 namespace jxl {
 namespace {
 
-TEST(GainMapTest, TestGainMap) {
+TEST(GainMapTest, GainMapRoundtrip) {
   JxlGainMapBundle orig_bundle;
 
   // Initialize the bundle with some test data
