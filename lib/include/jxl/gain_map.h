@@ -22,12 +22,16 @@ typedef struct {
   uint16_t gain_map_metadata_size;
   /** pointer to binary blob of gain map metadata (ISO 21496-1) */
   uint8_t *gain_map_metadata;
+  /**indicate if it has a color encoding*/
+  bool has_color_encoding;
   /** uncompressed color encoding */
   JxlColorEncoding color_encoding;
+  /** size of the alt_icc profile */
+  uint32_t alt_icc_size;
   /** pointer to the uncompressed icc profile */
   uint8_t *alt_icc;
   /** size of the gain map */
-  uint8_t gain_map_size;
+  uint32_t gain_map_size;
   /** pointer to the gain map (a JPEG XL naked codestream) */
   uint8_t *gain_map;
 } JxlGainMapBundle;
@@ -41,6 +45,9 @@ JXL_GAIN_MAP_EXPORT size_t
 JxlGainMapWriteBundle(const JxlGainMapBundle *map_bundle,
                       uint8_t *output_buffer, const size_t output_buffer_size);
 
+JXL_GAIN_MAP_EXPORT void JxlGainMapGetBufferSizes(
+    JxlGainMapBundle *map_bundle, const uint8_t *input_buffer,
+    const size_t input_buffer_size);
 // Function to read the map bundle from a buffer
 JXL_GAIN_MAP_EXPORT size_t JxlGainMapReadBundle(JxlGainMapBundle *map_bundle,
                                                 const uint8_t *input_buffer,
