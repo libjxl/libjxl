@@ -154,8 +154,8 @@ TEST(GainMapTest, TestGetBundleSize) {
                          output_metadata.begin()));
   EXPECT_TRUE(
       std::equal(gain_map.begin(), gain_map.end(), output_gain_map.begin()));
-  // EXPECT_TRUE(std::equal(alt_icc.begin(), alt_icc.end(),
-  // output_alt_icc.begin()));
+  EXPECT_TRUE(
+      std::equal(alt_icc.begin(), alt_icc.end(), output_alt_icc.begin()));
 }
 
 }  // namespace

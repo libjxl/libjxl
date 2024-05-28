@@ -169,7 +169,7 @@ void JxlGainMapGetBufferSizes(JxlGainMapBundle *map_bundle,
     fprintf(stderr, "Failed to read the bundle\n");
     return;
   }
-  jxl::Status error = (reader.Close());
+  (void)(reader.Close());
 
   jxl::BitReader bit_reader(internal_bundle.compressed_icc);
   jxl::ICCReader icc_reader;
@@ -181,7 +181,6 @@ void JxlGainMapGetBufferSizes(JxlGainMapBundle *map_bundle,
   map_bundle->gain_map_metadata_size = internal_bundle.gain_map_metadata.size();
   map_bundle->has_color_encoding = internal_bundle.has_color_encoding;
   map_bundle->gain_map_size = internal_bundle.gain_map.size();
-  (void)error;
 }
 
 size_t JxlGainMapReadBundle(JxlGainMapBundle *map_bundle,
@@ -212,5 +211,16 @@ size_t JxlGainMapReadBundle(JxlGainMapBundle *map_bundle,
   map_bundle->color_encoding = internal_bundle.color_encoding.ToExternal();
   // Return the number of bytes read
   (void)reader.Close();
+
+  jxl::BitReader bit_reader(internal_bundle.compressed_icc);
+  jxl::ICCReader icc_reader;
+  jxl::PaddedBytes icc_buffer;
+  (void)icc_reader.Init(&bit_reader, 0UL);
+  (void)icc_reader.Process(&bit_reader, &icc_buffer);
+  (void)bit_reader.Close();
+  if (map_bundle->alt_icc_size == icc_buffer.size()) {
+    std::memcpy(map_bundle->alt_icc, icc_buffer.data(), icc_buffer.size());
+  }
+
   return reader.TotalBitsConsumed() / 8;
 }
