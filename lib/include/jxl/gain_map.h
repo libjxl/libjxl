@@ -54,10 +54,10 @@ JxlGainMapGetBundleSize(const JxlGainMapBundle *map_bundle);
  * Serializes the gain map bundle into a preallocated buffer. The function
  * ensures that all parts of the bundle such as metadata, color encoding,
  * compressed ICC profile, and the gain map are correctly encoded into the
- * buffer. First call @ref JxlGainMapGetBundleSize to get the size needed for
+ * buffer. First call `JxlGainMapGetBundleSize` to get the size needed for
  * the buffer.
  *
- * @param map_bundle Pointer to the JxlGainMapBundle to serialize.
+ * @param map_bundle Pointer to the `JxlGainMapBundle` to serialize.
  * @param output_buffer Pointer to the buffer where the serialized data will be
  * written.
  * @param output_buffer_size The size of the output buffer in bytes. Must be
@@ -72,14 +72,14 @@ JxlGainMapWriteBundle(const JxlGainMapBundle *map_bundle,
 /**
  * Determines the sizes of various components within a gain map bundle from a
  * serialized buffer. This function parses the buffer to extract sets the
- * following fields of @ref JxlGainMapBundle:
+ * following fields of `JxlGainMapBundle`:
  *  - gain_map_metadata_size
  *  - alt_icc_size
  *  - gain_map_size
- * allowing buffer allocation for deserialization, preparing the call to @ref
- * JxlGainMapReadBundle.
+ * allowing buffer allocation for deserialization, preparing the call to
+ * `JxlGainMapReadBundle`.
  *
- * @param map_bundle Pointer to the JxlGainMapBundle where the sizes will be
+ * @param map_bundle Pointer to the `JxlGainMapBundle` where the sizes will be
  * stored. Must be preallocated.
  * @param input_buffer Pointer to the buffer containing the serialized gain map
  * bundle data.
@@ -91,15 +91,15 @@ JXL_GAIN_MAP_EXPORT void JxlGainMapGetBufferSizes(
 
 /**
  * Deserializes a gain map bundle from a given buffer, populating the provided
- * JxlGainMapBundle structure with data extracted from the buffer. Assumes that
- * the buffer contains a valid serialized gain map bundle and that the
+ * `JxlGainMapBundle` structure with data extracted from the buffer. Assumes
+ * that the buffer contains a valid serialized gain map bundle and that the
  * `map_bundle` has preallocated memory for the pointers
  *  - gain_map_metadata
  *  - alt_icc
  *  - gain
- * based on sizes obtained from @ref JxlGainMapGetBufferSizes.
+ * based on sizes obtained from `JxlGainMapGetBufferSizes`.
  *
- * @param map_bundle Pointer to a preallocated JxlGainMapBundle where the
+ * @param map_bundle Pointer to a preallocated `JxlGainMapBundle` where the
  * deserialized data will be stored.
  * @param input_buffer Pointer to the buffer containing the serialized gain map
  * bundle data.
