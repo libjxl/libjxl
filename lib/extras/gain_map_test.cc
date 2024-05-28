@@ -116,9 +116,7 @@ TEST(GainMapTest, TestGetBundleSize) {
   orig_bundle.gain_map_size = gain_map.size();
   orig_bundle.gain_map = gain_map.data();
 
-  // Call the function and verify the result
   size_t bundle_size = JxlGainMapGetBundleSize(&orig_bundle);
-  //
   EXPECT_EQ(bundle_size, 530);
 
   std::vector<uint8_t> buffer(bundle_size);
