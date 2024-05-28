@@ -40,7 +40,7 @@ struct JxlGainMapBundleInternal : public Fields {
 
   JXL_FIELDS_NAME(JxlGainMapBundleInternal)
 
-  Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     uint32_t temp_u32;
     // uint32_t temp_u32_le;
     //  Promote uint8_t to uint32_t for the visitor
@@ -98,7 +98,9 @@ struct JxlGainMapBundleInternal : public Fields {
 };
 }  // namespace jxl
 
-size_t JxlGainMapGetBundleSize(const JxlGainMapBundle *map_bundle) {
+JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
+                                 const JxlGainMapBundle* map_bundle,
+                                 size_t* bundle_size) {
   if (map_bundle == nullptr) return 0;
 
   jxl::JxlGainMapBundleInternal internal_bundle;
@@ -114,7 +116,7 @@ size_t JxlGainMapGetBundleSize(const JxlGainMapBundle *map_bundle) {
   internal_bundle.gain_map = std::vector<uint8_t>(
       map_bundle->gain_map, map_bundle->gain_map + map_bundle->gain_map_size);
 
-  jxl::BitWriter icc_writer;
+  jxl::BitWriter icc_writer(memory_manager);
   if (map_bundle->alt_icc) {
     jxl::IccBytes icc_bytes(map_bundle->alt_icc,
                             map_bundle->alt_icc + map_bundle->alt_icc_size);
@@ -124,16 +126,19 @@ size_t JxlGainMapGetBundleSize(const JxlGainMapBundle *map_bundle) {
                                           icc_writer.GetSpan().end());
   }
 
-  jxl::BitWriter writer;
+  jxl::BitWriter writer(memory_manager);
   if (!jxl::Bundle::Write(internal_bundle, &writer, /*layer=*/0, nullptr)) {
-    return 0;  // Failed to write the bundle
+    return JXL_FALSE;
   }
-  return jxl::DivCeil(writer.BitsWritten(), 8);
+  *bundle_size = jxl::DivCeil(writer.BitsWritten(), 8);
+  return JXL_TRUE;
 }
 
-size_t JxlGainMapWriteBundle(const JxlGainMapBundle *map_bundle,
-                             uint8_t *output_buffer,
-                             size_t output_buffer_size) {
+JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
+                               const JxlGainMapBundle* map_bundle,
+                               uint8_t* output_buffer,
+                               size_t output_buffer_size,
+                               size_t* bytes_written) {
   jxl::JxlGainMapBundleInternal internal_bundle;
   if (map_bundle == nullptr) return 0;
   internal_bundle.jhgm_version = map_bundle->jhgm_version;
@@ -148,7 +153,7 @@ size_t JxlGainMapWriteBundle(const JxlGainMapBundle *map_bundle,
   internal_bundle.gain_map = std::vector<uint8_t>(
       map_bundle->gain_map, map_bundle->gain_map + map_bundle->gain_map_size);
 
-  jxl::BitWriter icc_writer;
+  jxl::BitWriter icc_writer(memory_manager);
   if (map_bundle->alt_icc) {
     jxl::IccBytes icc_bytes(map_bundle->alt_icc,
                             map_bundle->alt_icc + map_bundle->alt_icc_size);
@@ -158,19 +163,21 @@ size_t JxlGainMapWriteBundle(const JxlGainMapBundle *map_bundle,
                                           icc_writer.GetSpan().end());
   }
 
-  jxl::BitWriter writer;
+  jxl::BitWriter writer(memory_manager);
   if (!jxl::Bundle::Write(internal_bundle, &writer, /*layer=*/0, nullptr)) {
-    return 0;  // Failed to write the bundle
+    return JXL_FALSE;
   }
   writer.ZeroPadToByte();
   size_t size = jxl::DivCeil(writer.BitsWritten(), 8);
   memcpy(output_buffer, writer.GetSpan().data(), size);
-  return size;
+  if (bytes_written != nullptr) *bytes_written = size;
+  return JXL_TRUE;
 }
 
-void JxlGainMapGetBufferSizes(JxlGainMapBundle *map_bundle,
-                              const uint8_t *input_buffer,
-                              const size_t input_buffer_size) {
+JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
+                                  JxlGainMapBundle* map_bundle,
+                                  const uint8_t* input_buffer,
+                                  const size_t input_buffer_size) {
   if (input_buffer == nullptr) {
     map_bundle->alt_icc_size = 0;
     map_bundle->gain_map_metadata_size = 0;
@@ -181,35 +188,35 @@ void JxlGainMapGetBufferSizes(JxlGainMapBundle *map_bundle,
   jxl::BitReader reader(
       jxl::Span<const uint8_t>(input_buffer, input_buffer_size));
   jxl::JxlGainMapBundleInternal internal_bundle;
-  if (!jxl::Bundle::Read(&reader, &internal_bundle)) {
-    fprintf(stderr, "Failed to read the bundle\n");
-    return;
-  }
-  (void)(reader.Close());
+  JXL_RETURN_IF_ERROR(jxl::Bundle::Read(&reader, &internal_bundle));
+  JXL_RETURN_IF_ERROR(reader.Close());
 
   jxl::BitReader bit_reader(internal_bundle.compressed_icc);
-  jxl::ICCReader icc_reader;
-  jxl::PaddedBytes icc_buffer;
-  (void)icc_reader.Init(&bit_reader, 0UL);
-  (void)icc_reader.Process(&bit_reader, &icc_buffer);
-  (void)bit_reader.Close();
+  jxl::ICCReader icc_reader(memory_manager);
+  jxl::PaddedBytes icc_buffer(memory_manager);
+  JXL_RETURN_IF_ERROR(icc_reader.Init(&bit_reader, 0UL));
+  JXL_RETURN_IF_ERROR(icc_reader.Process(&bit_reader, &icc_buffer));
+  JXL_RETURN_IF_ERROR(bit_reader.Close());
   map_bundle->alt_icc_size = icc_buffer.size();
   map_bundle->gain_map_metadata_size = internal_bundle.gain_map_metadata.size();
   map_bundle->has_color_encoding = internal_bundle.has_color_encoding;
   map_bundle->gain_map_size = internal_bundle.gain_map.size();
+  return JXL_TRUE;
 }
 
-size_t JxlGainMapReadBundle(JxlGainMapBundle *map_bundle,
-                            const uint8_t *input_buffer,
-                            const size_t input_buffer_size) {
-  if (map_bundle == nullptr || input_buffer == nullptr) return 0;
+JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
+                              JxlGainMapBundle* map_bundle,
+                              const uint8_t* input_buffer,
+                              const size_t input_buffer_size,
+                              size_t* bytes_read) {
+  if (map_bundle == nullptr || input_buffer == nullptr) return JXL_FALSE;
 
   jxl::BitReader reader(
       jxl::Span<const uint8_t>(input_buffer, input_buffer_size));
   jxl::JxlGainMapBundleInternal internal_bundle;
 
   if (!jxl::Bundle::Read(&reader, &internal_bundle)) {
-    return 0;  // Failed to read the bundle
+    return JXL_FALSE;
   }
   map_bundle->has_color_encoding = internal_bundle.has_color_encoding;
   map_bundle->jhgm_version = internal_bundle.jhgm_version;
@@ -226,11 +233,11 @@ size_t JxlGainMapReadBundle(JxlGainMapBundle *map_bundle,
   }
   map_bundle->color_encoding = internal_bundle.color_encoding.ToExternal();
   // Return the number of bytes read
-  (void)reader.Close();
+  JXL_RETURN_IF_ERROR(reader.Close());
 
   jxl::BitReader bit_reader(internal_bundle.compressed_icc);
-  jxl::ICCReader icc_reader;
-  jxl::PaddedBytes icc_buffer;
+  jxl::ICCReader icc_reader(memory_manager);
+  jxl::PaddedBytes icc_buffer(memory_manager);
   (void)icc_reader.Init(&bit_reader, 0UL);
   (void)icc_reader.Process(&bit_reader, &icc_buffer);
   (void)bit_reader.Close();
@@ -238,5 +245,7 @@ size_t JxlGainMapReadBundle(JxlGainMapBundle *map_bundle,
     std::memcpy(map_bundle->alt_icc, icc_buffer.data(), icc_buffer.size());
   }
 
-  return reader.TotalBitsConsumed() / 8;
+  if (bytes_read != nullptr) *bytes_read = reader.TotalBitsConsumed() / 8;
+
+  return JXL_TRUE;
 }

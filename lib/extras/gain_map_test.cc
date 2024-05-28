@@ -39,6 +39,8 @@ namespace jxl {
 namespace {
 
 TEST(GainMapTest, GainMapRoundtrip) {
+  JxlMemoryManager* const memory_manager = jxl::test::MemoryManager();
+
   JxlGainMapBundle orig_bundle;
 
   // Initialize the bundle with some test data
@@ -54,7 +56,7 @@ TEST(GainMapTest, GainMapRoundtrip) {
   orig_bundle.gain_map_metadata = gain_map_metadata.data();
 
   JxlColorEncoding color_encoding = {};
-  JxlColorEncodingSetToLinearSRGB(&color_encoding, false);
+  JxlColorEncodingSetToLinearSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
 
   orig_bundle.color_encoding = color_encoding;
 
@@ -72,17 +74,22 @@ TEST(GainMapTest, GainMapRoundtrip) {
   orig_bundle.gain_map_size = gain_map.size();
   orig_bundle.gain_map = gain_map.data();
 
-  size_t bundle_size = JxlGainMapGetBundleSize(&orig_bundle);
+  size_t bundle_size;
+  ASSERT_TRUE(
+      JxlGainMapGetBundleSize(memory_manager, &orig_bundle, &bundle_size));
   EXPECT_EQ(bundle_size, 530);
 
   std::vector<uint8_t> buffer(bundle_size);
-  EXPECT_EQ(JxlGainMapWriteBundle(&orig_bundle, buffer.data(), buffer.size()),
-            bundle_size);
+  size_t bytes_written;
+  ASSERT_TRUE(JxlGainMapWriteBundle(memory_manager, &orig_bundle, buffer.data(),
+                                    buffer.size(), &bytes_written));
+  EXPECT_EQ(bytes_written, bundle_size);
 
   EXPECT_EQ(buffer[0], orig_bundle.jhgm_version);
 
   JxlGainMapBundle output_bundle;
-  JxlGainMapGetBufferSizes(&output_bundle, buffer.data(), buffer.size());
+  JxlGainMapGetBufferSizes(memory_manager, &output_bundle, buffer.data(),
+                           buffer.size());
   EXPECT_EQ(output_bundle.gain_map_size, gain_map.size());
   EXPECT_EQ(output_bundle.gain_map_metadata_size, gain_map_metadata.size());
   EXPECT_EQ(output_bundle.alt_icc_size, icc_profile.size());
@@ -92,7 +99,9 @@ TEST(GainMapTest, GainMapRoundtrip) {
   output_bundle.gain_map_metadata = output_metadata.data();
   output_bundle.gain_map = output_gain_map.data();
   output_bundle.alt_icc = output_alt_icc.data();
-  JxlGainMapReadBundle(&output_bundle, buffer.data(), buffer.size());
+  ASSERT_TRUE(JxlGainMapReadBundle(memory_manager, &output_bundle,
+                                   buffer.data(), buffer.size(),
+                                   /*bytes_read=*/nullptr));
   EXPECT_EQ(orig_bundle.jhgm_version, output_bundle.jhgm_version);
   EXPECT_EQ(orig_bundle.has_color_encoding, orig_bundle.has_color_encoding);
   EXPECT_TRUE(ColorEncodingsEqual(orig_bundle.color_encoding,
