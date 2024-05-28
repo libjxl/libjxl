@@ -16,14 +16,11 @@
 #include <jxl/color_encoding.h>
 #include <jxl/jxl_gain_map_export.h>
 #include <jxl/memory_manager.h>
+#include <jxl/types.h>
 
-#include <cstddef>
-#include <cstdint>
-#include <cstdlib>
-#include <cstring>
-
-#include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/fields.h"
+#ifndef __cplusplus
+extern "C" {
+#endif
 
 /** Gain map bundle */
 typedef struct {
@@ -127,6 +124,10 @@ JXL_GAIN_MAP_EXPORT JXL_BOOL JxlGainMapGetBufferSizes(
 JXL_GAIN_MAP_EXPORT JXL_BOOL JxlGainMapReadBundle(
     JxlMemoryManager* memory_manager, JxlGainMapBundle* map_bundle,
     const uint8_t* input_buffer, size_t input_buffer_size, size_t* bytes_read);
+
+#ifndef __cplusplus
+}
+#endif
 
 #endif /* JXL_GAIN_MAP_H_ */
 
