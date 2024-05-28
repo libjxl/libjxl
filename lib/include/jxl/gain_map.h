@@ -31,7 +31,7 @@ typedef struct {
   /** pointer to binary blob of gain map metadata (ISO 21496-1) */
   uint8_t* gain_map_metadata;
   /** indicate if it has a color encoding*/
-  bool has_color_encoding;
+  uint32_t color_encoding_size;
   /** uncompressed color encoding */
   JxlColorEncoding color_encoding;
   /** size of the alt_icc profile */
@@ -54,11 +54,17 @@ typedef struct {
  * @param[in] map_bundle Pointer to the JxlGainMapBundle containing all
  * necessary data to compute the size.
  * @param[out] bundle_size The size in bytes required to serialize the bundle.
+ * @param[out] color_encoding_size The size the compressed color_encoding will
+ * occupy in the serialized bundle.
+ * @param[out] compressed_icc_size The size the compressed icc_profile will
+ * occupy in the serialized bundle.
  * @return Whether setting the size was successful.
  */
 JXL_EXPORT JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
                                             const JxlGainMapBundle* map_bundle,
-                                            size_t* bundle_size);
+                                            size_t* bundle_size,
+                                            size_t* color_encoding_size,
+                                            size_t* compressed_icc_size);
 
 /**
  * Serializes the gain map bundle into a preallocated buffer. The function
