@@ -299,6 +299,10 @@ class PAMEncoder : public BasePNMEncoder {
         return std::string("CFA");
       case JXL_CHANNEL_THERMAL:
         return std::string("Thermal");
+      case JXL_CHANNEL_UNKNOWN:
+        return std::string("Unknown");
+      case JXL_CHANNEL_OPTIONAL:
+        return std::string("Optional");
       default:
         return std::string("UNKNOWN");
     }

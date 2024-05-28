@@ -227,6 +227,10 @@ class Parser {
           header->ec_types.push_back(JXL_CHANNEL_CFA);
         } else if (MatchString("Thermal")) {
           header->ec_types.push_back(JXL_CHANNEL_THERMAL);
+        } else if (MatchString("Unknown")) {
+          header->ec_types.push_back(JXL_CHANNEL_UNKNOWN);
+        } else if (MatchString("Optional")) {
+          header->ec_types.push_back(JXL_CHANNEL_OPTIONAL);
         } else {
           return JXL_FAILURE("PAM: unknown TUPLTYPE");
         }
