@@ -14,7 +14,7 @@
 #define JXL_GAIN_MAP_H_
 
 #include <jxl/color_encoding.h>
-#include <jxl/jxl_gain_map_export.h>
+#include <jxl/jxl_export.h>
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
@@ -56,9 +56,9 @@ typedef struct {
  * @param[out] bundle_size The size in bytes required to serialize the bundle.
  * @return Whether setting the size was successful.
  */
-JXL_GAIN_MAP_EXPORT JXL_BOOL JxlGainMapGetBundleSize(
-    JxlMemoryManager* memory_manager, const JxlGainMapBundle* map_bundle,
-    size_t* bundle_size);
+JXL_EXPORT JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
+                                            const JxlGainMapBundle* map_bundle,
+                                            size_t* bundle_size);
 
 /**
  * Serializes the gain map bundle into a preallocated buffer. The function
@@ -76,9 +76,11 @@ JXL_GAIN_MAP_EXPORT JXL_BOOL JxlGainMapGetBundleSize(
  * @param[out] bytes_written The number of bytes written to the output buffer.
  * @return Whether writing the bundle was successful.
  */
-JXL_GAIN_MAP_EXPORT JXL_BOOL JxlGainMapWriteBundle(
-    JxlMemoryManager* memory_manager, const JxlGainMapBundle* map_bundle,
-    uint8_t* output_buffer, size_t output_buffer_size, size_t* bytes_written);
+JXL_EXPORT JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
+                                          const JxlGainMapBundle* map_bundle,
+                                          uint8_t* output_buffer,
+                                          size_t output_buffer_size,
+                                          size_t* bytes_written);
 
 /**
  * Determines the sizes of various components within a gain map bundle from a
@@ -98,9 +100,10 @@ JXL_GAIN_MAP_EXPORT JXL_BOOL JxlGainMapWriteBundle(
  * @param[in] input_buffer_size The size of the input buffer in bytes.
  * @return Whether the sizes could be successfully determined.
  */
-JXL_GAIN_MAP_EXPORT JXL_BOOL JxlGainMapGetBufferSizes(
-    JxlMemoryManager* memory_manager, JxlGainMapBundle* map_bundle,
-    const uint8_t* input_buffer, size_t input_buffer_size);
+JXL_EXPORT JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
+                                             JxlGainMapBundle* map_bundle,
+                                             const uint8_t* input_buffer,
+                                             size_t input_buffer_size);
 
 /**
  * Deserializes a gain map bundle from a given buffer, populating the provided
@@ -121,9 +124,11 @@ JXL_GAIN_MAP_EXPORT JXL_BOOL JxlGainMapGetBufferSizes(
  * @param[out] bytes_read The number of bytes read from the input buffer.
  * @return Whether reading the bundle was successful.
  */
-JXL_GAIN_MAP_EXPORT JXL_BOOL JxlGainMapReadBundle(
-    JxlMemoryManager* memory_manager, JxlGainMapBundle* map_bundle,
-    const uint8_t* input_buffer, size_t input_buffer_size, size_t* bytes_read);
+JXL_EXPORT JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
+                                         JxlGainMapBundle* map_bundle,
+                                         const uint8_t* input_buffer,
+                                         size_t input_buffer_size,
+                                         size_t* bytes_read);
 
 #ifndef __cplusplus
 }
