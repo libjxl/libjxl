@@ -97,7 +97,6 @@ TEST(GainMapTest, TestGetBundleSize) {
   orig_bundle.gain_map_metadata_size = gain_map_metadata.size();
   orig_bundle.gain_map_metadata = gain_map_metadata.data();
 
-  // TODO: actually set a color encoding here
   JxlColorEncoding color_encoding = {};
   JxlColorEncodingSetToLinearSRGB(&color_encoding, false);
 
@@ -110,7 +109,6 @@ TEST(GainMapTest, TestGetBundleSize) {
   orig_bundle.alt_icc = alt_icc.data();
   orig_bundle.alt_icc_size = alt_icc.size();
 
-  // TODO: use real image here
   const char* gain_map_str =
       "placeholder for an actual naked JPEG XL codestream";
   std::vector<uint8_t> gain_map(gain_map_str,
@@ -121,7 +119,7 @@ TEST(GainMapTest, TestGetBundleSize) {
   // Call the function and verify the result
   size_t bundle_size = JxlGainMapGetBundleSize(&orig_bundle);
   //
-  EXPECT_GT(bundle_size, 140);
+  EXPECT_EQ(bundle_size, 530);
 
   std::vector<uint8_t> buffer(bundle_size);
   EXPECT_EQ(JxlGainMapWriteBundle(&orig_bundle, buffer.data(), buffer.size()),
@@ -136,7 +134,6 @@ TEST(GainMapTest, TestGetBundleSize) {
   JxlGainMapGetBufferSizes(&output_bundle, buffer.data(), buffer.size());
   EXPECT_EQ(output_bundle.gain_map_size, gain_map.size());
   EXPECT_EQ(output_bundle.gain_map_metadata_size, gain_map_metadata.size());
-  // TODO: decode compressed icc!
   EXPECT_EQ(output_bundle.alt_icc_size, icc_profile.size());
   std::vector<uint8_t> output_metadata(output_bundle.gain_map_metadata_size);
   std::vector<uint8_t> output_gain_map(output_bundle.gain_map_size);
@@ -147,7 +144,6 @@ TEST(GainMapTest, TestGetBundleSize) {
   JxlGainMapReadBundle(&output_bundle, buffer.data(), buffer.size());
   EXPECT_EQ(orig_bundle.jhgm_version, output_bundle.jhgm_version);
   EXPECT_EQ(orig_bundle.has_color_encoding, orig_bundle.has_color_encoding);
-  // check color_encoding was recovered (add "==" to ColorEncoding?)
   EXPECT_TRUE(ColorEncodingsEqual(orig_bundle.color_encoding,
                                   output_bundle.color_encoding));
   EXPECT_TRUE(std::equal(gain_map_metadata.begin(), gain_map_metadata.end(),

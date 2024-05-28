@@ -16,7 +16,18 @@
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/icc_codec.h"
+namespace {
+// Function to swap the byte order of uint32_t
+inline uint32_t SwapByteOrder(uint32_t value) {
+  return ((value & 0x000000FF) << 24) | ((value & 0x0000FF00) << 8) |
+         ((value & 0x00FF0000) >> 8) | ((value & 0xFF000000) >> 24);
+}
 
+// Function to swap the byte order of uint16_t
+inline uint16_t SwapByteOrder(uint16_t value) {
+  return ((value & 0x00FF) << 8) | ((value & 0xFF00) >> 8);
+}
+}  // namespace
 namespace jxl {
 
 struct JxlGainMapBundleInternal : public Fields {
@@ -31,16 +42,22 @@ struct JxlGainMapBundleInternal : public Fields {
 
   Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
     uint32_t temp_u32;
-    // Promote uint8_t to uint32_t for the visitor
+    // uint32_t temp_u32_le;
+    //  Promote uint8_t to uint32_t for the visitor
     temp_u32 = jhgm_version;
     JXL_RETURN_IF_ERROR(visitor->Bits(8, 0, &temp_u32));
     jhgm_version = static_cast<uint8_t>(temp_u32);
 
+    // Byte order is little endian
+    uint16_t temp_gain_map_metadata_size =
+        SwapByteOrder(static_cast<uint16_t>(gain_map_metadata.size()));
     // Promote uint16_t to uint32_t for the visitor
-    // TODO handle byte order?!
-    temp_u32 = gain_map_metadata.size();
+    temp_u32 = temp_gain_map_metadata_size;
     JXL_RETURN_IF_ERROR(visitor->Bits(16, 0, &temp_u32));
-    gain_map_metadata.resize(temp_u32);
+    // Restore byte order
+    temp_gain_map_metadata_size =
+        SwapByteOrder(static_cast<uint16_t>(temp_u32));
+    gain_map_metadata.resize(temp_gain_map_metadata_size);
 
     // Assume gain_map_metadata is a binary blob that we visit as raw bits
     // Visitor doesn't directly handle raw bit arrays, so we need a workaround
@@ -56,10 +73,10 @@ struct JxlGainMapBundleInternal : public Fields {
       // Visit the color_encoding as a whole block
       JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
     }
-    temp_u32 = compressed_icc.size();
-    // TODO handle byte order?!
+
+    temp_u32 = SwapByteOrder(static_cast<uint32_t>(compressed_icc.size()));
     JXL_RETURN_IF_ERROR(visitor->Bits(32, 0, &temp_u32));
-    compressed_icc.resize(temp_u32);
+    compressed_icc.resize(SwapByteOrder(temp_u32));
 
     for (size_t i = 0; i < compressed_icc.size(); ++i) {
       temp_u32 = compressed_icc[i];
@@ -67,10 +84,9 @@ struct JxlGainMapBundleInternal : public Fields {
       compressed_icc[i] = static_cast<uint8_t>(temp_u32);
     }
 
-    temp_u32 = gain_map.size();
-    // TODO handle byte order?!
+    temp_u32 = SwapByteOrder(static_cast<uint32_t>(gain_map.size()));
     JXL_RETURN_IF_ERROR(visitor->Bits(32, 0, &temp_u32));
-    gain_map.resize(temp_u32);
+    gain_map.resize(SwapByteOrder(temp_u32));
     // Assume gain_map is a binary blob that we visit as raw bits
     for (size_t i = 0; i < gain_map.size(); ++i) {
       temp_u32 = gain_map[i];
