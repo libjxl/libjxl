@@ -306,11 +306,11 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       const struct BoxInfo {
         const char* type;
         const std::vector<uint8_t>& bytes;
-      } boxes[] = {{.type = "Exif", .bytes = exif_with_offset},
-                   {.type = "xml ", .bytes = ppf.metadata.xmp},
-                   {.type = "jumb", .bytes = ppf.metadata.jumbf},
-                   {.type = "xml ", .bytes = ppf.metadata.iptc},
-                   {.type = "jhgm", .bytes = ppf.metadata.jhgm}};
+      } boxes[] = {
+          {"Exif", exif_with_offset},   {"xml ", ppf.metadata.xmp},
+          {"jumb", ppf.metadata.jumbf}, {"xml ", ppf.metadata.iptc},
+          {"jhgm", ppf.metadata.jhgm},
+      };
       for (auto box : boxes) {
         if (!box.bytes.empty()) {
           if (JXL_ENC_SUCCESS !=
