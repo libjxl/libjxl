@@ -238,9 +238,9 @@ JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
   jxl::BitReader bit_reader(internal_bundle.compressed_icc);
   jxl::ICCReader icc_reader(memory_manager);
   jxl::PaddedBytes icc_buffer(memory_manager);
-  (void)icc_reader.Init(&bit_reader, 0UL);
-  (void)icc_reader.Process(&bit_reader, &icc_buffer);
-  (void)bit_reader.Close();
+  JXL_RETURN_IF_ERROR(icc_reader.Init(&bit_reader, 0UL));
+  JXL_RETURN_IF_ERROR(icc_reader.Process(&bit_reader, &icc_buffer));
+  JXL_RETURN_IF_ERROR(bit_reader.Close());
   if (map_bundle->alt_icc_size == icc_buffer.size()) {
     std::memcpy(map_bundle->alt_icc, icc_buffer.data(), icc_buffer.size());
   }
