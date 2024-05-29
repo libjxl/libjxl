@@ -141,12 +141,17 @@ JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
     internal_bundle.compressed_icc.assign(icc_writer.GetSpan().begin(),
                                           icc_writer.GetSpan().end());
   }
-  jxl::BitWriter writer(memory_manager);
-  if (!jxl::Bundle::Write(internal_bundle, &writer, /*layer=*/0, nullptr)) {
-    return JXL_FALSE;
-  }
 
-  *bundle_size = jxl::DivCeil(writer.BitsWritten(), 8);
+  *bundle_size =
+      1 +  // size of jhgm_version
+      2 +  // size_of gain_map_metadata_size
+      internal_bundle.gain_map_metadata.size() +  // size of gain_map_metadata
+      4 +                                         // size of color_encoding_size
+      internal_bundle.compressed_color_encoding
+          .size() +                            // size of the color_encoding
+      4 +                                      // size of compressed_icc_size
+      internal_bundle.compressed_icc.size() +  // size of compressed_icc
+      map_bundle->gain_map_size;               // size of gain map
   return JXL_TRUE;
 }
 
@@ -193,15 +198,55 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
     internal_bundle.compressed_icc.assign(icc_writer.GetSpan().begin(),
                                           icc_writer.GetSpan().end());
   }
-  jxl::BitWriter writer(memory_manager);
-  if (!jxl::Bundle::Write(internal_bundle, &writer, /*layer=*/0, nullptr)) {
-    return JXL_FALSE;
+  size_t cursor = 0;
+  if (cursor + 1 <= output_buffer_size) {
+    memcpy(output_buffer + cursor, &internal_bundle.jhgm_version, 1);
+    cursor += 1;
   }
-  writer.ZeroPadToByte();
-  size_t size = jxl::DivCeil(writer.BitsWritten(), 8);
-  memcpy(output_buffer, writer.GetSpan().data(), size);
-  if (bytes_written != nullptr) *bytes_written = size;
-  return JXL_TRUE;
+
+  uint16_t metadata_size = internal_bundle.gain_map_metadata.size();
+  uint16_t metadata_size_le = SwapByteOrder(metadata_size);
+  if (cursor + 2 <= output_buffer_size) {
+    memcpy(output_buffer + cursor, &metadata_size_le, 2);
+    cursor += 2;
+  }
+
+  if (cursor + metadata_size <= output_buffer_size) {
+    memcpy(output_buffer + cursor, internal_bundle.gain_map_metadata.data(), metadata_size);
+    cursor += metadata_size;
+  }
+
+  uint32_t color_enc_size = internal_bundle.compressed_color_encoding.size();
+  uint32_t color_enc_size_le = SwapByteOrder(color_enc_size);
+  if (cursor + 4 <= output_buffer_size) {
+    memcpy(output_buffer + cursor, &color_enc_size_le, 4);
+    cursor += 4;
+  }
+
+  if (cursor + color_enc_size <= output_buffer_size) {
+    memcpy(output_buffer + cursor, internal_bundle.compressed_color_encoding.data(), color_enc_size);
+    cursor += color_enc_size;
+  }
+
+  uint32_t icc_size = internal_bundle.compressed_icc.size();
+  uint32_t icc_size_le = SwapByteOrder(icc_size);
+  if (cursor + 4 <= output_buffer_size) {
+    memcpy(output_buffer + cursor, &icc_size_le, 4);
+    cursor += 4;
+  }
+
+  if (cursor + icc_size <= output_buffer_size) {
+    memcpy(output_buffer + cursor, internal_bundle.compressed_icc.data(), icc_size);
+    cursor += icc_size;
+  }
+
+  if (cursor + internal_bundle.gain_map_size <= output_buffer_size) {
+    memcpy(output_buffer + cursor, internal_bundle.gain_map.data(), internal_bundle.gain_map_size);
+    cursor += internal_bundle.gain_map_size;
+  }
+
+  if (bytes_written != nullptr) *bytes_written = cursor;
+  return cursor == output_buffer_size ? JXL_TRUE : JXL_FALSE;
 }
 
 JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
