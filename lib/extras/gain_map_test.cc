@@ -63,7 +63,7 @@ TEST(GainMapTest, GainMapRoundtrip) {
   // Use the ICC profile from GetIccTestProfile
   jxl::IccBytes icc_profile = test::GetIccTestProfile();
   std::vector<uint8_t> alt_icc(icc_profile.begin(), icc_profile.end());
-  orig_bundle.color_encoding_size = 1;
+  orig_bundle.has_color_encoding = true;
   orig_bundle.alt_icc = alt_icc.data();
   orig_bundle.alt_icc_size = alt_icc.size();
 
@@ -75,16 +75,9 @@ TEST(GainMapTest, GainMapRoundtrip) {
   orig_bundle.gain_map = gain_map.data();
 
   size_t bundle_size;
-  size_t color_encoding_size;
-  size_t compressed_icc_size;
-  ASSERT_TRUE(JxlGainMapGetBundleSize(memory_manager, &orig_bundle,
-                                      &bundle_size, &color_encoding_size,
-                                      &compressed_icc_size));
 
-  fprintf(stderr, "size without: %zu, bundle_size: %zu\n", color_encoding_size,
-          bundle_size);
-  ASSERT_TRUE(color_encoding_size < bundle_size);
-  orig_bundle.color_encoding_size = color_encoding_size;
+  ASSERT_TRUE(
+      JxlGainMapGetBundleSize(memory_manager, &orig_bundle, &bundle_size));
 
   EXPECT_EQ(bundle_size, 534);
 
@@ -112,7 +105,7 @@ TEST(GainMapTest, GainMapRoundtrip) {
                                    buffer.data(), buffer.size(),
                                    /*bytes_read=*/nullptr));
   EXPECT_EQ(orig_bundle.jhgm_version, output_bundle.jhgm_version);
-  EXPECT_EQ(orig_bundle.color_encoding_size, orig_bundle.color_encoding_size);
+  EXPECT_EQ(orig_bundle.has_color_encoding, orig_bundle.has_color_encoding);
   EXPECT_TRUE(ColorEncodingsEqual(orig_bundle.color_encoding,
                                   output_bundle.color_encoding));
   EXPECT_TRUE(std::equal(gain_map_metadata.begin(), gain_map_metadata.end(),

@@ -32,8 +32,8 @@ namespace jxl {
 
 struct JxlGainMapBundleInternal : public Fields {
   uint8_t jhgm_version;
-  uint32_t color_encoding_size;
   ColorEncoding color_encoding;
+  std::vector<uint8_t> compressed_color_encoding;
   std::vector<uint8_t> gain_map_metadata;
   IccBytes compressed_icc;
   std::vector<uint8_t> gain_map;
@@ -67,11 +67,15 @@ struct JxlGainMapBundleInternal : public Fields {
       gain_map_metadata[i] = static_cast<uint8_t>(temp_u32);
     }
 
-    JXL_RETURN_IF_ERROR(visitor->Bits(32, 0, &color_encoding_size));
+    temp_u32 =
+        SwapByteOrder(static_cast<uint32_t>(compressed_color_encoding.size()));
+    JXL_RETURN_IF_ERROR(visitor->Bits(32, 0, &temp_u32));
+    compressed_color_encoding.resize(SwapByteOrder(temp_u32));
 
-    if (visitor->Conditional(0 < color_encoding_size)) {
-      // Visit the color_encoding as a whole block
-      JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
+    for (size_t i = 0; i < compressed_color_encoding.size(); ++i) {
+      temp_u32 = compressed_color_encoding[i];
+      JXL_RETURN_IF_ERROR(visitor->Bits(8, 0, &temp_u32));
+      compressed_color_encoding[i] = static_cast<uint8_t>(temp_u32);
     }
 
     temp_u32 = SwapByteOrder(static_cast<uint32_t>(compressed_icc.size()));
@@ -100,16 +104,26 @@ struct JxlGainMapBundleInternal : public Fields {
 
 JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
                                  const JxlGainMapBundle* map_bundle,
-                                 size_t* bundle_size,
-                                 size_t* color_encoding_size,
-                                 size_t* compressed_icc_size) {
+                                 size_t* bundle_size) {
   if (map_bundle == nullptr) return 0;
 
   jxl::JxlGainMapBundleInternal internal_bundle;
   internal_bundle.jhgm_version = map_bundle->jhgm_version;
-  internal_bundle.color_encoding_size = map_bundle->color_encoding_size;
+
   JXL_RETURN_IF_ERROR(
       internal_bundle.color_encoding.FromExternal(map_bundle->color_encoding));
+  jxl::BitWriter color_encoding_writer(memory_manager);
+  if (map_bundle->has_color_encoding) {
+    if (!jxl::Bundle::Write(internal_bundle.color_encoding,
+                            &color_encoding_writer, /*layer=*/0, nullptr)) {
+      return JXL_FALSE;
+    }
+  }
+  color_encoding_writer.ZeroPadToByte();
+  internal_bundle.compressed_color_encoding =
+      std::vector<uint8_t>(color_encoding_writer.GetSpan().data(),
+                           color_encoding_writer.GetSpan().data() +
+                               color_encoding_writer.GetSpan().size());
 
   // Initialize vectors from raw data and sizes
   internal_bundle.gain_map_metadata = std::vector<uint8_t>(
@@ -127,27 +141,12 @@ JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
     internal_bundle.compressed_icc.assign(icc_writer.GetSpan().begin(),
                                           icc_writer.GetSpan().end());
   }
-  *compressed_icc_size = internal_bundle.compressed_icc.size();
   jxl::BitWriter writer(memory_manager);
   if (!jxl::Bundle::Write(internal_bundle, &writer, /*layer=*/0, nullptr)) {
     return JXL_FALSE;
   }
-  *bundle_size = jxl::DivCeil(writer.BitsWritten(), 8);
-  size_t size_without_color_encoding =
-      (1 +                                   // size of jhgm_version
-       2 +                                   // size_of gain_map_metadata_size
-       map_bundle->gain_map_metadata_size +  // size of gain_map_metadata
-       4 +                                   // size of color_encoding_size
-       4 +                                   // size of compressed_icc_size
-       *compressed_icc_size +                // size of compressed_icc
-       4 +                                   // size of gain_map_metadata_size
-       map_bundle->gain_map_size             // size of gain_map_metadata
-      );
 
-  if (*bundle_size < size_without_color_encoding) {
-    return JXL_FALSE;
-  }
-  *color_encoding_size = *bundle_size - size_without_color_encoding;
+  *bundle_size = jxl::DivCeil(writer.BitsWritten(), 8);
   return JXL_TRUE;
 }
 
@@ -156,12 +155,26 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
                                uint8_t* output_buffer,
                                size_t output_buffer_size,
                                size_t* bytes_written) {
-  jxl::JxlGainMapBundleInternal internal_bundle;
+  // TODO avoid code duplication with JxlGainMapGetBundleSize
   if (map_bundle == nullptr) return 0;
+
+  jxl::JxlGainMapBundleInternal internal_bundle;
   internal_bundle.jhgm_version = map_bundle->jhgm_version;
-  internal_bundle.color_encoding_size = map_bundle->color_encoding_size;
+
   JXL_RETURN_IF_ERROR(
       internal_bundle.color_encoding.FromExternal(map_bundle->color_encoding));
+  jxl::BitWriter color_encoding_writer(memory_manager);
+  if (map_bundle->has_color_encoding) {
+    if (!jxl::Bundle::Write(internal_bundle.color_encoding,
+                            &color_encoding_writer, /*layer=*/0, nullptr)) {
+      return JXL_FALSE;
+    }
+  }
+  color_encoding_writer.ZeroPadToByte();
+  internal_bundle.compressed_color_encoding =
+      std::vector<uint8_t>(color_encoding_writer.GetSpan().data(),
+                           color_encoding_writer.GetSpan().data() +
+                               color_encoding_writer.GetSpan().size());
 
   // Initialize vectors from raw data and sizes
   internal_bundle.gain_map_metadata = std::vector<uint8_t>(
@@ -179,7 +192,6 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
     internal_bundle.compressed_icc.assign(icc_writer.GetSpan().begin(),
                                           icc_writer.GetSpan().end());
   }
-
   jxl::BitWriter writer(memory_manager);
   if (!jxl::Bundle::Write(internal_bundle, &writer, /*layer=*/0, nullptr)) {
     return JXL_FALSE;
@@ -198,16 +210,20 @@ JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
   if (input_buffer == nullptr) {
     map_bundle->alt_icc_size = 0;
     map_bundle->gain_map_metadata_size = 0;
-    map_bundle->color_encoding_size = 0;
     map_bundle->gain_map_size = 0;
   }
 
   jxl::BitReader reader(
       jxl::Span<const uint8_t>(input_buffer, input_buffer_size));
   jxl::JxlGainMapBundleInternal internal_bundle;
+
   JXL_RETURN_IF_ERROR(jxl::Bundle::Read(&reader, &internal_bundle));
   JXL_RETURN_IF_ERROR(reader.Close());
+  // Set size for data that does not need decompressing
+  map_bundle->gain_map_metadata_size = internal_bundle.gain_map_metadata.size();
+  map_bundle->gain_map_size = internal_bundle.gain_map.size();
 
+  // Decompress and set size for icc data
   jxl::BitReader bit_reader(internal_bundle.compressed_icc);
   jxl::ICCReader icc_reader(memory_manager);
   jxl::PaddedBytes icc_buffer(memory_manager);
@@ -215,9 +231,7 @@ JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
   JXL_RETURN_IF_ERROR(icc_reader.Process(&bit_reader, &icc_buffer));
   JXL_RETURN_IF_ERROR(bit_reader.Close());
   map_bundle->alt_icc_size = icc_buffer.size();
-  map_bundle->gain_map_metadata_size = internal_bundle.gain_map_metadata.size();
-  map_bundle->color_encoding_size = internal_bundle.color_encoding_size;
-  map_bundle->gain_map_size = internal_bundle.gain_map.size();
+
   return JXL_TRUE;
 }
 
@@ -226,18 +240,18 @@ JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
                               const uint8_t* input_buffer,
                               const size_t input_buffer_size,
                               size_t* bytes_read) {
+  // TODO avoid code duplication with JxlGainMapReadBundle
   if (map_bundle == nullptr || input_buffer == nullptr) return JXL_FALSE;
 
   jxl::BitReader reader(
       jxl::Span<const uint8_t>(input_buffer, input_buffer_size));
   jxl::JxlGainMapBundleInternal internal_bundle;
 
-  if (!jxl::Bundle::Read(&reader, &internal_bundle)) {
-    return JXL_FALSE;
-  }
-  map_bundle->color_encoding_size = internal_bundle.color_encoding_size;
-  map_bundle->jhgm_version = internal_bundle.jhgm_version;
+  JXL_RETURN_IF_ERROR(jxl::Bundle::Read(&reader, &internal_bundle));
+  JXL_RETURN_IF_ERROR(reader.Close());
 
+  map_bundle->jhgm_version = internal_bundle.jhgm_version;
+  // write the data that does not need decompressing
   if (map_bundle->gain_map_metadata_size ==
       internal_bundle.gain_map_metadata.size()) {
     std::memcpy(map_bundle->gain_map_metadata,
@@ -248,10 +262,7 @@ JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
     std::memcpy(map_bundle->gain_map, internal_bundle.gain_map.data(),
                 internal_bundle.gain_map.size());
   }
-  map_bundle->color_encoding = internal_bundle.color_encoding.ToExternal();
-  // Return the number of bytes read
-  JXL_RETURN_IF_ERROR(reader.Close());
-
+  // Decompress and write icc data
   jxl::BitReader bit_reader(internal_bundle.compressed_icc);
   jxl::ICCReader icc_reader(memory_manager);
   jxl::PaddedBytes icc_buffer(memory_manager);
@@ -261,6 +272,19 @@ JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
   if (map_bundle->alt_icc_size == icc_buffer.size()) {
     std::memcpy(map_bundle->alt_icc, icc_buffer.data(), icc_buffer.size());
   }
+
+  // Decompress and write color encoding data
+  jxl::BitReader color_encoding_reader(
+      internal_bundle.compressed_color_encoding);
+  if (0 < internal_bundle.compressed_color_encoding.size()) {
+    if (!jxl::Bundle::Read(&color_encoding_reader,
+                           &internal_bundle.color_encoding)) {
+      return JXL_FALSE;
+    }
+  }
+  JXL_RETURN_IF_ERROR(color_encoding_reader.Close());
+
+  map_bundle->color_encoding = internal_bundle.color_encoding.ToExternal();
 
   if (bytes_read != nullptr) *bytes_read = reader.TotalBitsConsumed() / 8;
 
