@@ -36,6 +36,7 @@ struct JxlGainMapBundleInternal : public Fields {
   std::vector<uint8_t> compressed_color_encoding;
   std::vector<uint8_t> gain_map_metadata;
   IccBytes compressed_icc;
+  size_t gain_map_size;
   std::vector<uint8_t> gain_map;
 
   JXL_FIELDS_NAME(JxlGainMapBundleInternal)
@@ -88,11 +89,9 @@ struct JxlGainMapBundleInternal : public Fields {
       compressed_icc[i] = static_cast<uint8_t>(temp_u32);
     }
 
-    temp_u32 = SwapByteOrder(static_cast<uint32_t>(gain_map.size()));
-    JXL_RETURN_IF_ERROR(visitor->Bits(32, 0, &temp_u32));
-    gain_map.resize(SwapByteOrder(temp_u32));
     // Assume gain_map is a binary blob that we visit as raw bits
-    for (size_t i = 0; i < gain_map.size(); ++i) {
+
+    for (size_t i = 0; i < gain_map_size; ++i) {
       temp_u32 = gain_map[i];
       JXL_RETURN_IF_ERROR(visitor->Bits(8, 0, &temp_u32));
       gain_map[i] = static_cast<uint8_t>(temp_u32);
@@ -109,6 +108,7 @@ JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
 
   jxl::JxlGainMapBundleInternal internal_bundle;
   internal_bundle.jhgm_version = map_bundle->jhgm_version;
+  internal_bundle.gain_map_size = map_bundle->gain_map_size;
 
   JXL_RETURN_IF_ERROR(
       internal_bundle.color_encoding.FromExternal(map_bundle->color_encoding));
@@ -160,6 +160,7 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
 
   jxl::JxlGainMapBundleInternal internal_bundle;
   internal_bundle.jhgm_version = map_bundle->jhgm_version;
+  internal_bundle.gain_map_size = map_bundle->gain_map_size;
 
   JXL_RETURN_IF_ERROR(
       internal_bundle.color_encoding.FromExternal(map_bundle->color_encoding));
@@ -212,17 +213,28 @@ JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
     map_bundle->gain_map_metadata_size = 0;
     map_bundle->gain_map_size = 0;
   }
-
   jxl::BitReader reader(
       jxl::Span<const uint8_t>(input_buffer, input_buffer_size));
   jxl::JxlGainMapBundleInternal internal_bundle;
-
+  internal_bundle.gain_map_size = 0;
   JXL_RETURN_IF_ERROR(jxl::Bundle::Read(&reader, &internal_bundle));
   JXL_RETURN_IF_ERROR(reader.Close());
   // Set size for data that does not need decompressing
   map_bundle->gain_map_metadata_size = internal_bundle.gain_map_metadata.size();
-  map_bundle->gain_map_size = internal_bundle.gain_map.size();
+  size_t size_without_gain_map =
+      1 +  // size of jhgm_version
+      2 +  // size_of gain_map_metadata_size
+      internal_bundle.gain_map_metadata.size() +  // size of gain_map_metadata
+      4 +                                         // size of color_encoding_size
+      internal_bundle.compressed_color_encoding
+          .size() +                           // size of the color_encoding
+      4 +                                     // size of compressed_icc_size
+      internal_bundle.compressed_icc.size();  // size of compressed_icc
 
+  if (input_buffer_size < size_without_gain_map) {
+    return JXL_FALSE;
+  }
+  map_bundle->gain_map_size = input_buffer_size - size_without_gain_map;
   // Decompress and set size for icc data
   jxl::BitReader bit_reader(internal_bundle.compressed_icc);
   jxl::ICCReader icc_reader(memory_manager);
@@ -231,7 +243,6 @@ JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
   JXL_RETURN_IF_ERROR(icc_reader.Process(&bit_reader, &icc_buffer));
   JXL_RETURN_IF_ERROR(bit_reader.Close());
   map_bundle->alt_icc_size = icc_buffer.size();
-
   return JXL_TRUE;
 }
 
@@ -246,6 +257,8 @@ JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
   jxl::BitReader reader(
       jxl::Span<const uint8_t>(input_buffer, input_buffer_size));
   jxl::JxlGainMapBundleInternal internal_bundle;
+  internal_bundle.gain_map.resize(map_bundle->gain_map_size);
+  internal_bundle.gain_map_size = map_bundle->gain_map_size;
 
   JXL_RETURN_IF_ERROR(jxl::Bundle::Read(&reader, &internal_bundle));
   JXL_RETURN_IF_ERROR(reader.Close());
@@ -287,6 +300,7 @@ JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
   map_bundle->color_encoding = internal_bundle.color_encoding.ToExternal();
 
   if (bytes_read != nullptr) *bytes_read = reader.TotalBitsConsumed() / 8;
+  JXL_RETURN_IF_ERROR(reader.Close());
 
   return JXL_TRUE;
 }

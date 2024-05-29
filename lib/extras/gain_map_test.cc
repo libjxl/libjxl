@@ -79,7 +79,7 @@ TEST(GainMapTest, GainMapRoundtrip) {
   ASSERT_TRUE(
       JxlGainMapGetBundleSize(memory_manager, &orig_bundle, &bundle_size));
 
-  EXPECT_EQ(bundle_size, 534);
+  EXPECT_EQ(bundle_size, 530);
 
   std::vector<uint8_t> buffer(bundle_size);
   size_t bytes_written;
@@ -101,9 +101,10 @@ TEST(GainMapTest, GainMapRoundtrip) {
   output_bundle.gain_map_metadata = output_metadata.data();
   output_bundle.gain_map = output_gain_map.data();
   output_bundle.alt_icc = output_alt_icc.data();
+  size_t bytes_read;
   ASSERT_TRUE(JxlGainMapReadBundle(memory_manager, &output_bundle,
-                                   buffer.data(), buffer.size(),
-                                   /*bytes_read=*/nullptr));
+                                   buffer.data(), buffer.size(), &bytes_read));
+  EXPECT_EQ(bytes_read, buffer.size());
   EXPECT_EQ(orig_bundle.jhgm_version, output_bundle.jhgm_version);
   EXPECT_EQ(orig_bundle.has_color_encoding, orig_bundle.has_color_encoding);
   EXPECT_TRUE(ColorEncodingsEqual(orig_bundle.color_encoding,
