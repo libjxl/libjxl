@@ -62,13 +62,14 @@ jobs:
             cxxflags: -DHWY_COMPILE_ONLY_SCALAR -DFJXL_ENABLE_AVX2=0 -DFJXL_ENABLE_AVX512=0
           # Disabling optional features to speed up MSAN build a little bit.
           - name: msan
+            os: ubuntu-24.04
             skip_install: true
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
-            apt_pkgs: clang-15
-            cc: clang-15
-            cxx: clang++-15
+            apt_pkgs: clang-18
+            cc: clang-18
+            cxx: clang++-18
           - name: asan
             skip_install: true
           - name: tsan
@@ -227,7 +228,7 @@ jobs:
       with:
         submodules: false
         repository: llvm/llvm-project
-        ref: llvmorg-14.0.0 # NB: 15.0.0 does not build ¯\_(ツ)_/¯
+        ref: llvmorg-18.1.3 # NB: 15.0.0 does not build ¯\_(ツ)_/¯
         path: llvm_root
 
     - name: Sphinx dependencies
