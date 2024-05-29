@@ -136,7 +136,24 @@ if [[ "${BUILD_TARGET%%-*}" != "arm" ]]; then
   )
 fi
 
-CLANG_TIDY_BIN=$(which clang-tidy-6.0 clang-tidy-7 clang-tidy-8 clang-tidy 2>/dev/null | head -n 1)
+CLANG_TIDY_BIN_CANDIDATES=(
+  clang-tidy
+  clang-tidy-6.0
+  clang-tidy-7
+  clang-tidy-8
+  clang-tidy-9
+  clang-tidy-10
+  clang-tidy-11
+  clang-tidy-12
+  clang-tidy-13
+  clang-tidy-14
+  clang-tidy-15
+  clang-tidy-16
+  clang-tidy-17
+  clang-tidy-18
+)
+
+CLANG_TIDY_BIN=${CLANG_TIDY_BIN:-$(which ${CLANG_TIDY_BIN_CANDIDATES[@]} 2>/dev/null | tail -n 1)}
 # Default to "cat" if "colordiff" is not installed or if stdout is not a tty.
 if [[ -t 1 ]]; then
   COLORDIFF_BIN=$(which colordiff cat 2>/dev/null | head -n 1)

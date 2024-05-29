@@ -12,6 +12,7 @@
 
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_cache.h"
@@ -540,7 +541,9 @@ class WriteToOutputStage : public RenderPipelineStage {
   std::vector<AlignedMemory> temp_out_;
 };
 
+#if JXL_CXX_LANG < JXL_CXX_17
 constexpr size_t WriteToOutputStage::kMaxPixelsPerCall;
+#endif
 
 std::unique_ptr<RenderPipelineStage> GetWriteToOutputStage(
     const ImageOutput& main_output, size_t width, size_t height, bool has_alpha,

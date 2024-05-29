@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#define _DEFAULT_SOURCE  // for mkstemps().
+#define _DEFAULT_SOURCE  // NOLINT for mkstemps().
 
 #include "tools/benchmark/benchmark_utils.h"
 

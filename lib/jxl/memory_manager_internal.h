@@ -78,12 +78,12 @@ class AlignedMemory {
       : allocation_(nullptr), memory_manager_(nullptr), address_(nullptr) {}
 
   // Copy disallowed.
-  AlignedMemory(const AlignedMemory&) = delete;
-  AlignedMemory& operator=(const AlignedMemory&) = delete;
+  AlignedMemory(const AlignedMemory& other) = delete;
+  AlignedMemory& operator=(const AlignedMemory& other) = delete;
 
   // Custom move.
-  AlignedMemory(AlignedMemory&&) noexcept;
-  AlignedMemory& operator=(AlignedMemory&&) noexcept;
+  AlignedMemory(AlignedMemory&& other) noexcept;
+  AlignedMemory& operator=(AlignedMemory&& other) noexcept;
 
   ~AlignedMemory();
 

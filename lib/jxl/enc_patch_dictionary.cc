@@ -807,8 +807,7 @@ Status RoundtripPatchFrame(Image3F* reference_frame,
     }
     ib.SetExtraChannels(std::move(extra_channels));
   }
-  auto special_frame =
-      std::unique_ptr<BitWriter>(new BitWriter(memory_manager));
+  auto special_frame = jxl::make_unique<BitWriter>(memory_manager);
   AuxOut patch_aux_out;
   JXL_CHECK(EncodeFrame(
       memory_manager, cparams, patch_frame_info, state->shared.metadata, ib,

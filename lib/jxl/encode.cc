@@ -2308,8 +2308,7 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
     JXL_BOOL oneshot = TO_JXL_BOOL(!frame_data.StreamingInput());
     auto* frame_state = JxlFastLosslessPrepareFrame(
         frame_data.GetInputSource(), xsize, ysize, num_channels,
-        frame_settings->enc->metadata.m.bit_depth.bits_per_sample,
-        TO_JXL_BOOL(big_endian),
+        frame_settings->enc->metadata.m.bit_depth.bits_per_sample, big_endian,
         /*effort=*/2, oneshot);
     if (!streaming) {
       JxlFastLosslessProcessFrame(frame_state, /*is_last=*/false,

@@ -1061,7 +1061,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         if (!ctx.FeedChunks(chunk)) {
           return JXL_FAILURE("Corrupt iCCP chunk");
         }
-        color_info_type = ColorInfoType::ICCP_OR_SRGB;
 
         // TODO(jon): catch special case of PQ and synthesize color encoding
         // in that case
