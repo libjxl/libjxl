@@ -212,17 +212,18 @@ JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
   if (input_buffer_size < cursor + compressed_icc_size) {
     return JXL_FALSE;
   }
-
-  // Decode ICC data to determine its size when uncompressed
-  jxl::Span<const uint8_t> icc_span(input_buffer + cursor, compressed_icc_size);
-
-  jxl::BitReader icc_reader(icc_span);
-  jxl::ICCReader icc_decoder(memory_manager);
   jxl::PaddedBytes icc_buffer(memory_manager);
-  JXL_RETURN_IF_ERROR(icc_decoder.Init(&icc_reader, 0UL));
-  JXL_RETURN_IF_ERROR(icc_decoder.Process(&icc_reader, &icc_buffer));
-  JXL_RETURN_IF_ERROR(icc_reader.Close());
+  if (0 < compressed_icc_size) {
+    // Decode ICC data to determine its size when uncompressed
+    jxl::Span<const uint8_t> icc_span(input_buffer + cursor,
+                                      compressed_icc_size);
 
+    jxl::BitReader icc_reader(icc_span);
+    jxl::ICCReader icc_decoder(memory_manager);
+    JXL_RETURN_IF_ERROR(icc_decoder.Init(&icc_reader, 0UL));
+    JXL_RETURN_IF_ERROR(icc_decoder.Process(&icc_reader, &icc_buffer));
+    JXL_RETURN_IF_ERROR(icc_reader.Close());
+  }
   // Set sizes in the map bundle
   map_bundle->jhgm_version = jhgm_version;
   map_bundle->gain_map_metadata_size = gain_map_metadata_size;
