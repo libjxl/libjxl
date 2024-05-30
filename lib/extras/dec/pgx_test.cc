@@ -5,10 +5,15 @@
 
 #include "lib/extras/dec/pgx.h"
 
+#include <cstdint>
 #include <cstring>
+#include <string>
 
+#include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
