@@ -11,6 +11,7 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_description.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/no_memory_manager.h"
@@ -68,7 +69,7 @@ int main(int argc, const char** argv) {
     }
 
     if (!icc_signature || !io.metadata.m.color_encoding.SetICC(
-                              std::move(encoded), JxlGetDefaultCms())) {
+                              jxl::IccBytes(encoded), JxlGetDefaultCms())) {
       JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), {}, &io, pool.get()));
     }
   } else if (jxl::ParseDescription(input_filename, &c_descr)) {

@@ -14,11 +14,11 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/fuzztest.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/transform.h"
-#include "lib/jxl/test_utils.h"
 #include "tools/no_memory_manager.h"
 
 namespace {

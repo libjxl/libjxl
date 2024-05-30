@@ -17,8 +17,9 @@
 #endif
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/fuzztest.h"
 #include "lib/jxl/padded_bytes.h"
-#include "lib/jxl/test_utils.h"
+#include "lib/jxl/test_memory_manager.h"
 
 namespace jxl {
 Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result);

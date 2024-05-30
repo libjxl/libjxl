@@ -39,6 +39,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/padded_bytes.h"
+#include "lib/jxl/test_memory_manager.h"
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"
@@ -877,14 +878,6 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
   Bytes(output).AppendTo(*compressed);
   return true;
 }
-
-namespace {
-void* TestAlloc(void* /* opaque*/, size_t size) { return malloc(size); }
-void TestFree(void* /* opaque*/, void* address) { free(address); }
-JxlMemoryManager kMemoryManager{nullptr, &TestAlloc, &TestFree};
-}  // namespace
-
-JxlMemoryManager* MemoryManager() { return &kMemoryManager; };
 
 }  // namespace test
 

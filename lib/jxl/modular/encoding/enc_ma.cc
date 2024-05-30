@@ -499,8 +499,10 @@ void ComputeBestTree(TreeSamples &tree_samples, float threshold,
    tree);
 }
 
+#if JXL_CXX_LANG < JXL_CXX_17
 constexpr int32_t TreeSamples::kPropertyRange;
 constexpr uint32_t TreeSamples::kDedupEntryUnused;
+#endif
 
 Status TreeSamples::SetPredictor(Predictor predictor,
                                  ModularOptions::TreeMode wp_tree_mode) {

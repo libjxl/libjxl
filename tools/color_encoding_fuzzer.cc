@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "lib/extras/dec/color_description.h"
-#include "lib/jxl/test_utils.h"
+#include "lib/jxl/fuzztest.h"
 
 namespace {
 

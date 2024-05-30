@@ -17,6 +17,7 @@
 
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image.h"
@@ -169,7 +170,7 @@ ImageCodecPtr CreateImageCodec(const std::string& description,
     result.reset(CreateNewPNGCodec(*Args()));
 #endif  // BENCHMARK_PNG
   } else if (name == "none") {
-    result.reset(new NoneCodec(*Args()));
+    result = jxl::make_unique<NoneCodec>(*Args());
 #ifdef BENCHMARK_WEBP
   } else if (name == "webp") {
     result.reset(CreateNewWebPCodec(*Args()));

@@ -196,6 +196,9 @@ void BenchmarkStats::Assimilate(const BenchmarkStats& victim) {
   psnr += victim.psnr;
   distances.insert(distances.end(), victim.distances.begin(),
                    victim.distances.end());
+  pnorms.insert(pnorms.end(), victim.pnorms.begin(), victim.pnorms.end());
+  ssimulacra2s.insert(ssimulacra2s.end(), victim.ssimulacra2s.begin(),
+                      victim.ssimulacra2s.end());
   total_errors += victim.total_errors;
   jxl_stats.Assimilate(victim.jxl_stats);
   if (extra_metrics.size() < victim.extra_metrics.size()) {
@@ -210,13 +213,39 @@ void BenchmarkStats::PrintMoreStats() const {
   if (Args()->print_more_stats) {
     jxl_stats.Print();
   }
-  if (Args()->print_distance_percentiles) {
+  if (Args()->print_distance_percentiles && distances.size() > 1) {
+    const auto& descriptors = GetColumnDescriptors(0);
+    int spaces = 0;
+    for (int i = 0; i < 4; i++) spaces += descriptors[i].width;
+    JXL_ASSERT(distances.size() == pnorms.size());
+    JXL_ASSERT(distances.size() == ssimulacra2s.size());
     std::vector<float> sorted = distances;
     std::sort(sorted.begin(), sorted.end());
+    std::vector<float> sorted2 = pnorms;
+    std::sort(sorted2.begin(), sorted2.end());
+    std::vector<float> sorted3 = ssimulacra2s;
+    std::sort(sorted3.begin(), sorted3.end());
+    int p5idx = 0.05 * distances.size();
+    int p10idx = 0.1 * distances.size();
     int p50idx = 0.5 * distances.size();
     int p90idx = 0.9 * distances.size();
-    printf("50th/90th percentile distance: %.8f  %.8f\n", sorted[p50idx],
-           sorted[p90idx]);
+    int p95idx = 0.95 * distances.size();
+    printf("   ");
+    for (int i = 2; i < spaces; i++) printf("_");
+    printf("| median:       %12.8f %12.8f        %12.8f\n", sorted[p50idx],
+           sorted3[p50idx], sorted2[p50idx]);
+    if (distances.size() >= 10) {
+      printf("  /");
+      for (int i = 2; i < spaces; i++) printf(" ");
+      printf("| p10 (worst):  %12.8f %12.8f        %12.8f\n", sorted[p90idx],
+             sorted3[p10idx], sorted2[p90idx]);
+    }
+    if (distances.size() >= 20) {
+      printf(" / ");
+      for (int i = 2; i < spaces; i++) printf(" ");
+      printf("| p5 (worst):   %12.8f %12.8f        %12.8f\n", sorted[p95idx],
+             sorted3[p5idx], sorted2[p95idx]);
+    }
   }
 }
 
@@ -371,6 +400,14 @@ std::string PrintAggregate(
     }
     double geomean = numvalid ? std::exp2(logsum / numvalid) : 0.0;
 
+    // ssimulacra2 can get negative, so use arithmetic mean instead
+    if (i == 7) {
+      geomean = 0;
+      for (const auto& column : aggregate) {
+        geomean += column[i].f;
+      }
+      geomean /= aggregate.size();
+    }
     if (type == TYPE_SIZE || type == TYPE_COUNT) {
       result[i].i = static_cast<size_t>(std::llround(geomean));
     } else if (type == TYPE_POSITIVE_FLOAT) {

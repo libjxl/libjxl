@@ -942,7 +942,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
 
 struct JxlOutputProcessor {
   bool SetOutputPath(const std::string& path) {
-    outfile.reset(new FileWrapper(path, "wb"));
+    outfile = jxl::make_unique<FileWrapper>(path, "wb");
     if (!*outfile) {
       fprintf(stderr,
               "Could not open %s for writing\n"

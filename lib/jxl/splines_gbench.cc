@@ -47,6 +47,7 @@ void BM_Splines(benchmark::State& state) {
       Image3F::Create(jpegxl::tools::NoMemoryManager(), 320, 320));
   ZeroFillImage(&drawing_area);
   for (auto _ : state) {
+    (void)_;
     for (size_t i = 0; i < n; ++i) {
       JXL_CHECK(splines.InitializeDrawCache(
           drawing_area.xsize(), drawing_area.ysize(), color_correlation));
