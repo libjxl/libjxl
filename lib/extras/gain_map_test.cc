@@ -53,7 +53,6 @@ std::vector<uint8_t> GoldenTestGainMap(bool has_icc, bool has_color_encoding) {
   if (has_icc) {
     icc_size = {0x00, 0x00, 0x01, 0x7A};  // 378 in decimal
   }
-  // 378 in decimal if has_icc
   const uint8_t* raw_icc_data = reinterpret_cast<const uint8_t*>(
       "\x1f\x8b\x01\x33\x38\x18\x00\x30\x20\x8c"
       "\xe6\x81\x59\x00\x64\x69\x2c\x50\x80\xfc\xbc\x8e\xd6\xf7\x84\x66"
@@ -187,13 +186,14 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     GainMapTestCases, GainMapTest,
     ::testing::Values(GainMapTestParams{true, std::vector<uint8_t>()},
                       GainMapTestParams{true, test::GetIccTestProfile()},
+                      GainMapTestParams{false, test::GetIccTestProfile()},
                       GainMapTestParams{false, std::vector<uint8_t>()}),
     [](const testing::TestParamInfo<GainMapTest::ParamType>& info) {
       std::string name =
-          "HasColorEncoding_" + std::to_string(info.param.has_color_encoding);
-      if (info.param.has_color_encoding) {
-        name += "_ICC_Size_" + std::to_string(info.param.icc_data.size());
-      }
+          "HasColorEncoding" + std::to_string(info.param.has_color_encoding);
+
+      name += "ICCSize" + std::to_string(info.param.icc_data.size());
+
       return name;
     });
 

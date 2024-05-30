@@ -24,10 +24,10 @@ JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
   if (map_bundle == nullptr) return 0;
 
   jxl::ColorEncoding internal_color_encoding;
-  JXL_RETURN_IF_ERROR(
-      internal_color_encoding.FromExternal(map_bundle->color_encoding));
   jxl::BitWriter color_encoding_writer(memory_manager);
   if (map_bundle->has_color_encoding) {
+    JXL_RETURN_IF_ERROR(
+        internal_color_encoding.FromExternal(map_bundle->color_encoding));
     if (!jxl::Bundle::Write(internal_color_encoding, &color_encoding_writer,
                             /*layer=*/0, nullptr)) {
       return JXL_FALSE;
@@ -38,7 +38,6 @@ JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
       color_encoding_writer.GetSpan().data(),
       color_encoding_writer.GetSpan().data() +
           color_encoding_writer.GetSpan().size());
-
   // Initialize vectors from raw data and sizes
   std::vector<uint8_t> gain_map_metadata(
       map_bundle->gain_map_metadata,
@@ -81,15 +80,16 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
   size_t gain_map_size = map_bundle->gain_map_size;
 
   jxl::ColorEncoding internal_color_encoding;
-  JXL_RETURN_IF_ERROR(
-      internal_color_encoding.FromExternal(map_bundle->color_encoding));
   jxl::BitWriter color_encoding_writer(memory_manager);
   if (map_bundle->has_color_encoding) {
+    JXL_RETURN_IF_ERROR(
+        internal_color_encoding.FromExternal(map_bundle->color_encoding));
     if (!jxl::Bundle::Write(internal_color_encoding, &color_encoding_writer,
                             /*layer=*/0, nullptr)) {
       return JXL_FALSE;
     }
   }
+
   color_encoding_writer.ZeroPadToByte();
   std::vector<uint8_t> compressed_color_encoding(
       color_encoding_writer.GetSpan().data(),
