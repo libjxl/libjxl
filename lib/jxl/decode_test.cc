@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ostream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -43,6 +44,7 @@
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/common.h"  // SpeedTier
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_aux_out.h"

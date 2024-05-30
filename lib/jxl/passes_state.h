@@ -9,14 +9,22 @@
 #include <jxl/memory_manager.h>
 
 #include <array>
+#include <cstddef>
+#include <vector>
 
 #include "lib/jxl/ac_context.h"
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dec_patch_dictionary.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/noise.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"

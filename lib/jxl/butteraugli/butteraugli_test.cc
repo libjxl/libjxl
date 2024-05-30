@@ -9,6 +9,7 @@
 #include <jxl/types.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
