@@ -12,6 +12,7 @@
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/frame_header.h"
+#include "lib/jxl/fuzztest.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
@@ -20,7 +21,6 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/quantizer.h"
-#include "lib/jxl/test_utils.h"
 
 namespace {
 

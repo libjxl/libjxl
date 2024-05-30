@@ -17,8 +17,8 @@
 #include <hwy/targets.h>
 #include <vector>
 
+#include "lib/jxl/fuzztest.h"
 #include "lib/jxl/test_image.h"
-#include "lib/jxl/test_utils.h"
 
 namespace {
 

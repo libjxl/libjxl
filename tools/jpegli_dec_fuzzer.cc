@@ -14,7 +14,7 @@
 
 #include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
-#include "lib/jpegli/test_utils.h"
+#include "lib/jpegli/fuzztest.h"
 #include "lib/jpegli/types.h"
 
 namespace {

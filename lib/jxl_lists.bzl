@@ -524,6 +524,7 @@ libjxl_jpegli_sources = [
 ]
 
 libjxl_jpegli_testlib_files = [
+    "jpegli/fuzztest.h",
     "jpegli/test_params.h",
     "jpegli/test_utils-inl.h",
     "jpegli/test_utils.cc",
@@ -571,10 +572,13 @@ libjxl_testlib_files = [
     "jxl/dec_transforms_testonly.cc",
     "jxl/dec_transforms_testonly.h",
     "jxl/fake_parallel_runner_testonly.h",
+    "jxl/fuzztest.h",
     "jxl/image_test_utils.h",
     "jxl/render_pipeline/test_render_pipeline_stages.h",
     "jxl/test_image.cc",
     "jxl/test_image.h",
+    "jxl/test_memory_manager.cc",
+    "jxl/test_memory_manager.h",
     "jxl/test_utils.cc",
     "jxl/test_utils.h",
 ]
