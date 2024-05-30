@@ -109,8 +109,10 @@ struct WcMultipliers<8> {
   };
 };
 
+#if JXL_CXX_LANG < JXL_CXX_17
 constexpr float WcMultipliers<4>::kMultipliers[];
 constexpr float WcMultipliers<8>::kMultipliers[];
+#endif
 
 // Invoked on full vector.
 template <size_t N>

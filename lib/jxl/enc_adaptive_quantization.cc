@@ -682,8 +682,8 @@ Status DumpHeatmap(const CompressParams& cparams, const AuxOut* aux_out,
 Status DumpHeatmaps(const CompressParams& cparams, const AuxOut* aux_out,
                     float ba_target, const ImageF& quant_field,
                     const ImageF& tile_heatmap, const ImageF& bt_diffmap) {
-  JxlMemoryManager* memory_manager = quant_field.memory_manager();
   if (JXL_DEBUG_ADAPTIVE_QUANTIZATION) {
+    JxlMemoryManager* memory_manager = quant_field.memory_manager();
     if (!WantDebugOutput(cparams)) return true;
     JXL_ASSIGN_OR_RETURN(ImageF inv_qmap,
                          ImageF::Create(memory_manager, quant_field.xsize(),

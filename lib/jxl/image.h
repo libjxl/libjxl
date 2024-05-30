@@ -52,7 +52,7 @@ struct PlaneBase {
   // Move assignment (required for std::vector)
   PlaneBase& operator=(PlaneBase&& other) noexcept = default;
 
-  ~PlaneBase() {}
+  ~PlaneBase() = default;
 
   void Swap(PlaneBase& other);
 

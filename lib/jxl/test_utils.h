@@ -217,7 +217,7 @@ bool operator!=(const jxl::Bytes& a, const jxl::Bytes& b);
 #if !defined(FUZZ_TEST)
 struct FuzzTestSink {
   template <typename F>
-  FuzzTestSink WithSeeds(F) {
+  FuzzTestSink WithSeeds(F /*f*/) {
     return *this;
   }
 };

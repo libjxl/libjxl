@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include "lib/jpegli/decode_internal.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -111,8 +112,10 @@ struct WcMultipliers<8> {
   };
 };
 
+#if JXL_CXX_LANG < JXL_CXX_17
 constexpr float WcMultipliers<4>::kMultipliers[];
 constexpr float WcMultipliers<8>::kMultipliers[];
+#endif
 
 template <size_t N>
 void MultiplyAndAdd(const float* JXL_RESTRICT coeff, float* JXL_RESTRICT out,

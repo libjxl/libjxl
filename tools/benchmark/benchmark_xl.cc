@@ -31,6 +31,7 @@
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -950,7 +951,7 @@ class Benchmark {
             " threads, %" PRIuS " inner threads\n",
             num_hw_threads, num_tasks, num_threads, num_inner);
 
-    pool->reset(new ThreadPoolInternal(num_threads));
+    *pool = jxl::make_unique<ThreadPoolInternal>(num_threads);
     // Main thread OR worker threads in pool each get a possibly empty nested
     // pool (helps use all available cores when #tasks < #threads)
     for (size_t i = 0; i < std::max<size_t>(num_threads, 1); ++i) {

@@ -123,7 +123,7 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
 #if !defined(FUZZ_TEST)
 struct FuzzTestSink {
   template <typename F>
-  FuzzTestSink WithSeeds(F) {
+  FuzzTestSink WithSeeds(F /*f*/) {
     return *this;
   }
 };
