@@ -203,8 +203,6 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
 
 constexpr const char* BoolToCStr(bool b) { return b ? "true" : "false"; }
 
-JxlMemoryManager* MemoryManager();
-
 }  // namespace test
 
 bool operator==(const jxl::Bytes& a, const jxl::Bytes& b);
@@ -213,16 +211,5 @@ bool operator==(const jxl::Bytes& a, const jxl::Bytes& b);
 bool operator!=(const jxl::Bytes& a, const jxl::Bytes& b);
 
 }  // namespace jxl
-
-#if !defined(FUZZ_TEST)
-struct FuzzTestSink {
-  template <typename F>
-  FuzzTestSink WithSeeds(F /*f*/) {
-    return *this;
-  }
-};
-#define FUZZ_TEST(A, B) \
-  const JXL_MAYBE_UNUSED FuzzTestSink unused##A##B = FuzzTestSink()
-#endif
 
 #endif  // LIB_JXL_TEST_UTILS_H_

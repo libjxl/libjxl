@@ -18,7 +18,7 @@
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_coeff_order.h"
-#include "lib/jxl/test_utils.h"
+#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {

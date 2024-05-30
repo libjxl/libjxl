@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "lib/jxl/test_utils.h"
+#include "lib/jxl/fuzztest.h"
 
 namespace {
 
