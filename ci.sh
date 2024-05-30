@@ -590,13 +590,11 @@ cmd_tsan() {
     -DJXL_ENABLE_ASSERT=1
     -g
     -DTHREAD_SANITIZER
-    ${UBSAN_FLAGS[@]}
     -fsanitize=thread
   )
   CMAKE_C_FLAGS+=" ${tsan_args[@]}"
   CMAKE_CXX_FLAGS+=" ${tsan_args[@]}"
 
-  CMAKE_BUILD_TYPE="RelWithDebInfo"
   cmake_configure "$@" -DJPEGXL_ENABLE_TCMALLOC=OFF
   cmake_build_and_test
 }
@@ -648,8 +646,8 @@ cmd_msan() {
     -Wl,-rpath -Wl,"${msan_prefix}"/lib/
   )
 
-  CMAKE_C_FLAGS+=" ${msan_c_flags[@]} ${UBSAN_FLAGS[@]}"
-  CMAKE_CXX_FLAGS+=" ${msan_cxx_flags[@]} ${UBSAN_FLAGS[@]}"
+  CMAKE_C_FLAGS+=" ${msan_c_flags[@]}"
+  CMAKE_CXX_FLAGS+=" ${msan_cxx_flags[@]}"
   CMAKE_EXE_LINKER_FLAGS+=" ${msan_linker_flags[@]}"
   CMAKE_MODULE_LINKER_FLAGS+=" ${msan_linker_flags[@]}"
   CMAKE_SHARED_LINKER_FLAGS+=" ${msan_linker_flags[@]}"
