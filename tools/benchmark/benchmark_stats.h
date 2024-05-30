@@ -63,6 +63,8 @@ struct BenchmarkStats {
   double psnr = 0.0;
   double ssimulacra2 = 0.0;
   std::vector<float> distances;
+  std::vector<float> pnorms;
+  std::vector<float> ssimulacra2s;
   size_t total_errors = 0;
   JxlStats jxl_stats;
   std::vector<float> extra_metrics;

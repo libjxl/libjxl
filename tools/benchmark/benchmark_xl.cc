@@ -333,13 +333,16 @@ void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
         compressed->empty()
             ? 0
             : jxl::ComputePSNR(ib1, ib2, *JxlGetDefaultCms()) * input_pixels;
-    s->distance_p_norm +=
-        ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm) *
-        input_pixels;
+    double pnorm =
+        ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm);
+    s->distance_p_norm += pnorm * input_pixels;
     JXL_ASSIGN_OR_DIE(Msssim msssim, ComputeSSIMULACRA2(ib1, ib2));
-    s->ssimulacra2 += msssim.Score() * input_pixels;
+    double ssimulacra2 = msssim.Score();
+    s->ssimulacra2 += ssimulacra2 * input_pixels;
     s->max_distance = std::max(s->max_distance, distance);
     s->distances.push_back(distance);
+    s->pnorms.push_back(pnorm);
+    s->ssimulacra2s.push_back(ssimulacra2);
   }
 
   s->total_compressed_size += compressed->size();
@@ -737,12 +740,12 @@ struct StatPrinter {
         t.stats.total_input_pixels / (1000000.0 * t.stats.total_time_decode);
     if (Args()->print_details_csv) {
       printf("%s,%s,%" PRIdS ",%" PRIdS ",%" PRIdS
-             ",%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f",
+             ",%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f",
              (*methods_)[t.idx_method].c_str(),
              FileBaseName((*fnames_)[t.idx_image]).c_str(),
              t.stats.total_errors, t.stats.total_compressed_size, pixels,
-             enc_mps, dec_mps, comp_bpp, t.stats.max_distance, psnr, p_norm,
-             bpp_p_norm, adj_comp_bpp);
+             enc_mps, dec_mps, comp_bpp, t.stats.max_distance, ssimulacra2,
+             psnr, p_norm, bpp_p_norm, adj_comp_bpp);
       for (float m : t.stats.extra_metrics) {
         printf(",%.8f", m);
       }
@@ -814,7 +817,10 @@ struct StatPrinter {
       }
       printf("```\n");
     }
-    if (fnames_->size() == 1) printf("%s\n", (*fnames_)[0].c_str());
+    if (fnames_->size() == 1)
+      printf("%s\n", (*fnames_)[0].c_str());
+    else
+      printf("%" PRIuS " images\n", fnames_->size());
     printf("%s", PrintHeader(*extra_metrics_names_).c_str());
     fflush(stdout);
   }
@@ -1138,7 +1144,7 @@ class Benchmark {
       // Print CSV header
       printf(
           "method,image,error,size,pixels,enc_speed,dec_speed,"
-          "bpp,dist,psnr,p,bppp,qabpp");
+          "bpp,maxnorm,ssimulacra2,psnr,pnorm,bppp,qabpp");
       for (const std::string& s : extra_metrics_names) {
         printf(",%s", s.c_str());
       }
