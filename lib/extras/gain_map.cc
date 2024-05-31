@@ -38,33 +38,16 @@ JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
       color_encoding_writer.GetSpan().data(),
       color_encoding_writer.GetSpan().data() +
           color_encoding_writer.GetSpan().size());
-  // Initialize vectors from raw data and sizes
-  std::vector<uint8_t> gain_map_metadata(
-      map_bundle->gain_map_metadata,
-      map_bundle->gain_map_metadata + map_bundle->gain_map_metadata_size);
-  std::vector<uint8_t> gain_map(
-      map_bundle->gain_map, map_bundle->gain_map + map_bundle->gain_map_size);
-
-  jxl::BitWriter icc_writer(memory_manager);
-  std::vector<uint8_t> compressed_icc;
-  if (map_bundle->alt_icc) {
-    jxl::IccBytes icc_bytes(map_bundle->alt_icc,
-                            map_bundle->alt_icc + map_bundle->alt_icc_size);
-    JXL_RETURN_IF_ERROR(jxl::WriteICC(icc_bytes, &icc_writer, 0, nullptr));
-    icc_writer.ZeroPadToByte();
-    compressed_icc.assign(icc_writer.GetSpan().begin(),
-                          icc_writer.GetSpan().end());
-  }
 
   *bundle_size =
-      1 +                                 // size of jhgm_version
-      2 +                                 // size_of gain_map_metadata_size
-      gain_map_metadata.size() +          // size of gain_map_metadata
-      4 +                                 // size of color_encoding_size
-      compressed_color_encoding.size() +  // size of the color_encoding
-      4 +                                 // size of compressed_icc_size
-      compressed_icc.size() +             // size of compressed_icc
-      map_bundle->gain_map_size;          // size of gain map
+      1 +                                   // size of jhgm_version
+      2 +                                   // size_of gain_map_metadata_size
+      map_bundle->gain_map_metadata_size +  // size of gain_map_metadata
+      4 +                                   // size of color_encoding_size
+      compressed_color_encoding.size() +    // size of the color_encoding
+      4 +                                   // size of compressed_icc_size
+      map_bundle->alt_icc_size +            // size of compressed_icc
+      map_bundle->gain_map_size;            // size of gain map
   return JXL_TRUE;
 }
 
@@ -77,7 +60,6 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
   if (map_bundle == nullptr) return 0;
 
   uint8_t jhgm_version = map_bundle->jhgm_version;
-  size_t gain_map_size = map_bundle->gain_map_size;
 
   jxl::ColorEncoding internal_color_encoding;
   jxl::BitWriter color_encoding_writer(memory_manager);
@@ -96,40 +78,22 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
       color_encoding_writer.GetSpan().data() +
           color_encoding_writer.GetSpan().size());
 
-  // Initialize vectors from raw data and sizes
-  std::vector<uint8_t> gain_map_metadata(
-      map_bundle->gain_map_metadata,
-      map_bundle->gain_map_metadata + map_bundle->gain_map_metadata_size);
-  std::vector<uint8_t> gain_map(
-      map_bundle->gain_map, map_bundle->gain_map + map_bundle->gain_map_size);
-
-  jxl::BitWriter icc_writer(memory_manager);
-  std::vector<uint8_t> compressed_icc;
-
-  if (map_bundle->alt_icc) {
-    jxl::IccBytes icc_bytes(map_bundle->alt_icc,
-                            map_bundle->alt_icc + map_bundle->alt_icc_size);
-    JXL_RETURN_IF_ERROR(jxl::WriteICC(icc_bytes, &icc_writer, 0, nullptr));
-    icc_writer.ZeroPadToByte();
-    compressed_icc.assign(icc_writer.GetSpan().begin(),
-                          icc_writer.GetSpan().end());
-  }
   size_t cursor = 0;
   if (cursor + 1 <= output_buffer_size) {
     memcpy(output_buffer + cursor, &jhgm_version, 1);
     cursor += 1;
   }
 
-  uint16_t metadata_size = gain_map_metadata.size();
-  uint16_t metadata_size_le = JXL_BSWAP16(metadata_size);
+  uint16_t metadata_size_le = JXL_BSWAP16(map_bundle->gain_map_metadata_size);
   if (cursor + 2 <= output_buffer_size) {
     memcpy(output_buffer + cursor, &metadata_size_le, 2);
     cursor += 2;
   }
 
-  if (cursor + metadata_size <= output_buffer_size) {
-    memcpy(output_buffer + cursor, gain_map_metadata.data(), metadata_size);
-    cursor += metadata_size;
+  if (cursor + map_bundle->gain_map_metadata_size <= output_buffer_size) {
+    memcpy(output_buffer + cursor, map_bundle->gain_map_metadata,
+           map_bundle->gain_map_metadata_size);
+    cursor += map_bundle->gain_map_metadata_size;
   }
 
   uint32_t color_enc_size = compressed_color_encoding.size();
@@ -145,21 +109,22 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
     cursor += color_enc_size;
   }
 
-  uint32_t icc_size = compressed_icc.size();
-  uint32_t icc_size_le = JXL_BSWAP32(icc_size);
+  uint32_t icc_size_le = JXL_BSWAP32(map_bundle->alt_icc_size);
   if (cursor + 4 <= output_buffer_size) {
     memcpy(output_buffer + cursor, &icc_size_le, 4);
     cursor += 4;
   }
 
-  if (cursor + icc_size <= output_buffer_size) {
-    memcpy(output_buffer + cursor, compressed_icc.data(), icc_size);
-    cursor += icc_size;
+  if (cursor + map_bundle->alt_icc_size <= output_buffer_size) {
+    memcpy(output_buffer + cursor, map_bundle->alt_icc,
+           map_bundle->alt_icc_size);
+    cursor += map_bundle->alt_icc_size;
   }
 
-  if (cursor + gain_map_size <= output_buffer_size) {
-    memcpy(output_buffer + cursor, gain_map.data(), gain_map_size);
-    cursor += gain_map_size;
+  if (cursor + map_bundle->gain_map_size <= output_buffer_size) {
+    memcpy(output_buffer + cursor, map_bundle->gain_map,
+           map_bundle->gain_map_size);
+    cursor += map_bundle->gain_map_size;
   }
 
   if (bytes_written != nullptr) *bytes_written = cursor;
@@ -212,23 +177,12 @@ JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
   if (input_buffer_size < cursor + compressed_icc_size) {
     return JXL_FALSE;
   }
-  jxl::PaddedBytes icc_buffer(memory_manager);
-  if (0 < compressed_icc_size) {
-    // Decode ICC data to determine its size when uncompressed
-    jxl::Span<const uint8_t> icc_span(input_buffer + cursor,
-                                      compressed_icc_size);
 
-    jxl::BitReader icc_reader(icc_span);
-    jxl::ICCReader icc_decoder(memory_manager);
-    JXL_RETURN_IF_ERROR(icc_decoder.Init(&icc_reader, 0UL));
-    JXL_RETURN_IF_ERROR(icc_decoder.Process(&icc_reader, &icc_buffer));
-    JXL_RETURN_IF_ERROR(icc_reader.Close());
-  }
   // Set sizes in the map bundle
   map_bundle->jhgm_version = jhgm_version;
   map_bundle->has_color_encoding = (0 < compressed_color_encoding_size);
   map_bundle->gain_map_metadata_size = gain_map_metadata_size;
-  map_bundle->alt_icc_size = icc_buffer.size();
+  map_bundle->alt_icc_size = compressed_icc_size;
   map_bundle->gain_map_size = input_buffer_size - cursor - compressed_icc_size;
 
   return JXL_TRUE;
@@ -286,23 +240,8 @@ JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
   memcpy(&compressed_icc_size_le, input_buffer + cursor, 4);
   uint32_t compressed_icc_size = JXL_BSWAP32(compressed_icc_size_le);
   cursor += 4;
-
-  // Decode ICC
-  if (0 < compressed_icc_size) {
-    jxl::Span<const uint8_t> icc_span(input_buffer + cursor,
-                                      compressed_icc_size);
-    jxl::BitReader icc_reader(icc_span);
-    jxl::ICCReader icc_decoder(memory_manager);
-    jxl::PaddedBytes icc_buffer(memory_manager);
-    JXL_RETURN_IF_ERROR(icc_decoder.Init(&icc_reader, 0UL));
-    JXL_RETURN_IF_ERROR(icc_decoder.Process(&icc_reader, &icc_buffer));
-    if (map_bundle->alt_icc_size == icc_buffer.size()) {
-      memcpy(map_bundle->alt_icc, icc_buffer.data(), icc_buffer.size());
-    }
-    JXL_RETURN_IF_ERROR(icc_reader.Close());
-  }
+  memcpy(map_bundle->alt_icc, input_buffer + cursor, compressed_icc_size);
   cursor += compressed_icc_size;
-
   // Remaining bytes are gain map
   map_bundle->gain_map_size = input_buffer_size - cursor;
   if (input_buffer_size < cursor + map_bundle->gain_map_size) return JXL_FALSE;

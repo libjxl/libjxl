@@ -57,6 +57,8 @@ std::string GetTestDataPath(const std::string& filename);
 // the encoder cannot encode it in a compact struct instead.
 jxl::IccBytes GetIccTestProfile();
 
+std::vector<uint8_t> GetCompressedIccTestProfile();
+
 std::vector<uint8_t> ReadTestData(const std::string& filename);
 
 void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,

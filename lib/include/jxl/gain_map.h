@@ -34,9 +34,9 @@ typedef struct {
   bool has_color_encoding;
   /** uncompressed color encoding */
   JxlColorEncoding color_encoding;
-  /** size of the alt_icc profile */
+  /** size of the alt_icc profile  (compressed size) */
   uint32_t alt_icc_size;
-  /** pointer to the uncompressed icc profile */
+  /** pointer to the compressed icc profile */
   uint8_t* alt_icc;
   /** size of the gain map */
   uint32_t gain_map_size;
