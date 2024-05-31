@@ -87,17 +87,15 @@ struct GainMapTestParams {
   std::vector<uint8_t> icc_data;
 };
 
-class GainMapTest : public ::testing::TestWithParam<GainMapTestParams> {
- protected:
-  JxlMemoryManager* const memory_manager = jxl::test::MemoryManager();
-  JxlGainMapBundle orig_bundle;
-};
+class GainMapTest : public ::testing::TestWithParam<GainMapTestParams> {};
 
 TEST_P(GainMapTest, GainMapRoundtrip) {
   size_t bundle_size;
   const GainMapTestParams& params = GetParam();
   std::vector<uint8_t> golden_gain_map =
       GoldenTestGainMap(!params.icc_data.empty(), params.has_color_encoding);
+
+  JxlGainMapBundle orig_bundle;
   // Initialize the bundle with some test data
   orig_bundle.jhgm_version = 0;
   const char* metadata_str =
@@ -127,14 +125,13 @@ TEST_P(GainMapTest, GainMapRoundtrip) {
   orig_bundle.gain_map_size = gain_map.size();
   orig_bundle.gain_map = gain_map.data();
 
-  ASSERT_TRUE(
-      JxlGainMapGetBundleSize(memory_manager, &orig_bundle, &bundle_size));
+  ASSERT_TRUE(JxlGainMapGetBundleSize(&orig_bundle, &bundle_size));
   EXPECT_EQ(bundle_size, golden_gain_map.size());
 
   std::vector<uint8_t> buffer(bundle_size);
   size_t bytes_written;
-  ASSERT_TRUE(JxlGainMapWriteBundle(memory_manager, &orig_bundle, buffer.data(),
-                                    buffer.size(), &bytes_written));
+  ASSERT_TRUE(JxlGainMapWriteBundle(&orig_bundle, buffer.data(), buffer.size(),
+                                    &bytes_written));
   EXPECT_EQ(bytes_written, bundle_size);
   std::ofstream dump("/tmp/gainmap.bin", std::ios::out);
   dump.write(reinterpret_cast<const char*>(buffer.data()), buffer.size());

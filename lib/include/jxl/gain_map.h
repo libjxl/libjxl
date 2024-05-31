@@ -15,7 +15,6 @@
 
 #include <jxl/color_encoding.h>
 #include <jxl/jxl_export.h>
-#include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
 #ifndef __cplusplus
@@ -50,14 +49,12 @@ typedef struct {
  * serialize fields such as gain map metadata, color encoding, compressed ICC
  * profile data, and the gain map itself.
  *
- * @param[in] memory_manager A memory manager.
  * @param[in] map_bundle Pointer to the JxlGainMapBundle containing all
  * necessary data to compute the size.
  * @param[out] bundle_size The size in bytes required to serialize the bundle.
  * @return Whether setting the size was successful.
  */
-JXL_EXPORT JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
-                                            const JxlGainMapBundle* map_bundle,
+JXL_EXPORT JXL_BOOL JxlGainMapGetBundleSize(const JxlGainMapBundle* map_bundle,
                                             size_t* bundle_size);
 
 /**
@@ -67,7 +64,6 @@ JXL_EXPORT JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
  * buffer. First call `JxlGainMapGetBundleSize` to get the size needed for
  * the buffer.
  *
- * @param[in] memory_manager A memory manager.
  * @param[in] map_bundle Pointer to the `JxlGainMapBundle` to serialize.
  * @param[out] output_buffer Pointer to the buffer where the serialized data
  * will be written.
@@ -76,8 +72,7 @@ JXL_EXPORT JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
  * @param[out] bytes_written The number of bytes written to the output buffer.
  * @return Whether writing the bundle was successful.
  */
-JXL_EXPORT JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
-                                          const JxlGainMapBundle* map_bundle,
+JXL_EXPORT JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
                                           uint8_t* output_buffer,
                                           size_t output_buffer_size,
                                           size_t* bytes_written);

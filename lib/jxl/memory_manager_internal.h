@@ -18,6 +18,22 @@
 
 namespace jxl {
 
+namespace memory_manager_internal {
+
+// To avoid RFOs, match L2 fill size (pairs of lines); 2 x cache line size.
+static constexpr size_t kAlignment = 2 * 64;
+static_assert((kAlignment & (kAlignment - 1)) == 0,
+              "kAlignment must be a power of 2");
+
+// Minimum multiple for which cache set conflicts and/or loads blocked by
+// preceding stores can occur.
+static constexpr size_t kNumAlignmentGroups = 16;
+static constexpr size_t kAlias = kNumAlignmentGroups * kAlignment;
+static_assert((kNumAlignmentGroups & (kNumAlignmentGroups - 1)) == 0,
+              "kNumAlignmentGroups must be a power of 2");
+
+}  // namespace memory_manager_internal
+
 // Initializes the memory manager instance with the passed one. The
 // MemoryManager passed in |memory_manager| may be NULL or contain NULL
 // functions which will be initialized with the default ones. If either alloc

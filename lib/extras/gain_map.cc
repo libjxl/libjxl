@@ -14,17 +14,51 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_bit_writer.h"
-#include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/fields.h"
-#include "lib/jxl/icc_codec.h"
+#include "lib/jxl/memory_manager_internal.h"
 
-JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
-                                 const JxlGainMapBundle* map_bundle,
+namespace {
+
+template <size_t N>
+void* FixedSizeMemoryManagerAlloc(void* opaque, size_t capacity);
+void FixedSizeMemoryManagerFree(void* opaque, void* pointer) {}
+
+template <size_t N>
+class FixedSizeMemoryManager {
+ public:
+  FixedSizeMemoryManager() = default;
+
+  JxlMemoryManager* memory_manager() { return &manager_; }
+
+  friend void* FixedSizeMemoryManagerAlloc<N>(void* opaque, size_t capacity);
+
+ private:
+  uint8_t memory_[N + jxl::memory_manager_internal::kAlias];
+  JxlMemoryManager manager_ = {
+      /*opaque=*/this,
+      /*alloc=*/&FixedSizeMemoryManagerAlloc<N>,
+      /*free=*/&FixedSizeMemoryManagerFree,
+  };
+};
+
+template <size_t N>
+void* FixedSizeMemoryManagerAlloc(void* opaque, size_t capacity) {
+  auto manager = static_cast<FixedSizeMemoryManager<N>*>(opaque);
+  if (capacity > N + jxl::memory_manager_internal::kAlias) {
+    return nullptr;
+  }
+  return manager->memory_;
+}
+
+}  // namespace
+
+JXL_BOOL JxlGainMapGetBundleSize(const JxlGainMapBundle* map_bundle,
                                  size_t* bundle_size) {
   if (map_bundle == nullptr) return 0;
 
+  FixedSizeMemoryManager<sizeof(jxl::ColorEncoding)> memory_manager;
   jxl::ColorEncoding internal_color_encoding;
-  jxl::BitWriter color_encoding_writer(memory_manager);
+  jxl::BitWriter color_encoding_writer(memory_manager.memory_manager());
   if (map_bundle->has_color_encoding) {
     JXL_RETURN_IF_ERROR(
         internal_color_encoding.FromExternal(map_bundle->color_encoding));
@@ -34,25 +68,20 @@ JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
     }
   }
   color_encoding_writer.ZeroPadToByte();
-  std::vector<uint8_t> compressed_color_encoding(
-      color_encoding_writer.GetSpan().data(),
-      color_encoding_writer.GetSpan().data() +
-          color_encoding_writer.GetSpan().size());
 
   *bundle_size =
       1 +                                   // size of jhgm_version
       2 +                                   // size_of gain_map_metadata_size
       map_bundle->gain_map_metadata_size +  // size of gain_map_metadata
       1 +                                   // size of color_encoding_size
-      compressed_color_encoding.size() +    // size of the color_encoding
-      4 +                                   // size of compressed_icc_size
-      map_bundle->alt_icc_size +            // size of compressed_icc
-      map_bundle->gain_map_size;            // size of gain map
+      color_encoding_writer.GetSpan().size() +  // size of the color_encoding
+      4 +                                       // size of compressed_icc_size
+      map_bundle->alt_icc_size +                // size of compressed_icc
+      map_bundle->gain_map_size;                // size of gain map
   return JXL_TRUE;
 }
 
-JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
-                               const JxlGainMapBundle* map_bundle,
+JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
                                uint8_t* output_buffer,
                                size_t output_buffer_size,
                                size_t* bytes_written) {
@@ -60,8 +89,9 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
 
   uint8_t jhgm_version = map_bundle->jhgm_version;
 
+  FixedSizeMemoryManager<sizeof(jxl::ColorEncoding)> memory_manager;
   jxl::ColorEncoding internal_color_encoding;
-  jxl::BitWriter color_encoding_writer(memory_manager);
+  jxl::BitWriter color_encoding_writer(memory_manager.memory_manager());
   if (map_bundle->has_color_encoding) {
     JXL_RETURN_IF_ERROR(
         internal_color_encoding.FromExternal(map_bundle->color_encoding));
@@ -72,10 +102,6 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
   }
 
   color_encoding_writer.ZeroPadToByte();
-  std::vector<uint8_t> compressed_color_encoding(
-      color_encoding_writer.GetSpan().data(),
-      color_encoding_writer.GetSpan().data() +
-          color_encoding_writer.GetSpan().size());
 
   size_t cursor = 0;
   if (cursor + 1 <= output_buffer_size) {
@@ -96,14 +122,14 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
   }
 
   uint8_t color_enc_size =
-      static_cast<uint8_t>(compressed_color_encoding.size());
+      static_cast<uint8_t>(color_encoding_writer.GetSpan().size());
   if (cursor + 1 <= output_buffer_size) {
     memcpy(output_buffer + cursor, &color_enc_size, 4);
     cursor += 1;
   }
 
   if (cursor + color_enc_size <= output_buffer_size) {
-    memcpy(output_buffer + cursor, compressed_color_encoding.data(),
+    memcpy(output_buffer + cursor, color_encoding_writer.GetSpan().data(),
            color_enc_size);
     cursor += color_enc_size;
   }
