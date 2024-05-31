@@ -202,7 +202,6 @@ TEST_P(GainMapTest, GainMapRoundtrip) {
                          alt_icc.begin()));
   EXPECT_TRUE(std::equal(output_gain_map.begin(), output_gain_map.end(),
                          gain_map.begin()));
-
 }
 
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
