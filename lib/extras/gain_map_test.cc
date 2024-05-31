@@ -44,10 +44,7 @@ std::vector<uint8_t> GoldenTestGainMap(bool has_icc, bool has_color_encoding) {
       "placeholder gain map metadata, fill with actual example after (ISO "
       "21496-1) is finalized";
 
-  std::vector<uint8_t> color_encoding_size = {0x00, 0x00, 0x00, 0x00};
-  if (has_color_encoding) {
-    color_encoding_size[3] = 0x03;
-  }
+  uint8_t color_encoding_size = has_color_encoding ? 3 : 0;
   std::vector<uint8_t> color_encoding = {0x50, 0xb4, 0x00};
 
   std::vector<uint8_t> icc_size = {0x00, 0x00, 0x00, 0x00};
@@ -65,8 +62,7 @@ std::vector<uint8_t> GoldenTestGainMap(bool has_icc, bool has_color_encoding) {
                   gain_map_metadata_size.end());
   gain_map.insert(gain_map.end(), first_placeholder.begin(),
                   first_placeholder.end());
-  gain_map.insert(gain_map.end(), color_encoding_size.begin(),
-                  color_encoding_size.end());
+  gain_map.push_back(color_encoding_size);
   if (has_color_encoding) {
     gain_map.insert(gain_map.end(), color_encoding.begin(),
                     color_encoding.end());

@@ -43,7 +43,7 @@ JXL_BOOL JxlGainMapGetBundleSize(JxlMemoryManager* memory_manager,
       1 +                                   // size of jhgm_version
       2 +                                   // size_of gain_map_metadata_size
       map_bundle->gain_map_metadata_size +  // size of gain_map_metadata
-      4 +                                   // size of color_encoding_size
+      1 +                                   // size of color_encoding_size
       compressed_color_encoding.size() +    // size of the color_encoding
       4 +                                   // size of compressed_icc_size
       map_bundle->alt_icc_size +            // size of compressed_icc
@@ -96,11 +96,11 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
     cursor += map_bundle->gain_map_metadata_size;
   }
 
-  uint32_t color_enc_size = compressed_color_encoding.size();
-  uint32_t color_enc_size_le = JXL_BSWAP32(color_enc_size);
-  if (cursor + 4 <= output_buffer_size) {
-    memcpy(output_buffer + cursor, &color_enc_size_le, 4);
-    cursor += 4;
+  uint8_t color_enc_size =
+      static_cast<uint8_t>(compressed_color_encoding.size());
+  if (cursor + 1 <= output_buffer_size) {
+    memcpy(output_buffer + cursor, &color_enc_size, 4);
+    cursor += 1;
   }
 
   if (cursor + color_enc_size <= output_buffer_size) {
@@ -154,12 +154,10 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
   map_bundle->gain_map_metadata = input_buffer + cursor;
   cursor += gain_map_metadata_size;
 
-  // Read and swap compressed_color_encoding_size
-  uint32_t compressed_color_encoding_size_le;
-  memcpy(&compressed_color_encoding_size_le, input_buffer + cursor, 4);
-  uint32_t compressed_color_encoding_size =
-      JXL_BSWAP32(compressed_color_encoding_size_le);
-  cursor += 4;
+  // Read compressed_color_encoding_size
+  uint8_t compressed_color_encoding_size;
+  memcpy(&compressed_color_encoding_size, input_buffer + cursor, 1);
+  cursor += 1;
 
   map_bundle->has_color_encoding = (0 < compressed_color_encoding_size);
   if (map_bundle->has_color_encoding) {
