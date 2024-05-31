@@ -56,7 +56,6 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
                                uint8_t* output_buffer,
                                size_t output_buffer_size,
                                size_t* bytes_written) {
-  // TODO avoid code duplication with JxlGainMapGetBundleSize
   if (map_bundle == nullptr) return 0;
 
   uint8_t jhgm_version = map_bundle->jhgm_version;
