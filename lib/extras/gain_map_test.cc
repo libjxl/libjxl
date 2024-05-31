@@ -175,12 +175,34 @@ TEST_P(GainMapTest, GainMapRoundtrip) {
       std::equal(buffer.begin(), buffer.end(), golden_gain_map.begin()));
 
   JxlGainMapBundle output_bundle;
-  JxlGainMapGetBufferSizes(memory_manager, &output_bundle, buffer.data(),
-                           buffer.size());
+  ASSERT_TRUE(JxlGainMapGetBufferSizes(memory_manager, &output_bundle,
+                                       buffer.data(), buffer.size()));
   EXPECT_EQ(output_bundle.gain_map_size, orig_bundle.gain_map_size);
   EXPECT_EQ(output_bundle.gain_map_metadata_size,
             orig_bundle.gain_map_metadata_size);
   EXPECT_EQ(output_bundle.alt_icc_size, orig_bundle.alt_icc_size);
+  EXPECT_EQ(output_bundle.has_color_encoding, params.has_color_encoding);
+  EXPECT_EQ(output_bundle.jhgm_version, orig_bundle.jhgm_version);
+  std::vector<uint8_t> output_gain_map_metadata;
+  std::vector<uint8_t> output_alt_icc;
+  std::vector<uint8_t> output_gain_map;
+  output_gain_map_metadata.resize(output_bundle.gain_map_metadata_size);
+  output_alt_icc.resize(output_bundle.alt_icc_size);
+  output_gain_map.resize(output_bundle.gain_map_size);
+  output_bundle.gain_map_metadata = output_gain_map_metadata.data();
+  output_bundle.alt_icc = output_alt_icc.data();
+  output_bundle.gain_map = output_gain_map.data();
+  size_t bytes_read;
+  ASSERT_TRUE(JxlGainMapReadBundle(memory_manager, &output_bundle,
+                                   buffer.data(), buffer.size(), &bytes_read));
+  EXPECT_TRUE(std::equal(output_gain_map_metadata.begin(),
+                         output_gain_map_metadata.end(),
+                         gain_map_metadata.begin()));
+  EXPECT_TRUE(std::equal(output_alt_icc.begin(), output_alt_icc.end(),
+                         alt_icc.begin()));
+  EXPECT_TRUE(std::equal(output_gain_map.begin(), output_gain_map.end(),
+                         gain_map.begin()));
+
 }
 
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(

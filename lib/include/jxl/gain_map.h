@@ -84,8 +84,10 @@ JXL_EXPORT JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
 
 /**
  * Determines the sizes of various components within a gain map bundle from a
- * serialized buffer. This function parses the buffer to extract sets the
+ * serialized buffer. This function parses the buffer to extract and sets the
  * following fields of `JxlGainMapBundle`:
+ *  - jhgm_version
+ *  - has_color_encoding
  *  - gain_map_metadata_size
  *  - alt_icc_size
  *  - gain_map_size
