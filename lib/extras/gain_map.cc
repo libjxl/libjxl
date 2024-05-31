@@ -124,7 +124,7 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
   uint8_t color_enc_size =
       static_cast<uint8_t>(color_encoding_writer.GetSpan().size());
   if (cursor + 1 <= output_buffer_size) {
-    memcpy(output_buffer + cursor, &color_enc_size, 4);
+    memcpy(output_buffer + cursor, &color_enc_size, 1);
     cursor += 1;
   }
 
