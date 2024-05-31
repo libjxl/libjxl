@@ -941,7 +941,7 @@ run_benchmark() {
     "${TOOLS_DIR}/benchmark_xl" "${benchmark_args[@]}" | \
        tee "${output_dir}/results.txt"
 
-    # Check error code for benckmark_xl command. This will exit if not.
+    # Check error code for benchmark_xl command. This will exit if not.
     return ${PIPESTATUS[0]}
   )
 }
@@ -1222,6 +1222,15 @@ cmd_lint() {
       echo 'To fix them run (from the base directory):' >&2
       echo '  buildifier `git ls-files | grep -E "/BUILD$|WORKSPACE|.bzl$"`' >&2
     fi
+  fi
+
+  # It is ok, if spell-checker is not installed.
+  if which typos >/dev/null; then
+    local src_ext="bazel|bzl|c|cc|cmake|gni|h|html|in|java|js|m|md|nix|py|rst|sh|ts|txt|yaml|yml"
+    local sources=`git -C ${MYDIR} ls-files | grep -E "\.(${src_ext})$"`
+    typos -c ${MYDIR}/tools/scripts/typos.toml ${sources}
+  else
+    echo "Consider installing https://github.com/crate-ci/typos for spell-checking"
   fi
 
   local installed=()

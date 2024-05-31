@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         with:
           submodules: recursive
-          persist-credentials: false # otherwise, the wrong auhtentication is used in the push
+          persist-credentials: false # otherwise, the wrong authentication is used in the push
           fetch-depth: 0 # otherwise, there would be errors pushing refs to the destination repository.
       - name: Pull & update highway
         working-directory: ./third_party/highway

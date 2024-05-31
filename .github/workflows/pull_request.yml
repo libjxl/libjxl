@@ -57,10 +57,10 @@ jobs:
         #
     - name: Checkout the source
       uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-    - name: Install buildifier
+    - name: Install tools
       run: |
         eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-        brew install buildifier
+        brew install buildifier typos-cli
     - name: lint
       run: |
         eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
