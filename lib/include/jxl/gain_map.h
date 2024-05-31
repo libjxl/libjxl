@@ -29,7 +29,7 @@ typedef struct {
   /** size of the gain map metadata */
   uint16_t gain_map_metadata_size;
   /** pointer to binary blob of gain map metadata (ISO 21496-1) */
-  uint8_t* gain_map_metadata;
+  const uint8_t* gain_map_metadata;
   /** indicate if it has a color encoding*/
   bool has_color_encoding;
   /** uncompressed color encoding */
@@ -37,11 +37,11 @@ typedef struct {
   /** size of the alt_icc profile  (compressed size) */
   uint32_t alt_icc_size;
   /** pointer to the compressed icc profile */
-  uint8_t* alt_icc;
+  const uint8_t* alt_icc;
   /** size of the gain map */
   uint32_t gain_map_size;
   /** pointer to the gain map (a JPEG XL naked codestream) */
-  uint8_t* gain_map;
+  const uint8_t* gain_map;
 } JxlGainMapBundle;
 
 /**
@@ -83,41 +83,16 @@ JXL_EXPORT JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
                                           size_t* bytes_written);
 
 /**
- * Determines the sizes of various components within a gain map bundle from a
- * serialized buffer. This function parses the buffer to extract and sets the
- * following fields of `JxlGainMapBundle`:
- *  - jhgm_version
- *  - has_color_encoding
- *  - gain_map_metadata_size
- *  - alt_icc_size
- *  - gain_map_size
- * allowing buffer allocation for deserialization, preparing the call to
- * `JxlGainMapReadBundle`.
- *
- * @param[in] memory_manager A memory manager.
- * @param[in,out] map_bundle Pointer to the `JxlGainMapBundle` where the sizes
- * will be stored. Must be preallocated.
- * @param[in] input_buffer Pointer to the buffer containing the serialized gain
- * map bundle data.
- * @param[in] input_buffer_size The size of the input buffer in bytes.
- * @return Whether the sizes could be successfully determined.
- */
-JXL_EXPORT JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
-                                             JxlGainMapBundle* map_bundle,
-                                             const uint8_t* input_buffer,
-                                             size_t input_buffer_size);
-
-/**
- * Deserializes a gain map bundle from a given buffer, populating the provided
- * `JxlGainMapBundle` structure with data extracted from the buffer. Assumes
- * that the buffer contains a valid serialized gain map bundle and that the
- * `map_bundle` has preallocated memory for the pointers
+ * Deserializes a gain map bundle from a provided buffer and populates a
+ * `JxlGainMapBundle` structure with the data extracted. This function assumes
+ * the buffer contains a valid serialized gain map bundle. After successful
+ * execution, the `JxlGainMapBundle` structure will reference three different
+ * sections within the buffer:
  *  - gain_map_metadata
  *  - alt_icc
- *  - gain
- * based on sizes obtained from `JxlGainMapGetBufferSizes`.
- *
- * @param[in] memory_manager A memory manager.
+ *  - gain_map
+ * These sections will be accompanied by their respective sizes. Users must
+ * ensure that the buffer remains valid as long as these pointers are in use.
  * @param[in,out] map_bundle Pointer to a preallocated `JxlGainMapBundle` where
  * the deserialized data will be stored.
  * @param[in] input_buffer Pointer to the buffer containing the serialized gain
@@ -126,8 +101,7 @@ JXL_EXPORT JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
  * @param[out] bytes_read The number of bytes read from the input buffer.
  * @return Whether reading the bundle was successful.
  */
-JXL_EXPORT JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
-                                         JxlGainMapBundle* map_bundle,
+JXL_EXPORT JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
                                          const uint8_t* input_buffer,
                                          size_t input_buffer_size,
                                          size_t* bytes_read);

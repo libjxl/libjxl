@@ -131,65 +131,7 @@ JXL_BOOL JxlGainMapWriteBundle(JxlMemoryManager* memory_manager,
   return cursor == output_buffer_size ? JXL_TRUE : JXL_FALSE;
 }
 
-JXL_BOOL JxlGainMapGetBufferSizes(JxlMemoryManager* memory_manager,
-                                  JxlGainMapBundle* map_bundle,
-                                  const uint8_t* input_buffer,
-                                  const size_t input_buffer_size) {
-  if (input_buffer == nullptr || input_buffer_size < 1 + 2 + 4 + 4) {
-    return JXL_FALSE;
-  }
-
-  size_t cursor = 0;
-
-  uint8_t jhgm_version = input_buffer[cursor];
-  cursor += 1;
-
-  // Read the gain_map_metadata_size (2 bytes, needs endian swap)
-  uint16_t gain_map_metadata_size;
-  memcpy(&gain_map_metadata_size, input_buffer + cursor, 2);
-  gain_map_metadata_size = JXL_BSWAP16(gain_map_metadata_size);
-  cursor += 2;
-
-  if (input_buffer_size < cursor + gain_map_metadata_size + 4 + 4) {
-    return JXL_FALSE;
-  }
-
-  cursor += gain_map_metadata_size;
-
-  // Read compressed_color_encoding size (4 bytes, needs endian swap)
-  uint32_t compressed_color_encoding_size;
-  memcpy(&compressed_color_encoding_size, input_buffer + cursor, 4);
-  compressed_color_encoding_size = JXL_BSWAP32(compressed_color_encoding_size);
-  cursor += 4;
-
-  if (input_buffer_size < cursor + compressed_color_encoding_size + 4) {
-    return JXL_FALSE;
-  }
-
-  cursor += compressed_color_encoding_size;
-
-  // Read compressed_icc size (4 bytes, needs endian swap)
-  uint32_t compressed_icc_size;
-  memcpy(&compressed_icc_size, input_buffer + cursor, 4);
-  compressed_icc_size = JXL_BSWAP32(compressed_icc_size);
-  cursor += 4;
-
-  if (input_buffer_size < cursor + compressed_icc_size) {
-    return JXL_FALSE;
-  }
-
-  // Set sizes in the map bundle
-  map_bundle->jhgm_version = jhgm_version;
-  map_bundle->has_color_encoding = (0 < compressed_color_encoding_size);
-  map_bundle->gain_map_metadata_size = gain_map_metadata_size;
-  map_bundle->alt_icc_size = compressed_icc_size;
-  map_bundle->gain_map_size = input_buffer_size - cursor - compressed_icc_size;
-
-  return JXL_TRUE;
-}
-
-JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
-                              JxlGainMapBundle* map_bundle,
+JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
                               const uint8_t* input_buffer,
                               const size_t input_buffer_size,
                               size_t* bytes_read) {
@@ -208,10 +150,8 @@ JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
   memcpy(&gain_map_metadata_size_le, input_buffer + cursor, 2);
   uint16_t gain_map_metadata_size = JXL_BSWAP16(gain_map_metadata_size_le);
   cursor += 2;
-  // Copy gain_map_metadata
-  if (input_buffer_size < cursor + gain_map_metadata_size) return JXL_FALSE;
-  memcpy(map_bundle->gain_map_metadata, input_buffer + cursor,
-         gain_map_metadata_size);
+  map_bundle->gain_map_metadata_size = gain_map_metadata_size;
+  map_bundle->gain_map_metadata = input_buffer + cursor;
   cursor += gain_map_metadata_size;
 
   // Read and swap compressed_color_encoding_size
@@ -240,14 +180,13 @@ JXL_BOOL JxlGainMapReadBundle(JxlMemoryManager* memory_manager,
   memcpy(&compressed_icc_size_le, input_buffer + cursor, 4);
   uint32_t compressed_icc_size = JXL_BSWAP32(compressed_icc_size_le);
   cursor += 4;
-  memcpy(map_bundle->alt_icc, input_buffer + cursor, compressed_icc_size);
+  map_bundle->alt_icc_size = compressed_icc_size;
+  map_bundle->alt_icc = input_buffer + cursor;
   cursor += compressed_icc_size;
   // Remaining bytes are gain map
   map_bundle->gain_map_size = input_buffer_size - cursor;
   if (input_buffer_size < cursor + map_bundle->gain_map_size) return JXL_FALSE;
-  memcpy(map_bundle->gain_map, input_buffer + cursor,
-         map_bundle->gain_map_size);
-  cursor += map_bundle->gain_map_size;
+  map_bundle->gain_map = input_buffer + cursor;
 
   if (bytes_read != nullptr) *bytes_read = cursor;
   return JXL_TRUE;
