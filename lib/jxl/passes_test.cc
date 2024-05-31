@@ -5,6 +5,7 @@
 
 #include <jxl/cms.h>
 #include <jxl/memory_manager.h>
+#include <jxl/types.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +20,8 @@
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"

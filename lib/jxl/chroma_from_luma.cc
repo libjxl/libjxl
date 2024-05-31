@@ -8,7 +8,7 @@
 #include <jxl/memory_manager.h>
 
 #include <cstddef>
-#include <cstdlib>
+#include <cstdlib>  // abs
 #include <limits>
 
 #include "lib/jxl/base/common.h"

@@ -5,15 +5,16 @@
 
 #include "tools/benchmark/benchmark_args.h"
 
-#include <stddef.h>
-#include <stdlib.h>
+#include <jxl/color_encoding.h>
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
-#include "lib/extras/codec.h"
 #include "lib/extras/dec/color_description.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "tools/benchmark/benchmark_codec_custom.h"  // for AddCommand..

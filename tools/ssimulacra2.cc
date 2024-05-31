@@ -25,6 +25,7 @@ Design:
 #include "tools/ssimulacra2.h"
 
 #include <jxl/cms.h>
+#include <jxl/memory_manager.h>
 
 #include <algorithm>
 #include <cmath>

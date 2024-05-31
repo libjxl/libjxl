@@ -8,7 +8,6 @@
 #include <jxl/types.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>

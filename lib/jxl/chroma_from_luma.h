@@ -11,7 +11,6 @@
 
 #include <jxl/memory_manager.h>
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
