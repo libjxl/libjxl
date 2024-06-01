@@ -735,7 +735,7 @@ static Status CreateICCLutAtoBTagForHDR(JxlColorEncoding c,
 
 // Some software (Apple Safari, Preview) requires this.
 static Status CreateICCNoOpBToATag(std::vector<uint8_t>* tags) {
-  WriteICCTag("mBA ", tags->size(), tags);
+  WriteICCTag("mBA ", tags->size(), tags);  // notypo
   // 4 reserved bytes set to 0
   WriteICCUint32(0, tags->size(), tags);
   // number of input channels

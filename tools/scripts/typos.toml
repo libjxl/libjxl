@@ -1,0 +1,32 @@
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file
+
+[default]
+extend-ignore-re = [
+  "(?Rm)^.*// notypo$",  # disable check in current line
+  "// typo:off\\n(.*\\n)+\\s*// typo:on",  # disable check in block
+  "0x[0-9a-fA-F]+[ ,u]",  # hexadecimal literal
+  "clang-analyzer-optin",
+]
+extend-ignore-identifiers-re = []
+
+[default.extend-words]
+CNA = "CNA" # CVE Numbering Authority
+ix = "ix"
+iy = "iy"
+
+[default.extend-identifiers]
+APPn = "APPn"  # JPEG APP marker N
+cmsCreate_sRGBProfileTHR = "cmsCreate_sRGBProfileTHR"
+cmsCreateTransformTHR = "cmsCreateTransformTHR"
+cmsCreateXYZProfileTHR = "cmsCreateXYZProfileTHR"
+cmsOpenProfileFromMemTHR = "cmsOpenProfileFromMemTHR"
+cmsSetLogErrorHandlerTHR = "cmsSetLogErrorHandlerTHR"
+hIST = "hIST"  # histogram PNG chunk
+JMSG_STR_PARM_MAX = "JMSG_STR_PARM_MAX"  # jpeglib
+msg_parm = "msg_parm"  # jpeglib
+PNGs = "PNGs"
+YtoBRatio = "YtoBRatio"
+YtoXRatio = "YtoXRatio"

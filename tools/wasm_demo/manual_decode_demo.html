@@ -63,7 +63,7 @@ let probeHdr = () => {
 };
 
 // "main" method executed after page is loaded; all scripts are "synchronous" elements,
-// so it is guaranted that script elements are loaded and executed.
+// so it is guaranteed that script elements are loaded and executed.
 let onDomContentLoaded = () => {
   if (!probeMutlithreading()) return;
   hdrCanvas = probeHdr();

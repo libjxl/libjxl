@@ -799,7 +799,7 @@ void ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // starting from the smallest transforms (16x8 and 8x16).
   // Additional complication: 16x8 and 8x16 are considered
   // simultaneously and fairly against each other.
-  // We are looking at 64x64 squares since the YtoX and YtoB
+  // We are looking at 64x64 squares since the Y-to-X and Y-to-B
   // maps happen to be at that resolution, and having
   // integral transforms cross these boundaries leads to
   // additional complications.

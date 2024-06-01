@@ -95,19 +95,19 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   }
 
   ImageF distmap;
-  ButteraugliParams ba_params;
-  ba_params.hf_asymmetry = 1.0f;
-  ba_params.xmul = 1.0f;
-  ba_params.intensity_target = intensity_target;
+  ButteraugliParams butteraugli_params;
+  butteraugli_params.hf_asymmetry = 1.0f;
+  butteraugli_params.xmul = 1.0f;
+  butteraugli_params.intensity_target = intensity_target;
   const JxlCmsInterface& cms = *JxlGetDefaultCms();
-  JxlButteraugliComparator comparator(ba_params, cms);
+  JxlButteraugliComparator comparator(butteraugli_params, cms);
   float distance;
   JXL_CHECK(ComputeScore(io1.Main(), io2.Main(), &comparator, cms, &distance,
                          &distmap, pool.get(),
                          /* ignore_alpha */ false));
   printf("%.10f\n", distance);
 
-  double pnorm = jxl::ComputeDistanceP(distmap, ba_params, p);
+  double pnorm = jxl::ComputeDistanceP(distmap, butteraugli_params, p);
   printf("%g-norm: %f\n", p, pnorm);
 
   if (!distmap_filename.empty()) {

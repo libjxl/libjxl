@@ -606,11 +606,11 @@ float Butteraugli3Norm(const extras::PackedPixelFile& a,
   JXL_CHECK(ConvertPackedPixelFileToCodecInOut(a, pool, &io0));
   CodecInOut io1{memory_manager};
   JXL_CHECK(ConvertPackedPixelFileToCodecInOut(b, pool, &io1));
-  ButteraugliParams ba;
+  ButteraugliParams butteraugli_params;
   ImageF distmap;
-  ButteraugliDistance(io0.frames, io1.frames, ba, *JxlGetDefaultCms(), &distmap,
-                      pool);
-  return ComputeDistanceP(distmap, ba, 3);
+  ButteraugliDistance(io0.frames, io1.frames, butteraugli_params,
+                      *JxlGetDefaultCms(), &distmap, pool);
+  return ComputeDistanceP(distmap, butteraugli_params, 3);
 }
 
 float ComputeDistance2(const extras::PackedPixelFile& a,

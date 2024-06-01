@@ -144,7 +144,7 @@ adding asserts:
 
  * `JXL_DASSERT()` is only enabled in Debug builds, which includes all the ASan,
    MSan and UBSan builds. Performance of these checks is not an issue if kept
-   within reasonable limits (automated msan/asan test should finish withing 1
+   within reasonable limits (automated msan/asan test should finish within 1
    hour for example). Fuzzing is more effective when the given input runs
    faster, so keep that in mind when adding a complex DASSERT that runs multiple
    times per output pixel.
