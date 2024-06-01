@@ -59,13 +59,14 @@ inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
 
 // `cutoffs` must be sorted.
 Tree MakeFixedTree(int property, const std::vector<int32_t> &cutoffs,
-                   Predictor pred, size_t num_pixels) {
+                   Predictor pred, size_t num_pixels, int bitdepth) {
   size_t log_px = CeilLog2Nonzero(num_pixels);
   size_t min_gap = 0;
   // Reduce fixed tree height when encoding small images.
   if (log_px < 14) {
     min_gap = 8 * (14 - log_px);
   }
+  const size_t shift = bitdepth > 10 ? bitdepth - 10 : 0;
   Tree tree;
   struct NodeInfo {
     size_t begin, end, pos;
@@ -79,8 +80,8 @@ Tree MakeFixedTree(int property, const std::vector<int32_t> &cutoffs,
     q.pop();
     if (info.begin + min_gap >= info.end) continue;
     uint32_t split = (info.begin + info.end) / 2;
-    tree[info.pos] =
-        PropertyDecisionNode::Split(property, cutoffs[split], tree.size());
+    int32_t cutoff = cutoffs[split] << shift;
+    tree[info.pos] = PropertyDecisionNode::Split(property, cutoff, tree.size());
     q.push(NodeInfo{split + 1, info.end, tree.size()});
     tree.push_back(PropertyDecisionNode::Leaf(pred));
     q.push(NodeInfo{info.begin, split, tree.size()});
@@ -195,7 +196,8 @@ Status GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
   return true;
 }
 
-Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
+Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels,
+                    int bitdepth, int prevprop) {
   switch (tree_kind) {
     case ModularOptions::TreeKind::kJpegTranscodeACMeta:
       // All the data is 0, so no need for a fancy tree.
@@ -260,15 +262,17 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
           -500, -392, -255, -191, -127, -95, -63, -47, -31, -23, -15,
           -11,  -7,   -4,   -3,   -1,   0,   1,   3,   5,   7,   11,
           15,   23,   31,   47,   63,   95,  127, 191, 255, 392, 500};
-      return MakeFixedTree(kWPProp, cutoffs, Predictor::Weighted, total_pixels);
+      return MakeFixedTree(kWPProp, cutoffs, Predictor::Weighted, total_pixels,
+                           bitdepth);
     }
     case ModularOptions::TreeKind::kGradientFixedDC: {
       std::vector<int32_t> cutoffs = {
           -500, -392, -255, -191, -127, -95, -63, -47, -31, -23, -15,
           -11,  -7,   -4,   -3,   -1,   0,   1,   3,   5,   7,   11,
           15,   23,   31,   47,   63,   95,  127, 191, 255, 392, 500};
-      return MakeFixedTree(kGradientProp, cutoffs, Predictor::Gradient,
-                           total_pixels);
+      return MakeFixedTree(
+          prevprop > 0 ? kNumNonrefProperties + 2 : kGradientProp, cutoffs,
+          Predictor::Gradient, total_pixels, bitdepth);
     }
     case ModularOptions::TreeKind::kLearn: {
       JXL_DEBUG_ABORT("internal: kLearn is not predefined tree");
@@ -631,11 +635,11 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     std::vector<uint8_t> context_map;
 
     std::vector<std::vector<Token>> tree_tokens(1);
-
     tree_storage =
         options.tree_kind == ModularOptions::TreeKind::kLearn
             ? LearnTree(std::move(tree_samples_storage), *total_pixels, options)
-            : PredefinedTree(options.tree_kind, *total_pixels);
+            : PredefinedTree(options.tree_kind, *total_pixels, image.bitdepth,
+                             options.max_properties);
     tree = &tree_storage;
     tokens = tokens_storage.data();
 

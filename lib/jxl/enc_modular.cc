@@ -1131,8 +1131,8 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
                 total_pixels += ch.w * ch.h;
               }
             }
-            trees[chunk] =
-                PredefinedTree(stream_options_[start].tree_kind, total_pixels);
+            trees[chunk] = PredefinedTree(stream_options_[start].tree_kind,
+                                          total_pixels, 8, 0);
             return;
           }
           TreeSamples tree_samples;
@@ -1187,17 +1187,20 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
   } else {
     // Fixed tree.
     size_t total_pixels = 0;
+    int max_bitdepth = 0;
     for (const Image& img : stream_images_) {
+      max_bitdepth = std::max(max_bitdepth, img.bitdepth);
       for (const Channel& ch : img.channel) {
         total_pixels += ch.w * ch.h;
       }
     }
     if (cparams_.speed_tier <= SpeedTier::kFalcon) {
-      tree_ =
-          PredefinedTree(ModularOptions::TreeKind::kWPFixedDC, total_pixels);
+      tree_ = PredefinedTree(ModularOptions::TreeKind::kWPFixedDC, total_pixels,
+                             max_bitdepth, stream_options_[0].max_properties);
     } else if (cparams_.speed_tier <= SpeedTier::kThunder) {
       tree_ = PredefinedTree(ModularOptions::TreeKind::kGradientFixedDC,
-                             total_pixels);
+                             total_pixels, max_bitdepth,
+                             stream_options_[0].max_properties);
     } else {
       tree_ = {PropertyDecisionNode::Leaf(Predictor::Gradient)};
     }
