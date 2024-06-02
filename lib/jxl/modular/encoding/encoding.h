@@ -27,7 +27,7 @@ struct ANSCode;
 class BitReader;
 
 // Valid range of properties for using lookup tables instead of trees.
-constexpr int32_t kPropRangeFast = 512;
+constexpr int32_t kPropRangeFast = 512 << 6;
 
 struct GroupHeader : public Fields {
   GroupHeader();
