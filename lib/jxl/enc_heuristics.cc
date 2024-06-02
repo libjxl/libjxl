@@ -1077,7 +1077,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     // Call this here, as it relies on pre-gaborish values.
     float butteraugli_distance_for_iqf = cparams.butteraugli_distance;
     if (!frame_header.loop_filter.gab) {
-      butteraugli_distance_for_iqf *= 0.73f;
+      butteraugli_distance_for_iqf *= 0.62f;
     }
     JXL_ASSIGN_OR_RETURN(
         initial_quant_field,

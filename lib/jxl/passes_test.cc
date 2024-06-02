@@ -402,7 +402,7 @@ TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
       ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
-      1.2);
+      1.0);
 }
 
 }  // namespace
