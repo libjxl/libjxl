@@ -11,6 +11,7 @@
 #include <cstring>
 
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_bit_writer.h"
@@ -103,56 +104,66 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
 
   color_encoding_writer.ZeroPadToByte();
 
-  size_t cursor = 0;
-  if (cursor + 1 <= output_buffer_size) {
+  uint64_t cursor = 0;
+  uint64_t next_cursor = 0;
+  if (jxl::SafeAdd(cursor, 1, next_cursor) &&
+      next_cursor <= output_buffer_size) {
     memcpy(output_buffer + cursor, &jhgm_version, 1);
-    cursor += 1;
+    cursor = next_cursor;
   }
 
   uint16_t metadata_size_le = JXL_BSWAP16(map_bundle->gain_map_metadata_size);
-  if (cursor + 2 <= output_buffer_size) {
+  if (jxl::SafeAdd(cursor, 2, next_cursor) &&
+      next_cursor <= output_buffer_size) {
     memcpy(output_buffer + cursor, &metadata_size_le, 2);
-    cursor += 2;
+    cursor = next_cursor;
   }
 
-  if (cursor + map_bundle->gain_map_metadata_size <= output_buffer_size) {
+  if (jxl::SafeAdd(cursor, map_bundle->gain_map_metadata_size, next_cursor) &&
+      next_cursor <= output_buffer_size) {
     memcpy(output_buffer + cursor, map_bundle->gain_map_metadata,
            map_bundle->gain_map_metadata_size);
-    cursor += map_bundle->gain_map_metadata_size;
+    cursor = next_cursor;
   }
 
   uint8_t color_enc_size =
       static_cast<uint8_t>(color_encoding_writer.GetSpan().size());
-  if (cursor + 1 <= output_buffer_size) {
+  if (jxl::SafeAdd(cursor, 1, next_cursor) &&
+      next_cursor <= output_buffer_size) {
     memcpy(output_buffer + cursor, &color_enc_size, 1);
-    cursor += 1;
+    cursor = next_cursor;
   }
 
-  if (cursor + color_enc_size <= output_buffer_size) {
+  if (jxl::SafeAdd(cursor, color_enc_size, next_cursor) &&
+      next_cursor <= output_buffer_size) {
     memcpy(output_buffer + cursor, color_encoding_writer.GetSpan().data(),
            color_enc_size);
-    cursor += color_enc_size;
+    cursor = next_cursor;
   }
 
   uint32_t icc_size_le = JXL_BSWAP32(map_bundle->alt_icc_size);
-  if (cursor + 4 <= output_buffer_size) {
+  if (jxl::SafeAdd(cursor, 4, next_cursor) &&
+      next_cursor <= output_buffer_size) {
     memcpy(output_buffer + cursor, &icc_size_le, 4);
-    cursor += 4;
+    cursor = next_cursor;
   }
 
-  if (cursor + map_bundle->alt_icc_size <= output_buffer_size) {
+  if (jxl::SafeAdd(cursor, map_bundle->alt_icc_size, next_cursor) &&
+      next_cursor <= output_buffer_size) {
     memcpy(output_buffer + cursor, map_bundle->alt_icc,
            map_bundle->alt_icc_size);
-    cursor += map_bundle->alt_icc_size;
+    cursor = next_cursor;
   }
 
-  if (cursor + map_bundle->gain_map_size <= output_buffer_size) {
+  if (jxl::SafeAdd(cursor, map_bundle->gain_map_size, next_cursor) &&
+      next_cursor <= output_buffer_size) {
     memcpy(output_buffer + cursor, map_bundle->gain_map,
            map_bundle->gain_map_size);
-    cursor += map_bundle->gain_map_size;
+    cursor = next_cursor;
   }
 
-  if (bytes_written != nullptr) *bytes_written = cursor;
+  if (bytes_written != nullptr)
+    *bytes_written = cursor;  // Ensure size_t compatibility
   return cursor == output_buffer_size ? JXL_TRUE : JXL_FALSE;
 }
 
