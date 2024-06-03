@@ -66,7 +66,7 @@ Tree MakeFixedTree(int property, const std::vector<int32_t> &cutoffs,
   if (log_px < 14) {
     min_gap = 8 * (14 - log_px);
   }
-  const size_t shift = bitdepth > 10 ? bitdepth - 10 : 0;
+  const size_t shift = bitdepth > 11 ? std::min(4, bitdepth - 11) : 0;
   Tree tree;
   struct NodeInfo {
     size_t begin, end, pos;
@@ -350,7 +350,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   // Check if this tree is a WP-only tree with a small enough property value
   // range.
   // Initialized to avoid clang-tidy complaining.
-  auto tree_lut = jxl::make_unique<TreeLut<uint16_t, false>>();
+  auto tree_lut = jxl::make_unique<TreeLut<uint8_t, false, false>>();
   if (is_wp_only) {
     is_wp_only = TreeToLookupTable(tree, *tree_lut);
   }
@@ -383,7 +383,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
             kPropRangeFast + std::min(std::max(-kPropRangeFast, properties[0]),
                                       kPropRangeFast - 1);
         uint32_t ctx_id = tree_lut->context_lookup[pos];
-        int32_t residual = r[x] - guess - tree_lut->offsets[pos];
+        int32_t residual = r[x] - guess;
         *tokenp++ = Token(ctx_id, PackSigned(residual));
         wp_state.UpdateErrors(r[x], x, y, channel.w);
       }
@@ -426,7 +426,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                 std::max<pixel_type_w>(-kPropRangeFast, top + left - topleft),
                 kPropRangeFast - 1);
         uint32_t ctx_id = tree_lut->context_lookup[pos];
-        int32_t residual = r[x] - guess - tree_lut->offsets[pos];
+        int32_t residual = r[x] - guess;
         *tokenp++ = Token(ctx_id, PackSigned(residual));
       }
     }
