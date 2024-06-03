@@ -1662,9 +1662,10 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
                                   /*bits_per_sample=*/32, format,
                                   /*pool=*/nullptr, &io1.Main()));
 
-  jxl::ButteraugliParams ba;
+  jxl::ButteraugliParams butteraugli_params;
   EXPECT_SLIGHTLY_BELOW(
-      ButteraugliDistance(io0.frames, io1.frames, ba, *JxlGetDefaultCms(),
+      ButteraugliDistance(io0.frames, io1.frames, butteraugli_params,
+                          *JxlGetDefaultCms(),
                           /*distmap=*/nullptr, nullptr),
       0.58f);
 
@@ -2063,9 +2064,10 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
                                     /*bits_per_sample=*/8, format,
                                     /*pool=*/nullptr, &io1.Main()));
 
-    jxl::ButteraugliParams ba;
+    jxl::ButteraugliParams butteraugli_params;
     EXPECT_SLIGHTLY_BELOW(
-        ButteraugliDistance(io0.frames, io1.frames, ba, *JxlGetDefaultCms(),
+        ButteraugliDistance(io0.frames, io1.frames, butteraugli_params,
+                            *JxlGetDefaultCms(),
                             /*distmap=*/nullptr, nullptr),
         0.65f);
 
@@ -2114,9 +2116,10 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
                                     /*bits_per_sample=*/8, format,
                                     /*pool=*/nullptr, &io1.Main()));
 
-    jxl::ButteraugliParams ba;
+    jxl::ButteraugliParams butteraugli_params;
     EXPECT_SLIGHTLY_BELOW(
-        ButteraugliDistance(io0.frames, io1.frames, ba, *JxlGetDefaultCms(),
+        ButteraugliDistance(io0.frames, io1.frames, butteraugli_params,
+                            *JxlGetDefaultCms(),
                             /*distmap=*/nullptr, nullptr),
         1.9f);
 
@@ -2536,17 +2539,17 @@ TEST(DecodeTest, PreviewTest) {
                                  /*bits_per_sample=*/8, format,
                                  /*pool=*/nullptr, &io1.Main()));
 
-    jxl::ButteraugliParams ba;
+    jxl::ButteraugliParams butteraugli_params;
     // TODO(lode): this ButteraugliDistance silently returns 0 (dangerous for
     // tests) if xsize or ysize is < 8, no matter how different the images, a
     // tiny size that could happen for a preview. ButteraugliDiffmap does
     // support smaller than 8x8, but jxl's ButteraugliDistance does not. Perhaps
     // move butteraugli's <8x8 handling from ButteraugliDiffmap to
     // ButteraugliComparator::Diffmap in butteraugli.cc.
-    EXPECT_LE(
-        ButteraugliDistance(io0.frames, io1.frames, ba, *JxlGetDefaultCms(),
-                            /*distmap=*/nullptr, nullptr),
-        mode == jxl::kSmallPreview ? 0.7f : 1.2f);
+    EXPECT_LE(ButteraugliDistance(io0.frames, io1.frames, butteraugli_params,
+                                  *JxlGetDefaultCms(),
+                                  /*distmap=*/nullptr, nullptr),
+              mode == jxl::kSmallPreview ? 0.7f : 1.2f);
 
     JxlDecoderDestroy(dec);
   }
@@ -4896,7 +4899,7 @@ TEST_P(DecodeProgressiveTest, ProgressiveEventTest) {
       if (!expect_flush) {
         continue;
       }
-      jxl::ButteraugliParams ba;
+      jxl::ButteraugliParams butteraugli_params;
       std::vector<float> distances(kNumPasses + 1);
       for (int p = 0;; p = next_pass(p)) {
         jxl::CodecInOut io1{memory_manager};
@@ -4905,8 +4908,9 @@ TEST_P(DecodeProgressiveTest, ProgressiveEventTest) {
             color_encoding,
             /*bits_per_sample=*/16, format,
             /*pool=*/nullptr, &io1.Main()));
-        distances[p] = ButteraugliDistance(
-            io.frames, io1.frames, ba, *JxlGetDefaultCms(), nullptr, nullptr);
+        distances[p] =
+            ButteraugliDistance(io.frames, io1.frames, butteraugli_params,
+                                *JxlGetDefaultCms(), nullptr, nullptr);
         if (p == kNumPasses) break;
       }
       const float kMaxDistance[kNumPasses + 1] = {30.0f, 20.0f, 10.0f,
@@ -5077,7 +5081,7 @@ bool BoxTypeEquals(const std::string& type_string, const JxlBoxType type) {
 }
 }  // namespace
 
-TEST(DecodeTest, ExtentedBoxSizeTest) {
+TEST(DecodeTest, ExtendedBoxSizeTest) {
   const std::string jxl_path = "jxl/boxes/square-extended-size-container.jxl";
   const std::vector<uint8_t> orig = jxl::test::ReadTestData(jxl_path);
   JxlDecoder* dec = JxlDecoderCreate(nullptr);

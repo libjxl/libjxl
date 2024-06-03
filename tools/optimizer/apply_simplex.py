@@ -11,7 +11,7 @@ function call that returns the value of the VARn environment variable. The
 tool reads a text file containing the simplex definition that simplex_fork.py
 has written, and updates the target source files by substituting the bias(n)
 function calls with the (n+1)th coordinate of the simplex vector, and also
-simplifies these expressions by evaluating them to a sinlge floating point
+simplifies these expressions by evaluating them to a single floating point
 literal.
 
 The tool recognizes and evaluates the following expressions:
@@ -21,7 +21,7 @@ The tool recognizes and evaluates the following expressions:
 
 The --keep_bias command-line flag can be used to continue an aborted simplex
 search. This will keep the same bias(n) terms in the code, but would update the
-surronding constants.
+surrounding constants.
 
 The --index_min and --index_max flags can be used to update only a subset of the
 bias(n) parameters.

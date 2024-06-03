@@ -483,7 +483,7 @@ struct Reader {
     return result;
   }
 
-  /* Returns empty Span on errror. */
+  /* Returns empty Span on error. */
   Bytes ReadChunk() {
     Bytes len = Peek(4);
     if (len.size() != 4) {
@@ -555,7 +555,7 @@ struct Context {
       return false;
     }
 
-    /* hIST chunk tail is not proccesed properly; skip this chunk completely;
+    /* hIST chunk tail is not processed properly; skip this chunk completely;
        see https://github.com/glennrp/libpng/pull/413 */
     constexpr std::array<uint8_t, 5> kIgnoredChunks = {'h', 'I', 'S', 'T', 0};
     png_set_keep_unknown_chunks(png_ptr, 1, kIgnoredChunks.data(),

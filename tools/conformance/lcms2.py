@@ -61,7 +61,7 @@ def make_format(
     num_channels=3,  # RGB or XYZ
     extra_channels=0,
     swap_channels=0,
-    swap_endiannes=0,
+    swap_endianness=0,
     planar=0,
     flavor=0,
     swap_first=0,
@@ -70,7 +70,7 @@ def make_format(
     optimized=0,
     floating_point=1):
     values = [bytes_per_sample, num_channels, extra_channels, swap_channels,
-        swap_endiannes, planar, flavor, swap_first, unused, pixel_type,
+        swap_endianness, planar, flavor, swap_first, unused, pixel_type,
         optimized, floating_point]
     bit_width = [3, 4, 3, 1, 1, 1, 1, 1, 1, 5, 1, 1]
     result = 0
