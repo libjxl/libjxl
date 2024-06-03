@@ -21,35 +21,29 @@
 namespace {
 
 template <size_t N>
-void* FixedSizeMemoryManagerAlloc(void* opaque, size_t capacity);
-void FixedSizeMemoryManagerFree(void* opaque, void* pointer) {}
-
-template <size_t N>
 class FixedSizeMemoryManager {
  public:
   FixedSizeMemoryManager() = default;
 
   JxlMemoryManager* memory_manager() { return &manager_; }
 
-  friend void* FixedSizeMemoryManagerAlloc<N>(void* opaque, size_t capacity);
-
  private:
+  static void* FixedSizeMemoryManagerAlloc(void* opaque, size_t capacity) {
+    auto manager = static_cast<FixedSizeMemoryManager<N>*>(opaque);
+    if (capacity > N + jxl::memory_manager_internal::kAlias) {
+      return nullptr;
+    }
+    return manager->memory_;
+  }
+  static void FixedSizeMemoryManagerFree(void* opaque, void* pointer) {}
+
   uint8_t memory_[N + jxl::memory_manager_internal::kAlias];
   JxlMemoryManager manager_ = {
       /*opaque=*/this,
-      /*alloc=*/&FixedSizeMemoryManagerAlloc<N>,
+      /*alloc=*/&FixedSizeMemoryManagerAlloc,
       /*free=*/&FixedSizeMemoryManagerFree,
   };
 };
-
-template <size_t N>
-void* FixedSizeMemoryManagerAlloc(void* opaque, size_t capacity) {
-  auto manager = static_cast<FixedSizeMemoryManager<N>*>(opaque);
-  if (capacity > N + jxl::memory_manager_internal::kAlias) {
-    return nullptr;
-  }
-  return manager->memory_;
-}
 
 }  // namespace
 
