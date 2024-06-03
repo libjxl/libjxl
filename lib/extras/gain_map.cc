@@ -57,28 +57,27 @@ JXL_BOOL JxlGainMapGetBundleSize(const JxlGainMapBundle* map_bundle,
                                  size_t* bundle_size) {
   if (map_bundle == nullptr) return JXL_FALSE;
 
-  FixedSizeMemoryManager<sizeof(jxl::ColorEncoding)> memory_manager;
   jxl::ColorEncoding internal_color_encoding;
-  jxl::BitWriter color_encoding_writer(memory_manager.memory_manager());
+  size_t color_encoding_size = 0;
+  size_t extension_bits = 0;
   if (map_bundle->has_color_encoding) {
     JXL_RETURN_IF_ERROR(
         internal_color_encoding.FromExternal(map_bundle->color_encoding));
-    if (!jxl::Bundle::Write(internal_color_encoding, &color_encoding_writer,
-                            /*layer=*/0, nullptr)) {
+    if (!jxl::Bundle::CanEncode(internal_color_encoding, &extension_bits,
+                                &color_encoding_size)) {
       return JXL_FALSE;
     }
   }
-  color_encoding_writer.ZeroPadToByte();
 
   *bundle_size =
-      1 +                                   // size of jhgm_version
-      2 +                                   // size_of gain_map_metadata_size
-      map_bundle->gain_map_metadata_size +  // size of gain_map_metadata
-      1 +                                   // size of color_encoding_size
-      color_encoding_writer.GetSpan().size() +  // size of the color_encoding
-      4 +                                       // size of compressed_icc_size
-      map_bundle->alt_icc_size +                // size of compressed_icc
-      map_bundle->gain_map_size;                // size of gain map
+      1 +                                     // size of jhgm_version
+      2 +                                     // size_of gain_map_metadata_size
+      map_bundle->gain_map_metadata_size +    // size of gain_map_metadata
+      1 +                                     // size of color_encoding_size
+      jxl::DivCeil(color_encoding_size, 8) +  // size of the color_encoding
+      4 +                                     // size of compressed_icc_size
+      map_bundle->alt_icc_size +              // size of compressed_icc
+      map_bundle->gain_map_size;              // size of gain map
   return JXL_TRUE;
 }
 
