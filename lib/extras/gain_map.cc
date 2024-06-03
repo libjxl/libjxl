@@ -113,12 +113,11 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
   memcpy(output_buffer + cursor, &jhgm_version, 1);
   cursor = next_cursor;
 
-  uint16_t metadata_size_le = JXL_BSWAP16(map_bundle->gain_map_metadata_size);
   if (!jxl::SafeAdd(cursor, 2, next_cursor) ||
       next_cursor > output_buffer_size) {
     return JXL_FALSE;
   }
-  memcpy(output_buffer + cursor, &metadata_size_le, 2);
+  StoreBE16(map_bundle->gain_map_metadata_size, output_buffer + cursor);
   cursor = next_cursor;
 
   if (!jxl::SafeAdd(cursor, map_bundle->gain_map_metadata_size, next_cursor) ||
@@ -146,12 +145,11 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
          color_enc_size);
   cursor = next_cursor;
 
-  uint32_t icc_size_le = JXL_BSWAP32(map_bundle->alt_icc_size);
   if (!jxl::SafeAdd(cursor, 4, next_cursor) ||
       next_cursor > output_buffer_size) {
     return JXL_FALSE;
   }
-  memcpy(output_buffer + cursor, &icc_size_le, 4);
+  StoreBE32(map_bundle->alt_icc_size, output_buffer + cursor);
   cursor = next_cursor;
 
   if (!jxl::SafeAdd(cursor, map_bundle->alt_icc_size, next_cursor) ||
@@ -199,9 +197,8 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
       next_cursor > input_buffer_size) {
     return JXL_FALSE;
   }
-  uint16_t gain_map_metadata_size_le;
-  memcpy(&gain_map_metadata_size_le, input_buffer + cursor, 2);
-  uint16_t gain_map_metadata_size = JXL_BSWAP16(gain_map_metadata_size_le);
+
+  uint16_t gain_map_metadata_size = LoadBE16(input_buffer + cursor);
   cursor = next_cursor;
 
   if (!jxl::SafeAdd(cursor, gain_map_metadata_size, next_cursor) ||
@@ -245,9 +242,7 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
       next_cursor > input_buffer_size) {
     return JXL_FALSE;
   }
-  uint32_t compressed_icc_size_le;
-  memcpy(&compressed_icc_size_le, input_buffer + cursor, 4);
-  uint32_t compressed_icc_size = JXL_BSWAP32(compressed_icc_size_le);
+  uint32_t compressed_icc_size = LoadBE32(input_buffer + cursor);
   cursor = next_cursor;
 
   if (!jxl::SafeAdd(cursor, compressed_icc_size, next_cursor) ||
