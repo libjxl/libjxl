@@ -55,7 +55,7 @@ void* FixedSizeMemoryManagerAlloc(void* opaque, size_t capacity) {
 
 JXL_BOOL JxlGainMapGetBundleSize(const JxlGainMapBundle* map_bundle,
                                  size_t* bundle_size) {
-  if (map_bundle == nullptr) return 0;
+  if (map_bundle == nullptr) return JXL_FALSE;
 
   FixedSizeMemoryManager<sizeof(jxl::ColorEncoding)> memory_manager;
   jxl::ColorEncoding internal_color_encoding;
@@ -86,7 +86,7 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
                                uint8_t* output_buffer,
                                size_t output_buffer_size,
                                size_t* bytes_written) {
-  if (map_bundle == nullptr) return 0;
+  if (map_bundle == nullptr) return JXL_FALSE;
 
   uint8_t jhgm_version = map_bundle->jhgm_version;
 
