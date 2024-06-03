@@ -21,25 +21,45 @@
 extern "C" {
 #endif
 
-/** Gain map bundle */
+/**
+ * Gain map bundle
+ *
+ * This structure is used to serialize gain map data to and from an input
+ * buffer. It holds pointers to sections within the buffer, and different parts
+ * of the gain map data such as metadata, ICC profile data, and the gain map
+ * itself.
+ *
+ * The pointers in this structure do not take ownership of the memory they point
+ * to. Instead, they reference specific locations within the provided buffer. It
+ * is the caller's responsibility to ensure that the buffer remains valid and is
+ * not deallocated as long as these pointers are in use. The structure should be
+ * considered as providing a view into the buffer, not as an owner of the data.
+ *
+ * @param jhgm_version Version number of the gain map bundle.
+ * @param gain_map_metadata_size Size of the gain map metadata in bytes.
+ * @param gain_map_metadata Pointer to the gain map metadata, which is a binary
+ * blob following ISO 21496-1. This pointer references data within the input
+ * buffer.
+ * @param has_color_encoding Indicates whether a color encoding is present.
+ * @param color_encoding If has_color_encoding is true, this field contains the
+ *        uncompressed color encoding data.
+ * @param alt_icc_size Size of the alternative ICC profile in bytes (compressed
+ * size).
+ * @param alt_icc Pointer to the compressed ICC profile. This pointer references
+ * data within the input buffer.
+ * @param gain_map_size Size of the gain map in bytes.
+ * @param gain_map Pointer to the gain map data, which is a JPEG XL naked
+ * codestream. This pointer references data within the input buffer.
+ */
 typedef struct {
-  /** version number */
   uint8_t jhgm_version;
-  /** size of the gain map metadata */
   uint16_t gain_map_metadata_size;
-  /** pointer to binary blob of gain map metadata (ISO 21496-1) */
   const uint8_t* gain_map_metadata;
-  /** indicate if it has a color encoding*/
   bool has_color_encoding;
-  /** uncompressed color encoding */
   JxlColorEncoding color_encoding;
-  /** size of the alt_icc profile  (compressed size) */
   uint32_t alt_icc_size;
-  /** pointer to the compressed icc profile */
   const uint8_t* alt_icc;
-  /** size of the gain map */
   uint32_t gain_map_size;
-  /** pointer to the gain map (a JPEG XL naked codestream) */
   const uint8_t* gain_map;
 } JxlGainMapBundle;
 
