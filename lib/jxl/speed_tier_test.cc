@@ -100,7 +100,7 @@ TEST_P(SpeedTierTest, Roundtrip) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT,
                     10 - static_cast<int>(params.speed_tier));
   extras::JXLDecompressParams dparams;
-  dparams.accepted_formats = {{3, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0}};
+  dparams.accepted_formats = {{3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0}};
 
   {
     extras::PackedPixelFile ppf_out;

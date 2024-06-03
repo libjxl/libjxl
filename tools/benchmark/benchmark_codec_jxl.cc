@@ -305,7 +305,7 @@ class JxlCodec : public ImageCodec {
     dparams_.runner = pool->runner();
     dparams_.runner_opaque = pool->runner_opaque();
     dparams_.memory_manager = memory_manager_;
-    JxlDataType data_type = uint8_ ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
+    JxlDataType data_type = uint8_ ? JXL_TYPE_UINT8 : JXL_TYPE_FLOAT;
     for (uint32_t c = 1; c <= 4; ++c) {
       dparams_.accepted_formats.push_back({c, data_type, JXL_LITTLE_ENDIAN, 0});
     }

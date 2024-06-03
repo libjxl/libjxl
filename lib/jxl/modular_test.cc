@@ -75,7 +75,7 @@ void TestLosslessGroups(size_t group_size_shift) {
   cparams.distance = 0.0f;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, group_size_shift);
   extras::JXLDecompressParams dparams;
-  dparams.accepted_formats = {{3, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0}};
+  dparams.accepted_formats = {{3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0}};
 
   extras::PackedPixelFile ppf_out;
   size_t compressed_size =
@@ -111,7 +111,7 @@ TEST(ModularTest, RoundtripLosslessCustomWpPermuteRCT) {
   // slowest speed so different WP modes are tried
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 9);
   extras::JXLDecompressParams dparams;
-  dparams.accepted_formats = {{3, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0}};
+  dparams.accepted_formats = {{3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0}};
 
   extras::PackedPixelFile ppf_out;
   size_t compressed_size =
