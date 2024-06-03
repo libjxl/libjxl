@@ -100,65 +100,46 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
   uint64_t cursor = 0;
   uint64_t next_cursor = 0;
 
-  if (!jxl::SafeAdd(cursor, 1, next_cursor) ||
-      next_cursor > output_buffer_size) {
-    return JXL_FALSE;
-  }
+#define ADVANCE_CURSOR(n)                        \
+  do {                                           \
+    cursor = next_cursor;                        \
+    if (!jxl::SafeAdd(cursor, n, next_cursor) || \
+        next_cursor > output_buffer_size) {      \
+      return JXL_FALSE;                          \
+    }                                            \
+  } while (false);
+
+  ADVANCE_CURSOR(1);
   memcpy(output_buffer + cursor, &jhgm_version, 1);
-  cursor = next_cursor;
 
-  if (!jxl::SafeAdd(cursor, 2, next_cursor) ||
-      next_cursor > output_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(2);
   StoreBE16(map_bundle->gain_map_metadata_size, output_buffer + cursor);
-  cursor = next_cursor;
 
-  if (!jxl::SafeAdd(cursor, map_bundle->gain_map_metadata_size, next_cursor) ||
-      next_cursor > output_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(map_bundle->gain_map_metadata_size);
   memcpy(output_buffer + cursor, map_bundle->gain_map_metadata,
          map_bundle->gain_map_metadata_size);
-  cursor = next_cursor;
 
   uint8_t color_enc_size =
       static_cast<uint8_t>(color_encoding_writer.GetSpan().size());
-  if (!jxl::SafeAdd(cursor, 1, next_cursor) ||
-      next_cursor > output_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(1);
   memcpy(output_buffer + cursor, &color_enc_size, 1);
-  cursor = next_cursor;
 
-  if (!jxl::SafeAdd(cursor, color_enc_size, next_cursor) ||
-      next_cursor > output_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(color_enc_size);
   memcpy(output_buffer + cursor, color_encoding_writer.GetSpan().data(),
          color_enc_size);
-  cursor = next_cursor;
 
-  if (!jxl::SafeAdd(cursor, 4, next_cursor) ||
-      next_cursor > output_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(4);
   StoreBE32(map_bundle->alt_icc_size, output_buffer + cursor);
-  cursor = next_cursor;
 
-  if (!jxl::SafeAdd(cursor, map_bundle->alt_icc_size, next_cursor) ||
-      next_cursor > output_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(map_bundle->alt_icc_size);
   memcpy(output_buffer + cursor, map_bundle->alt_icc, map_bundle->alt_icc_size);
-  cursor = next_cursor;
 
-  if (!jxl::SafeAdd(cursor, map_bundle->gain_map_size, next_cursor) ||
-      next_cursor > output_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(map_bundle->gain_map_size);
   memcpy(output_buffer + cursor, map_bundle->gain_map,
          map_bundle->gain_map_size);
+
+#undef ADVANCE_CURSOR
+
   cursor = next_cursor;
 
   if (bytes_written != nullptr)
@@ -178,46 +159,35 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
   uint64_t cursor = 0;
   uint64_t next_cursor = 0;
 
+#define ADVANCE_CURSOR(n)                        \
+  do {                                           \
+    cursor = next_cursor;                        \
+    if (!jxl::SafeAdd(cursor, n, next_cursor) || \
+        next_cursor > input_buffer_size) {       \
+      return JXL_FALSE;                          \
+    }                                            \
+  } while (false);
+
   // Read the version byte
-  if (!jxl::SafeAdd(cursor, 1, next_cursor) ||
-      next_cursor > input_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(1);
   map_bundle->jhgm_version = input_buffer[cursor];
-  cursor = next_cursor;
 
   // Read and swap gain_map_metadata_size
-  if (!jxl::SafeAdd(cursor, 2, next_cursor) ||
-      next_cursor > input_buffer_size) {
-    return JXL_FALSE;
-  }
-
+  ADVANCE_CURSOR(2);
   uint16_t gain_map_metadata_size = LoadBE16(input_buffer + cursor);
-  cursor = next_cursor;
 
-  if (!jxl::SafeAdd(cursor, gain_map_metadata_size, next_cursor) ||
-      next_cursor > input_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(gain_map_metadata_size);
   map_bundle->gain_map_metadata_size = gain_map_metadata_size;
   map_bundle->gain_map_metadata = input_buffer + cursor;
-  cursor = next_cursor;
 
   // Read compressed_color_encoding_size
-  if (!jxl::SafeAdd(cursor, 1, next_cursor) ||
-      next_cursor > input_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(1);
   uint8_t compressed_color_encoding_size;
   memcpy(&compressed_color_encoding_size, input_buffer + cursor, 1);
-  cursor = next_cursor;
 
   map_bundle->has_color_encoding = (compressed_color_encoding_size > 0);
   if (map_bundle->has_color_encoding) {
-    if (!jxl::SafeAdd(cursor, compressed_color_encoding_size, next_cursor) ||
-        next_cursor > input_buffer_size) {
-      return JXL_FALSE;
-    }
+    ADVANCE_CURSOR(compressed_color_encoding_size);
     // Decode color encoding
     jxl::Span<const uint8_t> color_encoding_span(
         input_buffer + cursor, compressed_color_encoding_size);
@@ -228,32 +198,24 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
     }
     JXL_RETURN_IF_ERROR(color_encoding_reader.Close());
     map_bundle->color_encoding = internal_color_encoding.ToExternal();
-    cursor = next_cursor;
   }
 
   // Read and swap compressed_icc_size
-  if (!jxl::SafeAdd(cursor, 4, next_cursor) ||
-      next_cursor > input_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(4);
   uint32_t compressed_icc_size = LoadBE32(input_buffer + cursor);
-  cursor = next_cursor;
 
-  if (!jxl::SafeAdd(cursor, compressed_icc_size, next_cursor) ||
-      next_cursor > input_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(compressed_icc_size);
   map_bundle->alt_icc_size = compressed_icc_size;
   map_bundle->alt_icc = input_buffer + cursor;
-  cursor = next_cursor;
 
   // Calculate remaining bytes for gain map
+  cursor = next_cursor;
   map_bundle->gain_map_size = input_buffer_size - cursor;
-  if (!jxl::SafeAdd(cursor, map_bundle->gain_map_size, next_cursor) ||
-      next_cursor > input_buffer_size) {
-    return JXL_FALSE;
-  }
+  ADVANCE_CURSOR(map_bundle->gain_map_size);
   map_bundle->gain_map = input_buffer + cursor;
+
+#undef ADVANCE_CURSOR
+
   cursor = next_cursor;
 
   if (bytes_read != nullptr) {
