@@ -107,7 +107,7 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
         next_cursor > output_buffer_size) {      \
       return JXL_FALSE;                          \
     }                                            \
-  } while (false);
+  } while (false)
 
   ADVANCE_CURSOR(1);
   memcpy(output_buffer + cursor, &jhgm_version, 1);
@@ -166,7 +166,7 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
         next_cursor > input_buffer_size) {       \
       return JXL_FALSE;                          \
     }                                            \
-  } while (false);
+  } while (false)
 
   // Read the version byte
   ADVANCE_CURSOR(1);
