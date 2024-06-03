@@ -104,7 +104,9 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
 
   color_encoding_writer.ZeroPadToByte();
 
-  uint64_t cursor = 0, next_cursor = 0;
+  uint64_t cursor = 0;
+  uint64_t next_cursor = 0;
+
   if (!jxl::SafeAdd(cursor, 1, next_cursor) ||
       next_cursor > output_buffer_size) {
     return JXL_FALSE;
@@ -182,34 +184,50 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
     return JXL_FALSE;
   }
 
-  size_t cursor = 0;
+  uint64_t cursor = 0;
+  uint64_t next_cursor = 0;
+
   // Read the version byte
-  if (cursor + 1 > input_buffer_size) return JXL_FALSE;
+  if (!jxl::SafeAdd(cursor, 1, next_cursor) ||
+      next_cursor > input_buffer_size) {
+    return JXL_FALSE;
+  }
   map_bundle->jhgm_version = input_buffer[cursor];
-  cursor += 1;
+  cursor = next_cursor;
 
   // Read and swap gain_map_metadata_size
-  if (cursor + 2 > input_buffer_size) return JXL_FALSE;
+  if (!jxl::SafeAdd(cursor, 2, next_cursor) ||
+      next_cursor > input_buffer_size) {
+    return JXL_FALSE;
+  }
   uint16_t gain_map_metadata_size_le;
   memcpy(&gain_map_metadata_size_le, input_buffer + cursor, 2);
   uint16_t gain_map_metadata_size = JXL_BSWAP16(gain_map_metadata_size_le);
-  cursor += 2;
+  cursor = next_cursor;
 
-  if (cursor + gain_map_metadata_size > input_buffer_size) return JXL_FALSE;
+  if (!jxl::SafeAdd(cursor, gain_map_metadata_size, next_cursor) ||
+      next_cursor > input_buffer_size) {
+    return JXL_FALSE;
+  }
   map_bundle->gain_map_metadata_size = gain_map_metadata_size;
   map_bundle->gain_map_metadata = input_buffer + cursor;
-  cursor += gain_map_metadata_size;
+  cursor = next_cursor;
 
   // Read compressed_color_encoding_size
-  if (cursor + 1 > input_buffer_size) return JXL_FALSE;
+  if (!jxl::SafeAdd(cursor, 1, next_cursor) ||
+      next_cursor > input_buffer_size) {
+    return JXL_FALSE;
+  }
   uint8_t compressed_color_encoding_size;
   memcpy(&compressed_color_encoding_size, input_buffer + cursor, 1);
-  cursor += 1;
+  cursor = next_cursor;
 
-  map_bundle->has_color_encoding = (0 < compressed_color_encoding_size);
+  map_bundle->has_color_encoding = (compressed_color_encoding_size > 0);
   if (map_bundle->has_color_encoding) {
-    if (cursor + compressed_color_encoding_size > input_buffer_size)
+    if (!jxl::SafeAdd(cursor, compressed_color_encoding_size, next_cursor) ||
+        next_cursor > input_buffer_size) {
       return JXL_FALSE;
+    }
     // Decode color encoding
     jxl::Span<const uint8_t> color_encoding_span(
         input_buffer + cursor, compressed_color_encoding_size);
@@ -220,26 +238,38 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
     }
     JXL_RETURN_IF_ERROR(color_encoding_reader.Close());
     map_bundle->color_encoding = internal_color_encoding.ToExternal();
-    cursor += compressed_color_encoding_size;
+    cursor = next_cursor;
   }
 
   // Read and swap compressed_icc_size
-  if (cursor + 4 > input_buffer_size) return JXL_FALSE;
+  if (!jxl::SafeAdd(cursor, 4, next_cursor) ||
+      next_cursor > input_buffer_size) {
+    return JXL_FALSE;
+  }
   uint32_t compressed_icc_size_le;
   memcpy(&compressed_icc_size_le, input_buffer + cursor, 4);
   uint32_t compressed_icc_size = JXL_BSWAP32(compressed_icc_size_le);
-  cursor += 4;
+  cursor = next_cursor;
 
-  if (cursor + compressed_icc_size > input_buffer_size) return JXL_FALSE;
+  if (!jxl::SafeAdd(cursor, compressed_icc_size, next_cursor) ||
+      next_cursor > input_buffer_size) {
+    return JXL_FALSE;
+  }
   map_bundle->alt_icc_size = compressed_icc_size;
   map_bundle->alt_icc = input_buffer + cursor;
-  cursor += compressed_icc_size;
+  cursor = next_cursor;
 
-  // Remaining bytes are gain map
+  // Calculate remaining bytes for gain map
   map_bundle->gain_map_size = input_buffer_size - cursor;
-  if (input_buffer_size < cursor) return JXL_FALSE;
+  if (!jxl::SafeAdd(cursor, map_bundle->gain_map_size, next_cursor) ||
+      next_cursor > input_buffer_size) {
+    return JXL_FALSE;
+  }
   map_bundle->gain_map = input_buffer + cursor;
+  cursor = next_cursor;
 
-  if (bytes_read != nullptr) *bytes_read = cursor;
+  if (bytes_read != nullptr) {
+    *bytes_read = cursor;
+  }
   return JXL_TRUE;
 }
