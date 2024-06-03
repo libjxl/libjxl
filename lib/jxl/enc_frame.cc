@@ -262,6 +262,7 @@ Status LoopFilterFromParams(const CompressParams& cparams, bool streaming_mode,
       cparams.gaborish, cparams.speed_tier <= SpeedTier::kHare &&
                             frame_header->encoding == FrameEncoding::kVarDCT &&
                             cparams.decoding_speed_tier < 4 &&
+                            cparams.butteraugli_distance > 0.5f &&
                             !cparams.disable_perceptual_optimizations);
 
   if (cparams.epf != -1) {

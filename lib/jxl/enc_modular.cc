@@ -57,7 +57,7 @@ const float squeeze_luma_factor =
     1.1;  // for easy tweaking of the balance between luma (or anything
           // non-chroma) and chroma (decrease this number for higher quality
           // luma)
-const float squeeze_quality_factor_xyb = 2.4f;
+const float squeeze_quality_factor_xyb = 4.8f;
 const float squeeze_xyb_qtable[3][16] = {
     {163.84, 81.92, 40.96, 20.48, 10.24, 5.12, 2.56, 1.28, 0.64, 0.32, 0.16,
      0.08, 0.04, 0.02, 0.01, 0.005},  // Y
@@ -696,7 +696,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   int c = 0;
   if (cparams_.color_transform == ColorTransform::kXYB &&
       cparams_.modular_mode == true) {
-    float enc_factors[3] = {32768.0f, 2048.0f, 2048.0f};
+    float enc_factors[3] = {65536.0f, 4096.0f, 4096.0f};
     if (cparams_.butteraugli_distance > 0 && !cparams_.responsive) {
       // quantize XYB here and then treat it as a lossless image
       enc_factors[0] *= 1.f / (1.f + 23.f * cparams_.butteraugli_distance);
@@ -738,8 +738,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
             // TODO(eustas): check if std::roundf is appropriate
             row_out[x] = row_in[x] * factor + 0.5f;
             row_out[x] -= row_Y[x];
-            // zero the lsb of B
-            row_out[x] = row_out[x] / 2 * 2;
           }
         }
       } else {
