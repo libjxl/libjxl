@@ -18,7 +18,7 @@ JXL_BOOL JxlIccProfileEncode(JxlMemoryManager* memory_manager,
   *compressed_icc_size = writer.GetSpan().size();
   *compressed_icc = static_cast<uint8_t*>(
       memory_manager->alloc(memory_manager->opaque, *compressed_icc_size));
-  memcpy(compressed_icc, writer.GetSpan().data(), *compressed_icc_size);
+  memcpy(*compressed_icc, writer.GetSpan().data(), *compressed_icc_size);
   return JXL_TRUE;
 }
 
