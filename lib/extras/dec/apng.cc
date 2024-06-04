@@ -792,7 +792,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   Bytes sig = input.Read(kPngSignature.size());
   if (sig.size() != 8 ||
       memcmp(sig.data(), kPngSignature.data(), kPngSignature.size()) != 0) {
-    return JXL_FAILURE("PNG signature mismatch");
+    return false;  // Return silently if it is not a PNG
   }
 
   // Check IHDR chunk.
