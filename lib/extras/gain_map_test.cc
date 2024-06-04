@@ -133,9 +133,6 @@ TEST_P(GainMapTest, GainMapRoundtrip) {
   ASSERT_TRUE(JxlGainMapWriteBundle(&orig_bundle, buffer.data(), buffer.size(),
                                     &bytes_written));
   EXPECT_EQ(bytes_written, bundle_size);
-  std::ofstream dump("/tmp/gainmap.bin", std::ios::out);
-  dump.write(reinterpret_cast<const char*>(buffer.data()), buffer.size());
-  dump.close();
   EXPECT_EQ(buffer[0], orig_bundle.jhgm_version);
   EXPECT_EQ(buffer.size(), golden_gain_map.size());
   EXPECT_TRUE(
