@@ -439,6 +439,7 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/enc/encode.h
   extras/exif.cc
   extras/exif.h
+  extras/gain_map.cc
   extras/mmap.cc
   extras/mmap.h
   extras/packed_image.h
@@ -550,6 +551,7 @@ set(JPEGXL_INTERNAL_PUBLIC_HEADERS
   include/jxl/decode_cxx.h
   include/jxl/encode.h
   include/jxl/encode_cxx.h
+  include/jxl/gain_map.h
   include/jxl/memory_manager.h
   include/jxl/parallel_runner.h
   include/jxl/stats.h
@@ -576,6 +578,7 @@ set(JPEGXL_INTERNAL_TESTS
   extras/codec_test.cc
   extras/dec/color_description_test.cc
   extras/dec/pgx_test.cc
+  extras/gain_map_test.cc
   extras/jpegli_test.cc
   jxl/ac_strategy_test.cc
   jxl/alpha_test.cc

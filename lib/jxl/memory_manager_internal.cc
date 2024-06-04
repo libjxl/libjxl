@@ -23,18 +23,6 @@ namespace jxl {
 
 namespace {
 
-// To avoid RFOs, match L2 fill size (pairs of lines); 2 x cache line size.
-constexpr size_t kAlignment = 2 * 64;
-static_assert((kAlignment & (kAlignment - 1)) == 0,
-              "kAlignment must be a power of 2");
-
-// Minimum multiple for which cache set conflicts and/or loads blocked by
-// preceding stores can occur.
-constexpr size_t kNumAlignmentGroups = 16;
-constexpr size_t kAlias = kNumAlignmentGroups * kAlignment;
-static_assert((kNumAlignmentGroups & (kNumAlignmentGroups - 1)) == 0,
-              "kNumAlignmentGroups must be a power of 2");
-
 void* MemoryManagerDefaultAlloc(void* opaque, size_t size) {
   return malloc(size);
 }
@@ -85,7 +73,7 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
   }
 
   // Round up to vector and cache line size.
-  const size_t align = std::max(vec_size, kAlignment);
+  const size_t align = std::max(vec_size, memory_manager_internal::kAlignment);
   size_t bytes_per_row = RoundUpTo(valid_bytes, align);
 
   // During the lengthy window before writes are committed to memory, CPUs
@@ -93,7 +81,7 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
   // only the lower 11 bits. We avoid a false dependency between writes to
   // consecutive rows by ensuring their sizes are not multiples of 2 KiB.
   // Avoid2K prevents the same problem for the planes of an Image3.
-  if (bytes_per_row % kAlias == 0) {
+  if (bytes_per_row % memory_manager_internal::kAlias == 0) {
     bytes_per_row += align;
   }
 
@@ -103,7 +91,7 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
 
 StatusOr<AlignedMemory> AlignedMemory::Create(JxlMemoryManager* memory_manager,
                                               size_t size) {
-  size_t allocation_size = size + kAlias;
+  size_t allocation_size = size + memory_manager_internal::kAlias;
   if (size > allocation_size) {
     return JXL_FAILURE("Requested allocation is too large");
   }
@@ -124,15 +112,17 @@ AlignedMemory::AlignedMemory(JxlMemoryManager* memory_manager, void* allocation)
   static std::atomic<uint32_t> next_group{0};
   size_t group =
       static_cast<size_t>(next_group.fetch_add(1, std::memory_order_relaxed));
-  group &= (kNumAlignmentGroups - 1);
-  size_t offset = kAlignment * group;
+  group &= (memory_manager_internal::kNumAlignmentGroups - 1);
+  size_t offset = memory_manager_internal::kAlignment * group;
 
   // Actual allocation.
   uintptr_t address = reinterpret_cast<uintptr_t>(allocation);
 
   // Aligned address, but might land before allocation (50%/50%).
-  uintptr_t aligned_address = (address & ~(kAlias - 1)) + offset;
-  if (aligned_address < address) aligned_address += kAlias;
+  uintptr_t aligned_address =
+      (address & ~(memory_manager_internal::kAlias - 1)) + offset;
+  if (aligned_address < address)
+    aligned_address += memory_manager_internal::kAlias;
 
   address_ = reinterpret_cast<void*>(aligned_address);  // NOLINT
 }

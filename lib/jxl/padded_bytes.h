@@ -115,7 +115,7 @@ class PaddedBytes {
       new_data.address<uint8_t>()[0] = 0;
     } else {
       // Subsequent resize: copy existing data to new location.
-      memcpy(new_data.address<void>(), data_.address<void>(), size_);
+      memmove(new_data.address<void>(), data_.address<void>(), size_);
       // Ensure that the first new byte is initialized, to allow write_bits to
       // safely append to the newly-resized PaddedBytes.
       new_data.address<uint8_t>()[size_] = 0;
