@@ -589,9 +589,9 @@ libjxl_testlib_files = [
 
 libjxl_tests = [
     "extras/codec_test.cc",
+    "extras/compressed_icc_test.cc",
     "extras/dec/color_description_test.cc",
     "extras/dec/pgx_test.cc",
-    "extras/compressed_icc_test.cc",
     "extras/gain_map_test.cc",
     "extras/jpegli_test.cc",
     "jxl/ac_strategy_test.cc",
