@@ -100,7 +100,7 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
   uint64_t cursor = 0;
   uint64_t next_cursor = 0;
 
-#define ADVANCE_CURSOR(n)                        \
+#define SAFE_CURSOR_UPDATE(n)                    \
   do {                                           \
     cursor = next_cursor;                        \
     if (!jxl::SafeAdd(cursor, n, next_cursor) || \
@@ -109,36 +109,36 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
     }                                            \
   } while (false)
 
-  ADVANCE_CURSOR(1);
+  SAFE_CURSOR_UPDATE(1);
   memcpy(output_buffer + cursor, &jhgm_version, 1);
 
-  ADVANCE_CURSOR(2);
+  SAFE_CURSOR_UPDATE(2);
   StoreBE16(map_bundle->gain_map_metadata_size, output_buffer + cursor);
 
-  ADVANCE_CURSOR(map_bundle->gain_map_metadata_size);
+  SAFE_CURSOR_UPDATE(map_bundle->gain_map_metadata_size);
   memcpy(output_buffer + cursor, map_bundle->gain_map_metadata,
          map_bundle->gain_map_metadata_size);
 
   uint8_t color_enc_size =
       static_cast<uint8_t>(color_encoding_writer.GetSpan().size());
-  ADVANCE_CURSOR(1);
+  SAFE_CURSOR_UPDATE(1);
   memcpy(output_buffer + cursor, &color_enc_size, 1);
 
-  ADVANCE_CURSOR(color_enc_size);
+  SAFE_CURSOR_UPDATE(color_enc_size);
   memcpy(output_buffer + cursor, color_encoding_writer.GetSpan().data(),
          color_enc_size);
 
-  ADVANCE_CURSOR(4);
+  SAFE_CURSOR_UPDATE(4);
   StoreBE32(map_bundle->alt_icc_size, output_buffer + cursor);
 
-  ADVANCE_CURSOR(map_bundle->alt_icc_size);
+  SAFE_CURSOR_UPDATE(map_bundle->alt_icc_size);
   memcpy(output_buffer + cursor, map_bundle->alt_icc, map_bundle->alt_icc_size);
 
-  ADVANCE_CURSOR(map_bundle->gain_map_size);
+  SAFE_CURSOR_UPDATE(map_bundle->gain_map_size);
   memcpy(output_buffer + cursor, map_bundle->gain_map,
          map_bundle->gain_map_size);
 
-#undef ADVANCE_CURSOR
+#undef SAFE_CURSOR_UPDATE
 
   cursor = next_cursor;
 
@@ -159,7 +159,7 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
   uint64_t cursor = 0;
   uint64_t next_cursor = 0;
 
-#define ADVANCE_CURSOR(n)                        \
+#define SAFE_CURSOR_UPDATE(n)                    \
   do {                                           \
     cursor = next_cursor;                        \
     if (!jxl::SafeAdd(cursor, n, next_cursor) || \
@@ -169,25 +169,25 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
   } while (false)
 
   // Read the version byte
-  ADVANCE_CURSOR(1);
+  SAFE_CURSOR_UPDATE(1);
   map_bundle->jhgm_version = input_buffer[cursor];
 
   // Read gain_map_metadata_size
-  ADVANCE_CURSOR(2);
+  SAFE_CURSOR_UPDATE(2);
   uint16_t gain_map_metadata_size = LoadBE16(input_buffer + cursor);
 
-  ADVANCE_CURSOR(gain_map_metadata_size);
+  SAFE_CURSOR_UPDATE(gain_map_metadata_size);
   map_bundle->gain_map_metadata_size = gain_map_metadata_size;
   map_bundle->gain_map_metadata = input_buffer + cursor;
 
   // Read compressed_color_encoding_size
-  ADVANCE_CURSOR(1);
+  SAFE_CURSOR_UPDATE(1);
   uint8_t compressed_color_encoding_size;
   memcpy(&compressed_color_encoding_size, input_buffer + cursor, 1);
 
   map_bundle->has_color_encoding = (compressed_color_encoding_size > 0);
   if (map_bundle->has_color_encoding) {
-    ADVANCE_CURSOR(compressed_color_encoding_size);
+    SAFE_CURSOR_UPDATE(compressed_color_encoding_size);
     // Decode color encoding
     jxl::Span<const uint8_t> color_encoding_span(
         input_buffer + cursor, compressed_color_encoding_size);
@@ -201,20 +201,20 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
   }
 
   // Read compressed_icc_size
-  ADVANCE_CURSOR(4);
+  SAFE_CURSOR_UPDATE(4);
   uint32_t compressed_icc_size = LoadBE32(input_buffer + cursor);
 
-  ADVANCE_CURSOR(compressed_icc_size);
+  SAFE_CURSOR_UPDATE(compressed_icc_size);
   map_bundle->alt_icc_size = compressed_icc_size;
   map_bundle->alt_icc = input_buffer + cursor;
 
   // Calculate remaining bytes for gain map
   cursor = next_cursor;
   map_bundle->gain_map_size = input_buffer_size - cursor;
-  ADVANCE_CURSOR(map_bundle->gain_map_size);
+  SAFE_CURSOR_UPDATE(map_bundle->gain_map_size);
   map_bundle->gain_map = input_buffer + cursor;
 
-#undef ADVANCE_CURSOR
+#undef SAFE_CURSOR_UPDATE
 
   cursor = next_cursor;
 
