@@ -38,7 +38,7 @@ extern "C" {
  * containing the result.
  * @return Whether compressing the profile was successful.
  */
-JXL_EXPORT JXL_BOOL JxlIccProfileEncode(JxlMemoryManager* memory_manager,
+JXL_EXPORT JXL_BOOL JxlICCProfileEncode(JxlMemoryManager* memory_manager,
                                         const uint8_t* icc, size_t icc_size,
                                         uint8_t** compressed_icc,
                                         size_t* compressed_icc_size);
@@ -61,7 +61,7 @@ JXL_EXPORT JXL_BOOL JxlIccProfileEncode(JxlMemoryManager* memory_manager,
  * result.
  * @return Whether decompressing the profile was successful.
  */
-JXL_EXPORT JXL_BOOL JxlIccProfileDecode(JxlMemoryManager* memory_manager,
+JXL_EXPORT JXL_BOOL JxlICCProfileDecode(JxlMemoryManager* memory_manager,
                                         const uint8_t* compressed_icc,
                                         size_t compressed_icc_size,
                                         uint8_t** icc, size_t* icc_size);
