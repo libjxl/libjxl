@@ -49,7 +49,7 @@ std::vector<uint8_t> GoldenTestGainMap(bool has_icc, bool has_color_encoding) {
 
   std::vector<uint8_t> icc_size = {0x00, 0x00, 0x00, 0x00};
   if (has_icc) {
-    icc_size = {0x00, 0x00, 0x01, 0x7A};  // 378 in decimal
+    icc_size = {0x00, 0x00, 0x00, 0x88};  // 136 in decimal
   }
   std::vector<uint8_t> icc_data = jxl::test::GetCompressedIccTestProfile();
   std::string second_placeholder =
