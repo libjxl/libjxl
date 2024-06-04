@@ -7,7 +7,6 @@
 
 #include <jxl/cms.h>
 #include <jxl/cms_interface.h>
-#include <jxl/compressed_icc.h>
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
@@ -67,16 +66,11 @@ jxl::IccBytes GetIccTestProfile() {
 }
 
 std::vector<uint8_t> GetCompressedIccTestProfile() {
-  JxlMemoryManager* memory_manager = MemoryManager();
-  uint8_t* compressed_icc;
-  size_t compressed_icc_size;
+  BitWriter writer(MemoryManager());
   const IccBytes icc = GetIccTestProfile();
-  JXL_CHECK(JxlICCProfileEncode(memory_manager, icc.data(), icc.size(),
-                                &compressed_icc, &compressed_icc_size));
-  std::vector<uint8_t> result(compressed_icc,
-                              compressed_icc + compressed_icc_size);
-  memory_manager->free(memory_manager->opaque, compressed_icc);
-  return result;
+  JXL_CHECK(WriteICC(Span<const uint8_t>(icc), &writer, 0, nullptr));
+  writer.ZeroPadToByte();
+  return std::vector<uint8_t>(writer.GetSpan().begin(), writer.GetSpan().end());
 }
 
 std::vector<uint8_t> ReadTestData(const std::string& filename) {
