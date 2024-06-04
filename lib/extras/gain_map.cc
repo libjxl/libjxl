@@ -172,7 +172,7 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
   ADVANCE_CURSOR(1);
   map_bundle->jhgm_version = input_buffer[cursor];
 
-  // Read and swap gain_map_metadata_size
+  // Read gain_map_metadata_size
   ADVANCE_CURSOR(2);
   uint16_t gain_map_metadata_size = LoadBE16(input_buffer + cursor);
 
@@ -200,7 +200,7 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
     map_bundle->color_encoding = internal_color_encoding.ToExternal();
   }
 
-  // Read and swap compressed_icc_size
+  // Read compressed_icc_size
   ADVANCE_CURSOR(4);
   uint32_t compressed_icc_size = LoadBE32(input_buffer + cursor);
 
