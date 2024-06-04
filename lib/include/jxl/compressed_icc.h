@@ -43,6 +43,24 @@ JXL_EXPORT JXL_BOOL JxlIccProfileEncode(JxlMemoryManager* memory_manager,
                                         uint8_t** compressed_icc,
                                         size_t* compressed_icc_size);
 
+/**
+ * Allocates a buffer using the memory manager, fills it with the decompressed
+ * version of the ICC profile in @c compressed_icc, returns the result through
+ * @c output_buffer and indicates its size through @c output_size.
+ *
+ * The result must be freed using the memory manager once it is not of any more
+ * use.
+ *
+ * @param[in] memory_manager Pointer to a JxlMemoryManager.
+ * @param[in] compressed_icc Pointer to a buffer containing the compressed ICC
+ * profile.
+ * @param[in] compressed_icc_size Size of the buffer containing the compressed
+ * ICC profile.
+ * @param[out] icc Will be set to a pointer to the buffer containing the result.
+ * @param[out] icc_size Will be set to the size of the buffer containing the
+ * result.
+ * @return Whether decompressing the profile was successful.
+ */
 JXL_EXPORT JXL_BOOL JxlIccProfileDecode(JxlMemoryManager* memory_manager,
                                         const uint8_t* compressed_icc,
                                         size_t compressed_icc_size,
