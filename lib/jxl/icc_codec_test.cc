@@ -25,7 +25,7 @@ namespace {
 void TestProfile(const IccBytes& icc) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   BitWriter writer{memory_manager};
-  ASSERT_TRUE(WriteICC(icc, &writer, 0, nullptr));
+  ASSERT_TRUE(WriteICC(Span<const uint8_t>(icc), &writer, 0, nullptr));
   writer.ZeroPadToByte();
   std::vector<uint8_t> dec;
   BitReader reader(writer.GetSpan());

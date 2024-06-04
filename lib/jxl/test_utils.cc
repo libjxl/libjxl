@@ -879,8 +879,9 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
 
   // Only send ICC (at least several hundred bytes) if fields aren't enough.
   if (metadata->m.color_encoding.WantICC()) {
-    JXL_RETURN_IF_ERROR(WriteICC(metadata->m.color_encoding.ICC(), &writer,
-                                 kLayerHeader, /* aux_out */ nullptr));
+    JXL_RETURN_IF_ERROR(
+        WriteICC(Span<const uint8_t>(metadata->m.color_encoding.ICC()), &writer,
+                 kLayerHeader, /* aux_out */ nullptr));
   }
 
   if (metadata->m.have_preview) {
