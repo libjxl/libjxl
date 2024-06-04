@@ -210,6 +210,11 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
 
   // Calculate remaining bytes for gain map
   cursor = next_cursor;
+  // This calculation is guaranteed not to underflow because `cursor` is always
+  // updated to a position within or at the end of `input_buffer` (not beyond).
+  // Thus, subtracting `cursor` from `input_buffer_size` (the total size of the
+  // buffer) will always result in a non-negative integer representing the
+  // remaining buffer size.
   map_bundle->gain_map_size = input_buffer_size - cursor;
   SAFE_CURSOR_UPDATE(map_bundle->gain_map_size);
   map_bundle->gain_map = input_buffer + cursor;
