@@ -12,10 +12,12 @@ JXL_BOOL JxlIccProfileEncode(JxlMemoryManager* memory_manager,
                              uint8_t** compressed_icc,
                              size_t* compressed_icc_size) {
   jxl::BitWriter writer(memory_manager);
-  JXL_RETURN_IF_ERROR(jxl::WriteICC(jxl::Span<const uint8_t>(icc, icc_size), &writer, 0, nullptr));
+  JXL_RETURN_IF_ERROR(jxl::WriteICC(jxl::Span<const uint8_t>(icc, icc_size),
+                                    &writer, 0, nullptr));
   writer.ZeroPadToByte();
   *compressed_icc_size = writer.GetSpan().size();
-  *compressed_icc = static_cast<uint8_t*>(memory_manager->alloc(memory_manager->opaque, *compressed_icc_size));
+  *compressed_icc = static_cast<uint8_t*>(
+      memory_manager->alloc(memory_manager->opaque, *compressed_icc_size));
   memcpy(compressed_icc, writer.GetSpan().data(), *compressed_icc_size);
   return JXL_TRUE;
 }
