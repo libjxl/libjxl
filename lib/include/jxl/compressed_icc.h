@@ -32,10 +32,10 @@ extern "C" {
  * @param[in] memory_manager Pointer to a JxlMemoryManager.
  * @param[in] icc Pointer to a buffer containing the uncompressed ICC profile.
  * @param[in] icc_size Size of the buffer containing the ICC profile.
- * @param[out] output_buffer Will be set to a pointer to the buffer containing
+ * @param[out] compressed_icc Will be set to a pointer to the buffer containing
  * the result.
- * @param[out] output_size Will be set to the size of the buffer containing the
- * result.
+ * @param[out] compressed_icc_size Will be set to the size of the buffer
+ * containing the result.
  * @return Whether compressing the profile was successful.
  */
 JXL_EXPORT JXL_BOOL JxlIccProfileEncode(JxlMemoryManager* memory_manager,
