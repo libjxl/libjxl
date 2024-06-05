@@ -8,13 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
-
-### Removed
+  - Gain Map API (#3552 and #3628)
 
 ### Changed / clarified
-
-### Fixed
-
+  - avoiding abort in release build (TODO(eustas): add pull requests here)
 
 ## [0.10.2] - 2024-03-08
 
