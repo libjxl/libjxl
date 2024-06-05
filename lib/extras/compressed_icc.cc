@@ -5,6 +5,7 @@
 
 #include <jxl/compressed_icc.h>
 
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/icc_codec.h"
 
@@ -14,7 +15,7 @@ JXL_BOOL JxlICCProfileEncode(JxlMemoryManager* memory_manager,
                              size_t* compressed_icc_size) {
   jxl::BitWriter writer(memory_manager);
   JXL_RETURN_IF_ERROR(jxl::WriteICC(jxl::Span<const uint8_t>(icc, icc_size),
-                                    &writer, 0, nullptr));
+                                    &writer, jxl::LayerType::Header, nullptr));
   writer.ZeroPadToByte();
   *compressed_icc_size = writer.GetSpan().size();
   *compressed_icc = static_cast<uint8_t*>(

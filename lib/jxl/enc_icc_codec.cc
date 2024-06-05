@@ -430,7 +430,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
 }
 
 Status WriteICC(const Span<const uint8_t> icc, BitWriter* JXL_RESTRICT writer,
-                size_t layer, AuxOut* JXL_RESTRICT aux_out) {
+                LayerType layer, AuxOut* JXL_RESTRICT aux_out) {
   if (icc.empty()) return JXL_FAILURE("ICC must be non-empty");
   JxlMemoryManager* memory_manager = writer->memory_manager();
   PaddedBytes enc{memory_manager};

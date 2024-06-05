@@ -68,7 +68,8 @@ jxl::IccBytes GetIccTestProfile() {
 std::vector<uint8_t> GetCompressedIccTestProfile() {
   BitWriter writer(MemoryManager());
   const IccBytes icc = GetIccTestProfile();
-  JXL_CHECK(WriteICC(Span<const uint8_t>(icc), &writer, 0, nullptr));
+  JXL_CHECK(
+      WriteICC(Span<const uint8_t>(icc), &writer, LayerType::Header, nullptr));
   writer.ZeroPadToByte();
   return std::vector<uint8_t>(writer.GetSpan().begin(), writer.GetSpan().end());
 }
@@ -803,7 +804,7 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   compressed->clear();
   const JxlCmsInterface& cms = *JxlGetDefaultCms();
-  io->CheckMetadata();
+  JXL_RETURN_IF_ERROR(io->CheckMetadata());
   BitWriter writer{memory_manager};
 
   CompressParams cparams = params;
@@ -823,7 +824,7 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
   if (metadata->m.color_encoding.WantICC()) {
     JXL_RETURN_IF_ERROR(
         WriteICC(Span<const uint8_t>(metadata->m.color_encoding.ICC()), &writer,
-                 kLayerHeader, /* aux_out */ nullptr));
+                 LayerType::Header, /* aux_out */ nullptr));
   }
 
   if (metadata->m.have_preview) {
@@ -834,7 +835,7 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
   // Each frame should start on byte boundaries.
   BitWriter::Allotment allotment(&writer, 8);
   writer.ZeroPadToByte();
-  allotment.ReclaimAndCharge(&writer, kLayerHeader, /* aux_out */ nullptr);
+  allotment.ReclaimAndCharge(&writer, LayerType::Header, /* aux_out */ nullptr);
 
   for (size_t i = 0; i < io->frames.size(); i++) {
     FrameInfo info;

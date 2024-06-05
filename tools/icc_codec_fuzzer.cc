@@ -66,7 +66,7 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     BitWriter writer{memory_manager};
     // Writing should support any random bytestream so must succeed, make
     // fuzzer fail if not.
-    JXL_ASSERT(jxl::WriteICC(icc, &writer, 0, nullptr));
+    JXL_ASSERT(jxl::WriteICC(icc, &writer, jxl::LayerType::Header, nullptr));
   }
 #else  // JXL_ICC_FUZZER_SLOW_TEST
   if (read) {
