@@ -49,7 +49,7 @@ std::vector<uint8_t> GoldenTestGainMap(bool has_icc, bool has_color_encoding) {
 
   std::vector<uint8_t> icc_size = {0x00, 0x00, 0x00, 0x00};
   if (has_icc) {
-    icc_size = {0x00, 0x00, 0x01, 0x7A};  // 378 in decimal
+    icc_size = {0x00, 0x00, 0x00, 0x88};  // 136 in decimal
   }
   std::vector<uint8_t> icc_data = jxl::test::GetCompressedIccTestProfile();
   std::string second_placeholder =
@@ -133,9 +133,6 @@ TEST_P(GainMapTest, GainMapRoundtrip) {
   ASSERT_TRUE(JxlGainMapWriteBundle(&orig_bundle, buffer.data(), buffer.size(),
                                     &bytes_written));
   EXPECT_EQ(bytes_written, bundle_size);
-  std::ofstream dump("/tmp/gainmap.bin", std::ios::out);
-  dump.write(reinterpret_cast<const char*>(buffer.data()), buffer.size());
-  dump.close();
   EXPECT_EQ(buffer[0], orig_bundle.jhgm_version);
   EXPECT_EQ(buffer.size(), golden_gain_map.size());
   EXPECT_TRUE(

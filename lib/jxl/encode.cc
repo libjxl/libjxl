@@ -740,8 +740,9 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     }
     // Only send ICC (at least several hundred bytes) if fields aren't enough.
     if (metadata.m.color_encoding.WantICC()) {
-      if (!jxl::WriteICC(metadata.m.color_encoding.ICC(), &writer,
-                         jxl::kLayerHeader, aux_out)) {
+      if (!jxl::WriteICC(
+              jxl::Span<const uint8_t>(metadata.m.color_encoding.ICC()),
+              &writer, jxl::kLayerHeader, aux_out)) {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
                              "Failed to write ICC profile");
       }

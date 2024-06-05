@@ -750,7 +750,8 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
 
   if (!icc_profile.empty()) {
     EXPECT_TRUE(metadata.m.color_encoding.WantICC());
-    EXPECT_TRUE(jxl::WriteICC(icc_profile, &writer, 0, nullptr));
+    EXPECT_TRUE(jxl::WriteICC(jxl::Span<const uint8_t>(icc_profile), &writer, 0,
+                              nullptr));
   }
 
   writer.ZeroPadToByte();
