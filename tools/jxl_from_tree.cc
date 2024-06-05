@@ -15,6 +15,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_fields.h"
@@ -493,7 +494,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   cparams.custom_splines = SplinesFromSplineData(spline_data);
   PaddedBytes compressed{memory_manager};
 
-  io.CheckMetadata();
+  JXL_RETURN_IF_ERROR(io.CheckMetadata());
   BitWriter writer{memory_manager};
 
   std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();

@@ -6,34 +6,17 @@
 #include "jxl/gain_map.h"
 
 #include <jxl/encode.h>
-#include <stdint.h>
 
-#include <fstream>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <vector>
 
-#include "lib/jxl/base/span.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/fields.h"
-#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
 namespace {
-bool ColorEncodingsEqual(const JxlColorEncoding& lhs,
-                         const JxlColorEncoding& rhs) {
-  return lhs.color_space == rhs.color_space &&
-         lhs.white_point == rhs.white_point &&
-         std::memcmp(lhs.white_point_xy, rhs.white_point_xy,
-                     sizeof(lhs.white_point_xy)) == 0 &&
-         lhs.primaries == rhs.primaries &&
-         std::memcmp(lhs.primaries_red_xy, rhs.primaries_red_xy,
-                     sizeof(lhs.primaries_red_xy)) == 0 &&
-         std::memcmp(lhs.primaries_green_xy, rhs.primaries_green_xy,
-                     sizeof(lhs.primaries_green_xy)) == 0 &&
-         std::memcmp(lhs.primaries_blue_xy, rhs.primaries_blue_xy,
-                     sizeof(lhs.primaries_blue_xy)) == 0 &&
-         lhs.transfer_function == rhs.transfer_function &&
-         lhs.gamma == rhs.gamma && lhs.rendering_intent == rhs.rendering_intent;
-}
 
 std::vector<uint8_t> GoldenTestGainMap(bool has_icc, bool has_color_encoding) {
   // Define the parts of the gain map

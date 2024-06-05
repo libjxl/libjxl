@@ -8,7 +8,6 @@
 
 // Compressed representation of ICC profiles.
 
-#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -20,10 +19,12 @@
 namespace jxl {
 
 struct AuxOut;
+enum class LayerType : uint8_t;
+class PaddedBytes;
 
 // Should still be called if `icc.empty()` - if so, writes only 1 bit.
 Status WriteICC(Span<const uint8_t> icc, BitWriter* JXL_RESTRICT writer,
-                size_t layer, AuxOut* JXL_RESTRICT aux_out);
+                LayerType layer, AuxOut* JXL_RESTRICT aux_out);
 
 }  // namespace jxl
 
