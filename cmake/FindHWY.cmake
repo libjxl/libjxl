@@ -10,7 +10,7 @@ if (PkgConfig_FOUND)
 endif ()
 
 find_path(HWY_INCLUDE_DIR
-  NAMES hwy/highway.h
+  NAMES hwy/base.h hwy/highway.h
   HINTS ${PC_HWY_INCLUDEDIR} ${PC_HWY_INCLUDE_DIRS}
 )
 
