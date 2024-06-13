@@ -20,9 +20,19 @@ find_library(HWY_LIBRARY
 )
 
 if (HWY_INCLUDE_DIR AND NOT HWY_VERSION)
-  if (EXISTS "${HWY_INCLUDE_DIR}/hwy/highway.h")
-    file(READ "${HWY_INCLUDE_DIR}/hwy/highway.h" HWY_VERSION_CONTENT)
+  # Version 1.2.0 moved versioning to base.h
+  if (EXISTS "${HWY_INCLUDE_DIR}/hwy/base.h")
+    file(READ "${HWY_INCLUDE_DIR}/hwy/base.h" HWY_VERSION_CONTENT)
+    string(FIND "${HWY_VERSION_CONTENT}" "#define HWY_MAJOR" _FOUND_VERSION)
+    if (_FOUND_VERSION EQUAL -1)
+      unset(HWY_VERSION_CONTENT)
+      if (EXISTS "${HWY_INCLUDE_DIR}/hwy/highway.h")
+        file(READ "${HWY_INCLUDE_DIR}/hwy/highway.h" HWY_VERSION_CONTENT)
+      endif ()
+    endif ()
+  endif ()
 
+  if (HWY_VERSION_CONTENT)
     string(REGEX MATCH "#define HWY_MAJOR +([0-9]+)" _sink "${HWY_VERSION_CONTENT}")
     set(HWY_VERSION_MAJOR "${CMAKE_MATCH_1}")
 
