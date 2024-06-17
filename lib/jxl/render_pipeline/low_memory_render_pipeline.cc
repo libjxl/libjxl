@@ -383,7 +383,8 @@ Status LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
           group_data_[t][c],
           ImageF::Create(memory_manager_,
                          GroupInputXSize(c) + group_data_x_border_ * 2,
-                         GroupInputYSize(c) + group_data_y_border_ * 2));
+                         GroupInputYSize(c) + group_data_y_border_ * 2,
+                         kRenderPipelineXOffset));
     }
   }
   // TODO(veluca): avoid reallocating buffers if not needed.
