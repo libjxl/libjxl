@@ -510,9 +510,11 @@ void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                             const size_t xsize, const size_t ysize,
                             const GetConstRow& in, const GetRow& out,
                             ThreadPool* pool) {
-  const auto process_line = [&](const uint32_t task, size_t /*thread*/) {
+  const auto process_line = [&](const uint32_t task,
+                                size_t /*thread*/) -> Status {
     const size_t y = task;
     FastGaussian1D(rg, static_cast<intptr_t>(xsize), in(y), out(y));
+    return true;
   };
 
   JXL_CHECK(RunOnPool(pool, 0, ysize, ThreadPool::NoInit, process_line,

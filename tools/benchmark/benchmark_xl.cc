@@ -1077,36 +1077,38 @@ class Benchmark {
                                                  ThreadPool* pool) {
     std::vector<PackedPixelFile> loaded_images;
     loaded_images.resize(fnames.size());
-    const auto process_image = [&](const uint32_t task, size_t /*thread*/) {
+    const auto process_image = [&](const uint32_t task,
+                                   size_t /*thread*/) -> Status {
       const size_t i = static_cast<size_t>(task);
-      Status ok = true;
+      Status ret = true;
 
       if (!Args()->decode_only) {
         std::vector<uint8_t> encoded;
-        ok = ReadFile(fnames[i], &encoded);
-        if (ok) {
-          ok = jxl::extras::DecodeBytes(Bytes(encoded), Args()->color_hints,
-                                        &loaded_images[i]);
+        ret = ReadFile(fnames[i], &encoded);
+        if (ret) {
+          ret = jxl::extras::DecodeBytes(Bytes(encoded), Args()->color_hints,
+                                         &loaded_images[i]);
         }
-        if (ok && loaded_images[i].icc.empty()) {
+        if (ret && loaded_images[i].icc.empty()) {
           // Add ICC profile if the image is not in sRGB, because not all codecs
           // can handle the color_encoding enum.
-          ok = CreateNonSRGBICCProfile(&loaded_images[i]);
+          ret = CreateNonSRGBICCProfile(&loaded_images[i]);
         }
-        if (ok && Args()->intensity_target != 0) {
+        if (ret && Args()->intensity_target != 0) {
           // TODO(szabadka) Respect Args()->intensity_target
         }
       }
-      if (!ok) {
+      if (!ret) {
         if (!Args()->silent_errors) {
           fprintf(stderr, "Failed to load image %s\n", fnames[i].c_str());
         }
-        return;
+        return JXL_FAILURE("Failed to load image");
       }
 
       if (!Args()->decode_only && Args()->override_bitdepth != 0) {
         // TODO(szabadla) Respect Args()->override_bitdepth
       }
+      return true;
     };
     JXL_CHECK(jxl::RunOnPool(pool, 0, static_cast<uint32_t>(fnames.size()),
                              ThreadPool::NoInit, process_image, "Load images"));
@@ -1152,25 +1154,26 @@ class Benchmark {
     }
 
     std::vector<uint64_t> errors_thread;
-    JXL_CHECK(jxl::RunOnPool(
-        pool, 0, tasks->size(),
-        [&](const size_t num_threads) {
-          // Reduce false sharing by only writing every 8th slot (64 bytes).
-          errors_thread.resize(8 * num_threads);
-          return true;
-        },
-        [&](const uint32_t i, const size_t thread) {
-          Task& t = (*tasks)[i];
-          const PackedPixelFile& image = loaded_images[t.idx_image];
-          t.image = &image;
-          std::vector<uint8_t> compressed;
-          DoCompress(fnames[t.idx_image], image, extra_metrics_commands,
-                     t.codec.get(), inner_pools[thread]->get(), &compressed,
-                     &t.stats);
-          printer.TaskDone(i, t);
-          errors_thread[8 * thread] += t.stats.total_errors;
-        },
-        "Benchmark tasks"));
+
+    const auto init = [&](const size_t num_threads) -> Status {
+      // Reduce false sharing by only writing every 8th slot (64 bytes).
+      errors_thread.resize(8 * num_threads);
+      return true;
+    };
+    const auto do_task = [&](const uint32_t i, const size_t thread) -> Status {
+      Task& t = (*tasks)[i];
+      const PackedPixelFile& image = loaded_images[t.idx_image];
+      t.image = &image;
+      std::vector<uint8_t> compressed;
+      DoCompress(fnames[t.idx_image], image, extra_metrics_commands,
+                 t.codec.get(), inner_pools[thread]->get(), &compressed,
+                 &t.stats);
+      printer.TaskDone(i, t);
+      errors_thread[8 * thread] += t.stats.total_errors;
+      return true;
+    };
+    JXL_CHECK(jxl::RunOnPool(pool, 0, tasks->size(), init, do_task,
+                             "Benchmark tasks"));
     if (Args()->show_progress) fprintf(stderr, "\n");
     return std::accumulate(errors_thread.begin(), errors_thread.end(),
                            static_cast<size_t>(0));

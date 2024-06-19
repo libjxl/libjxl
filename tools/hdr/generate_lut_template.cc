@@ -45,21 +45,22 @@ int main(int argc, const char** argv) {
       Image3F image,
       Image3F::Create(jpegxl::tools::NoMemoryManager(), N * N, N));
   const float scale = 1.0 / (N - 1);
-  JXL_CHECK(jxl::RunOnPool(
-      pool.get(), 0, N, jxl::ThreadPool::NoInit,
-      [&](const uint32_t y, size_t /* thread */) {
-        const float g = y * scale;
-        float* const JXL_RESTRICT rows[3] = {
-            image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};
-        for (size_t x = 0; x < N * N; ++x) {
-          size_t r = x % N;
-          size_t q = x / N;
-          rows[0][x] = r * scale;
-          rows[1][x] = g;
-          rows[2][x] = q * scale;
-        }
-      },
-      "GenerateTemplate"));
+  const auto process_row = [&](const uint32_t y,
+                               size_t /* thread */) -> jxl::Status {
+    const float g = y * scale;
+    float* const JXL_RESTRICT rows[3] = {
+        image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};
+    for (size_t x = 0; x < N * N; ++x) {
+      size_t r = x % N;
+      size_t q = x / N;
+      rows[0][x] = r * scale;
+      rows[1][x] = g;
+      rows[2][x] = q * scale;
+    }
+    return true;
+  };
+  JXL_CHECK(jxl::RunOnPool(pool.get(), 0, N, jxl::ThreadPool::NoInit,
+                           process_row, "GenerateTemplate"));
 
   JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   jxl::extras::PackedPixelFile ppf =

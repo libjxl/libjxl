@@ -159,22 +159,23 @@ template <size_t N>
 void TestInverseT(float accuracy) {
   test::ThreadPoolForTests pool(N < 32 ? 0 : 8);
   enum { kBlockSize = N * N };
-  EXPECT_TRUE(RunOnPool(
-      pool.get(), 0, kBlockSize, ThreadPool::NoInit,
-      [accuracy](const uint32_t task, size_t /*thread*/) {
-        const size_t i = static_cast<size_t>(task);
-        HWY_ALIGN float x[kBlockSize] = {0.0f};
-        x[i] = 1.0;
+  const auto process_block = [accuracy](const uint32_t task,
+                                        size_t /*thread*/) -> Status {
+    const size_t i = static_cast<size_t>(task);
+    HWY_ALIGN float x[kBlockSize] = {0.0f};
+    x[i] = 1.0;
 
-        ComputeIDCT<N>(x);
-        ComputeDCT<N>(x);
+    ComputeIDCT<N>(x);
+    ComputeDCT<N>(x);
 
-        for (size_t k = 0; k < kBlockSize; ++k) {
-          EXPECT_NEAR(x[k], (k == i) ? 1.0f : 0.0f, accuracy)
-              << "i = " << i << ", k = " << k;
-        }
-      },
-      "TestInverse"));
+    for (size_t k = 0; k < kBlockSize; ++k) {
+      EXPECT_NEAR(x[k], (k == i) ? 1.0f : 0.0f, accuracy)
+          << "i = " << i << ", k = " << k;
+    }
+    return true;
+  };
+  EXPECT_TRUE(RunOnPool(pool.get(), 0, kBlockSize, ThreadPool::NoInit,
+                        process_block, "TestInverse"));
 }
 
 void InverseTest() {

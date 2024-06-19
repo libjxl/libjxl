@@ -57,31 +57,30 @@ StatusOr<ImageF> SumOfSquareDifferences(const Image3F& forig,
   JXL_ASSIGN_OR_RETURN(
       ImageF sum_of_squares,
       ImageF::Create(memory_manager, forig.xsize(), forig.ysize()));
-  JXL_CHECK(RunOnPool(
-      pool, 0, forig.ysize(), ThreadPool::NoInit,
-      [&](const uint32_t task, size_t thread) {
-        const size_t y = static_cast<size_t>(task);
-        const float* JXL_RESTRICT orig_row0 = forig.Plane(0).ConstRow(y);
-        const float* JXL_RESTRICT orig_row1 = forig.Plane(1).ConstRow(y);
-        const float* JXL_RESTRICT orig_row2 = forig.Plane(2).ConstRow(y);
-        const float* JXL_RESTRICT smooth_row0 = smooth.Plane(0).ConstRow(y);
-        const float* JXL_RESTRICT smooth_row1 = smooth.Plane(1).ConstRow(y);
-        const float* JXL_RESTRICT smooth_row2 = smooth.Plane(2).ConstRow(y);
-        float* JXL_RESTRICT sos_row = sum_of_squares.Row(y);
+  const auto process_row = [&](const uint32_t task, size_t thread) -> Status {
+    const size_t y = static_cast<size_t>(task);
+    const float* JXL_RESTRICT orig_row0 = forig.Plane(0).ConstRow(y);
+    const float* JXL_RESTRICT orig_row1 = forig.Plane(1).ConstRow(y);
+    const float* JXL_RESTRICT orig_row2 = forig.Plane(2).ConstRow(y);
+    const float* JXL_RESTRICT smooth_row0 = smooth.Plane(0).ConstRow(y);
+    const float* JXL_RESTRICT smooth_row1 = smooth.Plane(1).ConstRow(y);
+    const float* JXL_RESTRICT smooth_row2 = smooth.Plane(2).ConstRow(y);
+    float* JXL_RESTRICT sos_row = sum_of_squares.Row(y);
 
-        for (size_t x = 0; x < forig.xsize(); x += Lanes(d)) {
-          auto v0 = Sub(Load(d, orig_row0 + x), Load(d, smooth_row0 + x));
-          auto v1 = Sub(Load(d, orig_row1 + x), Load(d, smooth_row1 + x));
-          auto v2 = Sub(Load(d, orig_row2 + x), Load(d, smooth_row2 + x));
-          v0 = Mul(Mul(v0, v0), color_coef0);
-          v1 = Mul(Mul(v1, v1), color_coef1);
-          v2 = Mul(Mul(v2, v2), color_coef2);
-          const auto sos =
-              Add(v0, Add(v1, v2));  // weighted sum of square diffs
-          Store(sos, d, sos_row + x);
-        }
-      },
-      "ComputeEnergyImage"));
+    for (size_t x = 0; x < forig.xsize(); x += Lanes(d)) {
+      auto v0 = Sub(Load(d, orig_row0 + x), Load(d, smooth_row0 + x));
+      auto v1 = Sub(Load(d, orig_row1 + x), Load(d, smooth_row1 + x));
+      auto v2 = Sub(Load(d, orig_row2 + x), Load(d, smooth_row2 + x));
+      v0 = Mul(Mul(v0, v0), color_coef0);
+      v1 = Mul(Mul(v1, v1), color_coef1);
+      v2 = Mul(Mul(v2, v2), color_coef2);
+      const auto sos = Add(v0, Add(v1, v2));  // weighted sum of square diffs
+      Store(sos, d, sos_row + x);
+    }
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, forig.ysize(), ThreadPool::NoInit,
+                                process_row, "ComputeEnergyImage"));
   return sum_of_squares;
 }
 

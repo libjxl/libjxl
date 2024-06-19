@@ -270,7 +270,8 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
   ZeroFillImage(&is_screenshot_like);
   uint8_t* JXL_RESTRICT screenshot_row = is_screenshot_like.Row(0);
   const size_t screenshot_stride = is_screenshot_like.PixelsPerRow();
-  const auto process_row = [&](const uint32_t y, size_t /* thread */) {
+  const auto process_row = [&](const uint32_t y,
+                               size_t /* thread */) -> Status {
     for (uint64_t x = 0; x < frame_dim.xsize / kPatchSide; x++) {
       bool all_same = true;
       for (size_t iy = 0; iy < static_cast<size_t>(kPatchSide); iy++) {
@@ -303,9 +304,11 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
       screenshot_row[y * screenshot_stride + x] = 1;
       has_screenshot_areas = true;
     }
+    return true;
   };
-  JXL_CHECK(RunOnPool(pool, 0, frame_dim.ysize / kPatchSide, ThreadPool::NoInit,
-                      process_row, "IsScreenshotLike"));
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, frame_dim.ysize / kPatchSide,
+                                ThreadPool::NoInit, process_row,
+                                "IsScreenshotLike"));
 
   // TODO(veluca): also parallelize the rest of this function.
   if (WantDebugOutput(cparams)) {
