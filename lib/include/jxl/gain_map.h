@@ -17,7 +17,7 @@
 #include <jxl/jxl_export.h>
 #include <jxl/types.h>
 
-#ifndef __cplusplus
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -45,7 +45,7 @@ typedef struct {
    * buffer. */
   const uint8_t* gain_map_metadata;
   /** Indicates whether a color encoding is present. */
-  bool has_color_encoding;
+  JXL_BOOL has_color_encoding;
   /** If has_color_encoding is true, this field contains the
    *        uncompressed color encoding data. */
   JxlColorEncoding color_encoding;
@@ -120,7 +120,7 @@ JXL_EXPORT JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
                                          size_t input_buffer_size,
                                          size_t* bytes_read);
 
-#ifndef __cplusplus
+#ifdef __cplusplus
 }
 #endif
 
