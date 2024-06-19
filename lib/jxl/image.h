@@ -93,7 +93,7 @@ struct PlaneBase {
 
  protected:
   PlaneBase(size_t xsize, size_t ysize, size_t sizeof_t);
-  Status Allocate(JxlMemoryManager* memory_manager);
+  Status Allocate(JxlMemoryManager* memory_manager, size_t pre_padding);
 
   // Returns pointer to the start of a row.
   JXL_INLINE void* VoidRow(const size_t y) const {
@@ -151,9 +151,10 @@ class Plane : public detail::PlaneBase {
   Plane() = default;
 
   static StatusOr<Plane> Create(JxlMemoryManager* memory_manager,
-                                const size_t xsize, const size_t ysize) {
+                                const size_t xsize, const size_t ysize,
+                                const size_t pre_padding = 0) {
     Plane plane(xsize, ysize, sizeof(T));
-    JXL_RETURN_IF_ERROR(plane.Allocate(memory_manager));
+    JXL_RETURN_IF_ERROR(plane.Allocate(memory_manager, pre_padding));
     return plane;
   }
 
