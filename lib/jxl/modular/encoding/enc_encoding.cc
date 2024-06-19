@@ -66,7 +66,8 @@ Tree MakeFixedTree(int property, const std::vector<int32_t> &cutoffs,
   if (log_px < 14) {
     min_gap = 8 * (14 - log_px);
   }
-  const size_t shift = bitdepth > 11 ? std::min(4, bitdepth - 11) : 0;
+  const int shift = bitdepth > 11 ? std::min(4, bitdepth - 11) : 0;
+  const int mul = 1 << shift;
   Tree tree;
   struct NodeInfo {
     size_t begin, end, pos;
@@ -80,7 +81,7 @@ Tree MakeFixedTree(int property, const std::vector<int32_t> &cutoffs,
     q.pop();
     if (info.begin + min_gap >= info.end) continue;
     uint32_t split = (info.begin + info.end) / 2;
-    int32_t cutoff = cutoffs[split] << shift;
+    int32_t cutoff = cutoffs[split] * mul;
     tree[info.pos] = PropertyDecisionNode::Split(property, cutoff, tree.size());
     q.push(NodeInfo{split + 1, info.end, tree.size()});
     tree.push_back(PropertyDecisionNode::Leaf(pred));
