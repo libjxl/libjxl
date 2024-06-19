@@ -147,21 +147,22 @@ void Symmetric5(const ImageF& in, const Rect& in_rect,
   JXL_ASSERT(in_rect.xsize() == out_rect.xsize());
   JXL_ASSERT(in_rect.ysize() == out_rect.ysize());
   const size_t ysize = in_rect.ysize();
-  JXL_CHECK(RunOnPool(
-      pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
-      [&](const uint32_t task, size_t /*thread*/) {
-        const int64_t riy = task;
-        const int64_t iy = in_rect.y0() + riy;
+  const auto process_row = [&](const uint32_t task,
+                               size_t /*thread*/) -> Status {
+    const int64_t riy = task;
+    const int64_t iy = in_rect.y0() + riy;
 
-        if (iy < 2 || iy >= static_cast<ssize_t>(in.ysize()) - 2) {
-          Symmetric5Row<WrapMirror>(in, in_rect, iy, weights,
-                                    out_rect.Row(out, riy));
-        } else {
-          Symmetric5Row<WrapUnchanged>(in, in_rect, iy, weights,
-                                       out_rect.Row(out, riy));
-        }
-      },
-      "Symmetric5x5Convolution"));
+    if (iy < 2 || iy >= static_cast<ssize_t>(in.ysize()) - 2) {
+      Symmetric5Row<WrapMirror>(in, in_rect, iy, weights,
+                                out_rect.Row(out, riy));
+    } else {
+      Symmetric5Row<WrapUnchanged>(in, in_rect, iy, weights,
+                                   out_rect.Row(out, riy));
+    }
+    return true;
+  };
+  JXL_CHECK(RunOnPool(pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+                      process_row, "Symmetric5x5Convolution"));
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)

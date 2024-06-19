@@ -814,10 +814,8 @@ StatusOr<Image3F> ReconstructImage(
     group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
     return true;
   };
-  std::atomic<bool> has_error{false};
   const auto process_group = [&](const uint32_t group_index,
-                                 const size_t thread) {
-    if (has_error) return;
+                                 const size_t thread) -> Status {
     if (frame_header.loop_filter.epf_iters > 0) {
       ComputeSigma(frame_header.loop_filter,
                    frame_dim.BlockGroupRect(group_index), &dec_state);
@@ -831,14 +829,11 @@ StatusOr<Image3F> ReconstructImage(
       PrepareNoiseInput(dec_state, shared.frame_dim, frame_header, group_index,
                         thread);
     }
-    if (!input.Done()) {
-      has_error = true;
-      return;
-    }
+    JXL_RETURN_IF_ERROR(input.Done());
+    return true;
   };
-  JXL_CHECK(RunOnPool(pool, 0, frame_dim.num_groups, allocate_storage,
-                      process_group, "ReconstructImage"));
-  if (has_error) return JXL_FAILURE("ReconstructImage failure");
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, frame_dim.num_groups, allocate_storage,
+                                process_group, "ReconstructImage"));
   return std::move(*decoded.color());
 }
 
@@ -1112,9 +1107,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   acs_heuristics.Init(*opsin, rect, initial_quant_field, initial_quant_masking,
                       initial_quant_masking1x1, &matrices);
 
-  std::atomic<bool> has_error{false};
-  auto process_tile = [&](const uint32_t tid, const size_t thread) {
-    if (has_error) return;
+  auto process_tile = [&](const uint32_t tid, const size_t thread) -> Status {
     size_t n_enc_tiles = DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks);
     size_t tx = tid % n_enc_tiles;
     size_t ty = tid / n_enc_tiles;
@@ -1137,10 +1130,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     }
 
     // Choose block sizes.
-    if (!acs_heuristics.ProcessRect(r, cmap, &ac_strategy, thread)) {
-      has_error = true;
-      return;
-    }
+    JXL_RETURN_IF_ERROR(
+        acs_heuristics.ProcessRect(r, cmap, &ac_strategy, thread));
 
     // Always set the initial quant field, so we can compute the CfL map with
     // more accuracy. The initial quant field might change in slower modes, but
@@ -1156,20 +1147,17 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
           r, *opsin, rect, matrices, &ac_strategy, &raw_quant_field, &quantizer,
           /*fast=*/cparams.speed_tier >= SpeedTier::kWombat, thread, &cmap);
     }
+    return true;
   };
-  JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0,
-      DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks) *
-          DivCeil(frame_dim.ysize_blocks, kEncTileDimInBlocks),
-      [&](const size_t num_threads) {
-        acs_heuristics.PrepareForThreads(num_threads);
-        cfl_heuristics.PrepareForThreads(num_threads);
-        return true;
-      },
-      process_tile, "Enc Heuristics"));
-  if (has_error) {
-    return JXL_FAILURE("process_tile failed");
-  }
+  size_t num_tiles = DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks) *
+                     DivCeil(frame_dim.ysize_blocks, kEncTileDimInBlocks);
+  const auto prepare = [&](const size_t num_threads) -> Status {
+    acs_heuristics.PrepareForThreads(num_threads);
+    cfl_heuristics.PrepareForThreads(num_threads);
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(
+      RunOnPool(pool, 0, num_tiles, prepare, process_tile, "Enc Heuristics"));
 
   JXL_RETURN_IF_ERROR(acs_heuristics.Finalize(frame_dim, ac_strategy, aux_out));
 

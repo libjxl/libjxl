@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#include "lib/jxl/base/status.h"
 #if defined(_WIN32) || defined(_WIN64)
 #include "third_party/dirent.h"
 #else
@@ -353,9 +355,11 @@ int main(int argc, const char** argv) {
 
   jpegxl::tools::ThreadPoolInternal pool{num_threads};
   const auto generate = [&specs, dest_dir, regenerate, quiet](
-                            const uint32_t task, size_t /* thread */) {
+                            const uint32_t task,
+                            size_t /* thread */) -> jxl::Status {
     const ImageSpec& spec = specs[task];
     GenerateFile(dest_dir, spec, regenerate, quiet);
+    return true;
   };
   if (!RunOnPool(pool.get(), 0, specs.size(), jxl::ThreadPool::NoInit, generate,
                  "FuzzerCorpus")) {

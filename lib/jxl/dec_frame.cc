@@ -9,7 +9,6 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -640,25 +639,20 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     }
   }
 
-  std::atomic<bool> has_error{false};
   if (decoded_dc_global_) {
-    JXL_RETURN_IF_ERROR(RunOnPool(
-        pool_, 0, dc_group_sec.size(), ThreadPool::NoInit,
-        [this, &dc_group_sec, &num, &sections, &section_status, &has_error](
-            size_t i, size_t thread) {
-          if (has_error) return;
-          if (dc_group_sec[i] != num) {
-            if (!ProcessDCGroup(i, sections[dc_group_sec[i]].br)) {
-              has_error = true;
-              return;
-            } else {
-              section_status[dc_group_sec[i]] = SectionStatus::kDone;
-            }
-          }
-        },
-        "DecodeDCGroup"));
+    const auto process_section = [this, &dc_group_sec, &num, &sections,
+                                  &section_status](size_t i,
+                                                   size_t thread) -> Status {
+      if (dc_group_sec[i] != num) {
+        JXL_RETURN_IF_ERROR(ProcessDCGroup(i, sections[dc_group_sec[i]].br));
+        section_status[dc_group_sec[i]] = SectionStatus::kDone;
+      }
+      return true;
+    };
+    JXL_RETURN_IF_ERROR(RunOnPool(pool_, 0, dc_group_sec.size(),
+                                  ThreadPool::NoInit, process_section,
+                                  "DecodeDCGroup"));
   }
-  if (has_error) return JXL_FAILURE("Error in DC group");
 
   if (!HasDcGroupToDecode() && !finalized_dc_) {
     PassesDecoderState::PipelineOptions pipeline_options;
@@ -700,39 +694,37 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
       }
     }
 
-    JXL_RETURN_IF_ERROR(RunOnPool(
-        pool_, 0, ac_group_sec.size(),
-        [this](size_t num_threads) {
-          return PrepareStorage(num_threads,
-                                decoded_passes_per_ac_group_.size());
-        },
-        [this, &ac_group_sec, &desired_num_ac_passes, &num, &sections,
-         &section_status, &has_error](size_t g, size_t thread) {
-          if (desired_num_ac_passes[g] == 0) {
-            // no new AC pass, nothing to do
-            return;
-          }
-          (void)num;
-          size_t first_pass = decoded_passes_per_ac_group_[g];
-          BitReader* JXL_RESTRICT readers[kMaxNumPasses];
-          for (size_t i = 0; i < desired_num_ac_passes[g]; i++) {
-            JXL_ASSERT(ac_group_sec[g][first_pass + i] != num);
-            readers[i] = sections[ac_group_sec[g][first_pass + i]].br;
-          }
-          if (!ProcessACGroup(g, readers, desired_num_ac_passes[g],
-                              GetStorageLocation(thread, g),
-                              /*force_draw=*/false, /*dc_only=*/false)) {
-            has_error = true;
-          } else {
-            for (size_t i = 0; i < desired_num_ac_passes[g]; i++) {
-              section_status[ac_group_sec[g][first_pass + i]] =
-                  SectionStatus::kDone;
-            }
-          }
-        },
-        "DecodeGroup"));
+    const auto prepare_storage = [this](size_t num_threads) -> Status {
+      JXL_RETURN_IF_ERROR(
+          PrepareStorage(num_threads, decoded_passes_per_ac_group_.size()));
+      return true;
+    };
+    const auto process_group = [this, &ac_group_sec, &desired_num_ac_passes,
+                                &num, &sections, &section_status](
+                                   size_t g, size_t thread) -> Status {
+      if (desired_num_ac_passes[g] == 0) {
+        // no new AC pass, nothing to do
+        return true;
+      }
+      (void)num;
+      size_t first_pass = decoded_passes_per_ac_group_[g];
+      BitReader* JXL_RESTRICT readers[kMaxNumPasses];
+      for (size_t i = 0; i < desired_num_ac_passes[g]; i++) {
+        JXL_ASSERT(ac_group_sec[g][first_pass + i] != num);
+        readers[i] = sections[ac_group_sec[g][first_pass + i]].br;
+      }
+      JXL_RETURN_IF_ERROR(ProcessACGroup(
+          g, readers, desired_num_ac_passes[g], GetStorageLocation(thread, g),
+          /*force_draw=*/false, /*dc_only=*/false));
+      for (size_t i = 0; i < desired_num_ac_passes[g]; i++) {
+        section_status[ac_group_sec[g][first_pass + i]] = SectionStatus::kDone;
+      }
+      return true;
+    };
+    JXL_RETURN_IF_ERROR(RunOnPool(pool_, 0, ac_group_sec.size(),
+                                  prepare_storage, process_group,
+                                  "DecodeGroup"));
   }
-  if (has_error) return JXL_FAILURE("Error in AC group");
 
   MarkSections(sections, num, section_status);
   return true;
@@ -771,30 +763,26 @@ Status FrameDecoder::Flush() {
         dec_state_->render_pipeline->ClearDone(i);
       }
     }
-    std::atomic<bool> has_error{false};
-    JXL_RETURN_IF_ERROR(RunOnPool(
-        pool_, 0, decoded_passes_per_ac_group_.size(),
-        [this](const size_t num_threads) {
-          return PrepareStorage(num_threads,
-                                decoded_passes_per_ac_group_.size());
-        },
-        [this, &has_error](const uint32_t g, size_t thread) {
-          if (has_error) return;
-          if (decoded_passes_per_ac_group_[g] ==
-              frame_header_.passes.num_passes) {
-            // This group was drawn already, nothing to do.
-            return;
-          }
-          BitReader* JXL_RESTRICT readers[kMaxNumPasses] = {};
-          if (!ProcessACGroup(
-                  g, readers, /*num_passes=*/0, GetStorageLocation(thread, g),
-                  /*force_draw=*/true, /*dc_only=*/!decoded_ac_global_)) {
-            has_error = true;
-            return;
-          }
-        },
-        "ForceDrawGroup"));
-    if (has_error) return JXL_FAILURE("Drawing groups failed");
+    const auto prepare_storage = [this](const size_t num_threads) -> Status {
+      JXL_RETURN_IF_ERROR(
+          PrepareStorage(num_threads, decoded_passes_per_ac_group_.size()));
+      return true;
+    };
+    const auto process_group = [this](const uint32_t g,
+                                      size_t thread) -> Status {
+      if (decoded_passes_per_ac_group_[g] == frame_header_.passes.num_passes) {
+        // This group was drawn already, nothing to do.
+        return true;
+      }
+      BitReader* JXL_RESTRICT readers[kMaxNumPasses] = {};
+      JXL_RETURN_IF_ERROR(ProcessACGroup(
+          g, readers, /*num_passes=*/0, GetStorageLocation(thread, g),
+          /*force_draw=*/true, /*dc_only=*/!decoded_ac_global_));
+      return true;
+    };
+    JXL_RETURN_IF_ERROR(RunOnPool(pool_, 0, decoded_passes_per_ac_group_.size(),
+                                  prepare_storage, process_group,
+                                  "ForceDrawGroup"));
   }
 
   // undo global modular transforms and copy int pixel buffers to float ones

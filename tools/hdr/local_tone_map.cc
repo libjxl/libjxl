@@ -98,20 +98,21 @@ ImageF Upsample(const ImageF& image, ThreadPool* pool) {
   const auto BoundX = [&image](ssize_t x) {
     return Clamp1<ssize_t>(x, 0, image.xsize() - 1);
   };
-  JXL_CHECK(RunOnPool(
-      pool, 0, image.ysize(), &ThreadPool::NoInit,
-      [&](const int32_t y, const int32_t /*thread_id*/) {
-        const float* const JXL_RESTRICT in_row = image.ConstRow(y);
-        float* const JXL_RESTRICT out_row = upsampled_horizontally.Row(y);
+  const auto process_row_h = [&](const int32_t y,
+                                 const int32_t /*thread_id*/) -> Status {
+    const float* const JXL_RESTRICT in_row = image.ConstRow(y);
+    float* const JXL_RESTRICT out_row = upsampled_horizontally.Row(y);
 
-        for (ssize_t x = 0; x < static_cast<ssize_t>(image.xsize()); ++x) {
-          out_row[2 * x] = in_row[x];
-          out_row[2 * x + 1] =
-              0.5625f * (in_row[x] + in_row[BoundX(x + 1)]) -
-              0.0625f * (in_row[BoundX(x - 1)] + in_row[BoundX(x + 2)]);
-        }
-      },
-      "UpsampleHorizontally"));
+    for (ssize_t x = 0; x < static_cast<ssize_t>(image.xsize()); ++x) {
+      out_row[2 * x] = in_row[x];
+      out_row[2 * x + 1] =
+          0.5625f * (in_row[x] + in_row[BoundX(x + 1)]) -
+          0.0625f * (in_row[BoundX(x - 1)] + in_row[BoundX(x + 2)]);
+    }
+    return true;
+  };
+  JXL_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
+                      process_row_h, "UpsampleHorizontally"));
 
   HWY_FULL(float) df;
   JXL_ASSIGN_OR_DIE(ImageF upsampled,
@@ -120,32 +121,33 @@ ImageF Upsample(const ImageF& image, ThreadPool* pool) {
   const auto BoundY = [&image](ssize_t y) {
     return Clamp1<ssize_t>(y, 0, image.ysize() - 1);
   };
-  JXL_CHECK(RunOnPool(
-      pool, 0, image.ysize(), &ThreadPool::NoInit,
-      [&](const int32_t y, const int32_t /*thread_id*/) {
-        const float* const JXL_RESTRICT in_rows[4] = {
-            upsampled_horizontally.ConstRow(BoundY(y - 1)),
-            upsampled_horizontally.ConstRow(y),
-            upsampled_horizontally.ConstRow(BoundY(y + 1)),
-            upsampled_horizontally.ConstRow(BoundY(y + 2)),
-        };
-        float* const JXL_RESTRICT out_rows[2] = {
-            upsampled.Row(2 * y),
-            upsampled.Row(2 * y + 1),
-        };
+  const auto process_row_v = [&](const int32_t y,
+                                 const int32_t /*thread_id*/) -> Status {
+    const float* const JXL_RESTRICT in_rows[4] = {
+        upsampled_horizontally.ConstRow(BoundY(y - 1)),
+        upsampled_horizontally.ConstRow(y),
+        upsampled_horizontally.ConstRow(BoundY(y + 1)),
+        upsampled_horizontally.ConstRow(BoundY(y + 2)),
+    };
+    float* const JXL_RESTRICT out_rows[2] = {
+        upsampled.Row(2 * y),
+        upsampled.Row(2 * y + 1),
+    };
 
-        for (ssize_t x = 0;
-             x < static_cast<ssize_t>(upsampled_horizontally.xsize());
-             x += Lanes(df)) {
-          Store(Load(df, in_rows[1] + x), df, out_rows[0] + x);
-          Store(MulAdd(Set(df, 0.5625f),
-                       Add(Load(df, in_rows[1] + x), Load(df, in_rows[2] + x)),
-                       Mul(Set(df, -0.0625f), Add(Load(df, in_rows[0] + x),
-                                                  Load(df, in_rows[3] + x)))),
-                df, out_rows[1] + x);
-        }
-      },
-      "UpsampleVertically"));
+    for (ssize_t x = 0;
+         x < static_cast<ssize_t>(upsampled_horizontally.xsize());
+         x += Lanes(df)) {
+      Store(Load(df, in_rows[1] + x), df, out_rows[0] + x);
+      Store(MulAdd(Set(df, 0.5625f),
+                   Add(Load(df, in_rows[1] + x), Load(df, in_rows[2] + x)),
+                   Mul(Set(df, -0.0625f), Add(Load(df, in_rows[0] + x),
+                                              Load(df, in_rows[3] + x)))),
+            df, out_rows[1] + x);
+    }
+    return true;
+  };
+  JXL_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
+                      process_row_v, "UpsampleVertically"));
   return upsampled;
 }
 
@@ -157,48 +159,44 @@ Status ApplyLocalToneMapping(const ImageF& blurred_luminances,
   const auto log_default_intensity_target =
       Set(df, FastLog2f(kDefaultIntensityTarget));
   const auto log_10000 = Set(df, FastLog2f(10000.f));
-  JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, color->ysize(), &ThreadPool::NoInit,
-      [&](const int32_t y, const int32_t /*thread_id*/) {
-        float* const JXL_RESTRICT rows[3] = {color->PlaneRow(0, y),
-                                             color->PlaneRow(1, y),
-                                             color->PlaneRow(2, y)};
-        const float* const JXL_RESTRICT blurred_lum_row =
-            blurred_luminances.ConstRow(y);
+  const auto process_row = [&](const int32_t y,
+                               const int32_t /*thread_id*/) -> Status {
+    float* const JXL_RESTRICT rows[3] = {
+        color->PlaneRow(0, y), color->PlaneRow(1, y), color->PlaneRow(2, y)};
+    const float* const JXL_RESTRICT blurred_lum_row =
+        blurred_luminances.ConstRow(y);
 
-        for (size_t x = 0; x < color->xsize(); x += Lanes(df)) {
-          const auto log_local_max =
-              Add(Load(df, blurred_lum_row + x), Set(df, 1));
-          const auto luminance =
-              ComputeLuminance(intensity_target, Load(df, rows[0] + x),
-                               Load(df, rows[1] + x), Load(df, rows[2] + x));
-          const auto log_luminance =
-              Min(log_local_max, FastLog2f(df, luminance));
-          const auto log_knee =
-              Mul(log_default_intensity_target,
-                  MulAdd(Set(df, -0.85f),
-                         Div(Sub(log_local_max, log_default_intensity_target),
-                             Sub(log_10000, log_default_intensity_target)),
-                         Set(df, 1.f)));
-          const auto second_segment_position =
-              Div(Sub(log_luminance, log_knee), Sub(log_local_max, log_knee));
-          const auto log_new_luminance = IfThenElse(
-              Lt(log_luminance, log_knee), log_luminance,
-              MulAdd(
-                  second_segment_position,
-                  MulAdd(Sub(log_default_intensity_target, log_knee),
-                         second_segment_position, Sub(log_knee, log_luminance)),
-                  log_luminance));
-          const auto new_luminance = FastPow2f(df, log_new_luminance);
-          const auto ratio =
-              Div(Mul(Set(df, intensity_target), new_luminance),
-                  Mul(luminance, Set(df, kDefaultIntensityTarget)));
-          for (float* row : rows) {
-            Store(Mul(ratio, Load(df, row + x)), df, row + x);
-          }
-        }
-      },
-      "ApplyLocalToneMapping"));
+    for (size_t x = 0; x < color->xsize(); x += Lanes(df)) {
+      const auto log_local_max = Add(Load(df, blurred_lum_row + x), Set(df, 1));
+      const auto luminance =
+          ComputeLuminance(intensity_target, Load(df, rows[0] + x),
+                           Load(df, rows[1] + x), Load(df, rows[2] + x));
+      const auto log_luminance = Min(log_local_max, FastLog2f(df, luminance));
+      const auto log_knee =
+          Mul(log_default_intensity_target,
+              MulAdd(Set(df, -0.85f),
+                     Div(Sub(log_local_max, log_default_intensity_target),
+                         Sub(log_10000, log_default_intensity_target)),
+                     Set(df, 1.f)));
+      const auto second_segment_position =
+          Div(Sub(log_luminance, log_knee), Sub(log_local_max, log_knee));
+      const auto log_new_luminance = IfThenElse(
+          Lt(log_luminance, log_knee), log_luminance,
+          MulAdd(second_segment_position,
+                 MulAdd(Sub(log_default_intensity_target, log_knee),
+                        second_segment_position, Sub(log_knee, log_luminance)),
+                 log_luminance));
+      const auto new_luminance = FastPow2f(df, log_new_luminance);
+      const auto ratio = Div(Mul(Set(df, intensity_target), new_luminance),
+                             Mul(luminance, Set(df, kDefaultIntensityTarget)));
+      for (float* row : rows) {
+        Store(Mul(ratio, Load(df, row + x)), df, row + x);
+      }
+    }
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, color->ysize(), &ThreadPool::NoInit,
+                                process_row, "ApplyLocalToneMapping"));
 
   return true;
 }

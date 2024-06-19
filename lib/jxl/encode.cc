@@ -964,7 +964,11 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
         auto* pool = reinterpret_cast<jxl::ThreadPool*>(void_pool);
         JXL_CHECK(jxl::RunOnPool(
             pool, 0, count, jxl::ThreadPool::NoInit,
-            [&](size_t i, size_t) { fun(opaque, i); }, "Encode fast lossless"));
+            [&](size_t i, size_t) -> jxl::Status {
+              fun(opaque, i);
+              return true;
+            },
+            "Encode fast lossless"));
       };
       JxlFastLosslessProcessFrame(fast_lossless_frame.get(), last_frame,
                                   thread_pool.get(), runner, &output_processor);
@@ -2306,7 +2310,11 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
       auto* pool = reinterpret_cast<jxl::ThreadPool*>(void_pool);
       JXL_CHECK(jxl::RunOnPool(
           pool, 0, count, jxl::ThreadPool::NoInit,
-          [&](size_t i, size_t) { fun(opaque, i); }, "Encode fast lossless"));
+          [&](size_t i, size_t) -> jxl::Status {
+            fun(opaque, i);
+            return true;
+          },
+          "Encode fast lossless"));
     };
     JXL_BOOL oneshot = TO_JXL_BOOL(!frame_data.StreamingInput());
     auto* frame_state = JxlFastLosslessPrepareFrame(

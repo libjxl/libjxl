@@ -175,35 +175,34 @@ void TestConvolve() {
   TestNeighbors();
 
   test::ThreadPoolForTests pool(4);
-  EXPECT_EQ(true,
-            RunOnPool(
-                pool.get(), kConvolveMaxRadius, 40, ThreadPool::NoInit,
-                [](const uint32_t task, size_t /*thread*/) {
-                  const size_t xsize = task;
-                  Rng rng(129 + 13 * xsize);
+  const auto do_test = [](const uint32_t task, size_t /*thread*/) -> Status {
+    const size_t xsize = task;
+    Rng rng(129 + 13 * xsize);
 
-                  ThreadPool* null_pool = nullptr;
-                  test::ThreadPoolForTests pool3(3);
-                  for (size_t ysize = kConvolveMaxRadius; ysize < 16; ++ysize) {
-                    JXL_DEBUG(JXL_DEBUG_CONVOLVE,
-                              "%" PRIuS " x %" PRIuS " (target %" PRIx64
-                              ")===============================",
-                              xsize, ysize, static_cast<int64_t>(HWY_TARGET));
+    ThreadPool* null_pool = nullptr;
+    test::ThreadPoolForTests pool3(3);
+    for (size_t ysize = kConvolveMaxRadius; ysize < 16; ++ysize) {
+      JXL_DEBUG(JXL_DEBUG_CONVOLVE,
+                "%" PRIuS " x %" PRIuS " (target %" PRIx64
+                ")===============================",
+                xsize, ysize, static_cast<int64_t>(HWY_TARGET));
 
-                    JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym3------------------");
-                    VerifySymmetric3(xsize, ysize, null_pool, &rng);
-                    VerifySymmetric3(xsize, ysize, pool3.get(), &rng);
+      JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym3------------------");
+      VerifySymmetric3(xsize, ysize, null_pool, &rng);
+      VerifySymmetric3(xsize, ysize, pool3.get(), &rng);
 
-                    JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym5------------------");
-                    VerifySymmetric5(xsize, ysize, null_pool, &rng);
-                    VerifySymmetric5(xsize, ysize, pool3.get(), &rng);
+      JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym5------------------");
+      VerifySymmetric5(xsize, ysize, null_pool, &rng);
+      VerifySymmetric5(xsize, ysize, pool3.get(), &rng);
 
-                    JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sep5------------------");
-                    VerifySeparable5(xsize, ysize, null_pool, &rng);
-                    VerifySeparable5(xsize, ysize, pool3.get(), &rng);
-                  }
-                },
-                "TestConvolve"));
+      JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sep5------------------");
+      VerifySeparable5(xsize, ysize, null_pool, &rng);
+      VerifySeparable5(xsize, ysize, pool3.get(), &rng);
+    }
+    return true;
+  };
+  EXPECT_EQ(true, RunOnPool(pool.get(), kConvolveMaxRadius, 40,
+                            ThreadPool::NoInit, do_test, "TestConvolve"));
 }
 
 // Measures durations, verifies results, prints timings. `unpredictable1`

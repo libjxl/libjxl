@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -830,7 +829,8 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
           kScale * kZeroBiasDefault[c] *
           0.9999f;  // just epsilon less for better rounding
 
-      auto process_row = [&](const uint32_t task, const size_t thread) {
+      auto process_row = [&](const uint32_t task,
+                             const size_t thread) -> Status {
         size_t ty = task;
         int8_t* JXL_RESTRICT row_out = map->Row(ty);
         for (size_t tx = 0; tx < map->xsize(); ++tx) {
@@ -894,6 +894,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
             row_out[tx] = best - kOffset;
           }
         }
+        return true;
       };
 
       JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, map->ysize(), ThreadPool::NoInit,
@@ -1037,27 +1038,20 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
       *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
 
   // disable DC frame for now
-  std::atomic<bool> has_error{false};
   auto compute_dc_coeffs = [&](const uint32_t group_index,
-                               size_t /* thread */) {
-    if (has_error) return;
+                               size_t /* thread */) -> Status {
     const Rect r = enc_state->shared.frame_dim.DCGroupRect(group_index);
-    if (!enc_modular->AddVarDCTDC(frame_header, dc, r, group_index,
-                                  /*nl_dc=*/false, enc_state,
-                                  /*jpeg_transcode=*/true)) {
-      has_error = true;
-      return;
-    }
-    if (!enc_modular->AddACMetadata(r, group_index, /*jpeg_transcode=*/true,
-                                    enc_state)) {
-      has_error = true;
-      return;
-    }
+    JXL_RETURN_IF_ERROR(enc_modular->AddVarDCTDC(frame_header, dc, r,
+                                                 group_index,
+                                                 /*nl_dc=*/false, enc_state,
+                                                 /*jpeg_transcode=*/true));
+    JXL_RETURN_IF_ERROR(enc_modular->AddACMetadata(
+        r, group_index, /*jpeg_transcode=*/true, enc_state));
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_dc_groups,
                                 ThreadPool::NoInit, compute_dc_coeffs,
                                 "Compute DC coeffs"));
-  if (has_error) return JXL_FAILURE("Compute DC coeffs failed");
 
   return true;
 }
@@ -1132,14 +1126,12 @@ Status TokenizeAllCoefficients(const FrameHeader& frame_header,
   PassesSharedState& shared = enc_state->shared;
   std::vector<EncCache> group_caches;
   JxlMemoryManager* memory_manager = enc_state->memory_manager();
-  const auto tokenize_group_init = [&](const size_t num_threads) {
+  const auto tokenize_group_init = [&](const size_t num_threads) -> Status {
     group_caches.resize(num_threads);
     return true;
   };
-  std::atomic<bool> has_error{false};
   const auto tokenize_group = [&](const uint32_t group_index,
-                                  const size_t thread) {
-    if (has_error) return;
+                                  const size_t thread) -> Status {
     // Tokenize coefficients.
     const Rect rect = shared.frame_dim.BlockGroupRect(group_index);
     for (size_t idx_pass = 0; idx_pass < enc_state->passes.size(); idx_pass++) {
@@ -1150,10 +1142,7 @@ Status TokenizeAllCoefficients(const FrameHeader& frame_header,
           enc_state->coeffs[idx_pass]->PlaneRow(2, group_index, 0).ptr32,
       };
       // Ensure group cache is initialized.
-      if (!group_caches[thread].InitOnce(memory_manager)) {
-        has_error = true;
-        return;
-      }
+      JXL_RETURN_IF_ERROR(group_caches[thread].InitOnce(memory_manager));
       TokenizeCoefficients(
           &shared.coeff_orders[idx_pass * shared.coeff_order_size], rect,
           ac_rows, shared.ac_strategy, frame_header.chroma_subsampling,
@@ -1161,11 +1150,11 @@ Status TokenizeAllCoefficients(const FrameHeader& frame_header,
           &enc_state->passes[idx_pass].ac_tokens[group_index], shared.quant_dc,
           shared.raw_quant_field, shared.block_ctx_map);
     }
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_groups,
                                 tokenize_group_init, tokenize_group,
                                 "TokenizeGroup"));
-  if (has_error) return JXL_FAILURE("TokenizeGroup failed");
   return true;
 }
 
@@ -1326,7 +1315,7 @@ Status EncodeGroups(const FrameHeader& frame_header,
   };
 
   const auto process_dc_group = [&](const uint32_t group_index,
-                                    const size_t thread) {
+                                    const size_t thread) -> Status {
     AuxOut* my_aux_out = aux_outs[thread].get();
     BitWriter* output = get_output(group_index + 1);
     int modular_group_index = group_index;
@@ -1360,6 +1349,7 @@ Status EncodeGroups(const FrameHeader& frame_header,
           output, my_aux_out, LayerType::ControlFields,
           ModularStreamId::ACMetadata(modular_group_index)));
     }
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, frame_dim.num_dc_groups,
                                 resize_aux_outs, process_dc_group,
@@ -1370,10 +1360,8 @@ Status EncodeGroups(const FrameHeader& frame_header,
         enc_state, get_output(global_ac_index), enc_modular, aux_out));
   }
 
-  std::atomic<bool> has_error{false};
   const auto process_group = [&](const uint32_t group_index,
-                                 const size_t thread) {
-    if (has_error) return;
+                                 const size_t thread) -> Status {
     AuxOut* my_aux_out = aux_outs[thread].get();
 
     size_t ac_group_id =
@@ -1386,31 +1374,24 @@ Status EncodeGroups(const FrameHeader& frame_header,
       JXL_DEBUG_V(2, "Encoding AC group %u [abs %" PRIuS "] pass %" PRIuS,
                   group_index, ac_group_id, i);
       if (frame_header.encoding == FrameEncoding::kVarDCT) {
-        if (!EncodeGroupTokenizedCoefficients(
-                group_index, i, enc_state->histogram_idx[group_index],
-                *enc_state, ac_group_code(i, group_index), my_aux_out)) {
-          has_error = true;
-          return;
-        }
+        JXL_RETURN_IF_ERROR(EncodeGroupTokenizedCoefficients(
+            group_index, i, enc_state->histogram_idx[group_index], *enc_state,
+            ac_group_code(i, group_index), my_aux_out));
       }
       // Write all modular encoded data (color?, alpha, depth, extra channels)
-      if (!enc_modular->EncodeStream(
-              ac_group_code(i, group_index), my_aux_out,
-              LayerType::ModularAcGroup,
-              ModularStreamId::ModularAC(ac_group_id, i))) {
-        has_error = true;
-        return;
-      }
+      JXL_RETURN_IF_ERROR(enc_modular->EncodeStream(
+          ac_group_code(i, group_index), my_aux_out, LayerType::ModularAcGroup,
+          ModularStreamId::ModularAC(ac_group_id, i)));
       JXL_DEBUG_V(2,
                   "AC group %u [abs %" PRIuS "] pass %" PRIuS
                   " encoded size is %" PRIuS " bits",
                   group_index, ac_group_id, i,
                   ac_group_code(i, group_index)->BitsWritten());
     }
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_groups, resize_aux_outs,
                                 process_group, "EncodeGroupCoefficients"));
-  if (has_error) return JXL_FAILURE("EncodeGroupCoefficients failed");
   // Resizing aux_outs to 0 also Assimilates the array.
   static_cast<void>(resize_aux_outs(0));
 
@@ -2182,28 +2163,21 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     }
 
     size.resize(all_params.size());
-
-    std::atomic<bool> has_error{false};
-
-    JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, all_params.size(), ThreadPool::NoInit,
-        [&](size_t task, size_t) {
-          if (has_error) return;
-          std::vector<uint8_t> output(64);
-          uint8_t* next_out = output.data();
-          size_t avail_out = output.size();
-          JxlEncoderOutputProcessorWrapper local_output(memory_manager);
-          local_output.SetAvailOut(&next_out, &avail_out);
-          if (!EncodeFrame(memory_manager, all_params[task], frame_info,
-                           metadata, frame_data, cms, nullptr, &local_output,
-                           aux_out)) {
-            has_error = true;
-            return;
-          }
-          size[task] = local_output.CurrentPosition();
-        },
-        "Compress kTectonicPlate"));
-    if (has_error) return JXL_FAILURE("Compress kTectonicPlate failed");
+    const auto process_variant = [&](size_t task, size_t) -> Status {
+      std::vector<uint8_t> output(64);
+      uint8_t* next_out = output.data();
+      size_t avail_out = output.size();
+      JxlEncoderOutputProcessorWrapper local_output(memory_manager);
+      local_output.SetAvailOut(&next_out, &avail_out);
+      JXL_RETURN_IF_ERROR(EncodeFrame(memory_manager, all_params[task],
+                                      frame_info, metadata, frame_data, cms,
+                                      nullptr, &local_output, aux_out));
+      size[task] = local_output.CurrentPosition();
+      return true;
+    };
+    JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, all_params.size(),
+                                  ThreadPool::NoInit, process_variant,
+                                  "Compress kTectonicPlate"));
 
     size_t best_idx = 0;
     for (size_t i = 1; i < all_params.size(); i++) {

@@ -52,6 +52,10 @@ extern "C" {
 typedef int JxlParallelRetCode;
 
 /**
+ * Code returned by the @ref JxlParallelRunInit function to indicate success.
+ */
+#define JXL_PARALLEL_RET_SUCCESS (0)
+/**
  * General error returned by the @ref JxlParallelRunInit function to indicate
  * an error.
  */
