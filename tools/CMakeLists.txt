@@ -160,7 +160,7 @@ if(JPEGXL_ENABLE_TOOLS)
   endif()
 
   add_executable(jxlinfo jxlinfo.c)
-  target_link_libraries(jxlinfo jxl)
+  target_link_libraries(jxlinfo jxl jxl_extras_nocodec-internal)
   list(APPEND TOOL_BINARIES jxlinfo)
 
   if(NOT SANITIZER STREQUAL "none")
