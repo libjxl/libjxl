@@ -68,10 +68,12 @@ inline std::array<int, 3> JpegOrder(ColorTransform ct, bool is_gray) {
   if (is_gray) {
     return {{0, 0, 0}};
   }
-  JXL_ASSERT(ct != ColorTransform::kXYB);
   if (ct == ColorTransform::kYCbCr) {
     return {{1, 0, 2}};
+  } else if (ct == ColorTransform::kNone) {
+    return {{0, 1, 2}};
   } else {
+    JXL_DEBUG_ABORT("Internal logic error");
     return {{0, 1, 2}};
   }
 }

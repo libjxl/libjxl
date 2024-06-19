@@ -27,6 +27,10 @@
 #include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 
+#if !defined(QUIT)
+#define QUIT(M) JPEGXL_TOOLS_ABORT(M)
+#endif
+
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -55,13 +59,13 @@ V ComputeLuminance(const float intensity_target, const V r, const V g,
   return Max(Set(df, 1e-12f), luminance);
 }
 
-ImageF DownsampledLuminances(const Image3F& image,
-                             const float intensity_target) {
+StatusOr<ImageF> DownsampledLuminances(const Image3F& image,
+                                       const float intensity_target) {
   HWY_CAPPED(float, kDownsampling) d;
-  JXL_ASSIGN_OR_DIE(ImageF result,
-                    ImageF::Create(jpegxl::tools::NoMemoryManager(),
-                                   DivCeil(image.xsize(), kDownsampling),
-                                   DivCeil(image.ysize(), kDownsampling)));
+  JXL_ASSIGN_OR_RETURN(ImageF result,
+                       ImageF::Create(jpegxl::tools::NoMemoryManager(),
+                                      DivCeil(image.xsize(), kDownsampling),
+                                      DivCeil(image.ysize(), kDownsampling)));
   FillImage(.5f * kDefaultIntensityTarget, &result);
   for (size_t y = 0; y < image.ysize(); ++y) {
     const float* const JXL_RESTRICT rows[3] = {image.ConstPlaneRow(0, y),
@@ -91,10 +95,10 @@ ImageF DownsampledLuminances(const Image3F& image,
   return result;
 }
 
-ImageF Upsample(const ImageF& image, ThreadPool* pool) {
-  JXL_ASSIGN_OR_DIE(ImageF upsampled_horizontally,
-                    ImageF::Create(jpegxl::tools::NoMemoryManager(),
-                                   2 * image.xsize(), image.ysize()));
+StatusOr<ImageF> Upsample(const ImageF& image, ThreadPool* pool) {
+  JXL_ASSIGN_OR_RETURN(ImageF upsampled_horizontally,
+                       ImageF::Create(jpegxl::tools::NoMemoryManager(),
+                                      2 * image.xsize(), image.ysize()));
   const auto BoundX = [&image](ssize_t x) {
     return Clamp1<ssize_t>(x, 0, image.xsize() - 1);
   };
@@ -111,13 +115,13 @@ ImageF Upsample(const ImageF& image, ThreadPool* pool) {
     }
     return true;
   };
-  JXL_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
-                      process_row_h, "UpsampleHorizontally"));
+  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
+                               process_row_h, "UpsampleHorizontally"));
 
   HWY_FULL(float) df;
-  JXL_ASSIGN_OR_DIE(ImageF upsampled,
-                    ImageF::Create(jpegxl::tools::NoMemoryManager(),
-                                   2 * image.xsize(), 2 * image.ysize()));
+  JXL_ASSIGN_OR_RETURN(ImageF upsampled,
+                       ImageF::Create(jpegxl::tools::NoMemoryManager(),
+                                      2 * image.xsize(), 2 * image.ysize()));
   const auto BoundY = [&image](ssize_t y) {
     return Clamp1<ssize_t>(y, 0, image.ysize() - 1);
   };
@@ -146,8 +150,8 @@ ImageF Upsample(const ImageF& image, ThreadPool* pool) {
     }
     return true;
   };
-  JXL_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
-                      process_row_v, "UpsampleVertically"));
+  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
+                               process_row_v, "UpsampleVertically"));
   return upsampled;
 }
 
@@ -215,56 +219,63 @@ HWY_EXPORT(DownsampledLuminances);
 HWY_EXPORT(Upsample);
 HWY_EXPORT(ApplyLocalToneMapping);
 
-void Blur(ImageF* image) {
+Status Blur(ImageF* image) {
   static constexpr WeightsSeparable5 kBlurFilter = {
       {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)},
       {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)}};
-  JXL_ASSIGN_OR_DIE(ImageF blurred_once,
-                    ImageF::Create(jpegxl::tools::NoMemoryManager(),
-                                   image->xsize(), image->ysize()));
-  Separable5(*image, Rect(*image), kBlurFilter, nullptr, &blurred_once);
-  Separable5(blurred_once, Rect(blurred_once), kBlurFilter, nullptr, image);
+  JXL_ASSIGN_OR_RETURN(ImageF blurred_once,
+                       ImageF::Create(jpegxl::tools::NoMemoryManager(),
+                                      image->xsize(), image->ysize()));
+  JXL_RETURN_IF_ERROR(
+      Separable5(*image, Rect(*image), kBlurFilter, nullptr, &blurred_once));
+  JXL_RETURN_IF_ERROR(Separable5(blurred_once, Rect(blurred_once), kBlurFilter,
+                                 nullptr, image));
+  return true;
 }
 
-void ProcessFrame(CodecInOut* image, float preserve_saturation,
-                  ThreadPool* pool) {
+Status ProcessFrame(CodecInOut* image, float preserve_saturation,
+                    ThreadPool* pool) {
   ColorEncoding linear_rec2020;
-  JXL_CHECK(linear_rec2020.SetWhitePointType(WhitePoint::kD65));
-  JXL_CHECK(linear_rec2020.SetPrimariesType(Primaries::k2100));
+  JXL_RETURN_IF_ERROR(linear_rec2020.SetWhitePointType(WhitePoint::kD65));
+  JXL_RETURN_IF_ERROR(linear_rec2020.SetPrimariesType(Primaries::k2100));
   linear_rec2020.Tf().SetTransferFunction(TransferFunction::kLinear);
-  JXL_CHECK(linear_rec2020.CreateICC());
-  JXL_CHECK(
+  JXL_RETURN_IF_ERROR(linear_rec2020.CreateICC());
+  JXL_RETURN_IF_ERROR(
       image->Main().TransformTo(linear_rec2020, *JxlGetDefaultCms(), pool));
 
   const float intensity_target = image->metadata.m.IntensityTarget();
 
   Image3F color = std::move(*image->Main().color());
-  ImageF subsampled_image =
-      HWY_DYNAMIC_DISPATCH(DownsampledLuminances)(color, intensity_target);
+  JXL_ASSIGN_OR_RETURN(
+      ImageF subsampled_image,
+      HWY_DYNAMIC_DISPATCH(DownsampledLuminances)(color, intensity_target));
 
-  Blur(&subsampled_image);
-  const auto& Upsample = HWY_DYNAMIC_DISPATCH(Upsample);
+  JXL_RETURN_IF_ERROR(Blur(&subsampled_image));
   ImageF blurred_luminances = std::move(subsampled_image);
   for (int downsampling = HWY_NAMESPACE::kDownsampling; downsampling > 1;
        downsampling >>= 1) {
-    blurred_luminances =
-        Upsample(blurred_luminances, downsampling > 4 ? nullptr : pool);
+    JXL_ASSIGN_OR_RETURN(
+        blurred_luminances,
+        HWY_DYNAMIC_DISPATCH(Upsample)(blurred_luminances,
+                                       downsampling > 4 ? nullptr : pool));
   }
 
-  JXL_CHECK(HWY_DYNAMIC_DISPATCH(ApplyLocalToneMapping)(
+  JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(ApplyLocalToneMapping)(
       blurred_luminances, intensity_target, &color, pool));
 
-  image->SetFromImage(std::move(color), linear_rec2020);
+  JXL_RETURN_IF_ERROR(image->SetFromImage(std::move(color), linear_rec2020));
   image->metadata.m.color_encoding = linear_rec2020;
   image->metadata.m.SetIntensityTarget(kDefaultIntensityTarget);
 
-  JXL_CHECK(GamutMap(image, preserve_saturation, pool));
+  JXL_RETURN_IF_ERROR(GamutMap(image, preserve_saturation, pool));
 
   ColorEncoding rec2020_srgb = linear_rec2020;
   rec2020_srgb.Tf().SetTransferFunction(TransferFunction::kSRGB);
-  JXL_CHECK(rec2020_srgb.CreateICC());
-  JXL_CHECK(image->Main().TransformTo(rec2020_srgb, *JxlGetDefaultCms(), pool));
+  JXL_RETURN_IF_ERROR(rec2020_srgb.CreateICC());
+  JXL_RETURN_IF_ERROR(
+      image->Main().TransformTo(rec2020_srgb, *JxlGetDefaultCms(), pool));
   image->metadata.m.color_encoding = rec2020_srgb;
+  return true;
 }
 
 }  // namespace
@@ -309,19 +320,22 @@ int main(int argc, const char** argv) {
   jxl::extras::ColorHints color_hints;
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;
-  JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JXL_CHECK(
+  JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
+  JPEGXL_TOOLS_CHECK(
       jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, pool.get()));
 
-  jxl::ProcessFrame(&image, preserve_saturation, pool.get());
+  JPEGXL_TOOLS_CHECK(
+      jxl::ProcessFrame(&image, preserve_saturation, pool.get()));
 
   JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  jxl::extras::PackedPixelFile ppf =
-      jxl::extras::ConvertImage3FToPackedPixelFile(
-          *image.Main().color(), image.metadata.m.color_encoding, format,
-          pool.get());
-  JXL_CHECK(jxl::Encode(ppf, output_filename, &encoded, pool.get()));
-  JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
+  JXL_ASSIGN_OR_QUIT(jxl::extras::PackedPixelFile ppf,
+                     jxl::extras::ConvertImage3FToPackedPixelFile(
+                         *image.Main().color(), image.metadata.m.color_encoding,
+                         format, pool.get()),
+                     "ConvertImage3FToPackedPixelFile failed.");
+  JPEGXL_TOOLS_CHECK(jxl::Encode(ppf, output_filename, &encoded, pool.get()));
+  JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
+  return EXIT_SUCCESS;
 }
 
 #endif

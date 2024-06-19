@@ -213,10 +213,10 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
 
   if (fast_xyb_srgb8_conversion) {
 #if !JXL_HIGH_PRECISION
-    JXL_ASSERT(!NeedsBlending(frame_header));
-    JXL_ASSERT(!frame_header.CanBeReferenced() ||
+    JXL_ENSURE(!NeedsBlending(frame_header));
+    JXL_ENSURE(!frame_header.CanBeReferenced() ||
                frame_header.save_before_color_transform);
-    JXL_ASSERT(!options.render_spotcolors ||
+    JXL_ENSURE(!options.render_spotcolors ||
                !metadata->Find(ExtraChannel::kSpotColor));
     bool is_rgba = (main_output.format.num_channels == 4);
     uint8_t* rgb_output = reinterpret_cast<uint8_t*>(main_output.buffer);
@@ -264,7 +264,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         const ExtraChannelInfo& eci = metadata->extra_channel_info[i];
         if (eci.type == ExtraChannel::kSpotColor) {
           JXL_RETURN_IF_ERROR(
-              builder.AddStage(GetSpotColorStage(3 + i, eci.spot_color)));
+              builder.AddStage(GetSpotColorStage(i, eci.spot_color)));
         }
       }
     }

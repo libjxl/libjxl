@@ -242,7 +242,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     JXL_ASSIGN_OR_RETURN(
         jxl::extras::PackedFrame packed_frame,
         jxl::extras::PackedFrame::Create(spec.width, spec.height, format));
-    JXL_ASSERT(packed_frame.color.pixels_size == img_data.size());
+    JXL_ENSURE(packed_frame.color.pixels_size == img_data.size());
     memcpy(packed_frame.color.pixels(0, 0, 0), img_data.data(),
            img_data.size());
     ppf.frames.emplace_back(std::move(packed_frame));

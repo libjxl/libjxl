@@ -78,8 +78,8 @@ using PatchInfo =
 class PatchDictionaryEncoder {
  public:
   // Only call if HasAny().
-  static void Encode(const PatchDictionary& pdic, BitWriter* writer,
-                     LayerType layer, AuxOut* aux_out);
+  static Status Encode(const PatchDictionary& pdic, BitWriter* writer,
+                       LayerType layer, AuxOut* aux_out);
 
   static void SetPositions(PatchDictionary* pdic,
                            std::vector<PatchPosition> positions,

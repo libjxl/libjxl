@@ -146,7 +146,7 @@ void SetDefaultScanScript(j_compress_ptr cinfo) {
       ++next_scan;
     }
   }
-  JXL_ASSERT(next_scan - cinfo->script_space == cinfo->script_space_size);
+  JPEGLI_CHECK(next_scan - cinfo->script_space == cinfo->script_space_size);
   cinfo->scan_info = cinfo->script_space;
   cinfo->num_scans = cinfo->script_space_size;
 }
@@ -587,7 +587,7 @@ void PadInputBuffer(j_compress_ptr cinfo, float* row[kMaxComponents]) {
 }
 
 void ProcessiMCURow(j_compress_ptr cinfo) {
-  JXL_ASSERT(cinfo->master->next_iMCU_row < cinfo->total_iMCU_rows);
+  JPEGLI_CHECK(cinfo->master->next_iMCU_row < cinfo->total_iMCU_rows);
   if (!cinfo->raw_data_in) {
     ApplyInputSmoothing(cinfo);
     DownsampleInputBuffer(cinfo);
@@ -1174,7 +1174,7 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
     JPEGLI_ERROR("Missing input lines, minimum is %u", iMCU_height);
   }
   if (cinfo->next_scanline < m->next_input_row) {
-    JXL_ASSERT(m->next_input_row - cinfo->next_scanline == iMCU_height);
+    JPEGLI_CHECK(m->next_input_row - cinfo->next_scanline == iMCU_height);
     if (!jpegli::EmptyBitWriterBuffer(&m->bw)) {
       return 0;
     }

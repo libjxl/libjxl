@@ -81,7 +81,6 @@ jobs:
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
             mode: release
-            cxxflags: -DJXL_DEBUG_ON_ABORT=0
             cmake_args: >-
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
@@ -103,7 +102,6 @@ jobs:
           # reconstructing pixels is disabled.
           - name: release:minimal
             mode: release
-            cxxflags: -DJXL_DEBUG_ON_ABORT=0
             cmake_args: >-
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
               -DJPEGXL_ENABLE_BOXES=OFF

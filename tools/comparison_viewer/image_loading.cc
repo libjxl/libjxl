@@ -107,9 +107,10 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   };
 
   if (ib.HasAlpha()) {
+    ImageF* alpha = ib.alpha();
     for (int y = 0; y < image.height(); ++y) {
       QRgb* const row = reinterpret_cast<QRgb*>(image.scanLine(y));
-      const float* const alphaRow = ib.alpha().ConstRow(y);
+      const float* const alphaRow = alpha->ConstRow(y);
       const float* const redRow = converted.ConstPlaneRow(0, y);
       const float* const greenRow = converted.ConstPlaneRow(1, y);
       const float* const blueRow = converted.ConstPlaneRow(2, y);

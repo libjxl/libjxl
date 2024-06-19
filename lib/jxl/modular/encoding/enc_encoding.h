@@ -27,10 +27,11 @@ struct GroupHeader;
 Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels,
                     int bitdepth, int prevprop);
 
-Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
-               const ModularOptions &options,
-               const std::vector<ModularMultiplierInfo> &multiplier_info = {},
-               StaticPropRange static_prop_range = {});
+StatusOr<Tree> LearnTree(
+    TreeSamples &&tree_samples, size_t total_pixels,
+    const ModularOptions &options,
+    const std::vector<ModularMultiplierInfo> &multiplier_info = {},
+    StaticPropRange static_prop_range = {});
 
 // TODO(veluca): make cleaner interfaces.
 

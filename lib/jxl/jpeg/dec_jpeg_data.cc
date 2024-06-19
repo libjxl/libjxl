@@ -20,7 +20,7 @@ Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data) {
   size_t available_in = encoded.size();
   {
     BitReader br(encoded);
-    BitReaderScopedCloser br_closer(&br, &ret);
+    BitReaderScopedCloser br_closer(br, ret);
     JXL_RETURN_IF_ERROR(Bundle::Read(&br, jpeg_data));
     JXL_RETURN_IF_ERROR(br.JumpToByteBoundary());
     in += br.TotalBitsConsumed() / 8;

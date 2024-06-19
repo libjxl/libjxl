@@ -18,10 +18,16 @@
 #include <cstring>
 #include <vector>
 
-#include "lib/jxl/base/status.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/fuzztest.h"
 
 namespace {
+
+void Check(bool ok) {
+  if (!ok) {
+    JXL_CRASH();
+  }
+}
 
 struct FuzzSpec {
   uint32_t xsize;
@@ -108,10 +114,9 @@ struct FuzzSpec {
     // constants chosen so to cover the entire 0.01 - 25 range.
     spec.distance = u8() % 2 ? 0.0 : 0.01 + 0.00038132 * u16();
 
-    JXL_CHECK(spec.float_options[2].flag ==
-              JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT);
-    JXL_CHECK(spec.int_options[15].flag ==
-              JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM);
+    Check(spec.float_options[2].flag ==
+          JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT);
+    Check(spec.int_options[15].flag == JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM);
     if (spec.distance != 0 || spec.int_options[15].value == 0) {
       spec.float_options[2].possible_values[1] = 1;
     }
@@ -142,28 +147,28 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
   JxlEncoderPtr enc_ptr = JxlEncoderMake(/*memory_manager=*/nullptr);
   JxlEncoder* enc = enc_ptr.get();
 
-  JXL_CHECK(JxlEncoderSetParallelRunner(enc, JxlThreadParallelRunner,
-                                        runner.get()) == JXL_ENC_SUCCESS);
+  Check(JxlEncoderSetParallelRunner(enc, JxlThreadParallelRunner,
+                                    runner.get()) == JXL_ENC_SUCCESS);
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
 
-  JXL_CHECK(JxlEncoderSetFrameDistance(frame_settings, spec.distance) ==
-            JXL_ENC_SUCCESS);
+  Check(JxlEncoderSetFrameDistance(frame_settings, spec.distance) ==
+        JXL_ENC_SUCCESS);
 
   for (const auto& opt : spec.int_options) {
-    JXL_CHECK(JxlEncoderFrameSettingsSetOption(frame_settings, opt.flag,
-                                               opt.value) == JXL_ENC_SUCCESS);
+    Check(JxlEncoderFrameSettingsSetOption(frame_settings, opt.flag,
+                                           opt.value) == JXL_ENC_SUCCESS);
   }
   for (const auto& opt : spec.float_options) {
     if (opt.value != -1) {
-      JXL_CHECK(JxlEncoderFrameSettingsSetFloatOption(
-                    frame_settings, opt.flag, opt.value) == JXL_ENC_SUCCESS);
+      Check(JxlEncoderFrameSettingsSetFloatOption(
+                frame_settings, opt.flag, opt.value) == JXL_ENC_SUCCESS);
     }
   }
 
-  JXL_CHECK(JxlEncoderFrameSettingsSetOption(
-                frame_settings, JXL_ENC_FRAME_SETTING_BUFFERING,
-                streaming ? 3 : 0) == JXL_ENC_SUCCESS);
+  Check(JxlEncoderFrameSettingsSetOption(frame_settings,
+                                         JXL_ENC_FRAME_SETTING_BUFFERING,
+                                         streaming ? 3 : 0) == JXL_ENC_SUCCESS);
 
   JxlBasicInfo basic_info;
   JxlEncoderInitBasicInfo(&basic_info);
@@ -178,7 +183,7 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
     basic_info.alpha_bits = spec.bit_depth;
     basic_info.num_extra_channels = 1;
   }
-  JXL_CHECK(JxlEncoderSetBasicInfo(enc, &basic_info) == JXL_ENC_SUCCESS);
+  Check(JxlEncoderSetBasicInfo(enc, &basic_info) == JXL_ENC_SUCCESS);
   if (spec.alpha) {
     JxlExtraChannelInfo info;
     memset(&info, 0, sizeof(info));
@@ -197,14 +202,13 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
   color_encoding.white_point = JxlWhitePoint::JXL_WHITE_POINT_D65;
   color_encoding.rendering_intent =
       JxlRenderingIntent::JXL_RENDERING_INTENT_RELATIVE;
-  JXL_CHECK(JxlEncoderSetColorEncoding(enc, &color_encoding) ==
-            JXL_ENC_SUCCESS);
+  Check(JxlEncoderSetColorEncoding(enc, &color_encoding) == JXL_ENC_SUCCESS);
 
   JxlFrameHeader frame_header;
   JxlEncoderInitFrameHeader(&frame_header);
   // TODO(szabadka) Add more frame header options.
-  JXL_CHECK(JxlEncoderSetFrameHeader(frame_settings, &frame_header) ==
-            JXL_ENC_SUCCESS);
+  Check(JxlEncoderSetFrameHeader(frame_settings, &frame_header) ==
+        JXL_ENC_SUCCESS);
   JxlPixelFormat pixelformat = {nchan, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0};
   std::vector<uint16_t> pixels(spec.xsize * static_cast<uint64_t>(spec.ysize) *
                                nchan);
@@ -216,9 +220,9 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
       }
     }
   }
-  JXL_CHECK(JxlEncoderAddImageFrame(frame_settings, &pixelformat, pixels.data(),
-                                    pixels.size() * sizeof(uint16_t)) ==
-            JXL_ENC_SUCCESS);
+  Check(JxlEncoderAddImageFrame(frame_settings, &pixelformat, pixels.data(),
+                                pixels.size() * sizeof(uint16_t)) ==
+        JXL_ENC_SUCCESS);
   JxlEncoderCloseInput(enc);
   // Reading compressed output
   JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
@@ -231,7 +235,7 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
     process_result = JxlEncoderProcessOutput(enc, &next_out, &avail_out);
     written = next_out - buf.data();
   }
-  JXL_CHECK(process_result == JXL_ENC_SUCCESS);
+  Check(process_result == JXL_ENC_SUCCESS);
   buf.resize(written);
 
   return buf;
@@ -240,9 +244,9 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
 std::vector<float> Decode(const std::vector<uint8_t>& data) {
   // Multi-threaded parallel runner.
   auto dec = JxlDecoderMake(nullptr);
-  JXL_CHECK(JxlDecoderSubscribeEvents(
-                dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE) ==
-            JXL_DEC_SUCCESS);
+  Check(JxlDecoderSubscribeEvents(dec.get(),
+                                  JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE) ==
+        JXL_DEC_SUCCESS);
 
   JxlBasicInfo info;
   JxlPixelFormat format = {3, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
@@ -256,22 +260,21 @@ std::vector<float> Decode(const std::vector<uint8_t>& data) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
 
     if (status == JXL_DEC_BASIC_INFO) {
-      JXL_CHECK(JxlDecoderGetBasicInfo(dec.get(), &info) == JXL_DEC_SUCCESS);
+      Check(JxlDecoderGetBasicInfo(dec.get(), &info) == JXL_DEC_SUCCESS);
     } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
       size_t buffer_size;
-      JXL_CHECK(JxlDecoderImageOutBufferSize(dec.get(), &format,
-                                             &buffer_size) == JXL_DEC_SUCCESS);
+      Check(JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size) ==
+            JXL_DEC_SUCCESS);
       pixels.resize(buffer_size / sizeof(float));
       void* pixels_buffer = static_cast<void*>(pixels.data());
       size_t pixels_buffer_size = pixels.size() * sizeof(float);
-      JXL_CHECK(JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels_buffer,
-                                            pixels_buffer_size) ==
-                JXL_DEC_SUCCESS);
+      Check(JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels_buffer,
+                                        pixels_buffer_size) == JXL_DEC_SUCCESS);
     } else if (status == JXL_DEC_FULL_IMAGE || status == JXL_DEC_SUCCESS) {
       return pixels;
     } else {
       // Unexpected status
-      JXL_CHECK(false);
+      Check(false);
     }
   }
 }
@@ -282,9 +285,7 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   auto enc_streaming = Encode(spec, true);
   auto dec_default = Decode(enc_default);
   auto dec_streaming = Decode(enc_streaming);
-  if (dec_default != dec_streaming) {
-    return 1;
-  }
+  Check(dec_default == dec_streaming);
   return 0;
 }
 

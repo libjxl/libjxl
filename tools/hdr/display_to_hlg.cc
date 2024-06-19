@@ -67,25 +67,26 @@ int main(int argc, const char** argv) {
   }
 
   std::vector<uint8_t> encoded;
-  JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
+  JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
   jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
-  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
-                              &image, pool.get()));
+  JPEGXL_TOOLS_CHECK(jxl::SetFromBytes(
+      jxl::Bytes(encoded), jxl::extras::ColorHints(), &image, pool.get()));
   image.metadata.m.SetIntensityTarget(max_nits);
-  JXL_CHECK(jxl::HlgInverseOOTF(
+  JPEGXL_TOOLS_CHECK(jxl::HlgInverseOOTF(
       &image.Main(), jxl::GetHlgGamma(max_nits, surround_nits), pool.get()));
-  JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, pool.get()));
+  JPEGXL_TOOLS_CHECK(jxl::GamutMap(&image, preserve_saturation, pool.get()));
   image.metadata.m.SetIntensityTarget(301);
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
-  JXL_CHECK(hlg.SetPrimariesType(jxl::Primaries::k2100));
-  JXL_CHECK(hlg.SetWhitePointType(jxl::WhitePoint::kD65));
+  JPEGXL_TOOLS_CHECK(hlg.SetPrimariesType(jxl::Primaries::k2100));
+  JPEGXL_TOOLS_CHECK(hlg.SetWhitePointType(jxl::WhitePoint::kD65));
   hlg.Tf().SetTransferFunction(jxl::TransferFunction::kHLG);
-  JXL_CHECK(hlg.CreateICC());
-  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, hlg, pool.get()));
+  JPEGXL_TOOLS_CHECK(hlg.CreateICC());
+  JPEGXL_TOOLS_CHECK(
+      jpegxl::tools::TransformCodecInOutTo(image, hlg, pool.get()));
   image.metadata.m.color_encoding = hlg;
-  JXL_CHECK(
+  JPEGXL_TOOLS_CHECK(
       jpegxl::tools::Encode(image, output_filename, &encoded, pool.get()));
-  JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
+  JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

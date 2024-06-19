@@ -5,22 +5,17 @@
 
 #include "lib/extras/enc/pnm.h"
 
-#include <string.h>
-
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "lib/extras/packed_image.h"
-#include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/dec_external_image.h"
-#include "lib/jxl/enc_external_image.h"
-#include "lib/jxl/enc_image_bundle.h"
-#include "lib/jxl/fields.h"  // AllDefault
-#include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
 
 namespace jxl {
 namespace extras {
@@ -262,6 +257,7 @@ class PAMEncoder : public BasePNMEncoder {
           reinterpret_cast<const uint8_t*>(frame.extra_channels[i].pixels());
     }
     uint8_t* out = bytes->data() + pos;
+    JXL_RETURN_IF_ERROR(PackedImage::ValidateDataType(color.format.data_type));
     size_t pwidth = PackedImage::BitsPerChannel(color.format.data_type) / 8;
     for (size_t y = 0; y < color.ysize; ++y) {
       for (size_t x = 0; x < color.xsize; ++x) {

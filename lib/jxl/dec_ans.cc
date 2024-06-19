@@ -50,6 +50,7 @@ inline int DecodeVarLenUint16(BitReader* input) {
 
 Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
                      BitReader* input) {
+  int range = 1 << precision_bits;
   int simple_code = input->ReadBits(1);
   if (simple_code == 1) {
     int i;
@@ -62,19 +63,20 @@ Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
     }
     counts->resize(max_symbol + 1);
     if (num_symbols == 1) {
-      (*counts)[symbols[0]] = 1 << precision_bits;
+      (*counts)[symbols[0]] = range;
     } else {
       if (symbols[0] == symbols[1]) {  // corrupt data
         return false;
       }
       (*counts)[symbols[0]] = input->ReadBits(precision_bits);
-      (*counts)[symbols[1]] = (1 << precision_bits) - (*counts)[symbols[0]];
+      (*counts)[symbols[1]] = range - (*counts)[symbols[0]];
     }
   } else {
     int is_flat = input->ReadBits(1);
     if (is_flat == 1) {
       int alphabet_size = DecodeVarLenUint8(input) + 1;
-      *counts = CreateFlatHistogram(alphabet_size, 1 << precision_bits);
+      JXL_ENSURE(alphabet_size <= range);
+      *counts = CreateFlatHistogram(alphabet_size, range);
       return true;
     }
 
@@ -172,7 +174,7 @@ Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
       }
       total_count += (*counts)[i];
     }
-    (*counts)[omit_pos] = (1 << precision_bits) - total_count;
+    (*counts)[omit_pos] = range - total_count;
     if ((*counts)[omit_pos] <= 0) {
       // The histogram we've read sums to more than total_count (including at
       // least 1 for the omitted value).
@@ -191,7 +193,7 @@ Status DecodeANSCodes(JxlMemoryManager* memory_manager,
   result->memory_manager = memory_manager;
   result->degenerate_symbols.resize(num_histograms, -1);
   if (result->use_prefix_code) {
-    JXL_ASSERT(max_alphabet_size <= 1 << PREFIX_MAX_BITS);
+    JXL_ENSURE(max_alphabet_size <= 1 << PREFIX_MAX_BITS);
     result->huffman_data.resize(num_histograms);
     std::vector<uint16_t> alphabet_sizes(num_histograms);
     for (size_t c = 0; c < num_histograms; c++) {
@@ -223,7 +225,7 @@ Status DecodeANSCodes(JxlMemoryManager* memory_manager,
       }
     }
   } else {
-    JXL_ASSERT(max_alphabet_size <= ANS_MAX_ALPHABET_SIZE);
+    JXL_ENSURE(max_alphabet_size <= ANS_MAX_ALPHABET_SIZE);
     size_t alloc_size = num_histograms * (1 << result->log_alpha_size) *
                         sizeof(AliasTable::Entry);
     JXL_ASSIGN_OR_RETURN(result->alias_tables,
@@ -255,8 +257,9 @@ Status DecodeANSCodes(JxlMemoryManager* memory_manager,
         }
       }
       result->degenerate_symbols[c] = degenerate_symbol;
-      InitAliasTable(counts, ANS_TAB_SIZE, result->log_alpha_size,
-                     alias_tables + c * (1 << result->log_alpha_size));
+      JXL_RETURN_IF_ERROR(
+          InitAliasTable(counts, ANS_LOG_TAB_SIZE, result->log_alpha_size,
+                         alias_tables + c * (1 << result->log_alpha_size)));
     }
   }
   return true;

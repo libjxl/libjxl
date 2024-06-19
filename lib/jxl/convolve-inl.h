@@ -73,7 +73,7 @@ class Neighbors {
     return TableLookupLanes(c, indices);  // NMLK'JIIJ
 #elif HWY_TARGET == HWY_SCALAR
     const D d;
-    JXL_ASSERT(false);  // unsupported, avoid calling this.
+    JXL_DEBUG_ABORT("Unsupported");
     return Zero(d);
 #else  // 128 bit
     // c = LKJI
@@ -99,7 +99,7 @@ class Neighbors {
     return TableLookupLanes(c, indices);  // MLKJ'IIJK
 #elif HWY_TARGET == HWY_SCALAR
     const D d;
-    JXL_ASSERT(false);  // unsupported, avoid calling this.
+    JXL_DEBUG_ABORT("Unsipported");
     return Zero(d);
 #else  // 128 bit
     // c = LKJI
@@ -181,8 +181,8 @@ class ConvolveT {
   template <class Image, class Weights>
   static void Run(const Image& in, const Rect& rect, const Weights& weights,
                   ThreadPool* pool, Image* out) {
-    JXL_CHECK(SameSize(rect, *out));
-    JXL_CHECK(rect.xsize() >= MinWidth());
+    JXL_DASSERT(SameSize(rect, *out));
+    JXL_DASSERT(rect.xsize() >= MinWidth());
 
     static_assert(static_cast<int64_t>(kRadius) <= 3,
                   "Must handle [0, kRadius) and >= kRadius");
@@ -242,14 +242,16 @@ class ConvolveT {
                                          const Weights& weights,
                                          ThreadPool* pool, ImageF* out) {
     const int64_t stride = in.PixelsPerRow();
-    const auto process_row = [&](const uint32_t y, size_t /*thread*/)
-                                 HWY_ATTR -> Status {
+    const auto process_row = [&](const uint32_t y,
+                                 size_t /*thread*/) -> Status {
       RunRow<kSizeModN>(rect.ConstRow(in, y), rect.xsize(), stride,
                         WrapRowUnchanged(), weights, out->Row(y));
       return true;
     };
-    JXL_CHECK(RunOnPool(pool, ybegin, yend, ThreadPool::NoInit, process_row,
-                        "Convolve"));
+    Status status = RunOnPool(pool, ybegin, yend, ThreadPool::NoInit,
+                              process_row, "Convolve");
+    (void)status;
+    JXL_DASSERT(status);
   }
 
   // Image3F.
@@ -260,16 +262,18 @@ class ConvolveT {
                                          const Weights& weights,
                                          ThreadPool* pool, Image3F* out) {
     const int64_t stride = in.PixelsPerRow();
-    const auto process_row = [&](const uint32_t y, size_t /*thread*/)
-                                 HWY_ATTR -> Status {
+    const auto process_row = [&](const uint32_t y,
+                                 size_t /*thread*/) -> Status {
       for (size_t c = 0; c < 3; ++c) {
         RunRow<kSizeModN>(rect.ConstPlaneRow(in, c, y), rect.xsize(), stride,
                           WrapRowUnchanged(), weights, out->PlaneRow(c, y));
       }
       return true;
     };
-    JXL_CHECK(RunOnPool(pool, ybegin, yend, ThreadPool::NoInit, process_row,
-                        "Convolve3"));
+    Status status = RunOnPool(pool, ybegin, yend, ThreadPool::NoInit,
+                              process_row, "Convolve3");
+    (void)status;
+    JXL_DASSERT(status);
   }
 
   template <size_t kSizeModN, class Image, class Weights>

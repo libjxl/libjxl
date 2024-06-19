@@ -7,6 +7,7 @@
 
 #include <jxl/memory_manager.h>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/modular/transform/transform.h"  // CheckEqualChannels
 
 namespace jxl {
@@ -27,12 +28,10 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   size_t h = input.channel[c0].h;
   if (nb < 1) return JXL_FAILURE("Corrupted transforms");
   for (int i = 1; i < nb; i++) {
-    StatusOr<Channel> channel_or =
-        Channel::Create(memory_manager, w, h, input.channel[c0].hshift,
-                        input.channel[c0].vshift);
-    JXL_RETURN_IF_ERROR(channel_or.status());
-    input.channel.insert(input.channel.begin() + c0 + 1,
-                         std::move(channel_or).value());
+    JXL_ASSIGN_OR_RETURN(Channel c, Channel::Create(memory_manager, w, h,
+                                                    input.channel[c0].hshift,
+                                                    input.channel[c0].vshift));
+    input.channel.insert(input.channel.begin() + c0 + 1, std::move(c));
   }
   const Channel &palette = input.channel[0];
   const pixel_type *JXL_RESTRICT p_palette = input.channel[0].Row(0);
@@ -154,9 +153,9 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
     input.nb_meta_channels--;
   } else {
     // Palette was done on metachannels
-    JXL_ASSERT(static_cast<int>(input.nb_meta_channels) >= 2 - nb);
+    JXL_ENSURE(static_cast<int>(input.nb_meta_channels) >= 2 - nb);
     input.nb_meta_channels -= 2 - nb;
-    JXL_ASSERT(begin_c + nb - 1 < input.nb_meta_channels);
+    JXL_ENSURE(begin_c + nb - 1 < input.nb_meta_channels);
   }
   input.channel.erase(input.channel.begin(), input.channel.begin() + 1);
   return true;
@@ -173,7 +172,7 @@ Status MetaPalette(Image &input, uint32_t begin_c, uint32_t end_c,
     input.nb_meta_channels++;
   } else {
     // Palette was done on metachannels
-    JXL_ASSERT(end_c < input.nb_meta_channels);
+    JXL_ENSURE(end_c < input.nb_meta_channels);
     // we remove nb-1 metachannels and add one
     input.nb_meta_channels += 2 - nb;
   }

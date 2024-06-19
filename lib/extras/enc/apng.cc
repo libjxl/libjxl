@@ -36,8 +36,7 @@
  *
  */
 
-#include <string.h>
-
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -140,9 +139,14 @@ class BlobsWriterPNG {
   }
 
  private:
+  // TODO(eustas): use array
   static JXL_INLINE char EncodeNibble(const uint8_t nibble) {
-    JXL_ASSERT(nibble < 16);
-    return (nibble < 10) ? '0' + nibble : 'a' + nibble - 10;
+    if (nibble < 16) {
+      return (nibble < 10) ? '0' + nibble : 'a' + nibble - 10;
+    } else {
+      JXL_DEBUG_ABORT("Internal logic error");
+      return 0;
+    }
   }
 
   static Status EncodeBase16(const std::string& type,
@@ -159,7 +163,7 @@ class BlobsWriterPNG {
       base16.push_back(EncodeNibble(bytes[i] & 0x0F));
     }
     base16.push_back('\n');
-    JXL_ASSERT(base16.length() == base16_size);
+    JXL_ENSURE(base16.length() == base16_size);
 
     char key[30];
     snprintf(key, sizeof(key), "Raw profile type %s", type.c_str());
@@ -323,6 +327,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
     }
     const JxlPixelFormat format = color.format;
     const uint8_t* in = reinterpret_cast<const uint8_t*>(color.pixels());
+    JXL_RETURN_IF_ERROR(PackedImage::ValidateDataType(format.data_type));
     size_t data_bits_per_sample = PackedImage::BitsPerChannel(format.data_type);
     size_t bytes_per_sample = data_bits_per_sample / 8;
     size_t out_bytes_per_sample = bytes_per_sample > 1 ? 2 : 1;
@@ -448,10 +453,10 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
       size_t p = pos;
       while (p + 8 < bytes->size()) {
         size_t len = png_get_uint_32(bytes->data() + p);
-        JXL_ASSERT(bytes->operator[](p + 4) == 'I');
-        JXL_ASSERT(bytes->operator[](p + 5) == 'D');
-        JXL_ASSERT(bytes->operator[](p + 6) == 'A');
-        JXL_ASSERT(bytes->operator[](p + 7) == 'T');
+        JXL_ENSURE(bytes->operator[](p + 4) == 'I');
+        JXL_ENSURE(bytes->operator[](p + 5) == 'D');
+        JXL_ENSURE(bytes->operator[](p + 6) == 'A');
+        JXL_ENSURE(bytes->operator[](p + 7) == 'T');
         fdata.insert(fdata.end(), bytes->data() + p + 8,
                      bytes->data() + p + 8 + len);
         p += len + 12;

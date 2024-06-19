@@ -120,14 +120,14 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
   memcpy(output_buffer + cursor, map_bundle->gain_map_metadata,
          map_bundle->gain_map_metadata_size);
 
-  uint8_t color_enc_size =
-      static_cast<uint8_t>(color_encoding_writer.GetSpan().size());
+  jxl::Bytes bytes = color_encoding_writer.GetSpan();
+  uint8_t color_enc_size = static_cast<uint8_t>(bytes.size());
+  if (color_enc_size != bytes.size()) return JXL_FALSE;
   SAFE_CURSOR_UPDATE(1);
   memcpy(output_buffer + cursor, &color_enc_size, 1);
 
   SAFE_CURSOR_UPDATE(color_enc_size);
-  memcpy(output_buffer + cursor, color_encoding_writer.GetSpan().data(),
-         color_enc_size);
+  memcpy(output_buffer + cursor, bytes.data(), color_enc_size);
 
   SAFE_CURSOR_UPDATE(4);
   StoreBE32(map_bundle->alt_icc_size, output_buffer + cursor);

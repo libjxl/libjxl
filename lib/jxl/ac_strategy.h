@@ -214,13 +214,14 @@ class AcStrategyImage {
 
   void FillInvalid() { FillImage(INVALID, &layers_); }
 
-  void Set(size_t x, size_t y, AcStrategyType type) {
-#if JXL_ENABLE_ASSERT
+  Status Set(size_t x, size_t y, AcStrategyType type) {
+#if (JXL_IS_DEBUG_BUILD)
     AcStrategy acs = AcStrategy::FromRawStrategy(type);
-#endif  // JXL_ENABLE_ASSERT
-    JXL_ASSERT(y + acs.covered_blocks_y() <= layers_.ysize());
-    JXL_ASSERT(x + acs.covered_blocks_x() <= layers_.xsize());
-    JXL_CHECK(SetNoBoundsCheck(x, y, type, /*check=*/false));
+    JXL_DASSERT(y + acs.covered_blocks_y() <= layers_.ysize());
+    JXL_DASSERT(x + acs.covered_blocks_x() <= layers_.xsize());
+#endif
+    JXL_RETURN_IF_ERROR(SetNoBoundsCheck(x, y, type, /*check=*/false));
+    return true;
   }
 
   Status SetNoBoundsCheck(size_t x, size_t y, AcStrategyType type,

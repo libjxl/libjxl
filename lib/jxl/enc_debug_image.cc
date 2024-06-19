@@ -53,7 +53,7 @@ Status DumpImageT(const CompressParams& cparams, const char* label,
   for (int c = 0; c < 3; ++c) {
     channels[c] = &float_image.Plane(c);
   }
-  JXL_CHECK(ConvertChannelsToExternal(
+  JXL_RETURN_IF_ERROR(ConvertChannelsToExternal(
       channels, 3, 16, false, JXL_BIG_ENDIAN, 6 * image.xsize(), nullptr,
       pixels.data(), 2 * num_pixels, PixelCallback(), Orientation::kIdentity));
   (*cparams.debug_image)(cparams.debug_image_opaque, label, image.xsize(),
@@ -107,7 +107,8 @@ Status DumpXybImage(const CompressParams& cparams, const char* label,
       Image3F::Create(memory_manager, image.xsize(), image.ysize()));
   OpsinParams opsin_params;
   opsin_params.Init(kDefaultIntensityTarget);
-  OpsinToLinear(image, Rect(linear), nullptr, &linear, opsin_params);
+  JXL_RETURN_IF_ERROR(
+      OpsinToLinear(image, Rect(linear), nullptr, &linear, opsin_params));
 
   return DumpImageT(cparams, label, ColorEncoding::LinearSRGB(), linear);
 }

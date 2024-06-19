@@ -282,11 +282,11 @@ StatusOr<Image3F> TransformToLinearRGB(const Image3F& in,
 
 // This is different from Butteraugli's OpsinDynamicsImage() in the sense that
 // it does not contain a sensitivity multiplier based on the blurred image.
-void ToXYB(const ColorEncoding& c_current, float intensity_target,
-           const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
-           const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear) {
-  if (black) JXL_ASSERT(SameSize(*image, *black));
-  if (linear) JXL_ASSERT(SameSize(*image, *linear));
+Status ToXYB(const ColorEncoding& c_current, float intensity_target,
+             const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
+             const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear) {
+  if (black) JXL_ENSURE(SameSize(*image, *black));
+  if (linear) JXL_ENSURE(SameSize(*image, *linear));
 
   const HWY_FULL(float) d;
   // Pre-broadcasted constants
@@ -303,10 +303,10 @@ void ToXYB(const ColorEncoding& c_current, float intensity_target,
     // This only happens if kitten or slower, moving ImageBundle might be
     // possible but the encoder is much slower than this copy.
     if (want_linear) {
-      CopyImageTo(*image, linear);
+      JXL_RETURN_IF_ERROR(CopyImageTo(*image, linear));
     }
-    JXL_CHECK(LinearSRGBToXYB(premul_absorb, pool, image));
-    return;
+    JXL_RETURN_IF_ERROR(LinearSRGBToXYB(premul_absorb, pool, image));
+    return true;
   }
 
   // Common case: already sRGB, can avoid the color transform
@@ -314,20 +314,22 @@ void ToXYB(const ColorEncoding& c_current, float intensity_target,
     // Common case: can avoid allocating/copying
     if (want_linear) {
       // Slow encoder also wants linear sRGB.
-      JXL_CHECK(SRGBToXYBAndLinear(premul_absorb, pool, image, linear));
+      JXL_RETURN_IF_ERROR(
+          SRGBToXYBAndLinear(premul_absorb, pool, image, linear));
     } else {
-      JXL_CHECK(SRGBToXYB(premul_absorb, pool, image));
+      JXL_RETURN_IF_ERROR(SRGBToXYB(premul_absorb, pool, image));
     }
-    return;
+    return true;
   }
 
-  JXL_CHECK(ApplyColorTransform(c_current, intensity_target, *image, black,
-                                Rect(*image), c_linear_srgb, cms, pool,
-                                want_linear ? linear : image));
+  JXL_RETURN_IF_ERROR(ApplyColorTransform(
+      c_current, intensity_target, *image, black, Rect(*image), c_linear_srgb,
+      cms, pool, want_linear ? linear : image));
   if (want_linear) {
-    CopyImageTo(*linear, image);
+    JXL_RETURN_IF_ERROR(CopyImageTo(*linear, image));
   }
-  JXL_CHECK(LinearSRGBToXYB(premul_absorb, pool, image));
+  JXL_RETURN_IF_ERROR(LinearSRGBToXYB(premul_absorb, pool, image));
+  return true;
 }
 
 // Transform RGB to YCbCr.
@@ -401,11 +403,11 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(ToXYB);
-void ToXYB(const ColorEncoding& c_current, float intensity_target,
-           const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
-           const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear) {
-  HWY_DYNAMIC_DISPATCH(ToXYB)
-  (c_current, intensity_target, black, pool, image, cms, linear);
+Status ToXYB(const ColorEncoding& c_current, float intensity_target,
+             const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
+             const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear) {
+  return HWY_DYNAMIC_DISPATCH(ToXYB)(c_current, intensity_target, black, pool,
+                                     image, cms, linear);
 }
 
 Status ToXYB(const ImageBundle& in, ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
@@ -413,9 +415,9 @@ Status ToXYB(const ImageBundle& in, ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
   JxlMemoryManager* memory_manager = in.memory_manager();
   JXL_ASSIGN_OR_RETURN(*xyb,
                        Image3F::Create(memory_manager, in.xsize(), in.ysize()));
-  CopyImageTo(in.color(), xyb);
-  ToXYB(in.c_current(), in.metadata()->IntensityTarget(),
-        in.HasBlack() ? &in.black() : nullptr, pool, xyb, cms, linear);
+  JXL_RETURN_IF_ERROR(CopyImageTo(in.color(), xyb));
+  JXL_RETURN_IF_ERROR(ToXYB(in.c_current(), in.metadata()->IntensityTarget(),
+                            in.black(), pool, xyb, cms, linear));
   return true;
 }
 

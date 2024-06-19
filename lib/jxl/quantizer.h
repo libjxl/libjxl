@@ -60,8 +60,8 @@ struct QuantizerParams;
 
 class Quantizer {
  public:
-  explicit Quantizer(const DequantMatrices* dequant);
-  Quantizer(const DequantMatrices* dequant, int quant_dc, int global_scale);
+  explicit Quantizer(const DequantMatrices& dequant);
+  Quantizer(const DequantMatrices& dequant, int quant_dc, int global_scale);
 
   static constexpr int32_t kQuantMax = 256;
 
@@ -99,8 +99,8 @@ class Quantizer {
   void SetQuantFieldRect(const ImageF& qf, const Rect& rect,
                          ImageI* JXL_RESTRICT raw_quant_field) const;
 
-  void SetQuantField(float quant_dc, const ImageF& qf,
-                     ImageI* JXL_RESTRICT raw_quant_field);
+  Status SetQuantField(float quant_dc, const ImageF& qf,
+                       ImageI* JXL_RESTRICT raw_quant_field);
 
   void SetQuant(float quant_dc, float quant_ac,
                 ImageI* JXL_RESTRICT raw_quant_field);

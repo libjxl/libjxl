@@ -24,12 +24,12 @@ static const size_t kClustersLimit = 128;
 
 // Encodes the given context map to the bit stream. The number of different
 // histogram ids is given by num_histograms.
-void EncodeContextMap(const std::vector<uint8_t>& context_map,
-                      size_t num_histograms, BitWriter* writer, LayerType layer,
-                      AuxOut* aux_out);
+Status EncodeContextMap(const std::vector<uint8_t>& context_map,
+                        size_t num_histograms, BitWriter* writer,
+                        LayerType layer, AuxOut* aux_out);
 
-void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
-                       AuxOut* aux_out);
+Status EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
+                         AuxOut* aux_out);
 }  // namespace jxl
 
 #endif  // LIB_JXL_ENC_CONTEXT_MAP_H_

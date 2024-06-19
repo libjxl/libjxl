@@ -102,13 +102,13 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
 #endif
 
 Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
-  JXL_ASSERT(c < input.channel.size());
-  JXL_ASSERT(rc < input.channel.size());
+  JXL_ENSURE(c < input.channel.size());
+  JXL_ENSURE(rc < input.channel.size());
   Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
-  JXL_ASSERT(chin.w == DivCeil(chin.w + chin_residual.w, 2));
-  JXL_ASSERT(chin.h == chin_residual.h);
+  JXL_ENSURE(chin.w == DivCeil(chin.w + chin_residual.w, 2));
+  JXL_ENSURE(chin.h == chin_residual.h);
   JxlMemoryManager *memory_manager = input.memory_manager();
 
   if (chin_residual.w == 0) {
@@ -216,13 +216,13 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
 }
 
 Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
-  JXL_ASSERT(c < input.channel.size());
-  JXL_ASSERT(rc < input.channel.size());
+  JXL_ENSURE(c < input.channel.size());
+  JXL_ENSURE(rc < input.channel.size());
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
-  JXL_ASSERT(chin.h == DivCeil(chin.h + chin_residual.h, 2));
-  JXL_ASSERT(chin.w == chin_residual.w);
+  JXL_ENSURE(chin.h == DivCeil(chin.h + chin_residual.h, 2));
+  JXL_ENSURE(chin.w == chin_residual.w);
   JxlMemoryManager *memory_manager = input.memory_manager();
 
   if (chin_residual.h == 0) {
@@ -322,7 +322,7 @@ Status InvSqueeze(Image &input, const std::vector<SqueezeParams> &parameters,
     }
     if (beginc < input.nb_meta_channels) {
       // This is checked in MetaSqueeze.
-      JXL_ASSERT(input.nb_meta_channels > parameters[i].num_c);
+      JXL_ENSURE(input.nb_meta_channels > parameters[i].num_c);
       input.nb_meta_channels -= parameters[i].num_c;
     }
 
@@ -330,7 +330,7 @@ Status InvSqueeze(Image &input, const std::vector<SqueezeParams> &parameters,
       uint32_t rc = offset + c - beginc;
       // MetaApply should imply that `rc` is within range, otherwise there's a
       // programming bug.
-      JXL_ASSERT(rc < input.channel.size());
+      JXL_ENSURE(rc < input.channel.size());
       if ((input.channel[c].w < input.channel[rc].w) ||
           (input.channel[c].h < input.channel[rc].h)) {
         return JXL_FAILURE("Corrupted squeeze transform");

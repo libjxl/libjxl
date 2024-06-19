@@ -360,7 +360,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_modular.h
   jxl/enc_noise.cc
   jxl/enc_noise.h
-  jxl/enc_optimize.cc
   jxl/enc_optimize.h
   jxl/enc_params.h
   jxl/enc_patch_dictionary.cc

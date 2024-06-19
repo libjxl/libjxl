@@ -14,6 +14,7 @@
 #include "lib/jpegli/test_params.h"
 #include "lib/jpegli/types.h"
 #include "lib/jxl/base/include_jpeglib.h"  // NOLINT
+#include "lib/jxl/base/status.h"
 
 namespace jpegli {
 
@@ -58,7 +59,7 @@ void UnmapColors(uint8_t* row, size_t xsize, int components,
                  JSAMPARRAY colormap, size_t num_colors);
 
 std::string GetTestDataPath(const std::string& filename);
-std::vector<uint8_t> ReadTestData(const std::string& filename);
+jxl::StatusOr<std::vector<uint8_t>> ReadTestData(const std::string& filename);
 
 class PNMParser {
  public:
@@ -87,7 +88,7 @@ bool ReadPNM(const std::vector<uint8_t>& data, size_t* xsize, size_t* ysize,
              size_t* num_channels, size_t* bitdepth,
              std::vector<uint8_t>* pixels);
 
-void SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels);
+jxl::Status SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels);
 
 void ConvertToGrayscale(TestImage* img);
 

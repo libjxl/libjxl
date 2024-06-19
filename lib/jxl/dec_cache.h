@@ -46,12 +46,12 @@ struct PixelCallback {
   PixelCallback(JxlImageOutInitCallback init, JxlImageOutRunCallback run,
                 JxlImageOutDestroyCallback destroy, void* init_opaque)
       : init(init), run(run), destroy(destroy), init_opaque(init_opaque) {
-#if JXL_ENABLE_ASSERT
-    const bool has_init = init != nullptr;
-    const bool has_run = run != nullptr;
-    const bool has_destroy = destroy != nullptr;
+#if (JXL_IS_DEBUG_BUILD)
+    const bool has_init = (init != nullptr);
+    const bool has_run = (run != nullptr);
+    const bool has_destroy = (destroy != nullptr);
     const bool healthy = (has_init == has_run) && (has_run == has_destroy);
-    JXL_ASSERT(healthy);
+    JXL_DASSERT(healthy);
 #endif
   }
 

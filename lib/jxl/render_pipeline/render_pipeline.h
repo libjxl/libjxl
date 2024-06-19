@@ -45,7 +45,7 @@ class RenderPipelineInput {
   Status Done();
 
   const std::pair<ImageF*, Rect>& GetBuffer(size_t c) const {
-    JXL_ASSERT(c < buffers_.size());
+    JXL_DASSERT(c < buffers_.size());
     return buffers_[c];
   }
 
@@ -63,7 +63,7 @@ class RenderPipeline {
    public:
     explicit Builder(JxlMemoryManager* memory_manager, size_t num_c)
         : memory_manager_(memory_manager), num_c_(num_c) {
-      JXL_ASSERT(num_c > 0);
+      JXL_DASSERT(num_c > 0);
     }
 
     // Adds a stage to the pipeline. Must be called at least once; the last

@@ -51,8 +51,8 @@ Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
     JXL_FAILURE("unsupported pixel format data type %d", format.data_type);
   }
 
-  JXL_ASSERT(channel->xsize() == xsize);
-  JXL_ASSERT(channel->ysize() == ysize);
+  JXL_ENSURE(channel->xsize() == xsize);
+  JXL_ENSURE(channel->ysize() == ysize);
 
   size_t bytes_per_channel = JxlDataTypeBytes(format.data_type);
   size_t bytes_per_pixel = format.num_channels * bytes_per_channel;
@@ -113,10 +113,10 @@ Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
         &color.Plane(c)));
   }
   if (color_channels == 1) {
-    CopyImageTo(color.Plane(0), &color.Plane(1));
-    CopyImageTo(color.Plane(0), &color.Plane(2));
+    JXL_RETURN_IF_ERROR(CopyImageTo(color.Plane(0), &color.Plane(1)));
+    JXL_RETURN_IF_ERROR(CopyImageTo(color.Plane(0), &color.Plane(2)));
   }
-  ib->SetFromImage(std::move(color), c_current);
+  JXL_RETURN_IF_ERROR(ib->SetFromImage(std::move(color), c_current));
 
   // Passing an interleaved image with an alpha channel to an image that doesn't
   // have alpha channel just discards the passed alpha channel.
@@ -126,14 +126,14 @@ Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
     JXL_RETURN_IF_ERROR(ConvertFromExternalNoSizeCheck(
         data, xsize, ysize, stride, bits_per_sample, format,
         format.num_channels - 1, pool, &alpha));
-    ib->SetAlpha(std::move(alpha));
+    JXL_RETURN_IF_ERROR(ib->SetAlpha(std::move(alpha)));
   } else if (!has_alpha && ib->HasAlpha()) {
     // if alpha is not passed, but it is expected, then assume
     // it is all-opaque
     JXL_ASSIGN_OR_RETURN(ImageF alpha,
                          ImageF::Create(memory_manager, xsize, ysize));
     FillImage(1.0f, &alpha);
-    ib->SetAlpha(std::move(alpha));
+    JXL_RETURN_IF_ERROR(ib->SetAlpha(std::move(alpha)));
   }
 
   return true;
@@ -187,10 +187,10 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
                                             pool, &color.Plane(c)));
   }
   if (color_channels == 1) {
-    CopyImageTo(color.Plane(0), &color.Plane(1));
-    CopyImageTo(color.Plane(0), &color.Plane(2));
+    JXL_RETURN_IF_ERROR(CopyImageTo(color.Plane(0), &color.Plane(1)));
+    JXL_RETURN_IF_ERROR(CopyImageTo(color.Plane(0), &color.Plane(2)));
   }
-  ib->SetFromImage(std::move(color), c_current);
+  JXL_RETURN_IF_ERROR(ib->SetFromImage(std::move(color), c_current));
 
   // Passing an interleaved image with an alpha channel to an image that doesn't
   // have alpha channel just discards the passed alpha channel.
@@ -200,14 +200,14 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
     JXL_RETURN_IF_ERROR(ConvertFromExternal(
         bytes.data(), bytes.size(), xsize, ysize, bits_per_sample, format,
         format.num_channels - 1, pool, &alpha));
-    ib->SetAlpha(std::move(alpha));
+    JXL_RETURN_IF_ERROR(ib->SetAlpha(std::move(alpha)));
   } else if (!has_alpha && ib->HasAlpha()) {
     // if alpha is not passed, but it is expected, then assume
     // it is all-opaque
     JXL_ASSIGN_OR_RETURN(ImageF alpha,
                          ImageF::Create(memory_manager, xsize, ysize));
     FillImage(1.0f, &alpha);
-    ib->SetAlpha(std::move(alpha));
+    JXL_RETURN_IF_ERROR(ib->SetAlpha(std::move(alpha)));
   }
 
   return true;

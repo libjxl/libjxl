@@ -11,6 +11,7 @@
 #include <cstddef>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_gamma_correct.h"
 #include "lib/jxl/enc_image_bundle.h"
 
@@ -56,12 +57,11 @@ void AlphaBlend(float background_linear, ImageBundle* io_linear_srgb) {
   }
 }
 
-float ComputeScoreImpl(const ImageBundle& rgb0, const ImageBundle& rgb1,
-                       Comparator* comparator, ImageF* distmap) {
-  JXL_CHECK(comparator->SetReferenceImage(rgb0));
-  float score;
-  JXL_CHECK(comparator->CompareWith(rgb1, distmap, &score));
-  return score;
+Status ComputeScoreImpl(const ImageBundle& rgb0, const ImageBundle& rgb1,
+                        Comparator* comparator, ImageF* distmap, float& score) {
+  JXL_RETURN_IF_ERROR(comparator->SetReferenceImage(rgb0));
+  JXL_RETURN_IF_ERROR(comparator->CompareWith(rgb1, distmap, &score));
+  return true;
 }
 
 }  // namespace
@@ -75,18 +75,20 @@ Status ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
   ImageMetadata metadata0 = *rgb0.metadata();
   ImageBundle store0(memory_manager, &metadata0);
   const ImageBundle* linear_srgb0;
-  JXL_CHECK(TransformIfNeeded(rgb0, ColorEncoding::LinearSRGB(rgb0.IsGray()),
-                              cms, pool, &store0, &linear_srgb0));
+  JXL_RETURN_IF_ERROR(
+      TransformIfNeeded(rgb0, ColorEncoding::LinearSRGB(rgb0.IsGray()), cms,
+                        pool, &store0, &linear_srgb0));
   ImageMetadata metadata1 = *rgb1.metadata();
   ImageBundle store1(memory_manager, &metadata1);
   const ImageBundle* linear_srgb1;
-  JXL_CHECK(TransformIfNeeded(rgb1, ColorEncoding::LinearSRGB(rgb1.IsGray()),
-                              cms, pool, &store1, &linear_srgb1));
+  JXL_RETURN_IF_ERROR(
+      TransformIfNeeded(rgb1, ColorEncoding::LinearSRGB(rgb1.IsGray()), cms,
+                        pool, &store1, &linear_srgb1));
 
   // No alpha: skip blending, only need a single call to Butteraugli.
   if (ignore_alpha || (!rgb0.HasAlpha() && !rgb1.HasAlpha())) {
-    *score =
-        ComputeScoreImpl(*linear_srgb0, *linear_srgb1, comparator, diffmap);
+    JXL_RETURN_IF_ERROR(ComputeScoreImpl(*linear_srgb0, *linear_srgb1,
+                                         comparator, diffmap, *score));
     return true;
   }
 
@@ -107,10 +109,12 @@ Status ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
 
   ImageF diffmap_black;
   ImageF diffmap_white;
-  const float dist_black = ComputeScoreImpl(blended_black0, blended_black1,
-                                            comparator, &diffmap_black);
-  const float dist_white = ComputeScoreImpl(blended_white0, blended_white1,
-                                            comparator, &diffmap_white);
+  float dist_black;
+  JXL_RETURN_IF_ERROR(ComputeScoreImpl(blended_black0, blended_black1,
+                                       comparator, &diffmap_black, dist_black));
+  float dist_white;
+  JXL_RETURN_IF_ERROR(ComputeScoreImpl(blended_white0, blended_white1,
+                                       comparator, &diffmap_white, dist_white));
 
   // diffmap and return values are the max of diffmap_black/white.
   if (diffmap != nullptr) {

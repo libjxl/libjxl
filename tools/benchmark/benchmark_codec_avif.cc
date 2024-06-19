@@ -366,7 +366,8 @@ class AvifCodec : public ImageCodec {
       io->metadata.m.animation.tps_numerator = decoder->timescale;
       io->metadata.m.animation.tps_denominator = 1;
       io->metadata.m.SetUintSamples(decoder->image->depth);
-      io->SetSize(decoder->image->width, decoder->image->height);
+      JXL_RETURN_IF_ERROR(
+          io->SetSize(decoder->image->width, decoder->image->height));
       avifResult next_image;
       while ((next_image = avifDecoderNextImage(decoder.get())) ==
              AVIF_RESULT_OK) {

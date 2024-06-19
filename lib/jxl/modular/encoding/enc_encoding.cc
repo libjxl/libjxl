@@ -5,10 +5,15 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <queue>
+#include <utility>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -285,17 +290,18 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels,
   return {};
 }
 
-Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
-               const ModularOptions &options,
-               const std::vector<ModularMultiplierInfo> &multiplier_info = {},
-               StaticPropRange static_prop_range = {}) {
+StatusOr<Tree> LearnTree(
+    TreeSamples &&tree_samples, size_t total_pixels,
+    const ModularOptions &options,
+    const std::vector<ModularMultiplierInfo> &multiplier_info = {},
+    StaticPropRange static_prop_range = {}) {
+  Tree tree;
   for (size_t i = 0; i < kNumStaticProperties; i++) {
     if (static_prop_range[i][1] == 0) {
       static_prop_range[i][1] = std::numeric_limits<uint32_t>::max();
     }
   }
   if (!tree_samples.HasSamples()) {
-    Tree tree;
     tree.emplace_back();
     tree.back().predictor = tree_samples.PredictorFromIndex(0);
     tree.back().property = -1;
@@ -306,11 +312,10 @@ Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
   float pixel_fraction = tree_samples.NumSamples() * 1.0f / total_pixels;
   float required_cost = pixel_fraction * 0.9 + 0.1;
   tree_samples.AllSamplesDone();
-  Tree tree;
-  ComputeBestTree(tree_samples,
-                  options.splitting_heuristics_node_threshold * required_cost,
-                  multiplier_info, static_prop_range,
-                  options.fast_decode_multiplier, &tree);
+  JXL_RETURN_IF_ERROR(ComputeBestTree(
+      tree_samples, options.splitting_heuristics_node_threshold * required_cost,
+      multiplier_info, static_prop_range, options.fast_decode_multiplier,
+      &tree));
   return tree;
 }
 
@@ -322,7 +327,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   const Channel &channel = image.channel[chan];
   JxlMemoryManager *memory_manager = channel.memory_manager();
   Token *tokenp = *tokenpp;
-  JXL_ASSERT(channel.w != 0 && channel.h != 0);
+  JXL_ENSURE(channel.w != 0 && channel.h != 0);
 
   Image3F predictor_img;
   if (kWantDebug) {
@@ -626,7 +631,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     if (gather_data) return true;
   }
 
-  JXL_ASSERT((tree == nullptr) == (tokens == nullptr));
+  JXL_ENSURE((tree == nullptr) == (tokens == nullptr));
 
   Tree tree_storage;
   std::vector<std::vector<Token>> tokens_storage(1);
@@ -636,17 +641,20 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     std::vector<uint8_t> context_map;
 
     std::vector<std::vector<Token>> tree_tokens(1);
-    tree_storage =
-        options.tree_kind == ModularOptions::TreeKind::kLearn
-            ? LearnTree(std::move(tree_samples_storage), *total_pixels, options)
-            : PredefinedTree(options.tree_kind, *total_pixels, image.bitdepth,
-                             options.max_properties);
+    if (options.tree_kind == ModularOptions::TreeKind::kLearn) {
+      JXL_ASSIGN_OR_RETURN(
+          tree_storage,
+          LearnTree(std::move(tree_samples_storage), *total_pixels, options));
+    } else {
+      tree_storage = PredefinedTree(options.tree_kind, *total_pixels,
+                                    image.bitdepth, options.max_properties);
+    }
     tree = &tree_storage;
     tokens = tokens_storage.data();
 
     Tree decoded_tree;
-    TokenizeTree(*tree, tree_tokens.data(), &decoded_tree);
-    JXL_ASSERT(tree->size() == decoded_tree.size());
+    JXL_RETURN_IF_ERROR(TokenizeTree(*tree, tree_tokens.data(), &decoded_tree));
+    JXL_ENSURE(tree->size() == decoded_tree.size());
     tree_storage = std::move(decoded_tree);
 
     /* TODO(szabadka) Add text output callback
@@ -655,11 +663,14 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     } */
 
     // Write tree
-    BuildAndEncodeHistograms(memory_manager, options.histogram_params,
+    JXL_ASSIGN_OR_RETURN(size_t cost,
+                         BuildAndEncodeHistograms(
+                             memory_manager, options.histogram_params,
                              kNumTreeContexts, tree_tokens, &code, &context_map,
-                             writer, LayerType::ModularTree, aux_out);
-    WriteTokens(tree_tokens[0], code, context_map, 0, writer,
-                LayerType::ModularTree, aux_out);
+                             writer, LayerType::ModularTree, aux_out));
+    (void)cost;
+    JXL_RETURN_IF_ERROR(WriteTokens(tree_tokens[0], code, context_map, 0,
+                                    writer, LayerType::ModularTree, aux_out));
   }
 
   size_t image_width = 0;
@@ -695,7 +706,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
           options.skip_encoder_fast_path));
     }
     // Make sure we actually wrote all tokens
-    JXL_CHECK(tokenp == tokens->data() + tokens->size());
+    JXL_ENSURE(tokenp == tokens->data() + tokens->size());
   }
 
   // Write data if not using a global tree/ANS stream.
@@ -704,11 +715,14 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     std::vector<uint8_t> context_map;
     HistogramParams histo_params = options.histogram_params;
     histo_params.image_widths.push_back(image_width);
-    BuildAndEncodeHistograms(memory_manager, histo_params,
-                             (tree->size() + 1) / 2, tokens_storage, &code,
-                             &context_map, writer, layer, aux_out);
-    WriteTokens(tokens_storage[0], code, context_map, 0, writer, layer,
-                aux_out);
+    JXL_ASSIGN_OR_RETURN(
+        size_t cost,
+        BuildAndEncodeHistograms(memory_manager, histo_params,
+                                 (tree->size() + 1) / 2, tokens_storage, &code,
+                                 &context_map, writer, layer, aux_out));
+    (void)cost;
+    JXL_RETURN_IF_ERROR(WriteTokens(tokens_storage[0], code, context_map, 0,
+                                    writer, layer, aux_out));
   } else {
     *width = image_width;
   }

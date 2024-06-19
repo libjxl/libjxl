@@ -48,15 +48,15 @@ int main(int argc, const char** argv) {
 
   jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
   std::vector<uint8_t> encoded;
-  JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
-                              &image, pool.get()));
+  JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
+  JPEGXL_TOOLS_CHECK(jxl::SetFromBytes(
+      jxl::Bytes(encoded), jxl::extras::ColorHints(), &image, pool.get()));
 
-  JXL_CHECK(image.xsize() == image.ysize() * image.ysize());
+  JPEGXL_TOOLS_CHECK(image.xsize() == image.ysize() * image.ysize());
   const unsigned N = image.ysize();
 
   FILE* const output = fopen(output_filename, "wb");
-  JXL_CHECK(output);
+  JPEGXL_TOOLS_CHECK(output);
 
   fprintf(output, "# Created by libjxl\n");
   fprintf(output, "LUT_3D_SIZE %u\n", N);
@@ -75,4 +75,5 @@ int main(int argc, const char** argv) {
       }
     }
   }
+  return EXIT_SUCCESS;
 }

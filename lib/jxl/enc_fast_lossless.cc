@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include "lib/jxl/base/status.h"
 #ifndef FJXL_SELF_INCLUDE
 
 #include "lib/jxl/enc_fast_lossless.h"
@@ -855,30 +856,32 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
 }
 
 #if !FJXL_STANDALONE
-void JxlFastLosslessOutputAlignedSection(
+bool JxlFastLosslessOutputAlignedSection(
     const BitWriter& bw, JxlEncoderOutputProcessorWrapper* output_processor) {
   assert(bw.bits_in_buffer == 0);
   const uint8_t* data = bw.data.get();
   size_t remaining_len = bw.bytes_written;
   while (remaining_len > 0) {
-    auto retval = output_processor->GetBuffer(1, remaining_len);
-    assert(retval.status());
-    auto buffer = std::move(retval).value();
+    JXL_ASSIGN_OR_RETURN(auto buffer,
+                         output_processor->GetBuffer(1, remaining_len));
     size_t n = std::min(buffer.size(), remaining_len);
     if (n == 0) break;
     memcpy(buffer.data(), data, n);
-    buffer.advance(n);
+    JXL_RETURN_IF_ERROR(buffer.advance(n));
     data += n;
     remaining_len -= n;
   };
+  return true;
 }
 
-void JxlFastLosslessOutputHeaders(
+bool JxlFastLosslessOutputHeaders(
     JxlFastLosslessFrameState* frame_state,
     JxlEncoderOutputProcessorWrapper* output_processor) {
-  JxlFastLosslessOutputAlignedSection(frame_state->header, output_processor);
-  JxlFastLosslessOutputAlignedSection(frame_state->group_data[0][0],
-                                      output_processor);
+  JXL_RETURN_IF_ERROR(JxlFastLosslessOutputAlignedSection(frame_state->header,
+                                                          output_processor));
+  JXL_RETURN_IF_ERROR(JxlFastLosslessOutputAlignedSection(
+      frame_state->group_data[0][0], output_processor));
+  return true;
 }
 #endif
 
@@ -3979,17 +3982,18 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
 }
 
 template <typename BitDepth>
-void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
-               BitDepth bitdepth, void* runner_opaque,
-               FJxlParallelRunner runner,
-               JxlEncoderOutputProcessorWrapper* output_processor) {
+jxl::Status LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
+                      BitDepth bitdepth, void* runner_opaque,
+                      FJxlParallelRunner runner,
+                      JxlEncoderOutputProcessorWrapper* output_processor) {
 #if !FJXL_STANDALONE
   if (frame_state->process_done) {
     JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0, is_last);
     if (output_processor) {
-      JxlFastLosslessOutputFrame(frame_state, output_processor);
+      JXL_RETURN_IF_ERROR(
+          JxlFastLosslessOutputFrame(frame_state, output_processor));
     }
-    return;
+    return true;
   }
 #endif
   // The maximum number of groups that we process concurrently here.
@@ -4004,7 +4008,8 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
   size_t start_pos = 0;
   if (streaming) {
     start_pos = output_processor->CurrentPosition();
-    output_processor->Seek(start_pos + frame_state->ac_group_data_offset);
+    JXL_RETURN_IF_ERROR(
+        output_processor->Seek(start_pos + frame_state->ac_group_data_offset));
   }
 #endif
   for (size_t offset = 0; offset < total_groups; offset += max_groups) {
@@ -4056,14 +4061,15 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
     if (streaming) {
       local_frame_state.nb_chans = frame_state->nb_chans;
       local_frame_state.current_bit_writer = 1;
-      JxlFastLosslessOutputFrame(&local_frame_state, output_processor);
+      JXL_RETURN_IF_ERROR(
+          JxlFastLosslessOutputFrame(&local_frame_state, output_processor));
     }
 #endif
   }
 #if !FJXL_STANDALONE
   if (streaming) {
     size_t end_pos = output_processor->CurrentPosition();
-    output_processor->Seek(start_pos);
+    JXL_RETURN_IF_ERROR(output_processor->Seek(start_pos));
     frame_state->group_data.resize(1);
     bool have_alpha = frame_state->nb_chans == 2 || frame_state->nb_chans == 4;
     size_t padding = ComputeDcGlobalPadding(
@@ -4077,17 +4083,20 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
     JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0, is_last);
     assert(frame_state->ac_group_data_offset ==
            JxlFastLosslessOutputSize(frame_state));
-    JxlFastLosslessOutputHeaders(frame_state, output_processor);
-    output_processor->Seek(end_pos);
+    JXL_RETURN_IF_ERROR(
+        JxlFastLosslessOutputHeaders(frame_state, output_processor));
+    JXL_RETURN_IF_ERROR(output_processor->Seek(end_pos));
   } else if (output_processor) {
     assert(onegroup);
     JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0, is_last);
     if (output_processor) {
-      JxlFastLosslessOutputFrame(frame_state, output_processor);
+      JXL_RETURN_IF_ERROR(
+          JxlFastLosslessOutputFrame(frame_state, output_processor));
     }
   }
   frame_state->process_done = true;
 #endif
+  return true;
 }
 
 JxlFastLosslessFrameState* JxlFastLosslessPrepareImpl(
@@ -4113,24 +4122,26 @@ JxlFastLosslessFrameState* JxlFastLosslessPrepareImpl(
                    big_endian, effort, oneshot);
 }
 
-void JxlFastLosslessProcessFrameImpl(
+jxl::Status JxlFastLosslessProcessFrameImpl(
     JxlFastLosslessFrameState* frame_state, bool is_last, void* runner_opaque,
     FJxlParallelRunner runner,
     JxlEncoderOutputProcessorWrapper* output_processor) {
   const size_t bitdepth = frame_state->bitdepth;
   if (bitdepth <= 8) {
-    LLProcess(frame_state, is_last, UpTo8Bits(bitdepth), runner_opaque, runner,
-              output_processor);
+    JXL_RETURN_IF_ERROR(LLProcess(frame_state, is_last, UpTo8Bits(bitdepth),
+                                  runner_opaque, runner, output_processor));
   } else if (bitdepth <= 13) {
-    LLProcess(frame_state, is_last, From9To13Bits(bitdepth), runner_opaque,
-              runner, output_processor);
+    JXL_RETURN_IF_ERROR(LLProcess(frame_state, is_last, From9To13Bits(bitdepth),
+                                  runner_opaque, runner, output_processor));
   } else if (bitdepth == 14) {
-    LLProcess(frame_state, is_last, Exactly14Bits(bitdepth), runner_opaque,
-              runner, output_processor);
+    JXL_RETURN_IF_ERROR(LLProcess(frame_state, is_last, Exactly14Bits(bitdepth),
+                                  runner_opaque, runner, output_processor));
   } else {
-    LLProcess(frame_state, is_last, MoreThan14Bits(bitdepth), runner_opaque,
-              runner, output_processor);
+    JXL_RETURN_IF_ERROR(LLProcess(frame_state, is_last,
+                                  MoreThan14Bits(bitdepth), runner_opaque,
+                                  runner, output_processor));
   }
+  return true;
 }
 
 }  // namespace
@@ -4247,8 +4258,10 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
   auto frame_state = JxlFastLosslessPrepareFrame(
       input.GetInputSource(), width, height, nb_chans, bitdepth, big_endian,
       effort, /*oneshot=*/true);
-  JxlFastLosslessProcessFrame(frame_state, /*is_last=*/true, runner_opaque,
-                              runner, nullptr);
+  if (!JxlFastLosslessProcessFrame(frame_state, /*is_last=*/true, runner_opaque,
+                                   runner, nullptr)) {
+    return 0;
+  }
   JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/1,
                                /*is_last=*/1);
   size_t output_size = JxlFastLosslessMaxRequiredOutput(frame_state);
@@ -4289,7 +4302,7 @@ JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
       input, width, height, nb_chans, bitdepth, big_endian, effort, oneshot);
 }
 
-void JxlFastLosslessProcessFrame(
+bool JxlFastLosslessProcessFrame(
     JxlFastLosslessFrameState* frame_state, bool is_last, void* runner_opaque,
     FJxlParallelRunner runner,
     JxlEncoderOutputProcessorWrapper* output_processor) {
@@ -4310,41 +4323,42 @@ void JxlFastLosslessProcessFrame(
       HasCpuFeature(CpuFeature::kAVX512BW) &&
       HasCpuFeature(CpuFeature::kAVX512F) &&
       HasCpuFeature(CpuFeature::kAVX512VL)) {
-    AVX512::JxlFastLosslessProcessFrameImpl(frame_state, is_last, runner_opaque,
-                                            runner, output_processor);
-    return;
+    JXL_RETURN_IF_ERROR(AVX512::JxlFastLosslessProcessFrameImpl(
+        frame_state, is_last, runner_opaque, runner, output_processor));
+    return true;
   }
 #endif
 #if FJXL_ENABLE_AVX2
   if (HasCpuFeature(CpuFeature::kAVX2)) {
-    AVX2::JxlFastLosslessProcessFrameImpl(frame_state, is_last, runner_opaque,
-                                          runner, output_processor);
-    return;
+    JXL_RETURN_IF_ERROR(AVX2::JxlFastLosslessProcessFrameImpl(
+        frame_state, is_last, runner_opaque, runner, output_processor));
+    return true;
   }
 #endif
 
-  default_implementation::JxlFastLosslessProcessFrameImpl(
-      frame_state, is_last, runner_opaque, runner, output_processor);
+  JXL_RETURN_IF_ERROR(default_implementation::JxlFastLosslessProcessFrameImpl(
+      frame_state, is_last, runner_opaque, runner, output_processor));
+  return true;
 }
 
 }  // extern "C"
 
 #if !FJXL_STANDALONE
-void JxlFastLosslessOutputFrame(
+bool JxlFastLosslessOutputFrame(
     JxlFastLosslessFrameState* frame_state,
     JxlEncoderOutputProcessorWrapper* output_processor) {
   size_t fl_size = JxlFastLosslessOutputSize(frame_state);
   size_t written = 0;
   while (written < fl_size) {
-    auto retval = output_processor->GetBuffer(32, fl_size - written);
-    assert(retval.status());
-    auto buffer = std::move(retval).value();
+    JXL_ASSIGN_OR_RETURN(auto buffer,
+                         output_processor->GetBuffer(32, fl_size - written));
     size_t n =
         JxlFastLosslessWriteOutput(frame_state, buffer.data(), buffer.size());
     if (n == 0) break;
-    buffer.advance(n);
+    JXL_RETURN_IF_ERROR(buffer.advance(n));
     written += n;
   };
+  return true;
 }
 #endif
 

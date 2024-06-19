@@ -9,6 +9,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include "lib/jxl/base/status.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tools/gauss_blur.cc"
 #include <hwy/aligned_allocator.h>
@@ -336,10 +338,9 @@ void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                             SingleInput(bottom < ysize ? in(bottom) + x : zero),
                             ctr, ring_buffer, OutputNone(), nullptr);
   }
-  JXL_DASSERT(n >= 0);
 
   // Start producing output; top is still out of bounds.
-  for (; static_cast<size_t>(n) < std::min(N + 1, ysize); ++n) {
+  for (n = 0; static_cast<size_t>(n) < std::min(N + 1, ysize); ++n) {
     const size_t bottom = n + N - 1;
     VerticalBlock<kVectors>(d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
                             SingleInput(bottom < ysize ? in(bottom) + x : zero),
@@ -452,7 +453,9 @@ hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma) {
 
   Matrix3x3d A{
       {{p_1, p_3, p_5}, {r_1, r_3, r_5} /* (56) */, {zeta_15, zeta_35, 1}}};
-  JXL_CHECK(Inv3x3Matrix(A));
+  Status status = Inv3x3Matrix(A);
+  (void)status;
+  JXL_DASSERT(status);
   const Vector3d gamma{1, radius * radius - sigma * sigma,  // (55)
                        zeta_15 * rho[0] + zeta_35 * rho[1] + rho[2]};
   Vector3d beta;
@@ -460,7 +463,7 @@ hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma) {
 
   // Sanity check: correctly solved for beta (IIR filter weights are normalized)
   const double sum = beta[0] * p_1 + beta[1] * p_3 + beta[2] * p_5;  // (39)
-  JXL_ASSERT(std::abs(sum - 1) < 1E-12);
+  JXL_DASSERT(std::abs(sum - 1) < 1E-12);
   (void)sum;
 
   rg->radius = static_cast<int>(radius);
@@ -506,10 +509,10 @@ hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma) {
 namespace {
 
 // Apply 1D horizontal scan to each row.
-void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                            const size_t xsize, const size_t ysize,
-                            const GetConstRow& in, const GetRow& out,
-                            ThreadPool* pool) {
+Status FastGaussianHorizontal(
+    const hwy::AlignedUniquePtr<RecursiveGaussian>& rg, const size_t xsize,
+    const size_t ysize, const GetConstRow& in, const GetRow& out,
+    ThreadPool* pool) {
   const auto process_line = [&](const uint32_t task,
                                 size_t /*thread*/) -> Status {
     const size_t y = task;
@@ -517,19 +520,22 @@ void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
     return true;
   };
 
-  JXL_CHECK(RunOnPool(pool, 0, ysize, ThreadPool::NoInit, process_line,
-                      "FastGaussianHorizontal"));
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, ysize, ThreadPool::NoInit,
+                                process_line, "FastGaussianHorizontal"));
+  return true;
 }
 
 }  // namespace
 
-void FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                  const size_t xsize, const size_t ysize, const GetConstRow& in,
-                  const GetRow& temp, const GetRow& out, ThreadPool* pool) {
-  FastGaussianHorizontal(rg, xsize, ysize, in, temp, pool);
+Status FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
+                    const size_t xsize, const size_t ysize,
+                    const GetConstRow& in, const GetRow& temp,
+                    const GetRow& out, ThreadPool* pool) {
+  JXL_RETURN_IF_ERROR(FastGaussianHorizontal(rg, xsize, ysize, in, temp, pool));
   GetConstRow temp_in = [&](size_t y) { return temp(y); };
   HWY_DYNAMIC_DISPATCH(FastGaussianVertical)
   (rg, xsize, ysize, temp_in, out, pool);
+  return true;
 }
 
 }  // namespace jxl

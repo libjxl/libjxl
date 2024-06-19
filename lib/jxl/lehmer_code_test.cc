@@ -38,7 +38,7 @@ struct WorkingSet {
 
 template <typename PermutationT>
 void Roundtrip(size_t n, WorkingSet<PermutationT>* ws) {
-  JXL_ASSERT(n != 0);
+  EXPECT_TRUE(n != 0);
   const size_t padded_n = 1ull << CeilLog2Nonzero(n);
 
   Rng rng(n * 65537 + 13);
@@ -53,10 +53,11 @@ void Roundtrip(size_t n, WorkingSet<PermutationT>* ws) {
     rng.Shuffle(ws->permutation.data(), n);
 
     // Must decode to the same permutation
-    ComputeLehmerCode(ws->permutation.data(), ws->temp.data(), n,
-                      ws->lehmer.data());
+    EXPECT_TRUE(ComputeLehmerCode(ws->permutation.data(), ws->temp.data(), n,
+                                  ws->lehmer.data()));
     memset(ws->temp.data(), 0, padded_n * 4);
-    DecodeLehmerCode(ws->lehmer.data(), ws->temp.data(), n, ws->decoded.data());
+    EXPECT_TRUE(DecodeLehmerCode(ws->lehmer.data(), ws->temp.data(), n,
+                                 ws->decoded.data()));
 
     for (size_t i = 0; i < n; ++i) {
       EXPECT_EQ(ws->permutation[i], ws->decoded[i]);
@@ -81,7 +82,7 @@ void RoundtripSizeRange(ThreadPool* pool, uint32_t begin, uint32_t end) {
     Roundtrip(n, &working_sets[thread]);
     return true;
   };
-  JXL_CHECK(RunOnPool(pool, begin, end, init, do_roundtrip, "lehmer test"));
+  ASSERT_TRUE(RunOnPool(pool, begin, end, init, do_roundtrip, "lehmer test"));
 }
 
 TEST(LehmerCodeTest, TestRoundtrips) {
