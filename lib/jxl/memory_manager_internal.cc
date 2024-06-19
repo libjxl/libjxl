@@ -91,8 +91,10 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
 
 StatusOr<AlignedMemory> AlignedMemory::Create(JxlMemoryManager* memory_manager,
                                               size_t size, size_t pre_padding) {
+  JXL_CHECK(pre_padding <= memory_manager_internal::kAlignment);
+  pre_padding = pre_padding ? memory_manager_internal::kAlignment : 0;
   size_t allocation_size = size + pre_padding + memory_manager_internal::kAlias;
-  if (size > allocation_size || size + pre_padding > allocation_size) {
+  if (size > allocation_size) {
     return JXL_FAILURE("Requested allocation is too large");
   }
   JXL_CHECK(memory_manager);
@@ -110,6 +112,7 @@ AlignedMemory::AlignedMemory(JxlMemoryManager* memory_manager, void* allocation,
   // Congruence to `offset` (mod kAlias) reduces cache conflicts and load/store
   // stalls, especially with large allocations that would otherwise have similar
   // alignments.
+  JXL_DASSERT(pre_padding <= memory_manager_internal::kAlignment);
   static std::atomic<uint32_t> next_group{0};
   size_t group =
       static_cast<size_t>(next_group.fetch_add(1, std::memory_order_relaxed));
@@ -117,14 +120,17 @@ AlignedMemory::AlignedMemory(JxlMemoryManager* memory_manager, void* allocation,
   size_t offset = memory_manager_internal::kAlignment * group;
 
   // Actual allocation.
-  uintptr_t address = reinterpret_cast<uintptr_t>(allocation) + pre_padding;
+  uintptr_t address = reinterpret_cast<uintptr_t>(allocation);
 
-  // Aligned address, but might land before allocation (50%/50%) or not have
-  // enough pre-padding.
+  // Aligned address, but might land before allocation (50%/50%).
   uintptr_t aligned_address =
       (address & ~(memory_manager_internal::kAlias - 1)) + offset;
   if (aligned_address < address)
     aligned_address += memory_manager_internal::kAlias;
+
+  // Sometimes we have to take different group to meet pre_padding requirement.
+  if (aligned_address < address + pre_padding)
+    aligned_address += memory_manager_internal::kAlignment;
 
   address_ = reinterpret_cast<void*>(aligned_address);  // NOLINT
 }
