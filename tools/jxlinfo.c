@@ -6,6 +6,7 @@
 // This example prints information from the main codestream header.
 
 #include <jxl/decode.h>
+#include <jxl/gain_map.h>
 
 // NB: this is a .c file, C++ headers are not allowed.
 #include <inttypes.h>  // PRIu64
@@ -14,11 +15,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-int PrintBasicInfo(FILE* file, int verbose) {
+static int PrintBasicInfo(FILE* file, int verbose) {
   uint8_t* data = NULL;
   size_t data_size = 0;
   // In how large chunks to read from the file and try decoding the basic info.
   const size_t chunk_size = 2048;
+  uint8_t* box_data = NULL;
+  size_t box_size = 0;
+  size_t box_index = 0;
 
   JxlDecoder* dec = JxlDecoderCreate(NULL);
   if (!dec) {
@@ -74,6 +78,19 @@ int PrintBasicInfo(FILE* file, int verbose) {
       if (feof(file)) JxlDecoderCloseInput(dec);
     } else if (status == JXL_DEC_SUCCESS) {
       // Finished all processing.
+      if (box_size > 0) {
+        size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
+        box_size -= remaining;
+        JxlGainMapBundle gain_map_bundle;
+        size_t bytes_read;
+        if (JxlGainMapReadBundle(&gain_map_bundle, box_data, box_size,
+                                 &bytes_read)) {
+        }
+        free(box_data);
+        box_data = NULL;
+        box_size = 0;
+        box_index = 0;
+      }
       break;
     } else if (status == JXL_DEC_BASIC_INFO) {
       if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec, &info)) {
@@ -364,10 +381,20 @@ int PrintBasicInfo(FILE* file, int verbose) {
         printf("Brotli-compressed %c%c%c%c metadata: %" PRIu64
                " compressed bytes\n",
                type[0], type[1], type[2], type[3], size);
+      } else if (!strncmp(type, "jhgm", 4)) {
+        box_data = malloc(chunk_size);
+        box_size = chunk_size;
+        JxlDecoderSetBoxBuffer(dec, box_data, box_size);
       } else {
         printf("unknown box: type: \"%c%c%c%c\" size: %" PRIu64 "\n", type[0],
                type[1], type[2], type[3], size);
       }
+    } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+      const size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
+      box_size += chunk_size;
+      box_index += chunk_size - remaining;
+      box_data = realloc(box_data, box_size);
+      JxlDecoderSetBoxBuffer(dec, box_data + box_index, box_size - box_index);
     } else {
       fprintf(stderr, "Unexpected decoder status\n");
       break;
@@ -409,7 +436,7 @@ static int print_basic_info_filename(const char* jxl_filename, int verbose) {
   return 0;
 }
 
-int is_flag(const char* arg, const char* const* opts) {
+static int is_flag(const char* arg, const char* const* opts) {
   for (int i = 0; opts[i] != NULL; i++) {
     if (!strcmp(opts[i], arg)) {
       return 1;

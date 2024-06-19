@@ -17,7 +17,7 @@
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
-#ifndef __cplusplus
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -66,7 +66,7 @@ JXL_EXPORT JXL_BOOL JxlICCProfileDecode(JxlMemoryManager* memory_manager,
                                         size_t compressed_icc_size,
                                         uint8_t** icc, size_t* icc_size);
 
-#ifndef __cplusplus
+#ifdef __cplusplus
 }
 #endif
 
