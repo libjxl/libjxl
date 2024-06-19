@@ -5,6 +5,7 @@
 
 // This example prints information from the main codestream header.
 
+#include <jxl/compressed_icc.h>
 #include <jxl/decode.h>
 #include <jxl/gain_map.h>
 
@@ -14,6 +15,45 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static void PrintColorEncoding(const JxlColorEncoding* color_encoding) {
+  const char* const cs_string[4] = {"RGB", "Grayscale", "XYB", "Unknown"};
+  const char* const wp_string[12] = {"", "D65", "Custom", "", "",  "",
+                                     "", "",    "",       "", "E", "P3"};
+  const char* const pr_string[12] = {"", "sRGB", "Custom",   "", "",  "", "",
+                                     "", "",     "Rec.2100", "", "P3"};
+  const char* const tf_string[19] = {
+      "", "709", "Unknown", "",     "", "", "",   "",    "Linear", "",
+      "", "",    "",        "sRGB", "", "", "PQ", "DCI", "HLG"};
+  const char* const ri_string[4] = {"Perceptual", "Relative", "Saturation",
+                                    "Absolute"};
+  printf("%s, ", cs_string[(*color_encoding).color_space]);
+  printf("%s, ", wp_string[(*color_encoding).white_point]);
+  if ((*color_encoding).white_point == JXL_WHITE_POINT_CUSTOM) {
+    printf("white_point(x=%f,y=%f), ", (*color_encoding).white_point_xy[0],
+           (*color_encoding).white_point_xy[1]);
+  }
+  if ((*color_encoding).color_space == JXL_COLOR_SPACE_RGB ||
+      (*color_encoding).color_space == JXL_COLOR_SPACE_UNKNOWN) {
+    printf("%s primaries", pr_string[(*color_encoding).primaries]);
+    if ((*color_encoding).primaries == JXL_PRIMARIES_CUSTOM) {
+      printf(": red(x=%f,y=%f),", (*color_encoding).primaries_red_xy[0],
+             (*color_encoding).primaries_red_xy[1]);
+      printf("  green(x=%f,y=%f),", (*color_encoding).primaries_green_xy[0],
+             (*color_encoding).primaries_green_xy[1]);
+      printf("  blue(x=%f,y=%f)", (*color_encoding).primaries_blue_xy[0],
+             (*color_encoding).primaries_blue_xy[1]);
+    } else
+      printf(", ");
+  }
+  if ((*color_encoding).transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
+    printf("gamma(%f) transfer function, ", (*color_encoding).gamma);
+  } else {
+    printf("%s transfer function, ",
+           tf_string[(*color_encoding).transfer_function]);
+  }
+  printf("rendering intent: %s", ri_string[(*color_encoding).rendering_intent]);
+}
 
 static int PrintBasicInfo(FILE* file, int verbose) {
   uint8_t* data = NULL;
@@ -83,8 +123,35 @@ static int PrintBasicInfo(FILE* file, int verbose) {
         box_size -= remaining;
         JxlGainMapBundle gain_map_bundle;
         size_t bytes_read;
-        if (JxlGainMapReadBundle(&gain_map_bundle, box_data, box_size,
-                                 &bytes_read)) {
+        if (!JxlGainMapReadBundle(&gain_map_bundle, box_data, box_size,
+                                  &bytes_read)) {
+          fprintf(stderr, "Invalid gain map box found\n");
+        } else {
+          uint8_t* icc = NULL;
+          size_t icc_size = 0;
+          JxlMemoryManager manager = {
+              .opaque = NULL, .alloc = NULL, .free = NULL};
+          if (gain_map_bundle.alt_icc_size > 0 &&
+              !JxlICCProfileDecode(&manager, gain_map_bundle.alt_icc,
+                                   gain_map_bundle.alt_icc_size, &icc,
+                                   &icc_size)) {
+            fprintf(stderr,
+                    "Invalid gain map box found (ICC profile does not "
+                    "decompress)\n");
+          }
+          printf("Gain map (jhgm) box: version = %u",
+                 gain_map_bundle.jhgm_version);
+          if (gain_map_bundle.has_color_encoding) {
+            printf(", color encoding = ");
+            PrintColorEncoding(&gain_map_bundle.color_encoding);
+          }
+          if (icc_size > 0) {
+            printf(", %lu-byte ICC profile", (unsigned long)icc_size);
+          }
+          printf(", %u-byte gain map, %u-byte metadata\n",
+                 gain_map_bundle.gain_map_size,
+                 gain_map_bundle.gain_map_metadata_size);
+          free(icc);
         }
         free(box_data);
         box_data = NULL;
@@ -240,44 +307,8 @@ static int PrintBasicInfo(FILE* file, int verbose) {
       if (JXL_DEC_SUCCESS ==
           JxlDecoderGetColorAsEncodedProfile(
               dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &color_encoding)) {
-        const char* const cs_string[4] = {"RGB", "Grayscale", "XYB", "Unknown"};
-        const char* const wp_string[12] = {"", "D65", "Custom", "", "",  "",
-                                           "", "",    "",       "", "E", "P3"};
-        const char* const pr_string[12] = {
-            "", "sRGB", "Custom", "", "", "", "", "", "", "Rec.2100", "", "P3"};
-        const char* const tf_string[19] = {
-            "", "709", "Unknown", "",     "", "", "",   "",    "Linear", "",
-            "", "",    "",        "sRGB", "", "", "PQ", "DCI", "HLG"};
-        const char* const ri_string[4] = {"Perceptual", "Relative",
-                                          "Saturation", "Absolute"};
-        printf("%s, ", cs_string[color_encoding.color_space]);
-        printf("%s, ", wp_string[color_encoding.white_point]);
-        if (color_encoding.white_point == JXL_WHITE_POINT_CUSTOM) {
-          printf("white_point(x=%f,y=%f), ", color_encoding.white_point_xy[0],
-                 color_encoding.white_point_xy[1]);
-        }
-        if (color_encoding.color_space == JXL_COLOR_SPACE_RGB ||
-            color_encoding.color_space == JXL_COLOR_SPACE_UNKNOWN) {
-          printf("%s primaries", pr_string[color_encoding.primaries]);
-          if (color_encoding.primaries == JXL_PRIMARIES_CUSTOM) {
-            printf(": red(x=%f,y=%f),", color_encoding.primaries_red_xy[0],
-                   color_encoding.primaries_red_xy[1]);
-            printf("  green(x=%f,y=%f),", color_encoding.primaries_green_xy[0],
-                   color_encoding.primaries_green_xy[1]);
-            printf("  blue(x=%f,y=%f)", color_encoding.primaries_blue_xy[0],
-                   color_encoding.primaries_blue_xy[1]);
-          } else
-            printf(", ");
-        }
-        if (color_encoding.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
-          printf("gamma(%f) transfer function, ", color_encoding.gamma);
-        } else {
-          printf("%s transfer function, ",
-                 tf_string[color_encoding.transfer_function]);
-        }
-        printf("rendering intent: %s\n",
-               ri_string[color_encoding.rendering_intent]);
-
+        PrintColorEncoding(&color_encoding);
+        puts("");
       } else {
         // The profile is not in JPEG XL encoded form, get as ICC profile
         // instead.
