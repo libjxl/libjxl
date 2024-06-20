@@ -79,7 +79,7 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
       return JXL_DEC_BOX_NEED_MORE_OUTPUT;
     }
     if (res == BROTLI_DECODER_RESULT_SUCCESS) {
-      return JXL_DEC_SUCCESS;
+      return JXL_DEC_BOX_COMPLETE;
     }
     // unknown Brotli result
     return JXL_DEC_ERROR;
@@ -99,7 +99,7 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
 
     if (!box_until_eof_ && remaining_ > 0) return JXL_DEC_NEED_MORE_INPUT;
 
-    return JXL_DEC_SUCCESS;
+    return JXL_DEC_BOX_COMPLETE;
   }
 }
 
