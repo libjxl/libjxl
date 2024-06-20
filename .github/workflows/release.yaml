@@ -245,23 +245,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - triplet: x86-windows-static
-            arch: '-A Win32'
-          - triplet: x64-windows-static
-            arch: '-A x64'
+          #- triplet: x86-windows-static
+          #  arch: '-A Win32'
+          - triplet: x64-mingw-dynamic
+            static: 'OFF'
+            arch: ''
             run_benchmark: true
-          - triplet: x86-windows
-            arch: '-A Win32'
-            static: 'OFF'
-            tools: 'OFF'
-          - triplet: x64-windows
-            arch: '-A x64'
-            static: 'OFF'
-            tools: 'OFF'
+          #- triplet: x86-windows
+          #  arch: '-A Win32'
+          #  static: 'OFF'
+          #  tools: 'OFF'
+          #- triplet: x64-windows
+          #  arch: '-A x64'
+          #  static: 'OFF'
+          #  tools: 'OFF'
 
     env:
-      VCPKG_VERSION: '2023.12.12'
+      VCPKG_VERSION: '2024.02.14'
       VCPKG_ROOT: vcpkg
+      VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/vcpkg_triplets
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.triplet }}
+      VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.triplet }}
       VCPKG_DISABLE_METRICS: 1
 
     steps:
@@ -275,6 +279,13 @@ jobs:
       with:
         submodules: true
         fetch-depth: 2
+
+    - name: Checkout Triplets
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      with:
+        repository: Neumann-A/my-vcpkg-triplets
+        ref: 197b1f3b40434a38d3901c08cba19a63eacf2be2
+        path: vcpkg_triplets
 
     - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
       id: cache-vcpkg
@@ -304,7 +315,7 @@ jobs:
       shell: 'bash'
       run: |
         set -x
-        ${VCPKG_ROOT}/vcpkg --triplet ${{ matrix.triplet }} install \
+        ${VCPKG_ROOT}/vcpkg install \
           giflib \
           libjpeg-turbo \
           libpng \
@@ -312,10 +323,15 @@ jobs:
           pkgconf \
         #
 
+    - name: Setup tmate session
+      if: failure()
+      uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3.17
+
     - name: Configure
       shell: 'bash'
       run: |
         set -x
+        rm -rf /c/Strawberry/perl
         mkdir build
         cmake -Bbuild -H. ${{ matrix.arch }} \
           -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
@@ -323,6 +339,8 @@ jobs:
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
+          -G "MinGW Makefiles" \
+          -DFOO="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
           -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
           -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
@@ -330,7 +348,6 @@ jobs:
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
           -DJPEGXL_ENABLE_DEVTOOLS=${{ matrix.tools || 'ON'}} \
-          -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
         #
     - name: Build
       shell: 'bash'
