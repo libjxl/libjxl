@@ -290,12 +290,13 @@ typedef enum {
    *
    * The buffer set with @ref JxlDecoderSetBoxBuffer must be set again for each
    * next box to be obtained, or can be left unset to skip outputting this box.
-   * The output buffer contains the full box data when the next ::JXL_DEC_BOX
-   * event or ::JXL_DEC_SUCCESS occurs. ::JXL_DEC_BOX occurs for all
-   * boxes, including non-metadata boxes such as the signature box or codestream
-   * boxes. To check whether the box is a metadata type for respectively EXIF,
-   * XMP or JUMBF, use @ref JxlDecoderGetBoxType and check for types "Exif",
-   * "xml " and "jumb" respectively.
+   * The output buffer contains the full box data when the
+   * ::JXL_DEC_BOX_COMPLETE (if subscribed to) or subsequent ::JXL_DEC_SUCCESS
+   * or ::JXL_DEC_BOX event occurs. ::JXL_DEC_BOX occurs for all boxes,
+   * including non-metadata boxes such as the signature box or codestream boxes.
+   * To check whether the box is a metadata type for respectively EXIF, XMP or
+   * JUMBF, use @ref JxlDecoderGetBoxType and check for types "Exif", "xml " and
+   * "jumb" respectively.
    *
    * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
    * start of the box header as unprocessed.
@@ -318,6 +319,11 @@ typedef enum {
    * unprocessed.
    */
   JXL_DEC_FRAME_PROGRESSION = 0x8000,
+
+  /** The box being decoded is now complete. This is only emitted if a buffer
+   * was set for the box.
+   */
+  JXL_DEC_BOX_COMPLETE = 0x10000,
 } JxlDecoderStatus;
 
 /** Types of progressive detail.
