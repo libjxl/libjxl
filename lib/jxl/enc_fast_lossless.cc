@@ -17,20 +17,44 @@
 #include <memory>
 #include <vector>
 
-#if !FJXL_STANDALONE
-#include "lib/jxl/encode_internal.h"
+#if FJXL_STANDALONE
+#if defined(_MSC_VER)
+using ssize_t = intptr_t;
 #endif
+#else  // FJXL_STANDALONE
+#include "lib/jxl/encode_internal.h"
+#endif  // FJXL_STANDALONE
+
+#if defined(__x86_64__) || defined(_M_X64)
+#define FJXL_ARCH_IS_X86_64 1
+#else
+#define FJXL_ARCH_IS_X86_64 0
+#endif
+
+#if defined(__i386__) || defined(_M_IX86) || FJXL_ARCH_IS_X86_64
+#define FJXL_ARCH_IS_X86 1
+#else
+#define FJXL_ARCH_IS_X86 0
+#endif
+
+#if FJXL_ARCH_IS_X86
+#if defined(_MSC_VER)
+#include <intrin.h>
+#else  // _MSC_VER
+#include <cpuid.h>
+#endif  // _MSC_VER
+#endif  // FJXL_ARCH_IS_X86
 
 // Enable NEON and AVX2/AVX512 if not asked to do otherwise and the compilers
 // support it.
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if defined(__aarch64__) || defined(_M_ARM64)  // ARCH
 #include <arm_neon.h>
 
-#ifndef FJXL_ENABLE_NEON
+#if !defined(FJXL_ENABLE_NEON)
 #define FJXL_ENABLE_NEON 1
-#endif
+#endif  // !defined(FJXL_ENABLE_NEON)
 
-#elif (defined(__x86_64__) || defined(_M_X64)) && !defined(_MSC_VER)
+#elif FJXL_ARCH_IS_X86_64 && !defined(_MSC_VER)  // ARCH
 #include <immintrin.h>
 
 // manually add _mm512_cvtsi512_si32 definition if missing
@@ -46,14 +70,11 @@ _mm512_cvtsi512_si32(__m512i __A) {
 }
 #endif
 
-// TODO(veluca): MSVC support for dynamic dispatch.
-#if defined(__clang__) || defined(__GNUC__)
-
-#ifndef FJXL_ENABLE_AVX2
+#if !defined(FJXL_ENABLE_AVX2)
 #define FJXL_ENABLE_AVX2 1
-#endif
+#endif  // !defined(FJXL_ENABLE_AVX2)
 
-#ifndef FJXL_ENABLE_AVX512
+#if !defined(FJXL_ENABLE_AVX512)
 // On clang-7 or earlier, and gcc-10 or earlier, AVX512 seems broken.
 #if (defined(__clang__) &&                                             \
          (!defined(__apple_build_version__) && __clang_major__ > 7) || \
@@ -62,11 +83,9 @@ _mm512_cvtsi512_si32(__m512i __A) {
     (defined(__GNUC__) && __GNUC__ > 10)
 #define FJXL_ENABLE_AVX512 1
 #endif
-#endif
+#endif  // !defined(FJXL_ENABLE_AVX512)
 
-#endif
-
-#endif
+#endif  // ARCH
 
 #ifndef FJXL_ENABLE_NEON
 #define FJXL_ENABLE_NEON 0
@@ -81,6 +100,109 @@ _mm512_cvtsi512_si32(__m512i __A) {
 #endif
 
 namespace {
+
+enum class CpuFeature : uint32_t {
+  kAVX2 = 0,
+
+  kAVX512F,
+  kAVX512VL,
+  kAVX512CD,
+  kAVX512BW,
+
+  kVBMI,
+  kVBMI2
+};
+
+constexpr uint32_t CpuFeatureBit(CpuFeature feature) {
+  return 1u << static_cast<uint32_t>(feature);
+}
+
+#if FJXL_ARCH_IS_X86
+#if defined(_MSC_VER)
+void Cpuid(const uint32_t level, const uint32_t count,
+           std::array<uint32_t, 4>& abcd) {
+  int regs[4];
+  __cpuidex(regs, level, count);
+  for (int i = 0; i < 4; ++i) {
+    abcd[i] = regs[i];
+  }
+}
+uint32_t ReadXCR0() { return static_cast<uint32_t>(_xgetbv(0)); }
+#else   // _MSC_VER
+void Cpuid(const uint32_t level, const uint32_t count,
+           std::array<uint32_t, 4>& abcd) {
+  uint32_t a;
+  uint32_t b;
+  uint32_t c;
+  uint32_t d;
+  __cpuid_count(level, count, a, b, c, d);
+  abcd[0] = a;
+  abcd[1] = b;
+  abcd[2] = c;
+  abcd[3] = d;
+}
+uint32_t ReadXCR0() {
+  uint32_t xcr0;
+  uint32_t xcr0_high;
+  const uint32_t index = 0;
+  asm volatile(".byte 0x0F, 0x01, 0xD0"
+               : "=a"(xcr0), "=d"(xcr0_high)
+               : "c"(index));
+  return xcr0;
+}
+#endif  // _MSC_VER
+
+uint32_t DetectCpuFeatures() {
+  uint32_t flags = 0;  // return value
+  std::array<uint32_t, 4> abcd;
+  Cpuid(0, 0, abcd);
+  const uint32_t max_level = abcd[0];
+
+  const auto check_bit = [](uint32_t v, uint32_t idx) -> bool {
+    return (v & (1U << idx)) != 0;
+  };
+
+  // Extended features
+  if (max_level >= 7) {
+    Cpuid(7, 0, abcd);
+    flags |= check_bit(abcd[1], 5) ? CpuFeatureBit(CpuFeature::kAVX2) : 0;
+
+    flags |= check_bit(abcd[1], 16) ? CpuFeatureBit(CpuFeature::kAVX512F) : 0;
+    flags |= check_bit(abcd[1], 28) ? CpuFeatureBit(CpuFeature::kAVX512CD) : 0;
+    flags |= check_bit(abcd[1], 30) ? CpuFeatureBit(CpuFeature::kAVX512BW) : 0;
+    flags |= check_bit(abcd[1], 31) ? CpuFeatureBit(CpuFeature::kAVX512VL) : 0;
+
+    flags |= check_bit(abcd[2], 1) ? CpuFeatureBit(CpuFeature::kVBMI) : 0;
+    flags |= check_bit(abcd[2], 6) ? CpuFeatureBit(CpuFeature::kVBMI2) : 0;
+  }
+
+  Cpuid(1, 0, abcd);
+  const bool os_has_xsave = check_bit(abcd[2], 27);
+  if (os_has_xsave) {
+    const uint32_t xcr0 = ReadXCR0();
+    if (!check_bit(xcr0, 1) || !check_bit(xcr0, 2) || !check_bit(xcr0, 5) ||
+        !check_bit(xcr0, 6) || !check_bit(xcr0, 7)) {
+      flags = 0;  // TODO(eustas): be more selective?
+    }
+  }
+
+  return flags;
+}
+#else   // FJXL_ARCH_IS_X86
+uint32_t DetectCpuFeatures() { return 0; }
+#endif  // FJXL_ARCH_IS_X86
+
+#if defined(_MSC_VER)
+#define FJXL_UNUSED
+#else
+#define FJXL_UNUSED __attribute__((unused))
+#endif
+
+FJXL_UNUSED bool HasCpuFeature(CpuFeature feature) {
+  static uint32_t cpu_features = DetectCpuFeatures();
+  return (cpu_features & CpuFeatureBit(feature)) != 0;
+}
+
 #if defined(_MSC_VER) && !defined(__clang__)
 #define FJXL_INLINE __forceinline
 FJXL_INLINE uint32_t FloorLog2(uint32_t v) {
@@ -98,7 +220,9 @@ FJXL_INLINE uint32_t CtzNonZero(uint64_t v) {
 FJXL_INLINE uint32_t FloorLog2(uint32_t v) {
   return v ? 31 - __builtin_clz(v) : 0;
 }
-FJXL_INLINE uint32_t CtzNonZero(uint64_t v) { return __builtin_ctzll(v); }
+FJXL_UNUSED FJXL_INLINE uint32_t CtzNonZero(uint64_t v) {
+  return __builtin_ctzll(v);
+}
 #endif
 
 // Compiles to a memcpy on little-endian systems.
@@ -200,6 +324,7 @@ size_t TOCBucket(size_t group_size) {
   return bucket;
 }
 
+#if !FJXL_STANDALONE
 size_t TOCSize(const std::vector<size_t>& group_sizes) {
   size_t toc_bits = 0;
   for (size_t group_size : group_sizes) {
@@ -212,6 +337,7 @@ size_t FrameHeaderSize(bool have_alpha, bool is_last) {
   size_t nbits = 28 + (have_alpha ? 4 : 0) + (is_last ? 0 : 2);
   return (nbits + 7) / 8;
 }
+#endif
 
 void ComputeAcGroupDataOffset(size_t dc_global_size, size_t num_dc_groups,
                               size_t num_ac_groups, size_t& min_dc_global_size,
@@ -234,6 +360,7 @@ void ComputeAcGroupDataOffset(size_t dc_global_size, size_t num_dc_groups,
   ac_group_offset = kMaxFrameHeaderSize + max_toc_size + min_dc_global_size;
 }
 
+#if !FJXL_STANDALONE
 size_t ComputeDcGlobalPadding(const std::vector<size_t>& group_sizes,
                               size_t ac_group_data_offset,
                               size_t min_dc_global_size, bool have_alpha,
@@ -245,6 +372,7 @@ size_t ComputeDcGlobalPadding(const std::vector<size_t>& group_sizes,
       FrameHeaderSize(have_alpha, is_last) + toc_size + group_sizes[0];
   return ac_group_data_offset - actual_offset;
 }
+#endif
 
 constexpr size_t kNumRawSymbols = 19;
 constexpr size_t kNumLZ77 = 33;
@@ -788,7 +916,7 @@ size_t JxlFastLosslessWriteOutput(JxlFastLosslessFrameState* frame,
                                          unsigned char*, uint64_t&) = nullptr;
 
 #if FJXL_ENABLE_AVX512
-  if (__builtin_cpu_supports("avx512vbmi2")) {
+  if (HasCpuFeature(CpuFeature::kVBMI2)) {
     append_bytes_with_bit_offset = AppendBytesWithBitOffset;
   }
 #endif
@@ -4141,16 +4269,17 @@ JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
     size_t nb_chans, size_t bitdepth, bool big_endian, int effort,
     int oneshot) {
 #if FJXL_ENABLE_AVX512
-  if (__builtin_cpu_supports("avx512cd") &&
-      __builtin_cpu_supports("avx512vbmi") &&
-      __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512f") &&
-      __builtin_cpu_supports("avx512vl")) {
+  if (HasCpuFeature(CpuFeature::kAVX512CD) &&
+      HasCpuFeature(CpuFeature::kVBMI) &&
+      HasCpuFeature(CpuFeature::kAVX512BW) &&
+      HasCpuFeature(CpuFeature::kAVX512F) &&
+      HasCpuFeature(CpuFeature::kAVX512VL)) {
     return AVX512::JxlFastLosslessPrepareImpl(
         input, width, height, nb_chans, bitdepth, big_endian, effort, oneshot);
   }
 #endif
 #if FJXL_ENABLE_AVX2
-  if (__builtin_cpu_supports("avx2")) {
+  if (HasCpuFeature(CpuFeature::kAVX2)) {
     return AVX2::JxlFastLosslessPrepareImpl(
         input, width, height, nb_chans, bitdepth, big_endian, effort, oneshot);
   }
@@ -4176,17 +4305,18 @@ void JxlFastLosslessProcessFrame(
   }
 
 #if FJXL_ENABLE_AVX512
-  if (__builtin_cpu_supports("avx512cd") &&
-      __builtin_cpu_supports("avx512vbmi") &&
-      __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512f") &&
-      __builtin_cpu_supports("avx512vl")) {
+  if (HasCpuFeature(CpuFeature::kAVX512CD) &&
+      HasCpuFeature(CpuFeature::kVBMI) &&
+      HasCpuFeature(CpuFeature::kAVX512BW) &&
+      HasCpuFeature(CpuFeature::kAVX512F) &&
+      HasCpuFeature(CpuFeature::kAVX512VL)) {
     AVX512::JxlFastLosslessProcessFrameImpl(frame_state, is_last, runner_opaque,
                                             runner, output_processor);
     return;
   }
 #endif
 #if FJXL_ENABLE_AVX2
-  if (__builtin_cpu_supports("avx2")) {
+  if (HasCpuFeature(CpuFeature::kAVX2)) {
     AVX2::JxlFastLosslessProcessFrameImpl(frame_state, is_last, runner_opaque,
                                           runner, output_processor);
     return;
