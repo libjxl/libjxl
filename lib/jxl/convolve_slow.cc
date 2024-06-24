@@ -118,20 +118,20 @@ void SlowSymmetric3(const ImageF& in, const Rect& rect,
   const int64_t ysize = static_cast<int64_t>(rect.ysize());
   const int64_t kRadius = 1;
 
-  JXL_CHECK(RunOnPool(
-      pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
-      [&](const uint32_t task, size_t /*thread*/) {
-        const int64_t iy = task;
-        float* JXL_RESTRICT out_row = out->Row(static_cast<size_t>(iy));
+  const auto process_row = [&](const uint32_t task,
+                               size_t /*thread*/) -> Status {
+    const int64_t iy = task;
+    float* JXL_RESTRICT out_row = out->Row(static_cast<size_t>(iy));
 
-        if (iy < kRadius || iy >= ysize - kRadius) {
-          SlowSymmetric3Row<WrapMirror>(in, iy, xsize, ysize, weights, out_row);
-        } else {
-          SlowSymmetric3Row<WrapUnchanged>(in, iy, xsize, ysize, weights,
-                                           out_row);
-        }
-      },
-      "SlowSymmetric3"));
+    if (iy < kRadius || iy >= ysize - kRadius) {
+      SlowSymmetric3Row<WrapMirror>(in, iy, xsize, ysize, weights, out_row);
+    } else {
+      SlowSymmetric3Row<WrapUnchanged>(in, iy, xsize, ysize, weights, out_row);
+    }
+    return true;
+  };
+  JXL_CHECK(RunOnPool(pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+                      process_row, "SlowSymmetric3"));
 }
 
 namespace {
@@ -172,19 +172,20 @@ void SlowSeparable(const ImageF& in, const Rect& in_rect,
   const float* horz_weights = &weights.horz[0];
   const float* vert_weights = &weights.vert[0];
 
-  const size_t ysize = in_rect.ysize();
-  JXL_CHECK(RunOnPool(
-      pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
-      [&](const uint32_t task, size_t /*thread*/) {
-        const int64_t y = task;
+  const auto process_row = [&](const uint32_t task,
+                               size_t /*thread*/) -> Status {
+    const int64_t y = task;
 
-        float* const JXL_RESTRICT row_out = out_rect.Row(out, y);
-        for (size_t x = 0; x < in_rect.xsize(); ++x) {
-          row_out[x] = SlowSeparablePixel(in, in_rect, x, y, /*radius=*/R,
-                                          horz_weights, vert_weights);
-        }
-      },
-      "SlowSeparable"));
+    float* const JXL_RESTRICT row_out = out_rect.Row(out, y);
+    for (size_t x = 0; x < in_rect.xsize(); ++x) {
+      row_out[x] = SlowSeparablePixel(in, in_rect, x, y, /*radius=*/R,
+                                      horz_weights, vert_weights);
+    }
+    return true;
+  };
+  const size_t ysize = in_rect.ysize();
+  JXL_CHECK(RunOnPool(pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+                      process_row, "SlowSeparable"));
 }
 
 }  // namespace

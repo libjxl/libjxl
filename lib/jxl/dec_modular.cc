@@ -7,7 +7,6 @@
 
 #include <jxl/memory_manager.h>
 
-#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -583,71 +582,73 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       }
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
         JXL_ASSERT(!fp);
-        JXL_RETURN_IF_ERROR(RunOnPool(
-            pool, 0, ysize_shifted, ThreadPool::NoInit,
-            [&](const uint32_t task, size_t /* thread */) {
-              const size_t y = task;
-              const pixel_type* const JXL_RESTRICT row_in =
-                  mr.Row(&ch_in.plane, y);
-              const pixel_type* const JXL_RESTRICT row_in_Y =
-                  mr.Row(&gi.channel[0].plane, y);
-              float* const JXL_RESTRICT row_out = get_row(c, y);
-              HWY_DYNAMIC_DISPATCH(MultiplySum)
-              (xsize_shifted, row_in, row_in_Y, factor, row_out);
-            },
-            "ModularIntToFloat"));
+        const auto process_row = [&](const uint32_t task,
+                                     size_t /* thread */) -> Status {
+          const size_t y = task;
+          const pixel_type* const JXL_RESTRICT row_in = mr.Row(&ch_in.plane, y);
+          const pixel_type* const JXL_RESTRICT row_in_Y =
+              mr.Row(&gi.channel[0].plane, y);
+          float* const JXL_RESTRICT row_out = get_row(c, y);
+          HWY_DYNAMIC_DISPATCH(MultiplySum)
+          (xsize_shifted, row_in, row_in_Y, factor, row_out);
+          return true;
+        };
+        JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, ysize_shifted,
+                                      ThreadPool::NoInit, process_row,
+                                      "ModularIntToFloat"));
       } else if (fp) {
         int bits = metadata->m.bit_depth.bits_per_sample;
         int exp_bits = metadata->m.bit_depth.exponent_bits_per_sample;
-        JXL_RETURN_IF_ERROR(RunOnPool(
-            pool, 0, ysize_shifted, ThreadPool::NoInit,
-            [&](const uint32_t task, size_t /* thread */) {
-              const size_t y = task;
-              const pixel_type* const JXL_RESTRICT row_in =
-                  mr.Row(&ch_in.plane, y);
-              if (rgb_from_gray) {
-                for (size_t cc = 0; cc < 3; cc++) {
-                  float* const JXL_RESTRICT row_out = get_row(cc, y);
-                  int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
-                }
-              } else {
-                float* const JXL_RESTRICT row_out = get_row(c, y);
-                int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
-              }
-            },
-            "ModularIntToFloat_losslessfloat"));
+        const auto process_row = [&](const uint32_t task,
+                                     size_t /* thread */) -> Status {
+          const size_t y = task;
+          const pixel_type* const JXL_RESTRICT row_in = mr.Row(&ch_in.plane, y);
+          if (rgb_from_gray) {
+            for (size_t cc = 0; cc < 3; cc++) {
+              float* const JXL_RESTRICT row_out = get_row(cc, y);
+              int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
+            }
+          } else {
+            float* const JXL_RESTRICT row_out = get_row(c, y);
+            int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
+          }
+          return true;
+        };
+        JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, ysize_shifted,
+                                      ThreadPool::NoInit, process_row,
+                                      "ModularIntToFloat_losslessfloat"));
       } else {
-        JXL_RETURN_IF_ERROR(RunOnPool(
-            pool, 0, ysize_shifted, ThreadPool::NoInit,
-            [&](const uint32_t task, size_t /* thread */) {
-              const size_t y = task;
-              const pixel_type* const JXL_RESTRICT row_in =
-                  mr.Row(&ch_in.plane, y);
-              if (rgb_from_gray) {
-                if (full_image.bitdepth < 23) {
-                  HWY_DYNAMIC_DISPATCH(RgbFromSingle)
-                  (xsize_shifted, row_in, factor, get_row(0, y), get_row(1, y),
-                   get_row(2, y));
-                } else {
-                  SingleFromSingleAccurate(xsize_shifted, row_in, factor,
-                                           get_row(0, y));
-                  SingleFromSingleAccurate(xsize_shifted, row_in, factor,
-                                           get_row(1, y));
-                  SingleFromSingleAccurate(xsize_shifted, row_in, factor,
-                                           get_row(2, y));
-                }
-              } else {
-                float* const JXL_RESTRICT row_out = get_row(c, y);
-                if (full_image.bitdepth < 23) {
-                  HWY_DYNAMIC_DISPATCH(SingleFromSingle)
-                  (xsize_shifted, row_in, factor, row_out);
-                } else {
-                  SingleFromSingleAccurate(xsize_shifted, row_in, factor,
-                                           row_out);
-                }
-              }
-            },
-            "ModularIntToFloat"));
+        const auto process_row = [&](const uint32_t task,
+                                     size_t /* thread */) -> Status {
+          const size_t y = task;
+          const pixel_type* const JXL_RESTRICT row_in = mr.Row(&ch_in.plane, y);
+          if (rgb_from_gray) {
+            if (full_image.bitdepth < 23) {
+              HWY_DYNAMIC_DISPATCH(RgbFromSingle)
+              (xsize_shifted, row_in, factor, get_row(0, y), get_row(1, y),
+               get_row(2, y));
+            } else {
+              SingleFromSingleAccurate(xsize_shifted, row_in, factor,
+                                       get_row(0, y));
+              SingleFromSingleAccurate(xsize_shifted, row_in, factor,
+                                       get_row(1, y));
+              SingleFromSingleAccurate(xsize_shifted, row_in, factor,
+                                       get_row(2, y));
+            }
+          } else {
+            float* const JXL_RESTRICT row_out = get_row(c, y);
+            if (full_image.bitdepth < 23) {
+              HWY_DYNAMIC_DISPATCH(SingleFromSingle)
+              (xsize_shifted, row_in, factor, row_out);
+            } else {
+              SingleFromSingleAccurate(xsize_shifted, row_in, factor, row_out);
+            }
+          }
+          return true;
+        };
+        JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, ysize_shifted,
+                                      ThreadPool::NoInit, process_row,
+                                      "ModularIntToFloat"));
       }
       if (rgb_from_gray) {
         break;
@@ -728,32 +729,27 @@ Status ModularFrameDecoder::FinalizeDecoding(const FrameHeader& frame_header,
   for (size_t i = 0; i < dec_state->shared->frame_dim.num_groups; i++) {
     dec_state->render_pipeline->ClearDone(i);
   }
-  std::atomic<bool> has_error{false};
-  JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, dec_state->shared->frame_dim.num_groups,
-      [&](size_t num_threads) {
-        bool use_group_ids = (frame_header.encoding == FrameEncoding::kVarDCT ||
-                              (frame_header.flags & FrameHeader::kNoise));
-        return dec_state->render_pipeline->PrepareForThreads(num_threads,
-                                                             use_group_ids);
-      },
-      [&](const uint32_t group, size_t thread_id) {
-        if (has_error) return;
-        RenderPipelineInput input =
-            dec_state->render_pipeline->GetInputBuffers(group, thread_id);
-        if (!ModularImageToDecodedRect(
-                frame_header, gi, dec_state, nullptr, input,
-                dec_state->shared->frame_dim.GroupRect(group))) {
-          has_error = true;
-          return;
-        }
-        if (!input.Done()) {
-          has_error = true;
-          return;
-        }
-      },
-      "ModularToRect"));
-  if (has_error) return JXL_FAILURE("Error producing input to render pipeline");
+
+  const auto init = [&](size_t num_threads) -> Status {
+    bool use_group_ids = (frame_header.encoding == FrameEncoding::kVarDCT ||
+                          (frame_header.flags & FrameHeader::kNoise));
+    JXL_RETURN_IF_ERROR(dec_state->render_pipeline->PrepareForThreads(
+        num_threads, use_group_ids));
+    return true;
+  };
+  const auto process_group = [&](const uint32_t group,
+                                 size_t thread_id) -> Status {
+    RenderPipelineInput input =
+        dec_state->render_pipeline->GetInputBuffers(group, thread_id);
+    JXL_RETURN_IF_ERROR(ModularImageToDecodedRect(
+        frame_header, gi, dec_state, nullptr, input,
+        dec_state->shared->frame_dim.GroupRect(group)));
+    JXL_RETURN_IF_ERROR(input.Done());
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0,
+                                dec_state->shared->frame_dim.num_groups, init,
+                                process_group, "ModularToRect"));
   return true;
 }
 

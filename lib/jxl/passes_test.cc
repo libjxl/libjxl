@@ -200,12 +200,12 @@ TEST(PassesTest, AllDownsampleFeasible) {
   // TODO(veluca): re-enable downsampling 16.
   std::vector<size_t> downsamplings = {1, 2, 4, 8};  //, 16};
 
-  auto check = [&](const uint32_t task, size_t /* thread */) -> void {
+  auto check = [&](const uint32_t task, size_t /* thread */) -> Status {
     const size_t downsampling = downsamplings[task];
     extras::JXLDecompressParams dparams;
     dparams.max_downsampling = downsampling;
     CodecInOut output{memory_manager};
-    ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &output));
+    JXL_RETURN_IF_ERROR(test::DecodeFile(dparams, Bytes(compressed), &output));
     EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
     EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
     EXPECT_LE(ButteraugliDistance(io.frames, output.frames, ButteraugliParams(),
@@ -213,6 +213,7 @@ TEST(PassesTest, AllDownsampleFeasible) {
                                   /*distmap=*/nullptr, nullptr),
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
+    return true;
   };
   EXPECT_TRUE(RunOnPool(pool.get(), 0, downsamplings.size(), ThreadPool::NoInit,
                         check, "TestDownsampling"));
@@ -246,12 +247,12 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   // factors achievable.
   std::vector<size_t> downsamplings = {1, 2, 4, 8};
 
-  auto check = [&](const uint32_t task, size_t /* thread */) -> void {
+  auto check = [&](const uint32_t task, size_t /* thread */) -> Status {
     const size_t downsampling = downsamplings[task];
     extras::JXLDecompressParams dparams;
     dparams.max_downsampling = downsampling;
     CodecInOut output{memory_manager};
-    ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &output));
+    JXL_RETURN_IF_ERROR(test::DecodeFile(dparams, Bytes(compressed), &output));
     EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
     EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
     EXPECT_LE(ButteraugliDistance(io.frames, output.frames, ButteraugliParams(),
@@ -259,6 +260,7 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
                                   /*distmap=*/nullptr),
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
+    return true;
   };
   EXPECT_TRUE(RunOnPool(pool.get(), 0, downsamplings.size(), ThreadPool::NoInit,
                         check, "TestQProgressive"));

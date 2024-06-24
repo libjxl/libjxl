@@ -104,7 +104,7 @@ class AlignedMemory {
   ~AlignedMemory();
 
   static StatusOr<AlignedMemory> Create(JxlMemoryManager* memory_manager,
-                                        size_t size);
+                                        size_t size, size_t pre_padding = 0);
 
   template <typename T>
   T* address() const {
@@ -117,7 +117,8 @@ class AlignedMemory {
   //               might be useful for resizeable containers (e.g. PaddedBytes)
 
  private:
-  AlignedMemory(JxlMemoryManager* memory_manager, void* allocation);
+  AlignedMemory(JxlMemoryManager* memory_manager, void* allocation,
+                size_t pre_padding);
 
   void* allocation_;
   JxlMemoryManager* memory_manager_;

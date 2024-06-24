@@ -7,8 +7,6 @@
 
 #include <jxl/memory_manager.h>
 
-#include <atomic>
-
 #include "lib/jxl/modular/transform/transform.h"  // CheckEqualChannels
 
 namespace jxl {
@@ -20,7 +18,6 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   if (input.nb_meta_channels < 1) {
     return JXL_FAILURE("Error: Palette transform without palette.");
   }
-  std::atomic<int> num_errors{0};
   int nb = input.channel[0].h;
   uint32_t c0 = begin_c + 1;
   if (c0 >= input.channel.size()) {
@@ -48,41 +45,42 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
     // Avoid touching "empty" channels with non-zero height.
   } else if (nb_deltas == 0 && predictor == Predictor::Zero) {
     if (nb == 1) {
-      JXL_RETURN_IF_ERROR(RunOnPool(
-          pool, 0, h, ThreadPool::NoInit,
-          [&](const uint32_t task, size_t /* thread */) {
-            const size_t y = task;
-            pixel_type *p = input.channel[c0].Row(y);
-            for (size_t x = 0; x < w; x++) {
-              const int index =
-                  Clamp1<int>(p[x], 0, static_cast<pixel_type>(palette.w) - 1);
-              p[x] = palette_internal::GetPaletteValue(
-                  p_palette, index, /*c=*/0,
-                  /*palette_size=*/palette.w,
-                  /*onerow=*/onerow, /*bit_depth=*/bit_depth);
-            }
-          },
-          "UndoChannelPalette"));
+      const auto process_row = [&](const uint32_t task,
+                                   size_t /* thread */) -> Status {
+        const size_t y = task;
+        pixel_type *p = input.channel[c0].Row(y);
+        for (size_t x = 0; x < w; x++) {
+          const int index =
+              Clamp1<int>(p[x], 0, static_cast<pixel_type>(palette.w) - 1);
+          p[x] = palette_internal::GetPaletteValue(p_palette, index, /*c=*/0,
+                                                   /*palette_size=*/palette.w,
+                                                   /*onerow=*/onerow,
+                                                   /*bit_depth=*/bit_depth);
+        }
+        return true;
+      };
+      JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, h, ThreadPool::NoInit, process_row,
+                                    "UndoChannelPalette"));
     } else {
-      JXL_RETURN_IF_ERROR(RunOnPool(
-          pool, 0, h, ThreadPool::NoInit,
-          [&](const uint32_t task, size_t /* thread */) {
-            const size_t y = task;
-            std::vector<pixel_type *> p_out(nb);
-            const pixel_type *p_index = input.channel[c0].Row(y);
-            for (int c = 0; c < nb; c++)
-              p_out[c] = input.channel[c0 + c].Row(y);
-            for (size_t x = 0; x < w; x++) {
-              const int index = p_index[x];
-              for (int c = 0; c < nb; c++) {
-                p_out[c][x] = palette_internal::GetPaletteValue(
-                    p_palette, index, /*c=*/c,
-                    /*palette_size=*/palette.w,
-                    /*onerow=*/onerow, /*bit_depth=*/bit_depth);
-              }
-            }
-          },
-          "UndoPalette"));
+      const auto process_row = [&](const uint32_t task,
+                                   size_t /* thread */) -> Status {
+        const size_t y = task;
+        std::vector<pixel_type *> p_out(nb);
+        const pixel_type *p_index = input.channel[c0].Row(y);
+        for (int c = 0; c < nb; c++) p_out[c] = input.channel[c0 + c].Row(y);
+        for (size_t x = 0; x < w; x++) {
+          const int index = p_index[x];
+          for (int c = 0; c < nb; c++) {
+            p_out[c][x] = palette_internal::GetPaletteValue(
+                p_palette, index, /*c=*/c,
+                /*palette_size=*/palette.w,
+                /*onerow=*/onerow, /*bit_depth=*/bit_depth);
+          }
+        }
+        return true;
+      };
+      JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, h, ThreadPool::NoInit, process_row,
+                                    "UndoPalette"));
     }
   } else {
     // Parallelized per channel.
@@ -92,64 +90,63 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
         indices, ImageI::Create(memory_manager, plane.xsize(), plane.ysize()));
     plane.Swap(indices);
     if (predictor == Predictor::Weighted) {
-      JXL_RETURN_IF_ERROR(RunOnPool(
-          pool, 0, nb, ThreadPool::NoInit,
-          [&](const uint32_t c, size_t /* thread */) {
-            Channel &channel = input.channel[c0 + c];
-            weighted::State wp_state(wp_header, channel.w, channel.h);
-            for (size_t y = 0; y < channel.h; y++) {
-              pixel_type *JXL_RESTRICT p = channel.Row(y);
-              const pixel_type *JXL_RESTRICT idx = indices.Row(y);
-              for (size_t x = 0; x < channel.w; x++) {
-                int index = idx[x];
-                pixel_type_w val = 0;
-                const pixel_type palette_entry =
-                    palette_internal::GetPaletteValue(
-                        p_palette, index, /*c=*/c,
-                        /*palette_size=*/palette.w, /*onerow=*/onerow,
-                        /*bit_depth=*/bit_depth);
-                if (index < static_cast<int32_t>(nb_deltas)) {
-                  PredictionResult pred =
-                      PredictNoTreeWP(channel.w, p + x, onerow_image, x, y,
-                                      predictor, &wp_state);
-                  val = pred.guess + palette_entry;
-                } else {
-                  val = palette_entry;
-                }
-                p[x] = val;
-                wp_state.UpdateErrors(p[x], x, y, channel.w);
-              }
+      const auto process_row = [&](const uint32_t c,
+                                   size_t /* thread */) -> Status {
+        Channel &channel = input.channel[c0 + c];
+        weighted::State wp_state(wp_header, channel.w, channel.h);
+        for (size_t y = 0; y < channel.h; y++) {
+          pixel_type *JXL_RESTRICT p = channel.Row(y);
+          const pixel_type *JXL_RESTRICT idx = indices.Row(y);
+          for (size_t x = 0; x < channel.w; x++) {
+            int index = idx[x];
+            pixel_type_w val = 0;
+            const pixel_type palette_entry = palette_internal::GetPaletteValue(
+                p_palette, index, /*c=*/c,
+                /*palette_size=*/palette.w, /*onerow=*/onerow,
+                /*bit_depth=*/bit_depth);
+            if (index < static_cast<int32_t>(nb_deltas)) {
+              PredictionResult pred = PredictNoTreeWP(
+                  channel.w, p + x, onerow_image, x, y, predictor, &wp_state);
+              val = pred.guess + palette_entry;
+            } else {
+              val = palette_entry;
             }
-          },
-          "UndoDeltaPaletteWP"));
+            p[x] = val;
+            wp_state.UpdateErrors(p[x], x, y, channel.w);
+          }
+        }
+        return true;
+      };
+      JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, nb, ThreadPool::NoInit,
+                                    process_row, "UndoDeltaPaletteWP"));
     } else {
-      JXL_RETURN_IF_ERROR(RunOnPool(
-          pool, 0, nb, ThreadPool::NoInit,
-          [&](const uint32_t c, size_t /* thread */) {
-            Channel &channel = input.channel[c0 + c];
-            for (size_t y = 0; y < channel.h; y++) {
-              pixel_type *JXL_RESTRICT p = channel.Row(y);
-              const pixel_type *JXL_RESTRICT idx = indices.Row(y);
-              for (size_t x = 0; x < channel.w; x++) {
-                int index = idx[x];
-                pixel_type_w val = 0;
-                const pixel_type palette_entry =
-                    palette_internal::GetPaletteValue(
-                        p_palette, index, /*c=*/c,
-                        /*palette_size=*/palette.w,
-                        /*onerow=*/onerow, /*bit_depth=*/bit_depth);
-                if (index < static_cast<int32_t>(nb_deltas)) {
-                  PredictionResult pred = PredictNoTreeNoWP(
-                      channel.w, p + x, onerow_image, x, y, predictor);
-                  val = pred.guess + palette_entry;
-                } else {
-                  val = palette_entry;
-                }
-                p[x] = val;
-              }
+      const auto process_row = [&](const uint32_t c,
+                                   size_t /* thread */) -> Status {
+        Channel &channel = input.channel[c0 + c];
+        for (size_t y = 0; y < channel.h; y++) {
+          pixel_type *JXL_RESTRICT p = channel.Row(y);
+          const pixel_type *JXL_RESTRICT idx = indices.Row(y);
+          for (size_t x = 0; x < channel.w; x++) {
+            int index = idx[x];
+            pixel_type_w val = 0;
+            const pixel_type palette_entry = palette_internal::GetPaletteValue(
+                p_palette, index, /*c=*/c,
+                /*palette_size=*/palette.w,
+                /*onerow=*/onerow, /*bit_depth=*/bit_depth);
+            if (index < static_cast<int32_t>(nb_deltas)) {
+              PredictionResult pred = PredictNoTreeNoWP(
+                  channel.w, p + x, onerow_image, x, y, predictor);
+              val = pred.guess + palette_entry;
+            } else {
+              val = palette_entry;
             }
-          },
-          "UndoDeltaPaletteNoWP"));
+            p[x] = val;
+          }
+        }
+        return true;
+      };
+      JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, nb, ThreadPool::NoInit,
+                                    process_row, "UndoDeltaPaletteNoWP"));
     }
   }
   if (c0 >= input.nb_meta_channels) {
@@ -162,7 +159,7 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
     JXL_ASSERT(begin_c + nb - 1 < input.nb_meta_channels);
   }
   input.channel.erase(input.channel.begin(), input.channel.begin() + 1);
-  return num_errors.load(std::memory_order_relaxed) == 0;
+  return true;
 }
 
 Status MetaPalette(Image &input, uint32_t begin_c, uint32_t end_c,

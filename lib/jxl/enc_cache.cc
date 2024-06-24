@@ -36,25 +36,21 @@ namespace jxl {
 Status ComputeACMetadata(ThreadPool* pool, PassesEncoderState* enc_state,
                          ModularFrameEncoder* modular_frame_encoder) {
   PassesSharedState& shared = enc_state->shared;
-  std::atomic<bool> has_error{false};
-  auto compute_ac_meta = [&](int group_index, int /* thread */) {
+  auto compute_ac_meta = [&](int group_index, int /* thread */) -> Status {
     const Rect r = shared.frame_dim.DCGroupRect(group_index);
     int modular_group_index = group_index;
     if (enc_state->streaming_mode) {
       JXL_ASSERT(group_index == 0);
       modular_group_index = enc_state->dc_group_index;
     }
-    if (!modular_frame_encoder->AddACMetadata(r, modular_group_index,
-                                              /*jpeg_transcode=*/false,
-                                              enc_state)) {
-      has_error = true;
-      return;
-    }
+    JXL_RETURN_IF_ERROR(modular_frame_encoder->AddACMetadata(
+        r, modular_group_index,
+        /*jpeg_transcode=*/false, enc_state));
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_dc_groups,
                                 ThreadPool::NoInit, compute_ac_meta,
                                 "Compute AC Metadata"));
-  if (has_error) return JXL_FAILURE("Compute AC Metadata failed");
   return true;
 }
 
@@ -96,12 +92,13 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
   JXL_ASSIGN_OR_RETURN(
       Image3F dc, Image3F::Create(memory_manager, shared.frame_dim.xsize_blocks,
                                   shared.frame_dim.ysize_blocks));
-  JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, shared.frame_dim.num_groups, ThreadPool::NoInit,
-      [&](size_t group_idx, size_t _) {
-        ComputeCoefficients(group_idx, enc_state, opsin, rect, &dc);
-      },
-      "Compute coeffs"));
+  const auto process_group = [&](size_t group_idx, size_t _) -> Status {
+    ComputeCoefficients(group_idx, enc_state, opsin, rect, &dc);
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_groups,
+                                ThreadPool::NoInit, process_group,
+                                "Compute coeffs"));
 
   if (frame_header.flags & FrameHeader::kUseDcFrame) {
     CompressParams cparams = enc_state->cparams;
@@ -208,27 +205,22 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     shared.dc = &shared.dc_storage;
     JXL_CHECK(encoded_size == 0);
   } else {
-    std::atomic<bool> has_error{false};
-    auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
-      if (has_error) return;
+    auto compute_dc_coeffs = [&](int group_index, int /* thread */) -> Status {
       const Rect r = enc_state->shared.frame_dim.DCGroupRect(group_index);
       int modular_group_index = group_index;
       if (enc_state->streaming_mode) {
         JXL_ASSERT(group_index == 0);
         modular_group_index = enc_state->dc_group_index;
       }
-      if (!modular_frame_encoder->AddVarDCTDC(
-              frame_header, dc, r, modular_group_index,
-              enc_state->cparams.speed_tier < SpeedTier::kFalcon, enc_state,
-              /*jpeg_transcode=*/false)) {
-        has_error = true;
-        return;
-      }
+      JXL_RETURN_IF_ERROR(modular_frame_encoder->AddVarDCTDC(
+          frame_header, dc, r, modular_group_index,
+          enc_state->cparams.speed_tier < SpeedTier::kFalcon, enc_state,
+          /*jpeg_transcode=*/false));
+      return true;
     };
     JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_dc_groups,
                                   ThreadPool::NoInit, compute_dc_coeffs,
                                   "Compute DC coeffs"));
-    if (has_error) return JXL_FAILURE("Compute DC coeffs failed");
     // TODO(veluca): this is only useful in tests and if inspection is enabled.
     if (!(frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing)) {
       JXL_RETURN_IF_ERROR(AdaptiveDCSmoothing(

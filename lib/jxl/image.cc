@@ -76,7 +76,8 @@ PlaneBase::PlaneBase(const size_t xsize, const size_t ysize,
   JXL_ASSERT(sizeof_t == 1 || sizeof_t == 2 || sizeof_t == 4 || sizeof_t == 8);
 }
 
-Status PlaneBase::Allocate(JxlMemoryManager* memory_manager) {
+Status PlaneBase::Allocate(JxlMemoryManager* memory_manager,
+                           size_t pre_padding) {
   JXL_CHECK(bytes_.address<void>() == nullptr);
 
   // Dimensions can be zero, e.g. for lazily-allocated images. Only allocate
@@ -86,7 +87,8 @@ Status PlaneBase::Allocate(JxlMemoryManager* memory_manager) {
   }
 
   JXL_ASSIGN_OR_RETURN(
-      bytes_, AlignedMemory::Create(memory_manager, bytes_per_row_ * ysize_));
+      bytes_, AlignedMemory::Create(memory_manager, bytes_per_row_ * ysize_,
+                                    pre_padding * sizeof_t_));
 
   InitializePadding(*this, sizeof_t_);
 

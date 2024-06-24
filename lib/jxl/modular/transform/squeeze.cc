@@ -155,7 +155,8 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   // 8 rows at a time and treat it as a vertical unsqueeze of a
   // transposed 8x8 block (or 9x8 for one input).
   static constexpr const size_t kRowsPerThread = 8;
-  const auto unsqueeze_span = [&](const uint32_t task, size_t /* thread */) {
+  const auto unsqueeze_span = [&](const uint32_t task,
+                                  size_t /* thread */) -> Status {
     const size_t y0 = task * kRowsPerThread;
     const size_t rows = std::min(kRowsPerThread, chin.h - y0);
     size_t x = 0;
@@ -205,6 +206,7 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
     for (size_t y = 0; y < rows; y++) {
       unsqueeze_row(y0 + y, x);
     }
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, DivCeil(chin.h, kRowsPerThread),
                                 ThreadPool::NoInit, unsqueeze_span,
@@ -247,7 +249,8 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   }
 
   static constexpr const int kColsPerThread = 64;
-  const auto unsqueeze_slice = [&](const uint32_t task, size_t /* thread */) {
+  const auto unsqueeze_slice = [&](const uint32_t task,
+                                   size_t /* thread */) -> Status {
     const size_t x0 = task * kColsPerThread;
     const size_t x1 =
         std::min(static_cast<size_t>(task + 1) * kColsPerThread, chin.w);
@@ -284,6 +287,7 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
         p_nout[x] = out - diff;
       }
     }
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, DivCeil(chin.w, kColsPerThread),
                                 ThreadPool::NoInit, unsqueeze_slice,

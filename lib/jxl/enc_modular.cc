@@ -8,7 +8,6 @@
 #include <jxl/memory_manager.h>
 
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -749,25 +748,19 @@ Status ModularFrameEncoder::ComputeEncodingData(
         size_t ysize_shifted = DivCeil(ysize, 1 << gi.channel[c_out].vshift);
         JXL_RETURN_IF_ERROR(
             gi.channel[c_out].shrink(xsize_shifted, ysize_shifted));
-        std::atomic<bool> has_error{false};
-        JXL_RETURN_IF_ERROR(RunOnPool(
-            pool, 0, ysize_shifted, ThreadPool::NoInit,
-            [&](const int task, const int thread) {
-              if (has_error) return;
-              const size_t y = task;
-              const float* const JXL_RESTRICT row_in =
-                  color->PlaneRow(c, y + group_rect.y0()) + group_rect.x0();
-              pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
-              if (!float_to_int(row_in, row_out, xsize_shifted, bits, exp_bits,
-                                fp, factor)) {
-                has_error = true;
-                return;
-              };
-            },
-            "float2int"));
-        if (has_error) {
-          return JXL_FAILURE("Error in float to integer conversion");
-        }
+        const auto process_row = [&](const int task,
+                                     const int thread) -> Status {
+          const size_t y = task;
+          const float* const JXL_RESTRICT row_in =
+              color->PlaneRow(c, y + group_rect.y0()) + group_rect.x0();
+          pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
+          JXL_RETURN_IF_ERROR(float_to_int(row_in, row_out, xsize_shifted, bits,
+                                           exp_bits, fp, factor));
+          return true;
+        };
+        JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, ysize_shifted,
+                                      ThreadPool::NoInit, process_row,
+                                      "float2int"));
       }
     }
     if (metadata.color_encoding.IsGray() &&
@@ -789,23 +782,19 @@ Status ModularFrameEncoder::ComputeEncodingData(
     bool fp = eci.bit_depth.floating_point_sample;
     double factor = (fp ? 1 : ((1u << eci.bit_depth.bits_per_sample) - 1));
     if (bits + (fp ? 0 : 1) > max_bitdepth) max_bitdepth = bits + (fp ? 0 : 1);
-    std::atomic<bool> has_error{false};
-    JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, gi.channel[c].plane.ysize(), ThreadPool::NoInit,
-        [&](const int task, const int thread) {
-          if (has_error) return;
-          const size_t y = task;
-          const float* const JXL_RESTRICT row_in =
-              extra_channels[ec].Row(y + group_rect.y0()) + group_rect.x0();
-          pixel_type* const JXL_RESTRICT row_out = gi.channel[c].Row(y);
-          if (!float_to_int(row_in, row_out, gi.channel[c].plane.xsize(), bits,
-                            exp_bits, fp, factor)) {
-            has_error = true;
-            return;
-          };
-        },
-        "float2int"));
-    if (has_error) return JXL_FAILURE("Error in float to integer conversion");
+    const auto process_row = [&](const int task, const int thread) -> Status {
+      const size_t y = task;
+      const float* const JXL_RESTRICT row_in =
+          extra_channels[ec].Row(y + group_rect.y0()) + group_rect.x0();
+      pixel_type* const JXL_RESTRICT row_out = gi.channel[c].Row(y);
+      JXL_RETURN_IF_ERROR(float_to_int(row_in, row_out,
+                                       gi.channel[c].plane.xsize(), bits,
+                                       exp_bits, fp, factor));
+      return true;
+    };
+    JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, gi.channel[c].plane.ysize(),
+                                  ThreadPool::NoInit, process_row,
+                                  "float2int"));
   }
   JXL_ASSERT(c == nb_chans);
 
@@ -1001,19 +990,20 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
   gi_channel_.resize(stream_images_.size());
 
-  JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, stream_params_.size(), ThreadPool::NoInit,
-      [&](const uint32_t i, size_t /* thread */) {
-        size_t stream = stream_params_[i].id.ID(frame_dim_);
-        if (stream != 0) {
-          stream_options_[stream] = stream_options_[0];
-        }
-        JXL_CHECK(PrepareStreamParams(
-            stream_params_[i].rect, cparams_, stream_params_[i].minShift,
-            stream_params_[i].maxShift, stream_params_[i].id, do_color,
-            groupwise));
-      },
-      "ChooseParams"));
+  const auto process_row = [&](const uint32_t i,
+                               size_t /* thread */) -> Status {
+    size_t stream = stream_params_[i].id.ID(frame_dim_);
+    if (stream != 0) {
+      stream_options_[stream] = stream_options_[0];
+    }
+    JXL_CHECK(PrepareStreamParams(
+        stream_params_[i].rect, cparams_, stream_params_[i].minShift,
+        stream_params_[i].maxShift, stream_params_[i].id, do_color, groupwise));
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, stream_params_.size(),
+                                ThreadPool::NoInit, process_row,
+                                "ChooseParams"));
   {
     // Clear out channels that have been copied to groups.
     Image& full_image = stream_images_[0];
@@ -1112,76 +1102,67 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
     if (useful_splits.empty()) return true;
     useful_splits.push_back(tree_splits_.back());
 
-    std::atomic_flag invalid_force_wp = ATOMIC_FLAG_INIT;
-
     std::vector<Tree> trees(useful_splits.size() - 1);
-    JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, useful_splits.size() - 1, ThreadPool::NoInit,
-        [&](const uint32_t chunk, size_t /* thread */) {
-          // TODO(veluca): parallelize more.
-          size_t total_pixels = 0;
-          uint32_t start = useful_splits[chunk];
-          uint32_t stop = useful_splits[chunk + 1];
-          while (start < stop && stream_images_[start].empty()) ++start;
-          while (start < stop && stream_images_[stop - 1].empty()) --stop;
-          if (stream_options_[start].tree_kind !=
-              ModularOptions::TreeKind::kLearn) {
-            for (size_t i = start; i < stop; i++) {
-              for (const Channel& ch : stream_images_[i].channel) {
-                total_pixels += ch.w * ch.h;
-              }
-            }
-            trees[chunk] = PredefinedTree(stream_options_[start].tree_kind,
-                                          total_pixels, 8, 0);
-            return;
+    const auto process_chunk = [&](const uint32_t chunk,
+                                   size_t /* thread */) -> Status {
+      // TODO(veluca): parallelize more.
+      size_t total_pixels = 0;
+      uint32_t start = useful_splits[chunk];
+      uint32_t stop = useful_splits[chunk + 1];
+      while (start < stop && stream_images_[start].empty()) ++start;
+      while (start < stop && stream_images_[stop - 1].empty()) --stop;
+      if (stream_options_[start].tree_kind !=
+          ModularOptions::TreeKind::kLearn) {
+        for (size_t i = start; i < stop; i++) {
+          for (const Channel& ch : stream_images_[i].channel) {
+            total_pixels += ch.w * ch.h;
           }
-          TreeSamples tree_samples;
-          if (!tree_samples.SetPredictor(stream_options_[start].predictor,
-                                         stream_options_[start].wp_tree_mode)) {
-            invalid_force_wp.test_and_set(std::memory_order_acq_rel);
-            return;
-          }
-          if (!tree_samples.SetProperties(
-                  stream_options_[start].splitting_heuristics_properties,
-                  stream_options_[start].wp_tree_mode)) {
-            invalid_force_wp.test_and_set(std::memory_order_acq_rel);
-            return;
-          }
-          uint32_t max_c = 0;
-          std::vector<pixel_type> pixel_samples;
-          std::vector<pixel_type> diff_samples;
-          std::vector<uint32_t> group_pixel_count;
-          std::vector<uint32_t> channel_pixel_count;
-          for (size_t i = start; i < stop; i++) {
-            max_c = std::max<uint32_t>(stream_images_[i].channel.size(), max_c);
-            CollectPixelSamples(stream_images_[i], stream_options_[i], i,
-                                group_pixel_count, channel_pixel_count,
-                                pixel_samples, diff_samples);
-          }
-          StaticPropRange range;
-          range[0] = {{0, max_c}};
-          range[1] = {{start, stop}};
+        }
+        trees[chunk] = PredefinedTree(stream_options_[start].tree_kind,
+                                      total_pixels, 8, 0);
+        return true;
+      }
+      TreeSamples tree_samples;
+      JXL_RETURN_IF_ERROR(
+          tree_samples.SetPredictor(stream_options_[start].predictor,
+                                    stream_options_[start].wp_tree_mode));
+      JXL_RETURN_IF_ERROR(tree_samples.SetProperties(
+          stream_options_[start].splitting_heuristics_properties,
+          stream_options_[start].wp_tree_mode));
+      uint32_t max_c = 0;
+      std::vector<pixel_type> pixel_samples;
+      std::vector<pixel_type> diff_samples;
+      std::vector<uint32_t> group_pixel_count;
+      std::vector<uint32_t> channel_pixel_count;
+      for (size_t i = start; i < stop; i++) {
+        max_c = std::max<uint32_t>(stream_images_[i].channel.size(), max_c);
+        CollectPixelSamples(stream_images_[i], stream_options_[i], i,
+                            group_pixel_count, channel_pixel_count,
+                            pixel_samples, diff_samples);
+      }
+      StaticPropRange range;
+      range[0] = {{0, max_c}};
+      range[1] = {{start, stop}};
 
-          tree_samples.PreQuantizeProperties(
-              range, multiplier_info, group_pixel_count, channel_pixel_count,
-              pixel_samples, diff_samples,
-              stream_options_[start].max_property_values);
-          for (size_t i = start; i < stop; i++) {
-            JXL_CHECK(ModularGenericCompress(
-                stream_images_[i], stream_options_[i], /*writer=*/nullptr,
-                /*aux_out=*/nullptr, LayerType::Header, i, &tree_samples,
-                &total_pixels));
-          }
+      tree_samples.PreQuantizeProperties(
+          range, multiplier_info, group_pixel_count, channel_pixel_count,
+          pixel_samples, diff_samples,
+          stream_options_[start].max_property_values);
+      for (size_t i = start; i < stop; i++) {
+        JXL_CHECK(ModularGenericCompress(stream_images_[i], stream_options_[i],
+                                         /*writer=*/nullptr,
+                                         /*aux_out=*/nullptr, LayerType::Header,
+                                         i, &tree_samples, &total_pixels));
+      }
 
-          // TODO(veluca): parallelize more.
-          trees[chunk] =
-              LearnTree(std::move(tree_samples), total_pixels,
-                        stream_options_[start], multiplier_info, range);
-        },
-        "LearnTrees"));
-    if (invalid_force_wp.test_and_set(std::memory_order_acq_rel)) {
-      return JXL_FAILURE("PrepareEncoding: force_no_wp with {Weighted}");
-    }
+      // TODO(veluca): parallelize more.
+      trees[chunk] = LearnTree(std::move(tree_samples), total_pixels,
+                               stream_options_[start], multiplier_info, range);
+      return true;
+    };
+    JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, useful_splits.size() - 1,
+                                  ThreadPool::NoInit, process_chunk,
+                                  "LearnTrees"));
     tree_.clear();
     MergeTrees(trees, useful_splits, 0, useful_splits.size() - 1, &tree_);
   } else {
@@ -1229,21 +1210,22 @@ Status ModularFrameEncoder::ComputeTokens(ThreadPool* pool) {
   stream_headers_.resize(num_streams);
   tokens_.resize(num_streams);
   image_widths_.resize(num_streams);
-  JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, num_streams, ThreadPool::NoInit,
-      [&](const uint32_t stream_id, size_t /* thread */) {
-        AuxOut my_aux_out;
-        tokens_[stream_id].clear();
-        JXL_CHECK(ModularGenericCompress(
-            stream_images_[stream_id], stream_options_[stream_id],
-            /*writer=*/nullptr, &my_aux_out, LayerType::Header, stream_id,
-            /*tree_samples=*/nullptr,
-            /*total_pixels=*/nullptr,
-            /*tree=*/&tree_, /*header=*/&stream_headers_[stream_id],
-            /*tokens=*/&tokens_[stream_id],
-            /*widths=*/&image_widths_[stream_id]));
-      },
-      "ComputeTokens"));
+  const auto process_stream = [&](const uint32_t stream_id,
+                                  size_t /* thread */) -> Status {
+    AuxOut my_aux_out;
+    tokens_[stream_id].clear();
+    JXL_CHECK(ModularGenericCompress(
+        stream_images_[stream_id], stream_options_[stream_id],
+        /*writer=*/nullptr, &my_aux_out, LayerType::Header, stream_id,
+        /*tree_samples=*/nullptr,
+        /*total_pixels=*/nullptr,
+        /*tree=*/&tree_, /*header=*/&stream_headers_[stream_id],
+        /*tokens=*/&tokens_[stream_id],
+        /*widths=*/&image_widths_[stream_id]));
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_streams, ThreadPool::NoInit,
+                                process_stream, "ComputeTokens"));
   return true;
 }
 

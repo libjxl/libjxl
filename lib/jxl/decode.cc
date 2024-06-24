@@ -1635,6 +1635,11 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
             next_out - (dec->box_out_buffer + dec->box_out_buffer_pos);
         dec->box_out_buffer_pos += produced;
 
+        if (box_result == JXL_DEC_BOX_COMPLETE &&
+            !(dec->events_wanted & JXL_DEC_BOX_COMPLETE)) {
+          box_result = JXL_DEC_SUCCESS;
+        }
+
         // Don't return JXL_DEC_NEED_MORE_INPUT: the box stages below, instead,
         // handle the input progression, and the above only outputs the part of
         // the box seen so far.
@@ -1662,7 +1667,7 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
             metadata.resize(metadata.size() * 2);
           } else if (box_result == JXL_DEC_NEED_MORE_INPUT) {
             break;  // box stage handling below will handle this instead
-          } else if (box_result == JXL_DEC_SUCCESS) {
+          } else if (box_result == JXL_DEC_BOX_COMPLETE) {
             size_t needed_size = (dec->store_exif == 1) ? dec->recon_exif_size
                                                         : dec->recon_xmp_size;
             if (dec->box_contents_unbounded &&

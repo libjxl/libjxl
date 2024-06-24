@@ -8,7 +8,6 @@
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
-#include <atomic>
 #include <cstring>
 #include <utility>
 
@@ -72,28 +71,22 @@ Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
       format.endianness == JXL_LITTLE_ENDIAN ||
       (format.endianness == JXL_NATIVE_ENDIAN && IsLittleEndian());
 
-  std::atomic<size_t> error_count = {0};
-
-  const auto convert_row = [&](const uint32_t task, size_t /*thread*/) {
+  const auto convert_row = [&](const uint32_t task,
+                               size_t /*thread*/) -> Status {
     const size_t y = task;
     size_t offset = y * stride + pixel_offset;
     float* JXL_RESTRICT row_out = channel->Row(y);
     const auto save_value = [&](size_t index, float value) {
       row_out[index] = value;
     };
-    if (!LoadFloatRow(data + offset, xsize, bytes_per_pixel, format.data_type,
-                      little_endian, scale, save_value)) {
-      error_count++;
-    }
+    JXL_RETURN_IF_ERROR(LoadFloatRow(data + offset, xsize, bytes_per_pixel,
+                                     format.data_type, little_endian, scale,
+                                     save_value));
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, static_cast<uint32_t>(ysize),
                                 ThreadPool::NoInit, convert_row,
                                 "ConvertExtraChannel"));
-
-  if (error_count) {
-    JXL_FAILURE("unsupported pixel format data type");
-  }
-
   return true;
 }
 

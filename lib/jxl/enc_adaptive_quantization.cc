@@ -623,26 +623,28 @@ StatusOr<ImageF> AdaptiveQuantizationMap(const float butteraugli_target,
       *mask, ImageF::Create(memory_manager, xsize_blocks, ysize_blocks));
   JXL_ASSIGN_OR_RETURN(
       *mask1x1, ImageF::Create(memory_manager, xyb.xsize(), xyb.ysize()));
-  JXL_CHECK(RunOnPool(
-      pool, 0,
-      DivCeil(xsize_blocks, kEncTileDimInBlocks) *
-          DivCeil(ysize_blocks, kEncTileDimInBlocks),
-      [&](const size_t num_threads) {
-        return !!impl.PrepareBuffers(memory_manager, num_threads);
-      },
-      [&](const uint32_t tid, const size_t thread) {
-        size_t n_enc_tiles = DivCeil(xsize_blocks, kEncTileDimInBlocks);
-        size_t tx = tid % n_enc_tiles;
-        size_t ty = tid / n_enc_tiles;
-        size_t by0 = ty * kEncTileDimInBlocks;
-        size_t by1 = std::min((ty + 1) * kEncTileDimInBlocks, ysize_blocks);
-        size_t bx0 = tx * kEncTileDimInBlocks;
-        size_t bx1 = std::min((tx + 1) * kEncTileDimInBlocks, xsize_blocks);
-        Rect rect_out(bx0, by0, bx1 - bx0, by1 - by0);
-        impl.ComputeTile(butteraugli_target, scale, xyb, rect, rect_out, thread,
-                         mask, mask1x1);
-      },
-      "AQ DiffPrecompute"));
+  const auto prepare = [&](const size_t num_threads) -> Status {
+    JXL_RETURN_IF_ERROR(impl.PrepareBuffers(memory_manager, num_threads));
+    return true;
+  };
+  const auto process_tile = [&](const uint32_t tid,
+                                const size_t thread) -> Status {
+    size_t n_enc_tiles = DivCeil(xsize_blocks, kEncTileDimInBlocks);
+    size_t tx = tid % n_enc_tiles;
+    size_t ty = tid / n_enc_tiles;
+    size_t by0 = ty * kEncTileDimInBlocks;
+    size_t by1 = std::min((ty + 1) * kEncTileDimInBlocks, ysize_blocks);
+    size_t bx0 = tx * kEncTileDimInBlocks;
+    size_t bx1 = std::min((tx + 1) * kEncTileDimInBlocks, xsize_blocks);
+    Rect rect_out(bx0, by0, bx1 - bx0, by1 - by0);
+    impl.ComputeTile(butteraugli_target, scale, xyb, rect, rect_out, thread,
+                     mask, mask1x1);
+    return true;
+  };
+  size_t num_tiles = DivCeil(xsize_blocks, kEncTileDimInBlocks) *
+                     DivCeil(ysize_blocks, kEncTileDimInBlocks);
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_tiles, prepare, process_tile,
+                                "AQ DiffPrecompute"));
 
   JXL_RETURN_IF_ERROR(Blur1x1Masking(memory_manager, pool, mask1x1, rect));
   return std::move(impl).aq_map;
@@ -836,10 +838,8 @@ StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,
     group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
     return true;
   };
-  std::atomic<bool> has_error{false};
   const auto process_group = [&](const uint32_t group_index,
-                                 const size_t thread) {
-    if (has_error) return;
+                                 const size_t thread) -> Status {
     if (frame_header.loop_filter.epf_iters > 0) {
       ComputeSigma(frame_header.loop_filter,
                    dec_state->shared->frame_dim.BlockGroupRect(group_index),
@@ -847,21 +847,18 @@ StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,
     }
     RenderPipelineInput input =
         dec_state->render_pipeline->GetInputBuffers(group_index, thread);
-    JXL_CHECK(DecodeGroupForRoundtrip(
+    JXL_RETURN_IF_ERROR(DecodeGroupForRoundtrip(
         frame_header, enc_state->coeffs, group_index, dec_state.get(),
         &group_dec_caches[thread], thread, input, nullptr, nullptr));
     for (size_t c = 0; c < metadata.num_extra_channels; c++) {
       std::pair<ImageF*, Rect> ri = input.GetBuffer(3 + c);
       FillPlane(0.0f, ri.first, ri.second);
     }
-    if (!input.Done()) {
-      has_error = true;
-      return;
-    }
+    JXL_RETURN_IF_ERROR(input.Done());
+    return true;
   };
-  JXL_CHECK(RunOnPool(pool, 0, num_groups, allocate_storage, process_group,
-                      "AQ loop"));
-  if (has_error) return JXL_FAILURE("AQ loop failure");
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_groups, allocate_storage,
+                                process_group, "AQ loop"));
 
   // Ensure we don't create any new special frames.
   enc_state->special_frames.resize(num_special_frames);

@@ -70,18 +70,18 @@ void RoundtripSizeRange(ThreadPool* pool, uint32_t begin, uint32_t end) {
   ASSERT_NE(0u, begin);  // n = 0 not allowed.
   std::vector<WorkingSet<PermutationT>> working_sets;
 
-  JXL_CHECK(RunOnPool(
-      pool, begin, end,
-      [&working_sets, end](const size_t num_threads) {
-        for (size_t i = 0; i < num_threads; i++) {
-          working_sets.emplace_back(end - 1);
-        }
-        return true;
-      },
-      [&working_sets](const uint32_t n, const size_t thread) {
-        Roundtrip(n, &working_sets[thread]);
-      },
-      "lehmer test"));
+  const auto init = [&working_sets, end](const size_t num_threads) -> Status {
+    for (size_t i = 0; i < num_threads; i++) {
+      working_sets.emplace_back(end - 1);
+    }
+    return true;
+  };
+  const auto do_roundtrip = [&working_sets](const uint32_t n,
+                                            const size_t thread) -> Status {
+    Roundtrip(n, &working_sets[thread]);
+    return true;
+  };
+  JXL_CHECK(RunOnPool(pool, begin, end, init, do_roundtrip, "lehmer test"));
 }
 
 TEST(LehmerCodeTest, TestRoundtrips) {

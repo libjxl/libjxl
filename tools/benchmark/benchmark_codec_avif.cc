@@ -44,11 +44,13 @@ namespace {
 
 size_t GetNumThreads(ThreadPool* pool) {
   size_t result = 0;
-  const auto count_threads = [&](const size_t num_threads) {
+  const auto count_threads = [&](const size_t num_threads) -> Status {
     result = num_threads;
     return true;
   };
-  const auto no_op = [&](const uint32_t /*task*/, size_t /*thread*/) {};
+  const auto no_op = [&](const uint32_t /*task*/, size_t /*thread*/) -> Status {
+    return true;
+  };
   (void)jxl::RunOnPool(pool, 0, 1, count_threads, no_op, "Compress");
   return result;
 }
