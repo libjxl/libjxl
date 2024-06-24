@@ -108,11 +108,11 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
                              hwy::kMaxVectorSize * 8,
                          frame_dimensions_.ysize_upsampled_padded +
                              kRenderPipelineXOffset * 2));
-      new_channels[c].ShrinkTo(
+      JXL_RETURN_IF_ERROR(new_channels[c].ShrinkTo(
           (input_sizes[c].first << stage->settings_.shift_x) +
               kRenderPipelineXOffset * 2,
           (input_sizes[c].second << stage->settings_.shift_y) +
-              kRenderPipelineXOffset * 2);
+              kRenderPipelineXOffset * 2));
       output_channels[c] = &new_channels[c];
     }
 
@@ -168,8 +168,8 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       xsize = std::max(input_sizes[c].first, xsize);
     }
 
-    JXL_ASSERT(ysize != 0);
-    JXL_ASSERT(xsize != 0);
+    JXL_ENSURE(ysize != 0);
+    JXL_ENSURE(xsize != 0);
 
     RenderPipelineStage::RowInfo input_rows(channel_data_.size());
     RenderPipelineStage::RowInfo output_rows(channel_data_.size());
@@ -218,8 +218,9 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
                              1 << channel_shifts_[next_stage][c].first);
       size_t ysize = DivCeil(frame_dimensions_.ysize_upsampled,
                              1 << channel_shifts_[next_stage][c].second);
-      channel_data_[c].ShrinkTo(xsize + 2 * kRenderPipelineXOffset,
-                                ysize + 2 * kRenderPipelineXOffset);
+      JXL_RETURN_IF_ERROR(
+          channel_data_[c].ShrinkTo(xsize + 2 * kRenderPipelineXOffset,
+                                    ysize + 2 * kRenderPipelineXOffset));
       JXL_CHECK_PLANE_INITIALIZED(
           channel_data_[c],
           Rect(kRenderPipelineXOffset, kRenderPipelineXOffset, xsize, ysize),
@@ -279,8 +280,9 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
           Rect(x0_fg, y0_fg, xsize, ysize)
               .Translate(kRenderPipelineXOffset, kRenderPipelineXOffset);
       for (size_t c = 0; c < channel_data_.size(); c++) {
-        CopyImageTo(rect_fg, old_channels[c], rect_fg_relative_to_image,
-                    &channel_data_[c]);
+        JXL_RETURN_IF_ERROR(CopyImageTo(rect_fg, old_channels[c],
+                                        rect_fg_relative_to_image,
+                                        &channel_data_[c]));
       }
     }
   }

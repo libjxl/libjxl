@@ -128,8 +128,9 @@ boolean test_marker_processor(j_decompress_ptr cinfo) {
   return TRUE;
 }
 
-void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
-                     SourceManager* src, TestImage* output) {
+jxl::Status ReadOutputImage(const DecompressParams& dparams,
+                            j_decompress_ptr cinfo, SourceManager* src,
+                            TestImage* output) {
   output->ysize = cinfo->output_height;
   output->xsize = cinfo->output_width;
   output->components = cinfo->num_components;
@@ -169,7 +170,7 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
       }
       while ((num_output_lines =
                   jpegli_read_raw_data(cinfo, data.data(), max_lines)) == 0) {
-        JXL_CHECK(src && src->LoadNextChunk());
+        JXL_ENSURE(src && src->LoadNextChunk());
       }
     } else {
       size_t max_output_lines = dparams.max_output_lines;
@@ -184,15 +185,16 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
       }
       while ((num_output_lines = jpegli_read_scanlines(cinfo, scanlines.data(),
                                                        max_lines)) == 0) {
-        JXL_CHECK(src && src->LoadNextChunk());
+        JXL_ENSURE(src && src->LoadNextChunk());
       }
     }
     total_output_lines += num_output_lines;
     EXPECT_EQ(total_output_lines, cinfo->output_scanline);
     if (num_output_lines < max_lines) {
-      JXL_CHECK(src && src->LoadNextChunk());
+      JXL_ENSURE(src && src->LoadNextChunk());
     }
   }
+  return true;
 }
 
 struct TestConfig {
@@ -204,13 +206,15 @@ struct TestConfig {
   float max_rms_dist = 1.0f;
 };
 
-std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
-  if (!config.fn.empty()) {
-    return ReadTestData(config.fn);
-  }
-  GeneratePixels(&config.input);
+jxl::StatusOr<std::vector<uint8_t>> GetTestJpegData(TestConfig& config) {
   std::vector<uint8_t> compressed;
-  JXL_CHECK(EncodeWithJpegli(config.input, config.jparams, &compressed));
+  if (!config.fn.empty()) {
+    JXL_ASSIGN_OR_RETURN(compressed, ReadTestData(config.fn));
+  } else {
+    GeneratePixels(&config.input);
+    JXL_RETURN_IF_ERROR(
+        EncodeWithJpegli(config.input, config.jparams, &compressed));
+  }
   return compressed;
 }
 
@@ -226,7 +230,8 @@ class InputSuspensionTestParam : public ::testing::TestWithParam<TestConfig> {};
 TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
-  std::vector<uint8_t> compressed = GetTestJpegData(config);
+  JXL_ASSIGN_OR_QUIT(std::vector<uint8_t> compressed, GetTestJpegData(config),
+                     "Failed to create test data.");
   bool is_partial = config.dparams.size_factor < 1.0f;
   if (is_partial) {
     compressed.resize(compressed.size() * config.dparams.size_factor);
@@ -249,7 +254,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
       jpegli_set_marker_processor(&cinfo, 0xe8, test_marker_processor);
     }
     while (jpegli_read_header(&cinfo, TRUE) == JPEG_SUSPENDED) {
-      JXL_CHECK(src.LoadNextChunk());
+      JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
     }
     SetDecompressParams(dparams, &cinfo);
     jpegli_set_output_format(&cinfo, dparams.data_type, dparams.endianness);
@@ -263,18 +268,18 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
     if (dparams.output_mode == COEFFICIENTS) {
       jvirt_barray_ptr* coef_arrays;
       while ((coef_arrays = jpegli_read_coefficients(&cinfo)) == nullptr) {
-        JXL_CHECK(src.LoadNextChunk());
+        JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
       }
       CopyCoefficients(&cinfo, coef_arrays, &output0);
     } else {
       while (!jpegli_start_decompress(&cinfo)) {
-        JXL_CHECK(src.LoadNextChunk());
+        JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
       }
-      ReadOutputImage(dparams, &cinfo, &src, &output0);
+      JPEGLI_TEST_ENSURE_TRUE(ReadOutputImage(dparams, &cinfo, &src, &output0));
     }
 
     while (!jpegli_finish_decompress(&cinfo)) {
-      JXL_CHECK(src.LoadNextChunk());
+      JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
     }
     return true;
   };
@@ -290,7 +295,8 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
   TestConfig config = GetParam();
   if (config.jparams.add_marker) return;
   const DecompressParams& dparams = config.dparams;
-  std::vector<uint8_t> compressed = GetTestJpegData(config);
+  JXL_ASSIGN_OR_QUIT(std::vector<uint8_t> compressed, GetTestJpegData(config),
+                     "Failed to create test data.");
   bool is_partial = config.dparams.size_factor < 1.0f;
   if (is_partial) {
     compressed.resize(compressed.size() * config.dparams.size_factor);
@@ -306,7 +312,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
 
     while (jpegli_read_header(&cinfo, TRUE) == JPEG_SUSPENDED) {
-      JXL_CHECK(src.LoadNextChunk());
+      JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
     }
     SetDecompressParams(dparams, &cinfo);
     jpegli_set_output_format(&cinfo, dparams.data_type, dparams.endianness);
@@ -327,18 +333,18 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
       EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
       EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
       TestImage output;
-      ReadOutputImage(dparams, &cinfo, &src, &output);
+      JPEGLI_TEST_ENSURE_TRUE(ReadOutputImage(dparams, &cinfo, &src, &output));
       output_progression0.emplace_back(std::move(output));
       // read scanlines/read raw data does not change input/output scan number
       EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
       EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
       while (!jpegli_finish_output(&cinfo)) {
-        JXL_CHECK(src.LoadNextChunk());
+        JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
       }
       ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
       if (dparams.output_mode == COEFFICIENTS) {
         jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&cinfo);
-        JXL_CHECK(coef_arrays != nullptr);
+        JPEGLI_TEST_ENSURE_TRUE(coef_arrays != nullptr);
         CopyCoefficients(&cinfo, coef_arrays, &output_progression0.back());
       }
     }
@@ -364,7 +370,8 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
   TestConfig config = GetParam();
   if (config.jparams.add_marker) return;
   const DecompressParams& dparams = config.dparams;
-  std::vector<uint8_t> compressed = GetTestJpegData(config);
+  JXL_ASSIGN_OR_QUIT(std::vector<uint8_t> compressed, GetTestJpegData(config),
+                     "Failed to create test data.");
   bool is_partial = config.dparams.size_factor < 1.0f;
   if (is_partial) {
     compressed.resize(compressed.size() * config.dparams.size_factor);
@@ -384,7 +391,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
     int status;
     while ((status = jpegli_consume_input(&cinfo)) != JPEG_REACHED_SOS) {
       if (status == JPEG_SUSPENDED) {
-        JXL_CHECK(src.LoadNextChunk());
+        JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
       }
     }
     EXPECT_EQ(JPEG_REACHED_SOS, jpegli_consume_input(&cinfo));
@@ -399,7 +406,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
 
     while ((status = jpegli_consume_input(&cinfo)) != JPEG_REACHED_EOI) {
       if (status == JPEG_SUSPENDED) {
-        JXL_CHECK(src.LoadNextChunk());
+        JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
       }
     }
 
@@ -411,14 +418,15 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
     EXPECT_EQ(output_progression1.size(), cinfo.input_scan_number);
     EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
 
-    ReadOutputImage(dparams, &cinfo, nullptr, &output0);
+    JPEGLI_TEST_ENSURE_TRUE(
+        ReadOutputImage(dparams, &cinfo, nullptr, &output0));
     EXPECT_EQ(output_progression1.size(), cinfo.input_scan_number);
     EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
 
     EXPECT_TRUE(jpegli_finish_output(&cinfo));
     if (dparams.output_mode == COEFFICIENTS) {
       jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&cinfo);
-      JXL_CHECK(coef_arrays != nullptr);
+      JPEGLI_TEST_ENSURE_TRUE(coef_arrays != nullptr);
       CopyCoefficients(&cinfo, coef_arrays, &output0);
     }
     EXPECT_TRUE(jpegli_finish_decompress(&cinfo));
@@ -434,7 +442,8 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
   TestConfig config = GetParam();
   if (config.jparams.add_marker || IsSequential(config)) return;
   const DecompressParams& dparams = config.dparams;
-  std::vector<uint8_t> compressed = GetTestJpegData(config);
+  JXL_ASSIGN_OR_QUIT(std::vector<uint8_t> compressed, GetTestJpegData(config),
+                     "Failed to create test data.");
   bool is_partial = config.dparams.size_factor < 1.0f;
   if (is_partial) {
     compressed.resize(compressed.size() * config.dparams.size_factor);
@@ -451,7 +460,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
     int status;
     while ((status = jpegli_consume_input(&cinfo)) != JPEG_REACHED_SOS) {
       if (status == JPEG_SUSPENDED) {
-        JXL_CHECK(src.LoadNextChunk());
+        JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
       }
     }
     EXPECT_EQ(JPEG_REACHED_SOS, jpegli_consume_input(&cinfo));
@@ -462,22 +471,23 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
       jpegli_read_coefficients(&cinfo);
     } else {
       while (!jpegli_start_decompress(&cinfo)) {
-        JXL_CHECK(src.LoadNextChunk());
+        JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
       }
     }
 
     while ((status = jpegli_consume_input(&cinfo)) != JPEG_REACHED_EOI) {
       if (status == JPEG_SUSPENDED) {
-        JXL_CHECK(src.LoadNextChunk());
+        JPEGLI_TEST_ENSURE_TRUE(src.LoadNextChunk());
       }
     }
 
     if (dparams.output_mode == COEFFICIENTS) {
       jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&cinfo);
-      JXL_CHECK(coef_arrays != nullptr);
+      JPEGLI_TEST_ENSURE_TRUE(coef_arrays != nullptr);
       CopyCoefficients(&cinfo, coef_arrays, &output0);
     } else {
-      ReadOutputImage(dparams, &cinfo, nullptr, &output0);
+      JPEGLI_TEST_ENSURE_TRUE(
+          ReadOutputImage(dparams, &cinfo, nullptr, &output0));
     }
 
     EXPECT_TRUE(jpegli_finish_decompress(&cinfo));

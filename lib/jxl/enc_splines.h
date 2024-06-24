@@ -19,8 +19,8 @@ struct AuxOut;
 enum class LayerType : uint8_t;
 
 // Only call if splines.HasAny().
-void EncodeSplines(const Splines& splines, BitWriter* writer, LayerType layer,
-                   const HistogramParams& histogram_params, AuxOut* aux_out);
+Status EncodeSplines(const Splines& splines, BitWriter* writer, LayerType layer,
+                     const HistogramParams& histogram_params, AuxOut* aux_out);
 
 Splines FindSplines(const Image3F& opsin);
 

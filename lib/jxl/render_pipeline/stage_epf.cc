@@ -511,7 +511,7 @@ HWY_EXPORT(GetEPFStage2);
 std::unique_ptr<RenderPipelineStage> GetEPFStage(const LoopFilter& lf,
                                                  const ImageF& sigma,
                                                  EpfStage epf_stage) {
-  JXL_ASSERT(lf.epf_iters != 0);
+  if (lf.epf_iters == 0) return nullptr;
   switch (epf_stage) {
     case EpfStage::Zero:
       return HWY_DYNAMIC_DISPATCH(GetEPFStage0)(lf, sigma);

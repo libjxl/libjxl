@@ -5,12 +5,11 @@
 
 #include "lib/jpegli/render.h"
 
-#include <string.h>
-
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <hwy/aligned_allocator.h>
 #include <vector>
 
@@ -22,7 +21,6 @@
 #include "lib/jpegli/upsample.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/status.h"
 
 #ifdef MEMORY_SANITIZER
 #define JXL_MEMORY_SANITIZER 1
@@ -466,8 +464,8 @@ void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
     auto dc = [&](int i, int j) {
       return swap_indices ? dc_values[j][i] : dc_values[i][j];
     };
+    JPEGLI_CHECK(coef_index >= 0 && coef_index < 10);
     Al = coef_bits[coef_index];
-    JXL_ASSERT(coef_index >= 0 && coef_index < 10);
     switch (coef_index) {
       case 0:
         // set the DC
@@ -569,7 +567,7 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
       m->dequant_[c * DCTSIZE2 + k] = table->quantval[k] * kDequantScale;
     }
   }
-  ChooseInverseTransform(cinfo);
+  JPEGLI_CHECK(ChooseInverseTransform(cinfo));
   ChooseColorTransform(cinfo);
 }
 
@@ -746,7 +744,7 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
           WriteToOutput(cinfo, rows, m->xoffset_, cinfo->output_width,
                         cinfo->out_color_components, output);
         }
-        JXL_ASSERT(cinfo->output_scanline == y + yix);
+        JPEGLI_CHECK(cinfo->output_scanline == y + yix);
         ++cinfo->output_scanline;
         ++(*num_output_rows);
         if (cinfo->output_scanline == cinfo->output_height) {

@@ -61,14 +61,6 @@ class RectT {
     return Intersection(RectT(0, 0, area_xsize, area_ysize));
   }
 
-  // Returns a rect that only contains `num` lines with offset `y` from `y0()`.
-  RectT Lines(size_t y, size_t num) const {
-    JXL_DASSERT(y + num <= ysize_);
-    return RectT(x0_, y0_ + y, xsize_, num);
-  }
-
-  RectT Line(size_t y) const { return Lines(y, 1); }
-
   JXL_MUST_USE_RESULT RectT Intersection(const RectT& other) const {
     return RectT(std::max(x0_, other.x0_), std::max(y0_, other.y0_), xsize_,
                  ysize_, std::min(x1(), other.x1()),
@@ -141,18 +133,13 @@ class RectT {
   RectT<T> ShiftLeft(size_t shift) const { return ShiftLeft(shift, shift); }
 
   // Requires x0(), y0() to be multiples of 1<<shiftx, 1<<shifty.
-  RectT<T> CeilShiftRight(size_t shiftx, size_t shifty) const {
-    JXL_ASSERT(x0_ % (1 << shiftx) == 0);
-    JXL_ASSERT(y0_ % (1 << shifty) == 0);
+  StatusOr<RectT<T>> CeilShiftRight(std::pair<size_t, size_t> shift) const {
+    size_t shiftx = shift.first;
+    size_t shifty = shift.second;
+    JXL_ENSURE((x0_ % (1 << shiftx) == 0) && (y0_ % (1 << shifty) == 0));
     return RectT<T>(x0_ / (1 << shiftx), y0_ / (1 << shifty),
                     DivCeil(xsize_, T{1} << shiftx),
                     DivCeil(ysize_, T{1} << shifty));
-  }
-  RectT<T> CeilShiftRight(std::pair<size_t, size_t> shift) const {
-    return CeilShiftRight(shift.first, shift.second);
-  }
-  RectT<T> CeilShiftRight(size_t shift) const {
-    return CeilShiftRight(shift, shift);
   }
 
   RectT<T> Extend(T border, RectT<T> parent) const {

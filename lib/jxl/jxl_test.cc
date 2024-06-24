@@ -28,6 +28,7 @@
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/alpha.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/sanitizer_definitions.h"  // JXL_MEMORY_SANITIZER
 #include "lib/jxl/base/span.h"
@@ -65,23 +66,32 @@ using test::ThreadPoolForTests;
 
 TEST(JxlTest, RoundtripSinglePixel) {
   TestImage t;
-  t.SetDimensions(1, 1).AddFrame().ZeroFill();
+  ASSERT_TRUE(t.SetDimensions(1, 1));
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
+  frame.ZeroFill();
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 54, 10);
 }
 
 TEST(JxlTest, RoundtripSinglePixelWithAlpha) {
   TestImage t;
-  t.SetDimensions(1, 1).SetChannels(4).AddFrame().ZeroFill();
+  ASSERT_TRUE(t.SetDimensions(1, 1));
+  ASSERT_TRUE(t.SetChannels(4));
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
+  frame.ZeroFill();
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 57, 10);
 }
 
 // Changing serialized signature causes Decode to fail.
-#ifndef JXL_CRASH_ON_ERROR
 TEST(JxlTest, RoundtripMarker) {
+  if (JXL_CRASH_ON_ERROR) {
+    GTEST_SKIP() << "Skipping due to JXL_CRASH_ON_ERROR";
+  }
   TestImage t;
-  t.SetDimensions(1, 1).AddFrame().ZeroFill();
+  ASSERT_TRUE(t.SetDimensions(1, 1));
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
+  frame.ZeroFill();
   for (size_t i = 0; i < 2; ++i) {
     std::vector<uint8_t> compressed;
     EXPECT_TRUE(extras::EncodeImageJXL({}, t.ppf(), /*jpeg_bytes=*/nullptr,
@@ -93,14 +103,15 @@ TEST(JxlTest, RoundtripMarker) {
                                         &ppf_out));
   }
 }
-#endif
 
 TEST(JxlTest, RoundtripTinyFast) {
   ThreadPool* pool = nullptr;
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata().SetDimensions(32, 32);
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
+  ASSERT_TRUE(t.SetDimensions(32, 32));
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);
@@ -115,10 +126,11 @@ TEST(JxlTest, RoundtripSmallD1) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   size_t xsize = t.ppf().info.xsize / 8;
   size_t ysize = t.ppf().info.ysize / 8;
-  t.SetDimensions(xsize, ysize);
+  ASSERT_TRUE(t.SetDimensions(xsize, ysize));
 
   {
     PackedPixelFile ppf_out;
@@ -142,7 +154,8 @@ TEST(JxlTest, RoundtripResample2) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_RESAMPLING, 2);
@@ -158,7 +171,8 @@ TEST(JxlTest, RoundtripResample2Slow) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_RESAMPLING, 2);
@@ -175,7 +189,8 @@ TEST(JxlTest, RoundtripResample2MT) {
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   // image has to be large enough to have multiple groups after downsampling
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_RESAMPLING, 2);
@@ -194,10 +209,11 @@ TEST(JxlTest, RoundtripOutOfOrderProcessing) {
   ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   // Image size is selected so that the block border needed is larger than the
   // amount of pixels available on the next block.
-  t.SetDimensions(513, 515);
+  ASSERT_TRUE(t.SetDimensions(513, 515));
 
   JXLCompressParams cparams;
   // Force epf so we end up needing a lot of border.
@@ -213,10 +229,11 @@ TEST(JxlTest, RoundtripOutOfOrderProcessingBorder) {
   ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   // Image size is selected so that the block border needed is larger than the
   // amount of pixels available on the next block.
-  t.SetDimensions(513, 515);
+  ASSERT_TRUE(t.SetDimensions(513, 515));
 
   JXLCompressParams cparams;
   // Force epf so we end up needing a lot of border.
@@ -233,7 +250,8 @@ TEST(JxlTest, RoundtripResample4) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_RESAMPLING, 4);
@@ -248,7 +266,8 @@ TEST(JxlTest, RoundtripResample8) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_RESAMPLING, 8);
@@ -263,10 +282,11 @@ TEST(JxlTest, RoundtripUnalignedD2) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   size_t xsize = t.ppf().info.xsize / 12;
   size_t ysize = t.ppf().info.ysize / 7;
-  t.SetDimensions(xsize, ysize);
+  ASSERT_TRUE(t.SetDimensions(xsize, ysize));
 
   JXLCompressParams cparams;
   cparams.distance = 2.0;
@@ -279,7 +299,9 @@ TEST(JxlTest, RoundtripUnalignedD2) {
 TEST(JxlTest, RoundtripMultiGroup) {
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata().SetDimensions(600, 1024);
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
+  ASSERT_TRUE(t.SetDimensions(600, 1024));
 
   auto test = [&](jxl::SpeedTier speed_tier, float target_distance,
                   size_t expected_size, float expected_distance) {
@@ -308,7 +330,7 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io{memory_manager};
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, pool.get()));
-  io.ShrinkTo(600, 1024);
+  ASSERT_TRUE(io.ShrinkTo(600, 1024));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0f;
@@ -354,7 +376,8 @@ TEST(JxlTest, RoundtripLargeFast) {
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
@@ -368,13 +391,15 @@ TEST(JxlTest, RoundtripLargeFast) {
 JXL_X86_64_TEST(JxlTest, RoundtripLargeEmptyModular) {
   ThreadPoolForTests pool(8);
   TestImage t;
-  t.SetDimensions(4096, 4096).SetDataType(JXL_TYPE_UINT8).SetChannels(4);
-  TestImage::Frame frame = t.AddFrame();
+  ASSERT_TRUE(t.SetDimensions(4096, 4096));
+  t.SetDataType(JXL_TYPE_UINT8);
+  ASSERT_TRUE(t.SetChannels(4));
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
   frame.ZeroFill();
   for (size_t c = 0; c < 4; ++c) {
     for (size_t y = 0; y < 1024; y += (c + 1)) {
       for (size_t x = 0; x < 1024; x += ((y % 4) + 3)) {
-        frame.SetValue(y, x, c, 0.88);
+        ASSERT_TRUE(frame.SetValue(y, x, c, 0.88));
       }
     }
   }
@@ -395,7 +420,8 @@ TEST(JxlTest, RoundtripOutputColorSpace) {
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
@@ -413,7 +439,8 @@ TEST(JxlTest, RoundtripDotsForceEpf) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
@@ -433,7 +460,8 @@ TEST(JxlTest, RoundtripD2Consistent) {
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
@@ -441,7 +469,7 @@ TEST(JxlTest, RoundtripD2Consistent) {
 
   // Try each xsize mod kBlockDim to verify right border handling.
   for (size_t xsize = 48; xsize > 40; --xsize) {
-    t.SetDimensions(xsize, 15);
+    ASSERT_TRUE(t.SetDimensions(xsize, 15));
 
     PackedPixelFile ppf2;
     const size_t size2 = Roundtrip(t.ppf(), cparams, {}, pool.get(), &ppf2);
@@ -463,7 +491,8 @@ TEST(JxlTest, RoundtripD2Consistent) {
 TEST(JxlTest, RoundtripLargeConsistent) {
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
@@ -496,10 +525,11 @@ TEST(JxlTest, RoundtripSmallNL) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   size_t xsize = t.ppf().info.xsize / 8;
   size_t ysize = t.ppf().info.ysize / 8;
-  t.SetDimensions(xsize, ysize);
+  ASSERT_TRUE(t.SetDimensions(xsize, ysize));
 
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 916, 45);
@@ -511,7 +541,8 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EPF, 0);
@@ -527,10 +558,11 @@ TEST(JxlTest, RoundtripSmallNoGaborish) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   size_t xsize = t.ppf().info.xsize / 8;
   size_t ysize = t.ppf().info.ysize / 8;
-  t.SetDimensions(xsize, ysize);
+  ASSERT_TRUE(t.SetDimensions(xsize, ysize));
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_GABORISH, 0);
@@ -543,17 +575,18 @@ TEST(JxlTest, RoundtripSmallNoGaborish) {
 TEST(JxlTest, RoundtripSmallPatchesAlpha) {
   ThreadPool* pool = nullptr;
   TestImage t;
-  t.SetDimensions(256, 256).SetChannels(4);
-  t.SetColorEncoding("RGB_D65_SRG_Rel_Lin");
-  TestImage::Frame frame = t.AddFrame();
+  ASSERT_TRUE(t.SetDimensions(256, 256));
+  ASSERT_TRUE(t.SetChannels(4));
+  ASSERT_TRUE(t.SetColorEncoding("RGB_D65_SRG_Rel_Lin"));
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
   frame.ZeroFill();
   // This pattern should be picked up by the patch detection heuristics.
   for (size_t y = 0; y < t.ppf().info.ysize; ++y) {
     for (size_t x = 0; x < t.ppf().info.xsize; ++x) {
       if (x % 4 == 0 && (y / 32) % 4 == 0) {
-        frame.SetValue(y, x, 1, 127.0f / 255.0f);
+        ASSERT_TRUE(frame.SetValue(y, x, 1, 127.0f / 255.0f));
       }
-      frame.SetValue(y, x, 3, 1.0f);
+      ASSERT_TRUE(frame.SetValue(y, x, 3, 1.0f));
     }
   }
 
@@ -569,15 +602,15 @@ TEST(JxlTest, RoundtripSmallPatchesAlpha) {
 TEST(JxlTest, RoundtripSmallPatches) {
   ThreadPool* pool = nullptr;
   TestImage t;
-  t.SetDimensions(256, 256);
-  t.SetColorEncoding("RGB_D65_SRG_Rel_Lin");
-  TestImage::Frame frame = t.AddFrame();
+  ASSERT_TRUE(t.SetDimensions(256, 256));
+  ASSERT_TRUE(t.SetColorEncoding("RGB_D65_SRG_Rel_Lin"));
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
   frame.ZeroFill();
   // This pattern should be picked up by the patch detection heuristics.
   for (size_t y = 0; y < t.ppf().info.ysize; ++y) {
     for (size_t x = 0; x < t.ppf().info.xsize; ++x) {
       if (x % 4 == 0 && (y / 32) % 4 == 0) {
-        frame.SetValue(y, x, 1, 127.0f / 255.0f);
+        ASSERT_TRUE(frame.SetValue(y, x, 1, 127.0f / 255.0f));
       }
     }
   }
@@ -599,7 +632,7 @@ TEST(JxlTest, RoundtripSmallPatches) {
 TEST(JxlTest, RoundtripImageBundleOriginalBits) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   // Image does not matter, only io.metadata.m and io2.metadata.m are tested.
-  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(memory_manager, 1, 1));
+  JXL_TEST_ASSIGN_OR_DIE(Image3F image, Image3F::Create(memory_manager, 1, 1));
   ZeroFillImage(&image);
   CodecInOut io{memory_manager};
   io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
@@ -673,7 +706,7 @@ TEST(JxlTest, RoundtripGrayscale) {
   CodecInOut io{memory_manager};
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
   ASSERT_NE(io.xsize(), 0u);
-  io.ShrinkTo(128, 128);
+  ASSERT_TRUE(io.ShrinkTo(128, 128));
   EXPECT_TRUE(io.Main().IsGray());
   EXPECT_EQ(8u, io.metadata.m.bit_depth.bits_per_sample);
   EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
@@ -750,7 +783,7 @@ TEST(JxlTest, RoundtripAlpha) {
   ASSERT_NE(io.xsize(), 0u);
   ASSERT_TRUE(io.metadata.m.HasAlpha());
   ASSERT_TRUE(io.Main().HasAlpha());
-  io.ShrinkTo(300, 300);
+  ASSERT_TRUE(io.ShrinkTo(300, 300));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
@@ -782,53 +815,55 @@ TEST(JxlTest, RoundtripAlpha) {
 
 namespace {
 // Performs "PremultiplyAlpha" for each ImageBundle (preview/frames).
-bool PremultiplyAlpha(CodecInOut& io) {
-  const auto doPremultiplyAlpha = [](ImageBundle& bundle) {
-    if (!bundle.HasAlpha()) return;
-    if (!bundle.HasColor()) return;
+Status PremultiplyAlpha(CodecInOut& io) {
+  const auto doPremultiplyAlpha = [](ImageBundle& bundle) -> Status {
+    if (!bundle.HasAlpha()) return true;
+    if (!bundle.HasColor()) return true;
     auto* color = bundle.color();
     const auto* alpha = bundle.alpha();
-    JXL_CHECK(color->ysize() == alpha->ysize());
-    JXL_CHECK(color->xsize() == alpha->xsize());
+    JXL_ENSURE(color->ysize() == alpha->ysize());
+    JXL_ENSURE(color->xsize() == alpha->xsize());
     for (size_t y = 0; y < color->ysize(); y++) {
       ::jxl::PremultiplyAlpha(color->PlaneRow(0, y), color->PlaneRow(1, y),
                               color->PlaneRow(2, y), alpha->Row(y),
                               color->xsize());
     }
+    return true;
   };
   ExtraChannelInfo* eci = io.metadata.m.Find(ExtraChannel::kAlpha);
-  if (eci == nullptr || eci->alpha_associated) return false;
+  JXL_ENSURE(eci != nullptr && !eci->alpha_associated);
   if (io.metadata.m.have_preview) {
-    doPremultiplyAlpha(io.preview_frame);
+    JXL_RETURN_IF_ERROR(doPremultiplyAlpha(io.preview_frame));
   }
   for (ImageBundle& ib : io.frames) {
-    doPremultiplyAlpha(ib);
+    JXL_RETURN_IF_ERROR(doPremultiplyAlpha(ib));
   }
   eci->alpha_associated = true;
   return true;
 }
 
-bool UnpremultiplyAlpha(CodecInOut& io) {
-  const auto doUnpremultiplyAlpha = [](ImageBundle& bundle) {
-    if (!bundle.HasAlpha()) return;
-    if (!bundle.HasColor()) return;
+Status UnpremultiplyAlpha(CodecInOut& io) {
+  const auto doUnpremultiplyAlpha = [](ImageBundle& bundle) -> Status {
+    if (!bundle.HasAlpha()) return true;
+    if (!bundle.HasColor()) return true;
     auto* color = bundle.color();
     const auto* alpha = bundle.alpha();
-    JXL_CHECK(color->ysize() == alpha->ysize());
-    JXL_CHECK(color->xsize() == alpha->xsize());
+    JXL_ENSURE(color->ysize() == alpha->ysize());
+    JXL_ENSURE(color->xsize() == alpha->xsize());
     for (size_t y = 0; y < color->ysize(); y++) {
       ::jxl::UnpremultiplyAlpha(color->PlaneRow(0, y), color->PlaneRow(1, y),
                                 color->PlaneRow(2, y), alpha->Row(y),
                                 color->xsize());
     }
+    return true;
   };
   ExtraChannelInfo* eci = io.metadata.m.Find(ExtraChannel::kAlpha);
-  if (eci == nullptr || !eci->alpha_associated) return false;
+  JXL_ENSURE(eci != nullptr && eci->alpha_associated);
   if (io.metadata.m.have_preview) {
-    doUnpremultiplyAlpha(io.preview_frame);
+    JXL_RETURN_IF_ERROR(doUnpremultiplyAlpha(io.preview_frame));
   }
   for (ImageBundle& ib : io.frames) {
-    doUnpremultiplyAlpha(ib);
+    JXL_RETURN_IF_ERROR(doUnpremultiplyAlpha(ib));
   }
   eci->alpha_associated = false;
   return true;
@@ -847,8 +882,8 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
   ASSERT_NE(io.xsize(), 0u);
   ASSERT_TRUE(io.metadata.m.HasAlpha());
   ASSERT_TRUE(io.Main().HasAlpha());
-  io.ShrinkTo(300, 300);
-  io_nopremul.ShrinkTo(300, 300);
+  ASSERT_TRUE(io.ShrinkTo(300, 300));
+  ASSERT_TRUE(io_nopremul.ShrinkTo(300, 300));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
@@ -908,7 +943,8 @@ TEST(JxlTest, RoundtripAlphaResampling) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   ASSERT_NE(t.ppf().info.xsize, 0);
   ASSERT_TRUE(t.ppf().info.alpha_bits > 0);
 
@@ -928,7 +964,8 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   ASSERT_NE(t.ppf().info.xsize, 0);
   ASSERT_TRUE(t.ppf().info.alpha_bits > 0);
 
@@ -947,7 +984,9 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata().SetDimensions(12, 12);
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
+  ASSERT_TRUE(t.SetDimensions(12, 12));
   ASSERT_NE(t.ppf().info.xsize, 0);
   ASSERT_TRUE(t.ppf().info.alpha_bits > 0);
   EXPECT_EQ(t.ppf().frames[0].color.format.data_type, JXL_TYPE_UINT8);
@@ -963,8 +1002,10 @@ TEST(JxlTest, RoundtripAlpha16) {
   size_t xsize = 1200;
   size_t ysize = 160;
   TestImage t;
-  t.SetDimensions(xsize, ysize).SetChannels(4).SetAllBitDepths(16);
-  TestImage::Frame frame = t.AddFrame();
+  ASSERT_TRUE(t.SetDimensions(xsize, ysize));
+  ASSERT_TRUE(t.SetChannels(4));
+  t.SetAllBitDepths(16);
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
   // Generate 16-bit pattern that uses various colors and alpha values.
   const float mul = 1.0f / 65535;
   for (size_t y = 0; y < ysize; y++) {
@@ -972,10 +1013,10 @@ TEST(JxlTest, RoundtripAlpha16) {
       uint16_t r = y * 65535 / ysize;
       uint16_t g = x * 65535 / xsize;
       uint16_t b = (y + x) * 65535 / (xsize + ysize);
-      frame.SetValue(y, x, 0, r * mul);
-      frame.SetValue(y, x, 1, g * mul);
-      frame.SetValue(y, x, 2, b * mul);
-      frame.SetValue(y, x, 3, g * mul);
+      ASSERT_TRUE(frame.SetValue(y, x, 0, r * mul));
+      ASSERT_TRUE(frame.SetValue(y, x, 1, g * mul));
+      ASSERT_TRUE(frame.SetValue(y, x, 2, b * mul));
+      ASSERT_TRUE(frame.SetValue(y, x, 3, g * mul));
     }
   }
 
@@ -1010,7 +1051,8 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams = CompressParamsForLossless();
   JXLDecompressParams dparams;
@@ -1026,7 +1068,8 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8ThunderGradient) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams = CompressParamsForLossless();
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 2);             // kThunder
@@ -1044,7 +1087,8 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8LightningGradient) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams = CompressParamsForLossless();
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);  // kLightning
@@ -1063,7 +1107,8 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8Falcon) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams = CompressParamsForLossless();
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 3);  // kFalcon
@@ -1080,7 +1125,8 @@ TEST(JxlTest, RoundtripLossless8Alpha) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   ASSERT_EQ(t.ppf().info.alpha_bits, 8);
   EXPECT_EQ(t.ppf().frames[0].color.format.data_type, JXL_TYPE_UINT8);
 
@@ -1101,8 +1147,11 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
   size_t xsize = 1200;
   size_t ysize = 160;
   TestImage t;
-  t.SetDimensions(xsize, ysize).SetChannels(4).SetAllBitDepths(16);
-  TestImage::Frame frame = t.AddFrame();
+  ASSERT_TRUE(t.SetDimensions(xsize, ysize));
+  ASSERT_TRUE(t.SetChannels(4));
+  t.SetAllBitDepths(16);
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
+  frame.ZeroFill();
   // Generate 16-bit pattern that uses various colors and alpha values.
   const float mul = 1.0f / 65535;
   for (size_t y = 0; y < ysize; y++) {
@@ -1110,10 +1159,10 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
       uint16_t r = y * 65535 / ysize;
       uint16_t g = x * 65535 / xsize + 37;
       uint16_t b = (y + x) * 65535 / (xsize + ysize);
-      frame.SetValue(y, x, 0, r * mul);
-      frame.SetValue(y, x, 1, g * mul);
-      frame.SetValue(y, x, 2, b * mul);
-      frame.SetValue(y, x, 3, g * mul);
+      ASSERT_TRUE(frame.SetValue(y, x, 0, r * mul));
+      ASSERT_TRUE(frame.SetValue(y, x, 1, g * mul));
+      ASSERT_TRUE(frame.SetValue(y, x, 2, b * mul));
+      ASSERT_TRUE(frame.SetValue(y, x, 3, g * mul));
     }
   }
   ASSERT_EQ(t.ppf().info.bits_per_sample, 16);
@@ -1137,8 +1186,10 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
   size_t xsize = 128;
   size_t ysize = 128;
   TestImage t;
-  t.SetDimensions(xsize, ysize).SetChannels(4).SetAllBitDepths(16);
-  TestImage::Frame frame = t.AddFrame();
+  ASSERT_TRUE(t.SetDimensions(xsize, ysize));
+  ASSERT_TRUE(t.SetChannels(4));
+  t.SetAllBitDepths(16);
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
   // All 16-bit values, both color and alpha, of this image are below 64.
   // This allows testing if a code path wrongly concludes it's an 8-bit instead
   // of 16-bit image (or even 6-bit).
@@ -1148,10 +1199,10 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
       uint16_t r = y * 64 / ysize;
       uint16_t g = x * 64 / xsize + 37;
       uint16_t b = (y + x) * 64 / (xsize + ysize);
-      frame.SetValue(y, x, 0, r * mul);
-      frame.SetValue(y, x, 1, g * mul);
-      frame.SetValue(y, x, 2, b * mul);
-      frame.SetValue(y, x, 3, g * mul);
+      ASSERT_TRUE(frame.SetValue(y, x, 0, r * mul));
+      ASSERT_TRUE(frame.SetValue(y, x, 1, g * mul));
+      ASSERT_TRUE(frame.SetValue(y, x, 2, b * mul));
+      ASSERT_TRUE(frame.SetValue(y, x, 3, g * mul));
     }
   }
   ASSERT_EQ(t.ppf().info.bits_per_sample, 16);
@@ -1175,7 +1226,8 @@ TEST(JxlTest, RoundtripDots) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   ASSERT_NE(t.ppf().info.xsize, 0);
   EXPECT_EQ(t.ppf().info.bits_per_sample, 8);
   EXPECT_EQ(t.ppf().color_encoding.transfer_function,
@@ -1195,7 +1247,8 @@ TEST(JxlTest, RoundtripDisablePerceptual) {
   ThreadPool* pool = nullptr;
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   ASSERT_NE(t.ppf().info.xsize, 0);
   EXPECT_EQ(t.ppf().info.bits_per_sample, 8);
   EXPECT_EQ(t.ppf().color_encoding.transfer_function,
@@ -1221,7 +1274,8 @@ TEST(JxlTest, RoundtripNoise) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   ASSERT_NE(t.ppf().info.xsize, 0);
   EXPECT_EQ(t.ppf().info.bits_per_sample, 8);
   EXPECT_EQ(t.ppf().color_encoding.transfer_function,
@@ -1241,7 +1295,9 @@ TEST(JxlTest, RoundtripLossless8Gray) {
   const std::vector<uint8_t> orig = ReadTestData(
       "external/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
   TestImage t;
-  t.SetColorEncoding("Gra_D65_Rel_SRG").DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.SetColorEncoding("Gra_D65_Rel_SRG"));
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   EXPECT_EQ(t.ppf().color_encoding.color_space, JXL_COLOR_SPACE_GRAY);
   EXPECT_EQ(t.ppf().info.bits_per_sample, 8);
 
@@ -1265,7 +1321,8 @@ TEST(JxlTest, RoundtripAnimation) {
   ThreadPool* pool = nullptr;
   const std::vector<uint8_t> orig = ReadTestData("jxl/traffic_light.gif");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   EXPECT_EQ(4, t.ppf().frames.size());
 
   JXLDecompressParams dparams;
@@ -1274,7 +1331,7 @@ TEST(JxlTest, RoundtripAnimation) {
   PackedPixelFile ppf_out;
   EXPECT_SLIGHTLY_BELOW(Roundtrip(t.ppf(), {}, dparams, pool, &ppf_out), 3370);
 
-  t.CoalesceGIFAnimationWithAlpha();
+  ASSERT_TRUE(t.CoalesceGIFAnimationWithAlpha());
   ASSERT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
   static constexpr double kMaxButteraugli =
 #if JXL_HIGH_PRECISION
@@ -1293,7 +1350,8 @@ TEST(JxlTest, RoundtripLosslessAnimation) {
   ThreadPool* pool = nullptr;
   const std::vector<uint8_t> orig = ReadTestData("jxl/traffic_light.gif");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   EXPECT_EQ(4, t.ppf().frames.size());
 
   JXLCompressParams cparams = CompressParamsForLossless();
@@ -1305,7 +1363,7 @@ TEST(JxlTest, RoundtripLosslessAnimation) {
   EXPECT_SLIGHTLY_BELOW(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out),
                         958);
 
-  t.CoalesceGIFAnimationWithAlpha();
+  ASSERT_TRUE(t.CoalesceGIFAnimationWithAlpha());
   ASSERT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
   EXPECT_LE(ButteraugliDistance(t.ppf(), ppf_out), 5e-4);
 }
@@ -1319,7 +1377,8 @@ TEST(JxlTest, RoundtripAnimationPatches) {
   const std::vector<uint8_t> orig = ReadTestData("jxl/animation_patches.gif");
 
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   ASSERT_EQ(2u, t.ppf().frames.size());
 
   JXLCompressParams cparams;
@@ -1397,7 +1456,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionToPixels) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
   TestImage t;
-  t.DecodeFromBytes(orig);
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
 
   PackedPixelFile ppf_out;
   RoundtripJpegToPixels(orig, {}, pool.get(), &ppf_out);
@@ -1410,7 +1469,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionToPixels420) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
   TestImage t;
-  t.DecodeFromBytes(orig);
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
 
   PackedPixelFile ppf_out;
   RoundtripJpegToPixels(orig, {}, pool.get(), &ppf_out);
@@ -1424,7 +1483,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest,
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
   TestImage t;
-  t.DecodeFromBytes(orig);
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
 
   JXLDecompressParams dparams;
   dparams.max_downsampling = 8;
@@ -1440,7 +1499,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionToPixels420Mul16) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower_cropped.jpg");
   TestImage t;
-  t.DecodeFromBytes(orig);
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
 
   PackedPixelFile ppf_out;
   RoundtripJpegToPixels(orig, {}, pool.get(), &ppf_out);
@@ -1453,7 +1512,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionToPixelsAsymmetric) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
   TestImage t;
-  t.DecodeFromBytes(orig);
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
 
   PackedPixelFile ppf_out;
   RoundtripJpegToPixels(orig, {}, pool.get(), &ppf_out);
@@ -1609,7 +1668,9 @@ TEST(JxlTest, RoundtripProgressive) {
   ThreadPoolForTests pool(4);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata().SetDimensions(600, 1024);
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
+  ASSERT_TRUE(t.SetDimensions(600, 1024));
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, 1);
@@ -1626,7 +1687,9 @@ TEST(JxlTest, RoundtripProgressiveLevel2Slow) {
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata().SetDimensions(600, 1024);
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
+  ASSERT_TRUE(t.SetDimensions(600, 1024));
 
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 9);  // kTortoise
@@ -1650,9 +1713,10 @@ TEST(JxlTest, RoundtripUnsignedCustomBitdepthLossless) {
                num_channels, bitdepth,
                endianness == JXL_LITTLE_ENDIAN ? "little" : "big");
         TestImage t;
-        t.SetDimensions(256, 256).SetChannels(num_channels);
+        ASSERT_TRUE(t.SetDimensions(256, 256));
+        ASSERT_TRUE(t.SetChannels(num_channels));
         t.SetAllBitDepths(bitdepth).SetEndianness(endianness);
-        TestImage::Frame frame = t.AddFrame();
+        JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
         frame.RandomFill();
         t.ppf().input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
 
@@ -1683,8 +1747,10 @@ TEST(JxlTest, LosslessPNMRoundtrip) {
                              std::to_string(bit_depth) + extension;
       const std::vector<uint8_t> orig = ReadTestData(filename);
       test::TestImage t;
-      if (channels < 3) t.SetColorEncoding("Gra_D65_Rel_SRG");
-      t.DecodeFromBytes(orig);
+      if (channels < 3) {
+        ASSERT_TRUE(t.SetColorEncoding("Gra_D65_Rel_SRG"));
+      }
+      ASSERT_TRUE(t.DecodeFromBytes(orig));
 
       JXLCompressParams cparams = CompressParamsForLossless();
       cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);  // kLightning
@@ -1714,7 +1780,8 @@ TEST_P(JxlTest, LosslessSmallFewColors) {
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig = ReadTestData(GetParam());
   TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
 
   JXLCompressParams cparams;
   cparams.distance = 0;
@@ -1777,11 +1844,12 @@ TEST_P(JxlStreamingTest, Roundtrip) {
   const StreamingTestParam& p = GetParam();
 
   jxl::test::TestImage image;
-  image.SetDimensions(p.xsize, p.ysize)
-      .SetDataType(JXL_TYPE_UINT8)
-      .SetChannels(p.num_channels())
-      .SetAllBitDepths(8);
-  image.AddFrame().RandomFill();
+  ASSERT_TRUE(image.SetDimensions(p.xsize, p.ysize));
+  image.SetDataType(JXL_TYPE_UINT8);
+  ASSERT_TRUE(image.SetChannels(p.num_channels()));
+  image.SetAllBitDepths(8);
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, image.AddFrame());
+  frame.RandomFill();
   JXLCompressParams cparams;
   cparams.distance = 0.1;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, p.effort);
@@ -1852,7 +1920,7 @@ JXL_X86_64_TEST_P(JxlStreamingEncodingTest, StreamingSamePixels) {
 
   const std::vector<uint8_t> orig = ReadTestData(param.file);
   jxl::test::TestImage image;
-  image.DecodeFromBytes(orig);
+  ASSERT_TRUE(image.DecodeFromBytes(orig));
 
   JXLCompressParams cparams;
   cparams.distance = param.distance;

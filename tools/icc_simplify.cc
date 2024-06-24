@@ -70,13 +70,15 @@ int main(int argc, const char** argv) {
 
     if (!icc_signature || !io.metadata.m.color_encoding.SetICC(
                               jxl::IccBytes(encoded), JxlGetDefaultCms())) {
-      JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), {}, &io, pool.get()));
+      JPEGXL_TOOLS_CHECK(
+          jxl::SetFromBytes(jxl::Bytes(encoded), {}, &io, pool.get()));
     }
   } else if (jxl::ParseDescription(input_filename, &c_descr)) {
-    JXL_CHECK(io.metadata.m.color_encoding.FromExternal(c_descr));
+    JPEGXL_TOOLS_CHECK(io.metadata.m.color_encoding.FromExternal(c_descr));
   }
 
   jxl::ColorEncoding c_out = io.metadata.m.color_encoding;
-  JXL_CHECK(c_out.CreateICC());
-  JXL_CHECK(jpegxl::tools::WriteFile(output_filename, c_out.ICC()));
+  JPEGXL_TOOLS_CHECK(c_out.CreateICC());
+  JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, c_out.ICC()));
+  return EXIT_SUCCESS;
 }

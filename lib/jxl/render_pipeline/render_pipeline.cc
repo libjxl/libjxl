@@ -27,15 +27,13 @@ Status RenderPipeline::Builder::AddStage(
 
 StatusOr<std::unique_ptr<RenderPipeline>> RenderPipeline::Builder::Finalize(
     FrameDimensions frame_dimensions) && {
-#if JXL_ENABLE_ASSERT
   // Check that the last stage is not a kInOut stage for any channel, and that
   // there is at least one stage.
-  JXL_ASSERT(!stages_.empty());
+  JXL_ENSURE(!stages_.empty());
   for (size_t c = 0; c < num_c_; c++) {
-    JXL_ASSERT(stages_.back()->GetChannelMode(c) !=
+    JXL_ENSURE(stages_.back()->GetChannelMode(c) !=
                RenderPipelineChannelMode::kInOut);
   }
-#endif
 
   std::unique_ptr<RenderPipeline> res;
   if (use_simple_implementation_) {
@@ -113,7 +111,7 @@ RenderPipelineInput RenderPipeline::GetInputBuffers(size_t group_id,
 Status RenderPipeline::InputReady(
     size_t group_id, size_t thread_id,
     const std::vector<std::pair<ImageF*, Rect>>& buffers) {
-  JXL_DASSERT(group_id < group_completed_passes_.size());
+  JXL_ENSURE(group_id < group_completed_passes_.size());
   group_completed_passes_[group_id]++;
   for (size_t i = 0; i < buffers.size(); ++i) {
     (void)i;
@@ -133,7 +131,7 @@ Status RenderPipeline::PrepareForThreads(size_t num, bool use_group_ids) {
 }
 
 Status RenderPipelineInput::Done() {
-  JXL_ASSERT(pipeline_);
+  JXL_ENSURE(pipeline_);
   JXL_RETURN_IF_ERROR(pipeline_->InputReady(group_id_, thread_id_, buffers_));
   return true;
 }

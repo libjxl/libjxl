@@ -14,6 +14,15 @@
 namespace jxl {
 namespace {
 
+#define QUIT(M)           \
+  state.SkipWithError(M); \
+  return;
+
+#define BM_CHECK(C) \
+  if (!(C)) {       \
+    QUIT(#C)        \
+  }
+
 // Decoder case, interleaves an internal float image.
 void BM_DecExternalImage_ConvertImageRGBA(benchmark::State& state) {
   JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
@@ -25,13 +34,15 @@ void BM_DecExternalImage_ConvertImageRGBA(benchmark::State& state) {
   ImageMetadata im;
   im.SetAlphaBits(8);
   ImageBundle ib(memory_manager, &im);
-  JXL_ASSIGN_OR_DIE(Image3F color,
-                    Image3F::Create(memory_manager, xsize, ysize));
+  JXL_ASSIGN_OR_QUIT(Image3F color,
+                     Image3F::Create(memory_manager, xsize, ysize),
+                     "Failed to allocate color plane.");
   ZeroFillImage(&color);
-  ib.SetFromImage(std::move(color), ColorEncoding::SRGB());
-  JXL_ASSIGN_OR_DIE(ImageF alpha, ImageF::Create(memory_manager, xsize, ysize));
+  BM_CHECK(ib.SetFromImage(std::move(color), ColorEncoding::SRGB()));
+  JXL_ASSIGN_OR_QUIT(ImageF alpha, ImageF::Create(memory_manager, xsize, ysize),
+                     "Failed to allocate alpha plane.");
   ZeroFillImage(&alpha);
-  ib.SetAlpha(std::move(alpha));
+  BM_CHECK(ib.SetAlpha(std::move(alpha)));
 
   const size_t bytes_per_row = xsize * num_channels;
   std::vector<uint8_t> interleaved(bytes_per_row * ysize);
@@ -39,7 +50,7 @@ void BM_DecExternalImage_ConvertImageRGBA(benchmark::State& state) {
   for (auto _ : state) {
     (void)_;
     for (size_t i = 0; i < kNumIter; ++i) {
-      JXL_CHECK(ConvertToExternal(
+      BM_CHECK(ConvertToExternal(
           ib,
           /*bits_per_sample=*/8,
           /*float_out=*/false, num_channels, JXL_NATIVE_ENDIAN,

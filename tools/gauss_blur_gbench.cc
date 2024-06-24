@@ -16,6 +16,15 @@
 namespace jxl {
 namespace {
 
+#define QUIT(M)           \
+  state.SkipWithError(M); \
+  return;
+
+#define BM_CHECK(C) \
+  if (!(C)) {       \
+    QUIT(#C)        \
+  }
+
 void BM_GaussBlur1d(benchmark::State& state) {
   JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
   // Uncomment to disable SIMD and force and scalar implementation
@@ -25,18 +34,21 @@ void BM_GaussBlur1d(benchmark::State& state) {
 
   const size_t length = state.range();
   const double sigma = 7.0;  // (from Butteraugli application)
-  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(memory_manager, length, 1));
+  JXL_ASSIGN_OR_QUIT(ImageF in, ImageF::Create(memory_manager, length, 1),
+                     "Failed to allocate image.");
   const float expected = length;
   FillImage(expected, &in);
 
-  JXL_ASSIGN_OR_DIE(ImageF temp, ImageF::Create(memory_manager, length, 1));
-  JXL_ASSIGN_OR_DIE(ImageF out, ImageF::Create(memory_manager, length, 1));
+  JXL_ASSIGN_OR_QUIT(ImageF temp, ImageF::Create(memory_manager, length, 1),
+                     "Failed to allocate image.");
+  JXL_ASSIGN_OR_QUIT(ImageF out, ImageF::Create(memory_manager, length, 1),
+                     "Failed to allocate image.");
   const auto rg = CreateRecursiveGaussian(sigma);
   for (auto _ : state) {
     FastGaussian1D(rg, length, in.Row(0), out.Row(0));
     // Prevent optimizing out
-    JXL_ASSERT(std::abs(out.ConstRow(0)[length / 2] - expected) / expected <
-               9E-5);
+    BM_CHECK(std::abs(out.ConstRow(0)[length / 2] - expected) / expected <
+             9E-5);
   }
   state.SetItemsProcessed(length * state.iterations());
 }
@@ -48,20 +60,25 @@ void BM_GaussBlur2d(benchmark::State& state) {
   const size_t xsize = state.range();
   const size_t ysize = xsize;
   const double sigma = 7.0;  // (from Butteraugli application)
-  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(memory_manager, xsize, ysize));
+  JXL_ASSIGN_OR_QUIT(ImageF in, ImageF::Create(memory_manager, xsize, ysize),
+                     "Failed to allocate image.");
   const float expected = xsize + ysize;
   FillImage(expected, &in);
 
-  JXL_ASSIGN_OR_DIE(ImageF temp, ImageF::Create(memory_manager, xsize, ysize));
-  JXL_ASSIGN_OR_DIE(ImageF out, ImageF::Create(memory_manager, xsize, ysize));
-  ThreadPool* null_pool = nullptr;
+  JXL_ASSIGN_OR_QUIT(ImageF temp, ImageF::Create(memory_manager, xsize, ysize),
+                     "Failed to allocate image.");
+  JXL_ASSIGN_OR_QUIT(ImageF out, ImageF::Create(memory_manager, xsize, ysize),
+                     "Failed to allocate image.");
   const auto rg = CreateRecursiveGaussian(sigma);
   for (auto _ : state) {
-    FastGaussian(rg, in, null_pool, &temp, &out);
+    BM_CHECK(FastGaussian(
+        rg, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+        [&](size_t y) { return temp.Row(y); },
+        [&](size_t y) { return out.Row(y); }));
     // Prevent optimizing out
-    JXL_ASSERT(std::abs(out.ConstRow(ysize / 2)[xsize / 2] - expected) /
-                   expected <
-               9E-5);
+    BM_CHECK(std::abs(out.ConstRow(ysize / 2)[xsize / 2] - expected) /
+                 expected <
+             9E-5);
   }
   state.SetItemsProcessed(xsize * ysize * state.iterations());
 }

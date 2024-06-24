@@ -358,7 +358,6 @@ else ()
   if(JPEGXL_ENABLE_COVERAGE)
     set(JPEGXL_COVERAGE_FLAGS
         -g -O0 -fprofile-arcs -ftest-coverage
-        -DJXL_ENABLE_ASSERT=0 -DJXL_ENABLE_CHECK=0
     )
     set(JPEGXL_COVERAGE_LINK_FLAGS
         --coverage

@@ -16,7 +16,6 @@
 #include "lib/jpegli/test_params.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
-#include "lib/jxl/base/status.h"
 
 namespace jpegli {
 namespace {
@@ -1053,10 +1052,10 @@ const size_t kDHTOffset = 84;
 const size_t kSOSOffset = 296;
 
 TEST(DecoderErrorHandlingTest, MinimalSuccess) {
-  JXL_CHECK(kCompressed0[kDQTOffset] == 0xff);
-  JXL_CHECK(kCompressed0[kSOFOffset] == 0xff);
-  JXL_CHECK(kCompressed0[kDHTOffset] == 0xff);
-  JXL_CHECK(kCompressed0[kSOSOffset] == 0xff);
+  ASSERT_TRUE(kCompressed0[kDQTOffset] == 0xff);
+  ASSERT_TRUE(kCompressed0[kSOFOffset] == 0xff);
+  ASSERT_TRUE(kCompressed0[kDHTOffset] == 0xff);
+  ASSERT_TRUE(kCompressed0[kSOSOffset] == 0xff);
   jpeg_decompress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);

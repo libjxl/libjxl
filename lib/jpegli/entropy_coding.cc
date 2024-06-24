@@ -568,8 +568,8 @@ bool IsEmptyHistogram(const Histogram& histo) {
   return true;
 }
 
-void ClusterJpegHistograms(const Histogram* histograms, size_t num,
-                           JpegClusteredHistograms* clusters) {
+void ClusterJpegHistograms(j_compress_ptr cinfo, const Histogram* histograms,
+                           size_t num, JpegClusteredHistograms* clusters) {
   clusters->histogram_indexes.resize(num);
   std::vector<uint32_t> slot_histograms;
   std::vector<float> slot_costs;
@@ -614,7 +614,7 @@ void ClusterJpegHistograms(const Histogram* histograms, size_t num,
       const Histogram& prev = clusters->histograms[histogram_index];
       AddHistograms(prev, cur, &clusters->histograms[histogram_index]);
       clusters->histogram_indexes[i] = histogram_index;
-      JXL_ASSERT(clusters->slot_ids[histogram_index] == best_slot);
+      JPEGLI_CHECK(clusters->slot_ids[histogram_index] == best_slot);
       slot_costs[best_slot] += best_cost;
     }
   }
@@ -716,11 +716,12 @@ void OptimizeHuffmanCodes(j_compress_ptr cinfo) {
 
   // Cluster DC histograms.
   JpegClusteredHistograms dc_clusters;
-  ClusterJpegHistograms(histograms.data(), cinfo->num_components, &dc_clusters);
+  ClusterJpegHistograms(cinfo, histograms.data(), cinfo->num_components,
+                        &dc_clusters);
 
   // Cluster AC histograms.
   JpegClusteredHistograms ac_clusters;
-  ClusterJpegHistograms(histograms.data() + 4, m->num_contexts - 4,
+  ClusterJpegHistograms(cinfo, histograms.data() + 4, m->num_contexts - 4,
                         &ac_clusters);
 
   // Create Huffman tables and slot ids clusters.

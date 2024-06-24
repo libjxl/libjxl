@@ -41,8 +41,8 @@ TEST(PatchDictionaryTest, GrayscaleModular) {
   size_t compressed_size;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
   EXPECT_LE(compressed_size, 8000u);
-  JXL_ASSERT_OK(VerifyRelativeError(*io.Main().color(), *io2.Main().color(),
-                                    1e-7f, 0, _));
+  JXL_TEST_ASSERT_OK(VerifyRelativeError(*io.Main().color(),
+                                         *io2.Main().color(), 1e-7f, 0, _));
 }
 
 TEST(PatchDictionaryTest, GrayscaleVarDCT) {

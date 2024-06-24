@@ -1453,12 +1453,12 @@ JXL_BOXES_TEST_P(EncodeBoxTest, BoxTest) {
       EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
       JxlBoxType type;
       EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec.get(), type, true));
-      if (!memcmp(type, "Exif", 4)) {
+      if (memcmp(type, "Exif", 4) == 0) {
         // This box should have been encoded before the image frame
         EXPECT_EQ(false, post_frame);
         JxlDecoderSetBoxBuffer(dec.get(), dec_exif_box.data(),
                                dec_exif_box.size());
-      } else if (!memcmp(type, "XML ", 4)) {
+      } else if (memcmp(type, "XML ", 4) == 0) {
         // This box should have been encoded after the image frame
         EXPECT_EQ(true, post_frame);
         JxlDecoderSetBoxBuffer(dec.get(), dec_xml_box.data(),
@@ -1768,14 +1768,15 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
   static void SetupImage(const StreamingTestParam& p, size_t xsize,
                          size_t ysize, size_t num_channels,
                          size_t bits_per_sample, jxl::test::TestImage& image) {
-    image.SetDimensions(xsize, ysize)
-        .SetDataType(JXL_TYPE_UINT8)
-        .SetChannels(num_channels)
-        .SetAllBitDepths(bits_per_sample);
+    ASSERT_TRUE(image.SetDimensions(xsize, ysize));
+    image.SetDataType(JXL_TYPE_UINT8);
+    ASSERT_TRUE(image.SetChannels(num_channels));
+    image.SetAllBitDepths(bits_per_sample);
     if (p.onegroup()) {
       image.SetRowAlignment(128);
     }
-    image.AddFrame().RandomFill();
+    JXL_TEST_ASSIGN_OR_DIE(auto frame, image.AddFrame());
+    frame.RandomFill();
   }
   static void SetUpBasicInfo(JxlBasicInfo& basic_info, size_t xsize,
                              size_t ysize, size_t number_extra_channels,
@@ -2035,17 +2036,19 @@ TEST(EncoderTest, CMYK) {
   size_t xsize = 257;
   size_t ysize = 259;
   jxl::test::TestImage image;
-  image.SetDimensions(xsize, ysize)
-      .SetDataType(JXL_TYPE_UINT8)
-      .SetChannels(3)
-      .SetAllBitDepths(8);
-  image.AddFrame().RandomFill();
+  ASSERT_TRUE(image.SetDimensions(xsize, ysize));
+  image.SetDataType(JXL_TYPE_UINT8);
+  ASSERT_TRUE(image.SetChannels(3));
+  image.SetAllBitDepths(8);
+  JXL_TEST_ASSIGN_OR_DIE(auto frame0, image.AddFrame());
+  frame0.RandomFill();
   jxl::test::TestImage ec_image;
-  ec_image.SetDataType(JXL_TYPE_UINT8)
-      .SetDimensions(xsize, ysize)
-      .SetChannels(1)
-      .SetAllBitDepths(8);
-  ec_image.AddFrame().RandomFill();
+  ec_image.SetDataType(JXL_TYPE_UINT8);
+  ASSERT_TRUE(ec_image.SetDimensions(xsize, ysize));
+  ASSERT_TRUE(ec_image.SetChannels(1));
+  ec_image.SetAllBitDepths(8);
+  JXL_TEST_ASSIGN_OR_DIE(auto frame1, ec_image.AddFrame());
+  frame1.RandomFill();
   const auto& frame = image.ppf().frames[0].color;
   const auto& ec_frame = ec_image.ppf().frames[0].color;
   JxlBasicInfo basic_info = image.ppf().info;

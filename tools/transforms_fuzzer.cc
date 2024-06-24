@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/memory_manager.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -47,16 +49,17 @@ void FillChannel(Channel& ch, Rng& rng) {
     }
   }
 }
-template <typename T>
-void AssertEq(T a, T b) {
-  if (a != b) __builtin_trap();
+void Check(bool ok) {
+  if (!ok) {
+    JXL_CRASH();
+  }
 }
 
 int DoTestOneInput(const uint8_t* data, size_t size) {
   if (size < 15) return 0;
   static Status nevermind = true;
   BitReader reader(Bytes(data, size));
-  BitReaderScopedCloser reader_closer(&reader, &nevermind);
+  BitReaderScopedCloser reader_closer(reader, nevermind);
 
   Rng rng(reader.ReadFixedBits<56>());
 
@@ -97,16 +100,22 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     ec_upsampling.push_back(1 << log_ec_upsampling);
   }
 
-  JXL_ASSIGN_OR_DIE(Image image,
-                    Image::Create(jpegxl::tools::NoMemoryManager(), w, h,
-                                  bit_depth, nb_chans + nb_extra));
+  JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
+  Image image{memory_manager};
+  bool ok = [&]() -> Status {
+    JXL_ASSIGN_OR_RETURN(image, Image::Create(memory_manager, w, h, bit_depth,
+                                              nb_chans + nb_extra));
+    return true;
+  }();
+  // OOM is ok here.
+  if (!ok) return 0;
 
   for (size_t c = 0; c < nb_chans; c++) {
     Channel& ch = image.channel[c];
     ch.hshift = hshift[c];
     ch.vshift = vshift[c];
-    JXL_CHECK(ch.shrink(jxl::DivCeil(w, 1 << hshift[c]),
-                        jxl::DivCeil(h, 1 << vshift[c])));
+    Check(ch.shrink(jxl::DivCeil(w, 1 << hshift[c]),
+                    jxl::DivCeil(h, 1 << vshift[c])));
   }
 
   for (size_t ec = 0; ec < nb_extra; ec++) {
@@ -114,8 +123,7 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     size_t ch_up = ec_upsampling[ec];
     int up_level =
         jxl::CeilLog2Nonzero(ch_up) - jxl::CeilLog2Nonzero(upsampling);
-    JXL_CHECK(
-        ch.shrink(jxl::DivCeil(w_orig, ch_up), jxl::DivCeil(h_orig, ch_up)));
+    Check(ch.shrink(jxl::DivCeil(w_orig, ch_up), jxl::DivCeil(h_orig, ch_up)));
     ch.hshift = ch.vshift = up_level;
   }
 
@@ -142,16 +150,16 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
 
   image.undo_transforms(w_header);
 
-  AssertEq(image.error, false);
-  AssertEq<size_t>(image.nb_meta_channels, 0);
-  AssertEq(image.channel.size(), nb_chans + nb_extra);
+  Check(!image.error);
+  Check(image.nb_meta_channels == 0);
+  Check(image.channel.size() == nb_chans + nb_extra);
 
   for (size_t c = 0; c < nb_chans; c++) {
     const Channel& ch = image.channel[c];
-    AssertEq(ch.hshift, hshift[c]);
-    AssertEq(ch.vshift, vshift[c]);
-    AssertEq(ch.w, jxl::DivCeil(w, 1 << hshift[c]));
-    AssertEq(ch.h, jxl::DivCeil(h, 1 << vshift[c]));
+    Check(ch.hshift == hshift[c]);
+    Check(ch.vshift == vshift[c]);
+    Check(ch.w == jxl::DivCeil(w, 1 << hshift[c]));
+    Check(ch.h == jxl::DivCeil(h, 1 << vshift[c]));
   }
 
   for (size_t ec = 0; ec < nb_extra; ec++) {
@@ -159,10 +167,10 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     size_t ch_up = ec_upsampling[ec];
     int up_level =
         jxl::CeilLog2Nonzero(ch_up) - jxl::CeilLog2Nonzero(upsampling);
-    AssertEq(ch.w, jxl::DivCeil(w_orig, ch_up));
-    AssertEq(ch.h, jxl::DivCeil(h_orig, ch_up));
-    AssertEq(ch.hshift, up_level);
-    AssertEq(ch.vshift, up_level);
+    Check(ch.w == jxl::DivCeil(w_orig, ch_up));
+    Check(ch.h == jxl::DivCeil(h_orig, ch_up));
+    Check(ch.hshift == up_level);
+    Check(ch.vshift == up_level);
   }
 
   return 0;

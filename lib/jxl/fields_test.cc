@@ -44,7 +44,7 @@ void TestU32Coder(const uint32_t value, const size_t expected_bits_written) {
   EXPECT_TRUE(U32Coder::Write(enc, value, &writer));
   EXPECT_EQ(expected_bits_written, writer.BitsWritten());
   writer.ZeroPadToByte();
-  allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr);
+  ASSERT_TRUE(allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
 
   BitReader reader(writer.GetSpan());
   const uint32_t decoded_value = U32Coder::Read(enc, &reader);
@@ -77,7 +77,7 @@ void TestU64Coder(const uint64_t value, const size_t expected_bits_written) {
   EXPECT_EQ(expected_bits_written, writer.BitsWritten());
 
   writer.ZeroPadToByte();
-  allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr);
+  ASSERT_TRUE(allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
 
   BitReader reader(writer.GetSpan());
   const uint64_t decoded_value = U64Coder::Read(&reader);
@@ -178,7 +178,7 @@ Status TestF16Coder(const float value) {
   EXPECT_TRUE(F16Coder::Write(value, &writer));
   EXPECT_EQ(F16Coder::MaxEncodedBits(), writer.BitsWritten());
   writer.ZeroPadToByte();
-  allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr);
+  EXPECT_TRUE(allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
 
   BitReader reader(writer.GetSpan());
   float decoded_value;
@@ -287,16 +287,17 @@ TEST(FieldsTest, TestRoundtripFrame) {
   EXPECT_EQ(h.flags, h2.flags);
 }
 
-#ifndef JXL_CRASH_ON_ERROR
 // Ensure out-of-bounds values cause an error.
 TEST(FieldsTest, TestOutOfRange) {
+  if (JXL_CRASH_ON_ERROR) {
+    GTEST_SKIP() << "Skipping due to JXL_CRASH_ON_ERROR";
+  }
   SizeHeader h;
   ASSERT_TRUE(h.Set(0xFFFFFFFFull, 0xFFFFFFFFull));
   size_t extension_bits = 999;
   size_t total_bits = 999;  // Initialize as garbage.
   ASSERT_FALSE(Bundle::CanEncode(h, &extension_bits, &total_bits));
 }
-#endif
 
 struct OldBundle : public Fields {
   OldBundle() { Bundle::Init(this); }
@@ -378,10 +379,11 @@ TEST(FieldsTest, TestNewDecoderOldData) {
                                  kMaxOutBytes * kBitsPerByte - total_bits);
   writer.Write(20, 0xA55A);  // sentinel
   writer.ZeroPadToByte();
-  allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr);
+  ASSERT_TRUE(allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
 
-  ASSERT_LE(writer.GetSpan().size(), kMaxOutBytes);
-  BitReader reader(writer.GetSpan());
+  Bytes bytes = writer.GetSpan();
+  ASSERT_LE(bytes.size(), kMaxOutBytes);
+  BitReader reader(bytes);
   NewBundle new_bundle;
   ASSERT_TRUE(Bundle::Read(&reader, &new_bundle));
   EXPECT_EQ(reader.TotalBitsConsumed(),
@@ -427,7 +429,7 @@ TEST(FieldsTest, TestOldDecoderNewData) {
   // Ensure Read skips the additional fields
   writer.Write(20, 0xA55A);  // sentinel
   writer.ZeroPadToByte();
-  allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr);
+  ASSERT_TRUE(allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
 
   BitReader reader(writer.GetSpan());
   OldBundle old_bundle;

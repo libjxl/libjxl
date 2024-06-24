@@ -31,8 +31,8 @@ namespace HWY_NAMESPACE {
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::MulAdd;
 
-void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
-                          const OpsinParams& opsin_params) {
+Status OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
+                            const OpsinParams& opsin_params) {
   JXL_CHECK_IMAGE_INITIALIZED(*inout, Rect(*inout));
 
   const size_t xsize = inout->xsize();  // not padded
@@ -63,15 +63,16 @@ void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
     }
     return true;
   };
-  JXL_CHECK(RunOnPool(pool, 0, inout->ysize(), ThreadPool::NoInit, process_row,
-                      "OpsinToLinear"));
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, inout->ysize(), ThreadPool::NoInit,
+                                process_row, "OpsinToLinear"));
+  return true;
 }
 
 // Same, but not in-place.
-void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
-                   Image3F* JXL_RESTRICT linear,
-                   const OpsinParams& opsin_params) {
-  JXL_ASSERT(SameSize(rect, *linear));
+Status OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
+                     Image3F* JXL_RESTRICT linear,
+                     const OpsinParams& opsin_params) {
+  JXL_ENSURE(SameSize(rect, *linear));
   JXL_CHECK_IMAGE_INITIALIZED(opsin, rect);
 
   const auto process_row = [&](const uint32_t task,
@@ -104,9 +105,11 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
     }
     return true;
   };
-  JXL_CHECK(RunOnPool(pool, 0, static_cast<int>(rect.ysize()),
-                      ThreadPool::NoInit, process_row, "OpsinToLinear(Rect)"));
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, static_cast<int>(rect.ysize()),
+                                ThreadPool::NoInit, process_row,
+                                "OpsinToLinear(Rect)"));
   JXL_CHECK_IMAGE_INITIALIZED(*linear, rect);
+  return true;
 }
 
 // Transform YCbCr to RGB.
@@ -159,16 +162,17 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 
 HWY_EXPORT(OpsinToLinearInplace);
-void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
-                          const OpsinParams& opsin_params) {
-  HWY_DYNAMIC_DISPATCH(OpsinToLinearInplace)(inout, pool, opsin_params);
+Status OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
+                            const OpsinParams& opsin_params) {
+  return HWY_DYNAMIC_DISPATCH(OpsinToLinearInplace)(inout, pool, opsin_params);
 }
 
 HWY_EXPORT(OpsinToLinear);
-void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
-                   Image3F* JXL_RESTRICT linear,
-                   const OpsinParams& opsin_params) {
-  HWY_DYNAMIC_DISPATCH(OpsinToLinear)(opsin, rect, pool, linear, opsin_params);
+Status OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
+                     Image3F* JXL_RESTRICT linear,
+                     const OpsinParams& opsin_params) {
+  return HWY_DYNAMIC_DISPATCH(OpsinToLinear)(opsin, rect, pool, linear,
+                                             opsin_params);
 }
 
 HWY_EXPORT(YcbcrToRgb);
@@ -268,12 +272,13 @@ Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
       !c_desired.IsGray()) {
     Matrix3x3 srgb_to_xyzd50;
     const auto& srgb = ColorEncoding::SRGB(/*is_gray=*/false);
-    PrimariesCIExy p = srgb.GetPrimaries();
+    PrimariesCIExy p;
+    JXL_RETURN_IF_ERROR(srgb.GetPrimaries(p));
     CIExy w = srgb.GetWhitePoint();
-    JXL_CHECK(PrimariesToXYZD50(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, w.x,
-                                w.y, srgb_to_xyzd50));
+    JXL_RETURN_IF_ERROR(PrimariesToXYZD50(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x,
+                                          p.b.y, w.x, w.y, srgb_to_xyzd50));
     Matrix3x3 original_to_xyz;
-    p = c_desired.GetPrimaries();
+    JXL_RETURN_IF_ERROR(c_desired.GetPrimaries(p));
     w = c_desired.GetWhitePoint();
     if (!PrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, w.x, w.y,
                         original_to_xyz)) {

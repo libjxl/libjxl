@@ -9,6 +9,7 @@
 #include <cstdint>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
@@ -25,6 +26,8 @@ using ::jxl::BitReaderScopedCloser;
 using ::jxl::Bytes;
 using ::jxl::Status;
 
+#define QUIT(M) JXL_CRASH()
+
 int DoTestOneInput(const uint8_t* data, size_t size) {
   if (size < 2) return 0;
   size_t numContexts = data[0] * 256 * data[1] + 1;
@@ -36,12 +39,13 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   Status ret = true;
   {
     BitReader br(Bytes(data, size));
-    BitReaderScopedCloser br_closer(&br, &ret);
+    BitReaderScopedCloser br_closer(br, ret);
     ANSCode code;
     JXL_RETURN_IF_ERROR(DecodeHistograms(memory_manager, &br, numContexts,
                                          &code, &context_map));
-    JXL_ASSIGN_OR_DIE(ANSSymbolReader ansreader,
-                      ANSSymbolReader::Create(&code, &br));
+    JXL_ASSIGN_OR_QUIT(ANSSymbolReader ansreader,
+                       ANSSymbolReader::Create(&code, &br),
+                       "Failed to create ANSSymbolReader.");
 
     // Limit the maximum amount of reads to avoid (valid) infinite loops.
     const size_t maxreads = size * 8;

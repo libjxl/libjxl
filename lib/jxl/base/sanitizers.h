@@ -159,10 +159,10 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
 template <typename Pixels>
 static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
     const Pixels& im, const Rect& r, size_t c, const char* message) {
-  JXL_ASSERT(r.x0() <= im.xsize());
-  JXL_ASSERT(r.x0() + r.xsize() <= im.xsize());
-  JXL_ASSERT(r.y0() <= im.ysize());
-  JXL_ASSERT(r.y0() + r.ysize() <= im.ysize());
+  JXL_DASSERT(r.x0() <= im.xsize());
+  JXL_DASSERT(r.x0() + r.xsize() <= im.xsize());
+  JXL_DASSERT(r.y0() <= im.ysize());
+  JXL_DASSERT(r.y0() + r.ysize() <= im.ysize());
   for (size_t y = r.y0(); y < r.y0() + r.ysize(); y++) {
     const auto* row = im.Row(y);
     intptr_t ret = __msan_test_shadow(row + r.x0(), sizeof(*row) * r.xsize());

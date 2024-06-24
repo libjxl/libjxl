@@ -14,7 +14,7 @@
 namespace jxl {
 
 // Render the spot color channels.
-std::unique_ptr<RenderPipelineStage> GetSpotColorStage(size_t spot_c,
+std::unique_ptr<RenderPipelineStage> GetSpotColorStage(size_t spot_c_offset,
                                                        const float* spot_color);
 
 }  // namespace jxl

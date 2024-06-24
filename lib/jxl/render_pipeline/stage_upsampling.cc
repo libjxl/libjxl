@@ -57,7 +57,7 @@ class UpsamplingStage : public RenderPipelineStage {
       msan::UnpoisonMemory(GetInputRow(input_rows, c_, iy) + xsize + 2,
                            sizeof(float) * (xsize_v - xsize));
     }
-    JXL_ASSERT(xextra == 0);
+    JXL_ENSURE(xextra == 0);
     ssize_t x0 = 0;
     ssize_t x1 = xsize;
     if (N == 2) {
@@ -184,8 +184,10 @@ HWY_EXPORT(GetUpsamplingStage);
 
 std::unique_ptr<RenderPipelineStage> GetUpsamplingStage(
     const CustomTransformData& ups_factors, size_t c, size_t shift) {
-  JXL_ASSERT(shift != 0);
-  JXL_ASSERT(shift <= 3);
+  if ((shift < 1) || (shift > 3)) {
+    JXL_DEBUG_ABORT("internal: (shift != 0) && (shift <= 3)");
+    return nullptr;
+  }
   return HWY_DYNAMIC_DISPATCH(GetUpsamplingStage)(ups_factors, c, shift);
 }
 

@@ -11,10 +11,10 @@
 #include <jxl/cms_interface.h>
 #include <jxl/color_encoding.h>
 #include <jxl/types.h>
-#include <stddef.h>
-#include <stdint.h>
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>  // free
 #include <ostream>
 #include <string>
@@ -148,8 +148,8 @@ struct ColorEncoding : public Fields {
   // subsequent WantICC() will return true until DecideIfWantICC() changes it.
   // Returning false indicates data has been lost.
   Status SetICC(IccBytes&& icc, const JxlCmsInterface* cms) {
-    JXL_ASSERT(cms != nullptr);
-    JXL_ASSERT(!icc.empty());
+    JXL_ENSURE(cms != nullptr);
+    JXL_ENSURE(!icc.empty());
     want_icc_ = storage_.SetFieldsFromICC(std::move(icc), *cms);
     return want_icc_;
   }
@@ -160,7 +160,7 @@ struct ColorEncoding : public Fields {
   // used anymore after this and functions such as IsSRGB return false no matter
   // what the contents of the icc profile.
   void SetICCRaw(IccBytes&& icc) {
-    JXL_ASSERT(!icc.empty());
+    JXL_DASSERT(!icc.empty());
     storage_.icc = std::move(icc);
     storage_.have_fields = false;
     want_icc_ = true;
@@ -221,7 +221,7 @@ struct ColorEncoding : public Fields {
   Status SetSRGB(const ColorSpace cs,
                  const RenderingIntent ri = RenderingIntent::kRelative) {
     storage_.icc.clear();
-    JXL_ASSERT(cs == ColorSpace::kGray || cs == ColorSpace::kRGB);
+    JXL_ENSURE(cs == ColorSpace::kGray || cs == ColorSpace::kRGB);
     storage_.color_space = cs;
     storage_.white_point = WhitePoint::kD65;
     storage_.primaries = Primaries::kSRGB;
@@ -239,7 +239,9 @@ struct ColorEncoding : public Fields {
 
   WhitePoint GetWhitePointType() const { return storage_.white_point; }
   Status SetWhitePointType(const WhitePoint& wp);
-  PrimariesCIExy GetPrimaries() const { return storage_.GetPrimaries(); }
+  Status GetPrimaries(PrimariesCIExy& p) const {
+    return storage_.GetPrimaries(p);
+  }
 
   Primaries GetPrimariesType() const { return storage_.primaries; }
   Status SetPrimariesType(const Primaries& p);

@@ -135,14 +135,7 @@ perform an invalid operation (read/write out of bounds, perform an undefined
 behavior operation, etc). You can help the fuzzer find invalid situations by
 adding asserts:
 
- * `JXL_ASSERT()` is enabled in Release mode by default. It can be disabled
-   with `-DJXL_ENABLE_ASSERT=0` but the intention is that it will run for all
-   the users in released code. If performance of the check is not an issue (like
-   checks done once per image, once per channel, once per group, etc) a
-   JXL_ASSERT is appropriate. A failed assert is preferable to an out of bounds
-   write.
-
- * `JXL_DASSERT()` is only enabled in Debug builds, which includes all the ASan,
+ * `JXL_DASSERT` is only enabled in Debug builds, which includes all the ASan,
    MSan and UBSan builds. Performance of these checks is not an issue if kept
    within reasonable limits (automated msan/asan test should finish within 1
    hour for example). Fuzzing is more effective when the given input runs

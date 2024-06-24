@@ -231,7 +231,9 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   std::vector<uint8_t> pixels =
       GetSomeTestImage(spec.width, spec.height, spec.num_channels, spec.seed);
   std::vector<uint8_t> compressed;
-  JXL_CHECK(EncodeWithJpegli(spec, pixels, &compressed));
+  if (!EncodeWithJpegli(spec, pixels, &compressed)) {
+    return false;
+  }
 
   // Append 4 bytes with the flags used by jpegli_dec_fuzzer to select the
   // decoding output.
@@ -358,14 +360,14 @@ int main(int argc, const char** argv) {
                             const uint32_t task,
                             size_t /* thread */) -> jxl::Status {
     const ImageSpec& spec = specs[task];
-    GenerateFile(dest_dir, spec, regenerate, quiet);
+    JXL_RETURN_IF_ERROR(GenerateFile(dest_dir, spec, regenerate, quiet));
     return true;
   };
   if (!RunOnPool(pool.get(), 0, specs.size(), jxl::ThreadPool::NoInit, generate,
                  "FuzzerCorpus")) {
     std::cerr << "Error generating fuzzer corpus\n" << std::flush;
-    return 1;
+    return EXIT_FAILURE;
   }
   std::cerr << "Finished generating fuzzer corpus\n" << std::flush;
-  return 0;
+  return EXIT_SUCCESS;
 }

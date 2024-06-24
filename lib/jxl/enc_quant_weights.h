@@ -29,19 +29,19 @@ Status DequantMatricesEncodeDC(const DequantMatrices& matrices,
                                AuxOut* aux_out);
 // For consistency with QuantEncoding, higher values correspond to more
 // precision.
-void DequantMatricesSetCustomDC(JxlMemoryManager* memory_manager,
-                                DequantMatrices* matrices, const float* dc);
+Status DequantMatricesSetCustomDC(JxlMemoryManager* memory_manager,
+                                  DequantMatrices* matrices, const float* dc);
 
-void DequantMatricesScaleDC(JxlMemoryManager* memory_manager,
-                            DequantMatrices* matrices, float scale);
+Status DequantMatricesScaleDC(JxlMemoryManager* memory_manager,
+                              DequantMatrices* matrices, float scale);
 
 Status DequantMatricesSetCustom(DequantMatrices* matrices,
                                 const std::vector<QuantEncoding>& encodings,
                                 ModularFrameEncoder* encoder);
 
 // Roundtrip encode/decode the matrices to ensure same values as decoder.
-void DequantMatricesRoundtrip(JxlMemoryManager* memory_manager,
-                              DequantMatrices* matrices);
+Status DequantMatricesRoundtrip(JxlMemoryManager* memory_manager,
+                                DequantMatrices* matrices);
 
 }  // namespace jxl
 

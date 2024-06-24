@@ -19,8 +19,8 @@ struct AuxOut;
 struct PassesEncoderState;
 
 // Fills DC
-void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
-                         const Image3F& opsin, const Rect& rect, Image3F* dc);
+Status ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
+                           const Image3F& opsin, const Rect& rect, Image3F* dc);
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
                                         size_t histogram_idx,

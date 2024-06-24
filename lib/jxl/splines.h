@@ -62,9 +62,11 @@ class QuantizedSplineEncoder;
 class QuantizedSpline {
  public:
   QuantizedSpline() = default;
-  explicit QuantizedSpline(const Spline& original,
-                           int32_t quantization_adjustment, float y_to_x,
-                           float y_to_b);
+
+  // TODO(eustas): move this out of library code
+  static StatusOr<QuantizedSpline> Create(const Spline& original,
+                                          int32_t quantization_adjustment,
+                                          float y_to_x, float y_to_b);
 
   Status Dequantize(const Spline::Point& starting_point,
                     int32_t quantization_adjustment, float y_to_x, float y_to_b,
@@ -113,10 +115,10 @@ class Splines {
   Status Decode(JxlMemoryManager* memory_manager, BitReader* br,
                 size_t num_pixels);
 
-  void AddTo(Image3F* opsin, const Rect& opsin_rect,
-             const Rect& image_rect) const;
+  void AddTo(Image3F* opsin, const Rect& opsin_rect) const;
   void AddToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
-                float* JXL_RESTRICT row_b, const Rect& image_row) const;
+                float* JXL_RESTRICT row_b, size_t y, size_t x0,
+                size_t x1) const;
   void SubtractFrom(Image3F* opsin) const;
 
   const std::vector<QuantizedSpline>& QuantizedSplines() const {
@@ -134,10 +136,10 @@ class Splines {
  private:
   template <bool>
   void ApplyToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
-                  float* JXL_RESTRICT row_b, const Rect& image_row) const;
+                  float* JXL_RESTRICT row_b, size_t y, size_t x0,
+                  size_t x1) const;
   template <bool>
-  void Apply(Image3F* opsin, const Rect& opsin_rect,
-             const Rect& image_rect) const;
+  void Apply(Image3F* opsin, const Rect& opsin_rect) const;
 
   // If positive, quantization weights are multiplied by 1 + this/8, which
   // increases precision. If negative, they are divided by 1 - this/8. If 0,

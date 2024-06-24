@@ -12,7 +12,7 @@
 #include <map>
 #include <vector>
 
-#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/fields.h"
@@ -74,7 +74,7 @@ Status PredictAndShuffle(size_t stride, size_t width, int order, size_t num,
   return true;
 }
 
-inline void EncodeVarInt(uint64_t value, PaddedBytes* data) {
+inline Status EncodeVarInt(uint64_t value, PaddedBytes* data) {
   size_t pos = data->size();
   data->resize(data->size() + 9);
   size_t output_size = data->size();
@@ -84,17 +84,18 @@ inline void EncodeVarInt(uint64_t value, PaddedBytes* data) {
   // store 7 bits and set the next byte flag
   while (value > 127) {
     // TODO(eustas): should it be `<` ?
-    JXL_CHECK(pos <= output_size);
+    JXL_ENSURE(pos <= output_size);
     // |128: Set the next byte flag
     output[pos++] = (static_cast<uint8_t>(value & 127)) | 128;
     // Remove the seven bits we just wrote
     value >>= 7;
   }
   // TODO(eustas): should it be `<` ?
-  JXL_CHECK(pos <= output_size);
+  JXL_ENSURE(pos <= output_size);
   output[pos++] = static_cast<uint8_t>(value & 127);
 
   data->resize(pos);
+  return true;
 }
 
 constexpr size_t kSizeLimit = std::numeric_limits<uint32_t>::max() >> 2;
@@ -117,18 +118,17 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     return JXL_FAILURE("ICC profile is too large");
   }
 
-  EncodeVarInt(size, result);
+  JXL_RETURN_IF_ERROR(EncodeVarInt(size, result));
 
   // Header
   PaddedBytes header{memory_manager};
-  header.append(ICCInitialHeaderPrediction());
-  EncodeUint32(0, size, &header);
+  header.append(ICCInitialHeaderPrediction(size));
   for (size_t i = 0; i < kICCHeaderSize && i < size; i++) {
     ICCPredictHeader(icc, size, header.data(), i);
     data.push_back(icc[i] - header[i]);
   }
   if (size <= kICCHeaderSize) {
-    EncodeVarInt(0, result);  // 0 commands
+    JXL_RETURN_IF_ERROR(EncodeVarInt(0, result));  // 0 commands
     for (uint8_t b : data) {
       result->push_back(b);
     }
@@ -145,7 +145,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
   if (pos + 4 <= size) {
     uint64_t numtags = DecodeUint32(icc, size, pos);
     pos += 4;
-    EncodeVarInt(numtags + 1, &commands);
+    JXL_RETURN_IF_ERROR(EncodeVarInt(numtags + 1, &commands));
     uint64_t prevtagstart = kICCHeaderSize + numtags * 12;
     uint32_t prevtagsize = 0;
     for (size_t i = 0; i < numtags; i++) {
@@ -222,8 +222,10 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
       if (tagcode == 1) {
         AppendKeyword(tag, &data);
       }
-      if (command & kFlagBitOffset) EncodeVarInt(tagstart, &commands);
-      if (command & kFlagBitSize) EncodeVarInt(tagsize, &commands);
+      if (command & kFlagBitOffset)
+        JXL_RETURN_IF_ERROR(EncodeVarInt(tagstart, &commands));
+      if (command & kFlagBitSize)
+        JXL_RETURN_IF_ERROR(EncodeVarInt(tagsize, &commands));
 
       prevtagstart = tagstart;
       prevtagsize = tagsize;
@@ -281,7 +283,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
         commands_add.push_back(kCommandTypeStartFirst + 3);
         pos += 8;
         commands_add.push_back(kCommandShuffle2);
-        EncodeVarInt(num, &commands_add);
+        JXL_RETURN_IF_ERROR(EncodeVarInt(num, &commands_add));
         size_t start = data_add.size();
         for (size_t i = 0; i < num; i++) {
           data_add.push_back(icc[pos]);
@@ -302,7 +304,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           int width = 2;
           int stride = width;
           commands_add.push_back((order << 2) | (width - 1));
-          EncodeVarInt(num, &commands_add);
+          JXL_RETURN_IF_ERROR(EncodeVarInt(num, &commands_add));
           JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
                                                 size, &pos, &data_add));
         }
@@ -322,7 +324,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           int width = 2;
           int stride = width;
           commands_add.push_back((order << 2) | (width - 1));
-          EncodeVarInt(num, &commands_add);
+          JXL_RETURN_IF_ERROR(EncodeVarInt(num, &commands_add));
           JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
                                                 size, &pos, &data_add));
         }
@@ -351,8 +353,10 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           uint8_t flags =
               (order << 2) | (width - 1) | (stride == width ? 0 : 16);
           commands_add.push_back(flags);
-          if (flags & 16) EncodeVarInt(stride, &commands_add);
-          EncodeVarInt(num, &commands_add);
+          if (flags & 16) {
+            JXL_RETURN_IF_ERROR(EncodeVarInt(stride, &commands_add));
+          }
+          JXL_RETURN_IF_ERROR(EncodeVarInt(num, &commands_add));
           JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
                                                 size, &pos, &data_add));
         }
@@ -369,8 +373,10 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
       uint8_t flags = (order << 2) | (width - 1) | (stride == width ? 0 : 16);
       commands_add.push_back(kCommandPredict);
       commands_add.push_back(flags);
-      if (flags & 16) EncodeVarInt(stride, &commands_add);
-      EncodeVarInt(num, &commands_add);
+      if (flags & 16) {
+        JXL_RETURN_IF_ERROR(EncodeVarInt(stride, &commands_add));
+      }
+      JXL_RETURN_IF_ERROR(EncodeVarInt(num, &commands_add));
       JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
                                             size, &pos, &data_add));
     }
@@ -400,7 +406,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     if (!(commands_add.empty() && data_add.empty()) || pos == size) {
       if (last0 < last1) {
         commands.push_back(kCommandInsert);
-        EncodeVarInt(last1 - last0, &commands);
+        JXL_RETURN_IF_ERROR(EncodeVarInt(last1 - last0, &commands));
         while (last0 < last1) {
           data.push_back(icc[last0++]);
         }
@@ -418,7 +424,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     }
   }
 
-  EncodeVarInt(commands.size(), result);
+  JXL_RETURN_IF_ERROR(EncodeVarInt(commands.size(), result));
   for (uint8_t b : commands) {
     result->push_back(b);
   }
@@ -438,7 +444,7 @@ Status WriteICC(const Span<const uint8_t> icc, BitWriter* JXL_RESTRICT writer,
   std::vector<std::vector<Token>> tokens(1);
   BitWriter::Allotment allotment(writer, 128);
   JXL_RETURN_IF_ERROR(U64Coder::Write(enc.size(), writer));
-  allotment.ReclaimAndCharge(writer, layer, aux_out);
+  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
 
   for (size_t i = 0; i < enc.size(); i++) {
     tokens[0].emplace_back(
@@ -451,9 +457,13 @@ Status WriteICC(const Span<const uint8_t> icc, BitWriter* JXL_RESTRICT writer,
   EntropyEncodingData code;
   std::vector<uint8_t> context_map;
   params.force_huffman = true;
-  BuildAndEncodeHistograms(memory_manager, params, kNumICCContexts, tokens,
-                           &code, &context_map, writer, layer, aux_out);
-  WriteTokens(tokens[0], code, context_map, 0, writer, layer, aux_out);
+  JXL_ASSIGN_OR_RETURN(
+      size_t cost,
+      BuildAndEncodeHistograms(memory_manager, params, kNumICCContexts, tokens,
+                               &code, &context_map, writer, layer, aux_out));
+  (void)cost;
+  JXL_RETURN_IF_ERROR(
+      WriteTokens(tokens[0], code, context_map, 0, writer, layer, aux_out));
   return true;
 }
 

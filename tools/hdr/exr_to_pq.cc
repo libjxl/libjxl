@@ -81,26 +81,27 @@ int main(int argc, const char** argv) {
 
   jxl::extras::PackedPixelFile ppf;
   std::vector<uint8_t> input_bytes;
-  JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &input_bytes));
-  JXL_CHECK(jxl::extras::DecodeBytes(jxl::Bytes(input_bytes),
-                                     jxl::extras::ColorHints(), &ppf));
+  JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(input_filename, &input_bytes));
+  JPEGXL_TOOLS_CHECK(jxl::extras::DecodeBytes(jxl::Bytes(input_bytes),
+                                              jxl::extras::ColorHints(), &ppf));
 
   jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
-  JXL_CHECK(
+  JPEGXL_TOOLS_CHECK(
       jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool.get(), &image));
   image.metadata.m.bit_depth.exponent_bits_per_sample = 0;
   jxl::ColorEncoding linear_rec_2020 = image.Main().c_current();
-  JXL_CHECK(linear_rec_2020.SetPrimariesType(jxl::Primaries::k2100));
+  JPEGXL_TOOLS_CHECK(linear_rec_2020.SetPrimariesType(jxl::Primaries::k2100));
   linear_rec_2020.Tf().SetTransferFunction(jxl::TransferFunction::kLinear);
-  JXL_CHECK(linear_rec_2020.CreateICC());
-  JXL_CHECK(
+  JPEGXL_TOOLS_CHECK(linear_rec_2020.CreateICC());
+  JPEGXL_TOOLS_CHECK(
       jpegxl::tools::TransformCodecInOutTo(image, linear_rec_2020, pool.get()));
 
   jxl::Matrix3x3 primaries_xyz;
-  const jxl::PrimariesCIExy p = image.Main().c_current().GetPrimaries();
+  jxl::PrimariesCIExy p;
+  JPEGXL_TOOLS_CHECK(image.Main().c_current().GetPrimaries(p));
   const jxl::CIExy wp = image.Main().c_current().GetWhitePoint();
-  JXL_CHECK(jxl::PrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, wp.x,
-                                wp.y, primaries_xyz));
+  JPEGXL_TOOLS_CHECK(jxl::PrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x,
+                                         p.b.y, wp.x, wp.y, primaries_xyz));
 
   float max_value = 0.f;
   float max_relative_luminance = 0.f;
@@ -158,16 +159,18 @@ int main(int argc, const char** argv) {
   jxl::ScaleImage(1.f / max_value, image.Main().color());
 
   if (needs_gamut_mapping) {
-    JXL_CHECK(jxl::GamutMap(&image, 0.f, pool.get()));
+    JPEGXL_TOOLS_CHECK(jxl::GamutMap(&image, 0.f, pool.get()));
   }
 
   jxl::ColorEncoding pq = image.Main().c_current();
   pq.Tf().SetTransferFunction(jxl::TransferFunction::kPQ);
-  JXL_CHECK(pq.CreateICC());
-  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, pq, pool.get()));
+  JPEGXL_TOOLS_CHECK(pq.CreateICC());
+  JPEGXL_TOOLS_CHECK(
+      jpegxl::tools::TransformCodecInOutTo(image, pq, pool.get()));
   image.metadata.m.color_encoding = pq;
   std::vector<uint8_t> encoded;
-  JXL_CHECK(
+  JPEGXL_TOOLS_CHECK(
       jpegxl::tools::Encode(image, output_filename, &encoded, pool.get()));
-  JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
+  JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
+  return EXIT_SUCCESS;
 }

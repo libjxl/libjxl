@@ -230,13 +230,14 @@ struct TestConfig {
   float max_diff = 35.0f;
 };
 
-std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
+jxl::StatusOr<std::vector<uint8_t>> GetTestJpegData(TestConfig& config) {
   std::vector<uint8_t> compressed;
   if (!config.fn.empty()) {
-    compressed = ReadTestData(config.fn);
+    JXL_ASSIGN_OR_RETURN(compressed, ReadTestData(config.fn));
   } else {
     GeneratePixels(&config.input);
-    JXL_CHECK(EncodeWithJpegli(config.input, config.jparams, &compressed));
+    JXL_RETURN_IF_ERROR(
+        EncodeWithJpegli(config.input, config.jparams, &compressed));
   }
   if (config.dparams.size_factor < 1.0f) {
     compressed.resize(compressed.size() * config.dparams.size_factor);
@@ -267,8 +268,8 @@ void TestAPINonBuffered(const CompressParams& jparams,
   if (!jparams.icc.empty()) {
     uint8_t* icc_data = nullptr;
     unsigned int icc_len;
-    JXL_CHECK(jpegli_read_icc_profile(cinfo, &icc_data, &icc_len));
-    JXL_CHECK(icc_data);
+    ASSERT_TRUE(jpegli_read_icc_profile(cinfo, &icc_data, &icc_len));
+    ASSERT_TRUE(icc_data);
     EXPECT_EQ(0, memcmp(jparams.icc.data(), icc_data, icc_len));
     free(icc_data);
   }
@@ -289,7 +290,7 @@ void TestAPINonBuffered(const CompressParams& jparams,
   }
   if (dparams.output_mode == COEFFICIENTS) {
     jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(cinfo);
-    JXL_CHECK(coef_arrays != nullptr);
+    ASSERT_TRUE(coef_arrays != nullptr);
     CopyCoefficients(cinfo, coef_arrays, output);
   } else {
     jpegli_start_decompress(cinfo);
@@ -341,7 +342,7 @@ void TestAPIBuffered(const CompressParams& jparams,
     ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
     if (dparams.output_mode == COEFFICIENTS) {
       jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(cinfo);
-      JXL_CHECK(coef_arrays != nullptr);
+      ASSERT_TRUE(coef_arrays != nullptr);
       CopyCoefficients(cinfo, coef_arrays, &output_progression->back());
     }
   }
@@ -377,7 +378,8 @@ TEST(DecodeAPITest, ReuseCinfo) {
               "Generating input with %dx%d chroma subsampling "
               "progressive level %d\n",
               h_samp, v_samp, progr);
-          JXL_CHECK(EncodeWithJpegli(input, jparams, &compressed));
+          JPEGLI_TEST_ENSURE_TRUE(
+              EncodeWithJpegli(input, jparams, &compressed));
           for (JpegIOMode output_mode : {PIXELS, RAW_DATA, COEFFICIENTS}) {
             for (bool crop : {true, false}) {
               if (crop && output_mode != PIXELS) continue;
@@ -419,8 +421,8 @@ TEST(DecodeAPITest, ReuseCinfo) {
                 output_progression.clear();
                 src.Reset();
                 TestAPIBuffered(jparams, dparams, &cinfo, &output_progression);
-                JXL_CHECK(output_progression.size() ==
-                          expected_output_progression.size());
+                JPEGLI_TEST_ENSURE_TRUE(output_progression.size() ==
+                                        expected_output_progression.size());
                 for (size_t i = 0; i < output_progression.size(); ++i) {
                   const TestImage& output = output_progression[i];
                   const TestImage& expected = expected_output_progression[i];
@@ -498,7 +500,7 @@ TEST(DecodeAPITest, ReuseCinfoSameMemSource) {
 TEST(DecodeAPITest, ReuseCinfoSameStdSource) {
   std::vector<TestConfig> all_configs = GenerateBasicConfigs();
   FILE* tmpf = tmpfile();
-  JXL_CHECK(tmpf);
+  ASSERT_TRUE(tmpf);
   {
     jpeg_compress_struct cinfo;
     const auto try_catch_block = [&]() -> bool {
@@ -602,7 +604,8 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
   if (dparams.skip_scans) return;
-  const std::vector<uint8_t> compressed = GetTestJpegData(config);
+  JXL_ASSIGN_OR_QUIT(std::vector<uint8_t> compressed, GetTestJpegData(config),
+                     "Failed to create test data");
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
 
   TestImage output1;
@@ -636,7 +639,8 @@ class DecodeAPITestParamBuffered : public ::testing::TestWithParam<TestConfig> {
 TEST_P(DecodeAPITestParamBuffered, TestAPI) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
-  const std::vector<uint8_t> compressed = GetTestJpegData(config);
+  JXL_ASSIGN_OR_QUIT(std::vector<uint8_t> compressed, GetTestJpegData(config),
+                     "Failed to create test data.");
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
 
   std::vector<TestImage> output_progression1;

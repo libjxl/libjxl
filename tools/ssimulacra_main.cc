@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include "lib/extras/codec.h"
@@ -18,6 +19,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
+#include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/no_memory_manager.h"
 #include "tools/ssimulacra.h"
@@ -25,9 +27,13 @@
 namespace ssimulacra {
 namespace {
 
+#define QUIT(M)               \
+  fprintf(stderr, "%s\n", M); \
+  return EXIT_FAILURE;
+
 int PrintUsage(char** argv) {
   fprintf(stderr, "Usage: %s [-v] [-s] orig.png distorted.png\n", argv[0]);
-  return 1;
+  return EXIT_FAILURE;
 }
 
 int Run(int argc, char** argv) {
@@ -52,40 +58,35 @@ int Run(int argc, char** argv) {
   jxl::CodecInOut* io[2] = {&io1, &io2};
   for (size_t i = 0; i < 2; ++i) {
     std::vector<uint8_t> encoded;
-    JXL_CHECK(jpegxl::tools::ReadFile(argv[input_arg + i], &encoded));
-    JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
-                                io[i]));
+    JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(argv[input_arg + i], &encoded));
+    JPEGXL_TOOLS_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded),
+                                         jxl::extras::ColorHints(), io[i]));
   }
   jxl::ImageBundle& ib1 = io1.Main();
   jxl::ImageBundle& ib2 = io2.Main();
-  JXL_CHECK(ib1.TransformTo(jxl::ColorEncoding::LinearSRGB(ib1.IsGray()),
-                            *JxlGetDefaultCms(), nullptr));
-  JXL_CHECK(ib2.TransformTo(jxl::ColorEncoding::LinearSRGB(ib2.IsGray()),
-                            *JxlGetDefaultCms(), nullptr));
+  JPEGXL_TOOLS_CHECK(
+      ib1.TransformTo(jxl::ColorEncoding::LinearSRGB(ib1.IsGray()),
+                      *JxlGetDefaultCms(), nullptr));
+  JPEGXL_TOOLS_CHECK(
+      ib2.TransformTo(jxl::ColorEncoding::LinearSRGB(ib2.IsGray()),
+                      *JxlGetDefaultCms(), nullptr));
   jxl::Image3F& img1 = *ib1.color();
   jxl::Image3F& img2 = *ib2.color();
   if (img1.xsize() != img2.xsize() || img1.ysize() != img2.ysize()) {
-    fprintf(stderr, "Image size mismatch\n");
-    return 1;
+    QUIT("Image size mismatch.");
   }
   if (img1.xsize() < 8 || img1.ysize() < 8) {
-    fprintf(stderr, "Minimum image size is 8x8 pixels\n");
-    return 1;
+    QUIT("Minimum image size is 8x8 pixels.");
   }
 
-  jxl::StatusOr<Ssimulacra> ssimulacra_or = ComputeDiff(img1, img2, simple);
-  if (!ssimulacra_or.ok()) {
-    fprintf(stderr, "ComputeDiff failed\n");
-    return 1;
-  }
-
-  Ssimulacra ssimulacra = std::move(ssimulacra_or).value();
+  JXL_ASSIGN_OR_QUIT(Ssimulacra ssimulacra, ComputeDiff(img1, img2, simple),
+                     "ComputeDiff failed.");
 
   if (verbose) {
     ssimulacra.PrintDetails();
   }
   printf("%.8f\n", ssimulacra.Score());
-  return 0;
+  return EXIT_SUCCESS;
 }
 
 }  // namespace

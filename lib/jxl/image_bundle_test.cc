@@ -32,7 +32,7 @@ TEST(ImageBundleTest, ExtraChannelName) {
   ASSERT_TRUE(
       WriteImageMetadata(metadata, &writer, LayerType::Header, &aux_out));
   writer.ZeroPadToByte();
-  allotment.ReclaimAndCharge(&writer, LayerType::Header, &aux_out);
+  ASSERT_TRUE(allotment.ReclaimAndCharge(&writer, LayerType::Header, &aux_out));
 
   BitReader reader(writer.GetSpan());
   ImageMetadata metadata_out;

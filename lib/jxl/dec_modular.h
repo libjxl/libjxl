@@ -78,8 +78,8 @@ struct ModularStreamId {
   static ModularStreamId ACMetadata(size_t group_id) {
     return ModularStreamId{Kind::ACMetadata, 0, group_id, 0};
   }
-  static ModularStreamId QuantTable(size_t quant_table_id) {
-    JXL_ASSERT(quant_table_id < kNumQuantTables);
+  static StatusOr<ModularStreamId> QuantTable(size_t quant_table_id) {
+    JXL_ENSURE(quant_table_id < kNumQuantTables);
     return ModularStreamId{Kind::QuantTable, quant_table_id, 0, 0};
   }
   static ModularStreamId ModularAC(size_t group_id, size_t pass_id) {

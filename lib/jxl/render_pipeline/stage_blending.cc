@@ -118,7 +118,7 @@ class BlendingStage : public RenderPipelineStage {
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
-    JXL_ASSERT(initialized_);
+    JXL_ENSURE(initialized_);
     JxlMemoryManager* memory_manager = state_.memory_manager;
     const FrameOrigin& frame_origin = frame_header_.frame_origin;
     ssize_t bg_xpos = frame_origin.x0 + static_cast<ssize_t>(xpos);

@@ -45,9 +45,10 @@ using jxl::Status;
 Status WriteImage(const Image3F& image, const std::string& filename) {
   ThreadPoolInternal pool(4);
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
-  jxl::extras::PackedPixelFile ppf =
+  JXL_ASSIGN_OR_RETURN(
+      jxl::extras::PackedPixelFile ppf,
       jxl::extras::ConvertImage3FToPackedPixelFile(
-          image, jxl::ColorEncoding::SRGB(), format, pool.get());
+          image, jxl::ColorEncoding::SRGB(), format, pool.get()));
   std::vector<uint8_t> encoded;
   return jxl::Encode(ppf, filename, &encoded, pool.get()) &&
          jpegxl::tools::WriteFile(filename, encoded);
@@ -102,9 +103,9 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   const JxlCmsInterface& cms = *JxlGetDefaultCms();
   JxlButteraugliComparator comparator(butteraugli_params, cms);
   float distance;
-  JXL_CHECK(ComputeScore(io1.Main(), io2.Main(), &comparator, cms, &distance,
-                         &distmap, pool.get(),
-                         /* ignore_alpha */ false));
+  JXL_RETURN_IF_ERROR(ComputeScore(io1.Main(), io2.Main(), &comparator, cms,
+                                   &distance, &distmap, pool.get(),
+                                   /* ignore_alpha */ false));
   printf("%.10f\n", distance);
 
   double pnorm = jxl::ComputeDistanceP(distmap, butteraugli_params, p);
@@ -113,13 +114,13 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   if (!distmap_filename.empty()) {
     float good = jxl::ButteraugliFuzzyInverse(1.5);
     float bad = jxl::ButteraugliFuzzyInverse(0.5);
-    JXL_ASSIGN_OR_DIE(Image3F heatmap,
-                      jxl::CreateHeatMapImage(distmap, good, bad));
-    JXL_CHECK(WriteImage(heatmap, distmap_filename));
+    JXL_ASSIGN_OR_RETURN(Image3F heatmap,
+                         jxl::CreateHeatMapImage(distmap, good, bad));
+    JXL_RETURN_IF_ERROR(WriteImage(heatmap, distmap_filename));
   }
   if (!raw_distmap_filename.empty()) {
     FILE* out = fopen(raw_distmap_filename.c_str(), "wb");
-    JXL_CHECK(out != nullptr);
+    JXL_ENSURE(out != nullptr);
     fprintf(out, "Pf\n%" PRIuS " %" PRIuS "\n-1.0\n", distmap.xsize(),
             distmap.ysize());
     for (size_t y = distmap.ysize(); y-- > 0;) {

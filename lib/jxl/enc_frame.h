@@ -103,7 +103,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
 Status EncodeFrame(JxlMemoryManager* memory_manager,
                    const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
-                   const ImageBundle& ib, const JxlCmsInterface& cms,
+                   ImageBundle& ib, const JxlCmsInterface& cms,
                    ThreadPool* pool, BitWriter* writer, AuxOut* aux_out);
 
 }  // namespace jxl

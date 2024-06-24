@@ -83,7 +83,7 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     }
     if (!marker_order.empty()) {
       // Last marker should always be EOI marker.
-      JXL_CHECK(marker_order.back() == 0xd9);
+      JXL_ENSURE(marker_order.back() == 0xd9);
     }
   }
 
@@ -94,10 +94,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     com_data.resize(info.num_com_markers);
     scan_info.resize(info.num_scans);
   }
-  JXL_ASSERT(app_data.size() == info.num_app_markers);
-  JXL_ASSERT(app_marker_type.size() == info.num_app_markers);
-  JXL_ASSERT(com_data.size() == info.num_com_markers);
-  JXL_ASSERT(scan_info.size() == info.num_scans);
+  JXL_ENSURE(app_data.size() == info.num_app_markers);
+  JXL_ENSURE(app_marker_type.size() == info.num_app_markers);
+  JXL_ENSURE(com_data.size() == info.num_com_markers);
+  JXL_ENSURE(scan_info.size() == info.num_scans);
   for (size_t i = 0; i < app_data.size(); i++) {
     auto& app = app_data[i];
     // Encodes up to 8 different values.
@@ -249,7 +249,7 @@ Status JPEGData::VisitFields(Visitor* visitor) {
       return JXL_FAILURE("Missing EOI symbol");
     }
     // Last element, denoting EOI, have to be 1 after the loop.
-    JXL_ASSERT(value_slots[4] == 1);
+    JXL_ENSURE(value_slots[4] == 1);
     size_t num_values = 1;
     for (size_t i = 0; i < 4; ++i) num_values += hwy::PopCount(value_slots[i]);
     if (num_values != num_symbols) {
@@ -418,7 +418,7 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   // Apply postponed actions.
   if (visitor->IsReading()) {
     tail_data.resize(tail_data_len);
-    JXL_ASSERT(inter_marker_data_sizes.size() == info.num_intermarker);
+    JXL_ENSURE(inter_marker_data_sizes.size() == info.num_intermarker);
     inter_marker_data.reserve(info.num_intermarker);
     for (size_t i = 0; i < info.num_intermarker; ++i) {
       inter_marker_data.emplace_back(inter_marker_data_sizes[i]);

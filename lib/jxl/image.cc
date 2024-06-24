@@ -61,24 +61,18 @@ void InitializePadding(PlaneBase& plane, const size_t sizeof_t) {
 
 }  // namespace
 
-PlaneBase::PlaneBase(const size_t xsize, const size_t ysize,
+PlaneBase::PlaneBase(const uint32_t xsize, const uint32_t ysize,
                      const size_t sizeof_t)
-    : xsize_(static_cast<uint32_t>(xsize)),
-      ysize_(static_cast<uint32_t>(ysize)),
-      orig_xsize_(static_cast<uint32_t>(xsize)),
-      orig_ysize_(static_cast<uint32_t>(ysize)),
+    : xsize_(xsize),
+      ysize_(ysize),
+      orig_xsize_(xsize),
+      orig_ysize_(ysize),
       bytes_per_row_(BytesPerRow(xsize_, sizeof_t)),
-      sizeof_t_(sizeof_t) {
-  // TODO(eustas): turn to error instead of abort.
-  JXL_CHECK(xsize == xsize_);
-  JXL_CHECK(ysize == ysize_);
-
-  JXL_ASSERT(sizeof_t == 1 || sizeof_t == 2 || sizeof_t == 4 || sizeof_t == 8);
-}
+      sizeof_t_(sizeof_t) {}
 
 Status PlaneBase::Allocate(JxlMemoryManager* memory_manager,
                            size_t pre_padding) {
-  JXL_CHECK(bytes_.address<void>() == nullptr);
+  JXL_ENSURE(bytes_.address<void>() == nullptr);
 
   // Dimensions can be zero, e.g. for lazily-allocated images. Only allocate
   // if nonzero, because "zero" bytes still have padding/bookkeeping overhead.

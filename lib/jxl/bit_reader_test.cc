@@ -5,7 +5,6 @@
 
 #include <jxl/memory_manager.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -76,7 +75,8 @@ TEST(BitReaderTest, TestRoundTrip) {
     }
 
     writer.ZeroPadToByte();
-    allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr);
+    JXL_RETURN_IF_ERROR(
+        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
     BitReader reader(writer.GetSpan());
     for (const Symbol& s : symbols) {
       EXPECT_EQ(s.value, reader.ReadBits(s.num_bits));
@@ -114,11 +114,13 @@ TEST(BitReaderTest, TestSkip) {
       EXPECT_EQ(task + skip + 3, writer.BitsWritten());
       writer.ZeroPadToByte();
       AuxOut aux_out;
-      allotment.ReclaimAndCharge(&writer, LayerType::Header, &aux_out);
+      JXL_RETURN_IF_ERROR(
+          allotment.ReclaimAndCharge(&writer, LayerType::Header, &aux_out));
       EXPECT_LT(aux_out.layer(LayerType::Header).total_bits, kSize * 8);
 
-      BitReader reader1(writer.GetSpan());
-      BitReader reader2(writer.GetSpan());
+      Bytes bytes = writer.GetSpan();
+      BitReader reader1(bytes);
+      BitReader reader2(bytes);
       // Verify initial 1-bits
       for (size_t i = 0; i < task; ++i) {
         EXPECT_EQ(1u, reader1.ReadBits(1));
@@ -165,7 +167,8 @@ TEST(BitReaderTest, TestOrder) {
     }
 
     writer.ZeroPadToByte();
-    allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr);
+    ASSERT_TRUE(
+        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0x1Fu, reader.ReadFixedBits<8>());
     EXPECT_EQ(0xFCu, reader.ReadFixedBits<8>());
@@ -180,7 +183,8 @@ TEST(BitReaderTest, TestOrder) {
     writer.Write(8, 0x3F);
 
     writer.ZeroPadToByte();
-    allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr);
+    ASSERT_TRUE(
+        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0xF8u, reader.ReadFixedBits<8>());
     EXPECT_EQ(0x3Fu, reader.ReadFixedBits<8>());
@@ -194,7 +198,8 @@ TEST(BitReaderTest, TestOrder) {
     writer.Write(16, 0xF83F);
 
     writer.ZeroPadToByte();
-    allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr);
+    ASSERT_TRUE(
+        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0x3Fu, reader.ReadFixedBits<8>());
     EXPECT_EQ(0xF8u, reader.ReadFixedBits<8>());
@@ -211,7 +216,8 @@ TEST(BitReaderTest, TestOrder) {
     writer.Write(4, 8);
 
     writer.ZeroPadToByte();
-    allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr);
+    ASSERT_TRUE(
+        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0xBDu, reader.ReadFixedBits<8>());
     EXPECT_EQ(0x8Du, reader.ReadFixedBits<8>());

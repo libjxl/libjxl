@@ -162,9 +162,12 @@ StatusOr<ImageF> ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
 
   for (size_t c = 0; c < 3; ++c) {
     // Use forig as temporary storage to reduce memory and keep it warmer.
-    Separable5(orig.Plane(c), rect, weights3, pool, &forig.Plane(c));
-    Separable5(forig.Plane(c), rect, weights3, pool, &smooth->Plane(c));
-    Separable5(orig.Plane(c), rect, weights1, pool, &forig.Plane(c));
+    JXL_RETURN_IF_ERROR(
+        Separable5(orig.Plane(c), rect, weights3, pool, &forig.Plane(c)));
+    JXL_RETURN_IF_ERROR(
+        Separable5(forig.Plane(c), rect, weights3, pool, &smooth->Plane(c)));
+    JXL_RETURN_IF_ERROR(
+        Separable5(orig.Plane(c), rect, weights1, pool, &forig.Plane(c)));
   }
 
   return HWY_DYNAMIC_DISPATCH(SumOfSquareDifferences)(forig, *smooth, pool);
@@ -273,7 +276,7 @@ struct ConnectedComponent {
 };
 
 Rect BoundingRectangle(const std::vector<Pixel>& pixels) {
-  JXL_ASSERT(!pixels.empty());
+  JXL_DASSERT(!pixels.empty());
   int low_x;
   int high_x;
   int low_y;
@@ -299,7 +302,7 @@ StatusOr<std::vector<ConnectedComponent>> FindCC(const ImageF& energy,
   JXL_ASSIGN_OR_RETURN(
       ImageF img,
       ImageF::Create(memory_manager, energy.xsize(), energy.ysize()));
-  CopyImageTo(energy, &img);
+  JXL_RETURN_IF_ERROR(CopyImageTo(energy, &img));
   std::vector<ConnectedComponent> ans;
   for (size_t y = 0; y < rect.ysize(); y++) {
     float* JXL_RESTRICT row = rect.Row(&img, y);
@@ -307,9 +310,8 @@ StatusOr<std::vector<ConnectedComponent>> FindCC(const ImageF& energy,
       if (row[x] > t_high) {
         std::vector<Pixel> pixels;
         row[x] = 0.0;
-        bool success = ExtractComponent(
-            rect, &img, &pixels,
-            Pixel{static_cast<int>(x), static_cast<int>(y)}, t_low);
+        Pixel seed = Pixel{static_cast<int>(x), static_cast<int>(y)};
+        bool success = ExtractComponent(rect, &img, &pixels, seed, t_low);
         if (!success) continue;
 #if JXL_DEBUG_DOT_DETECT
         for (size_t i = 0; i < pixels.size(); i++) {
@@ -403,8 +405,9 @@ void ComputeDotLosses(GaussianEllipse* ellipse, const ConnectedComponent& cc,
   ellipse->ridge_loss = ellipse->l2_loss + ridgeTerm;
 }
 
-GaussianEllipse FitGaussianFast(const ConnectedComponent& cc, const Rect& rect,
-                                const Image3F& img, const Image3F& background) {
+StatusOr<GaussianEllipse> FitGaussianFast(const ConnectedComponent& cc,
+                                          const Rect& rect, const Image3F& img,
+                                          const Image3F& background) {
   constexpr bool leastSqIntensity = true;
   constexpr double kEpsilon = 1e-6;
   GaussianEllipse ans;
@@ -448,7 +451,7 @@ GaussianEllipse FitGaussianFast(const ConnectedComponent& cc, const Rect& rect,
       N++;
     }
   }
-  JXL_CHECK(N > 0);
+  JXL_ENSURE(N > 0);
 
   for (int i = 0; i < 3; i++) {
     m1[i] /= sum;
@@ -514,9 +517,11 @@ GaussianEllipse FitGaussianFast(const ConnectedComponent& cc, const Rect& rect,
   return ans;
 }
 
-GaussianEllipse FitGaussian(const ConnectedComponent& cc, const Rect& rect,
-                            const Image3F& img, const Image3F& background) {
-  auto ellipse = FitGaussianFast(cc, rect, img, background);
+StatusOr<GaussianEllipse> FitGaussian(const ConnectedComponent& cc,
+                                      const Rect& rect, const Image3F& img,
+                                      const Image3F& background) {
+  JXL_ASSIGN_OR_RETURN(GaussianEllipse ellipse,
+                       FitGaussianFast(cc, rect, img, background));
   if (ellipse.sigma_x < ellipse.sigma_y) {
     std::swap(ellipse.sigma_x, ellipse.sigma_y);
     ellipse.angle += kPi / 2.0;
@@ -525,8 +530,8 @@ GaussianEllipse FitGaussian(const ConnectedComponent& cc, const Rect& rect,
   if (fabs(ellipse.angle - kPi) < 1e-6 || fabs(ellipse.angle) < 1e-6) {
     ellipse.angle = 0.0;
   }
-  JXL_CHECK(ellipse.angle >= 0 && ellipse.angle <= kPi &&
-            ellipse.sigma_x >= ellipse.sigma_y);
+  JXL_ENSURE(ellipse.angle >= 0 && ellipse.angle <= kPi &&
+             ellipse.sigma_x >= ellipse.sigma_y);
   JXL_DEBUG(JXL_DEBUG_DOT_DETECT,
             "Ellipse mu=(%lf,%lf) sigma=(%lf,%lf) angle=%lf "
             "intensity=(%lf,%lf,%lf) bg=(%lf,%lf,%lf) l2_loss=%lf "
@@ -565,7 +570,8 @@ StatusOr<std::vector<PatchInfo>> DetectGaussianEllipses(
     components.erase(components.begin() + numCC, components.end());
   }
   for (const auto& cc : components) {
-    GaussianEllipse ellipse = FitGaussian(cc, rect, opsin, smooth);
+    JXL_ASSIGN_OR_RETURN(GaussianEllipse ellipse,
+                         FitGaussian(cc, rect, opsin, smooth));
     if (ellipse.x < 0.0 ||
         std::ceil(ellipse.x) >= static_cast<double>(rect.xsize()) ||
         ellipse.y < 0.0 ||

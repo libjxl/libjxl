@@ -12,6 +12,10 @@
 
 #include "lib/jxl/base/sanitizer_definitions.h"
 
+#if JXL_ADDRESS_SANITIZER || JXL_MEMORY_SANITIZER || JXL_THREAD_SANITIZER
+#include "sanitizer/common_interface_defs.h"  // __sanitizer_print_stack_trace
+#endif                                        // defined(*_SANITIZER)
+
 // #if is shorter and safer than #ifdef. *_VERSION are zero if not detected,
 // otherwise 100 * major + minor version. Note that other packages check for
 // #ifdef COMPILER_MSVC, so we cannot use that same name.
@@ -158,13 +162,59 @@ using ssize_t = intptr_t;
 #define JXL_CXX_17 201703
 
 // In most cases we consider build as "debug". Use `NDEBUG` for release build.
-#if defined(JXL_DEBUG_BUILD)
-#undef JXL_DEBUG_BUILD
-#define JXL_DEBUG_BUILD 1
+#if defined(JXL_IS_DEBUG_BUILD)
+#undef JXL_IS_DEBUG_BUILD
+#define JXL_IS_DEBUG_BUILD 1
 #elif defined(NDEBUG)
-#define JXL_DEBUG_BUILD 0
+#define JXL_IS_DEBUG_BUILD 0
 #else
-#define JXL_DEBUG_BUILD 1
+#define JXL_IS_DEBUG_BUILD 1
+#endif
+
+#if defined(JXL_CRASH_ON_ERROR)
+#undef JXL_CRASH_ON_ERROR
+#define JXL_CRASH_ON_ERROR 1
+#else
+#define JXL_CRASH_ON_ERROR 0
+#endif
+
+#if JXL_CRASH_ON_ERROR && !JXL_IS_DEBUG_BUILD
+#error "JXL_CRASH_ON_ERROR requires JXL_IS_DEBUG_BUILD"
+#endif
+
+// Pass -DJXL_DEBUG_ON_ALL_ERROR at compile time to print debug messages on
+// all error (fatal and non-fatal) status.
+#if defined(JXL_DEBUG_ON_ALL_ERROR)
+#undef JXL_DEBUG_ON_ALL_ERROR
+#define JXL_DEBUG_ON_ALL_ERROR 1
+#else
+#define JXL_DEBUG_ON_ALL_ERROR 0
+#endif
+
+#if JXL_DEBUG_ON_ALL_ERROR && !JXL_IS_DEBUG_BUILD
+#error "JXL_DEBUG_ON_ALL_ERROR requires JXL_IS_DEBUG_BUILD"
+#endif
+
+// Pass -DJXL_DEBUG_ON_ABORT={0} to disable the debug messages on
+// (debug) JXL_ENSURE and JXL_DASSERT.
+#if !defined(JXL_DEBUG_ON_ABORT)
+#define JXL_DEBUG_ON_ABORT JXL_IS_DEBUG_BUILD
+#endif  // JXL_DEBUG_ON_ABORT
+
+#if JXL_DEBUG_ON_ABORT && !JXL_IS_DEBUG_BUILD
+#error "JXL_DEBUG_ON_ABORT requires JXL_IS_DEBUG_BUILD"
+#endif
+
+#if JXL_ADDRESS_SANITIZER || JXL_MEMORY_SANITIZER || JXL_THREAD_SANITIZER
+#define JXL_PRINT_STACK_TRACE() __sanitizer_print_stack_trace();
+#else
+#define JXL_PRINT_STACK_TRACE()
+#endif
+
+#if JXL_COMPILER_MSVC
+#define JXL_CRASH() __debugbreak(), (void)abort()
+#else
+#define JXL_CRASH() (void)__builtin_trap()
 #endif
 
 #endif  // LIB_JXL_BASE_COMPILER_SPECIFIC_H_

@@ -72,24 +72,22 @@ class WebPCodec : public ImageCodec {
     // Ensure that the 'q' parameter is not used up by ImageCodec.
     if (param[0] == 'q') {
       if (near_lossless_) {
-        near_lossless_quality_ = ParseIntParam(param, 0, 99);
+        return ParseIntParam(param, 0, 99, near_lossless_quality_);
       } else {
-        quality_ = ParseIntParam(param, 1, 100);
+        return ParseIntParam(param, 1, 100, quality_);
       }
-      return true;
     } else if (ImageCodec::ParseParam(param)) {
       return true;
     } else if (param == "ll") {
       lossless_ = true;
-      JXL_CHECK(!near_lossless_);
+      JXL_ENSURE(!near_lossless_);
       return true;
     } else if (param == "nl") {
       near_lossless_ = true;
-      JXL_CHECK(!lossless_);
+      JXL_ENSURE(!lossless_);
       return true;
     } else if (param[0] == 'm') {
-      method_ = ParseIntParam(param, 1, 6);
-      return true;
+      return ParseIntParam(param, 1, 6, method_);
     }
     return false;
   }
@@ -213,7 +211,7 @@ class WebPCodec : public ImageCodec {
     }
     const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
-    JXL_CHECK(buf->u.RGBA.stride == buf->width * 4);
+    JXL_ENSURE(buf->u.RGBA.stride == buf->width * 4);
 
     const bool is_gray = false;
     const bool has_alpha = true;
@@ -231,7 +229,7 @@ class WebPCodec : public ImageCodec {
       return JXL_FAILURE("Color profile is-gray mismatch");
     }
     io->metadata.m.SetAlphaBits(8);
-    io->SetSize(buf->width, buf->height);
+    JXL_RETURN_IF_ERROR(io->SetSize(buf->width, buf->height));
     const Status ok = FromSRGB(buf->width, buf->height, is_gray, has_alpha,
                                /*is_16bit=*/false, JXL_LITTLE_ENDIAN,
                                data_begin, data_end, pool, &io->Main());
@@ -260,7 +258,7 @@ class WebPCodec : public ImageCodec {
     if (!WebPConfigInit(&config)) {
       return JXL_FAILURE("WebPConfigInit failed");
     }
-    JXL_ASSERT(!lossless_ || !near_lossless_);  // can't have both
+    JXL_ENSURE(!lossless_ || !near_lossless_);  // can't have both
     config.lossless = lossless_ ? 1 : 0;
     config.quality = quality;
     config.method = method_;
@@ -271,7 +269,7 @@ class WebPCodec : public ImageCodec {
       JXL_WARNING("Near lossless not supported by this WebP version");
     }
 #endif
-    JXL_CHECK(WebPValidateConfig(&config));
+    JXL_ENSURE(WebPValidateConfig(&config));
 
     WebPPicture pic;
     if (!WebPPictureInit(&pic)) {

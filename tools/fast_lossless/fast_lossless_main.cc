@@ -3,12 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include <atomic>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <thread>
 #include <vector>
 
@@ -87,9 +86,11 @@ int main(int argc, char** argv) {
   auto start = std::chrono::high_resolution_clock::now();
   for (size_t _ = 0; _ < num_reps; _++) {
     free(encoded);
+    encoded = nullptr;
     encoded_size = JxlFastLosslessEncode(
         png, width, stride, height, nb_chans, bitdepth,
         /*big_endian=*/true, effort, &encoded, &num_threads, +parallel_runner);
+    if (encoded_size == 0) return EXIT_FAILURE;
   }
   auto stop = std::chrono::high_resolution_clock::now();
   if (num_reps > 1) {

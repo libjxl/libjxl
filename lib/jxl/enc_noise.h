@@ -27,8 +27,8 @@ Status GetNoiseParameter(const Image3F& opsin, NoiseParams* noise_params,
 
 // Does not write anything if `noise_params` are empty. Otherwise, caller must
 // set FrameHeader.flags.kNoise.
-void EncodeNoise(const NoiseParams& noise_params, BitWriter* writer,
-                 LayerType layer, AuxOut* aux_out);
+Status EncodeNoise(const NoiseParams& noise_params, BitWriter* writer,
+                   LayerType layer, AuxOut* aux_out);
 
 }  // namespace jxl
 

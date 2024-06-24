@@ -128,12 +128,12 @@ Passes::Passes() { Bundle::Init(this); }
 Status Passes::VisitFields(Visitor* JXL_RESTRICT visitor) {
   JXL_QUIET_RETURN_IF_ERROR(
       visitor->U32(Val(1), Val(2), Val(3), BitsOffset(3, 4), 1, &num_passes));
-  JXL_ASSERT(num_passes <= kMaxNumPasses);  // Cannot happen when reading
+  JXL_ENSURE(num_passes <= kMaxNumPasses);  // Cannot happen when reading
 
   if (visitor->Conditional(num_passes != 1)) {
     JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
         Val(0), Val(1), Val(2), BitsOffset(1, 3), 0, &num_downsample));
-    JXL_ASSERT(num_downsample <= 4);  // 1,2,4,8
+    JXL_ENSURE(num_downsample <= 4);  // 1,2,4,8
     if (num_downsample > num_passes) {
       return JXL_FAILURE("num_downsample %u > num_passes %u", num_downsample,
                          num_passes);

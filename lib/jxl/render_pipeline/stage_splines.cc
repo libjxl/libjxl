@@ -13,7 +13,6 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 #include "lib/jxl/splines.h"
@@ -34,7 +33,7 @@ class SplineStage : public RenderPipelineStage {
     float* row_x = GetInputRow(input_rows, 0, 0);
     float* row_y = GetInputRow(input_rows, 1, 0);
     float* row_b = GetInputRow(input_rows, 2, 0);
-    splines_.AddToRow(row_x, row_y, row_b, Rect(xpos, ypos, xsize, 1));
+    splines_.AddToRow(row_x, row_y, row_b, ypos, xpos, xpos + xsize);
     return true;
   }
 

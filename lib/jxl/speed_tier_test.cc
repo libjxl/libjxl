@@ -85,12 +85,13 @@ TEST_P(SpeedTierTest, Roundtrip) {
   const std::vector<uint8_t> orig = jxl::test::ReadTestData(
       "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   test::TestImage t;
-  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
   if (params.speed_tier == SpeedTier::kGlacier) {
     // just a few pixels will already take enough time at this setting
-    t.SetDimensions(8, 8);
+    ASSERT_TRUE(t.SetDimensions(8, 8));
   } else if (params.shrink8) {
-    t.SetDimensions(t.ppf().xsize() / 8, t.ppf().ysize() / 8);
+    ASSERT_TRUE(t.SetDimensions(t.ppf().xsize() / 8, t.ppf().ysize() / 8));
   }
 
   extras::JXLCompressParams cparams;

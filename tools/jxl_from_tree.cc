@@ -8,6 +8,7 @@
 #include <jxl/types.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -49,6 +50,7 @@ using ::jxl::PropertyDecisionNode;
 using ::jxl::QuantizedSpline;
 using ::jxl::Spline;
 using ::jxl::Splines;
+using ::jxl::StatusOr;
 using ::jxl::Tree;
 
 namespace {
@@ -57,15 +59,17 @@ struct SplineData {
   std::vector<Spline> splines;
 };
 
-Splines SplinesFromSplineData(const SplineData& spline_data) {
+StatusOr<Splines> SplinesFromSplineData(const SplineData& spline_data) {
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
   quantized_splines.reserve(spline_data.splines.size());
   starting_points.reserve(spline_data.splines.size());
   for (const Spline& spline : spline_data.splines) {
-    JXL_CHECK(!spline.control_points.empty());
-    quantized_splines.emplace_back(spline, spline_data.quantization_adjustment,
-                                   0.0, 1.0);
+    JXL_ASSIGN_OR_RETURN(
+        QuantizedSpline qspline,
+        QuantizedSpline::Create(spline, spline_data.quantization_adjustment,
+                                0.0, 1.0));
+    quantized_splines.emplace_back(std::move(qspline));
     starting_points.push_back(spline.control_points.front());
   }
   return Splines(spline_data.quantization_adjustment,
@@ -243,15 +247,19 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     io.metadata.m.SetAlphaBits(io.metadata.m.bit_depth.bits_per_sample);
     JXL_ASSIGN_OR_RETURN(
         ImageF alpha, ImageF::Create(jpegxl::tools::NoMemoryManager(), W, H));
-    io.frames[0].SetAlpha(std::move(alpha));
+    if (!io.frames[0].SetAlpha(std::move(alpha))) {
+      fprintf(stderr, "Internal: SetAlpha failed\n");
+      return false;
+    }
   } else if (t == "Bitdepth") {
     t = tok();
     size_t num = 0;
-    io.metadata.m.bit_depth.bits_per_sample = std::stoul(t, &num);
-    if (num != t.size()) {
+    uint32_t bits_per_sample = std::stoul(t, &num);
+    if (num != t.size() || bits_per_sample < 1 || bits_per_sample > 32) {
       fprintf(stderr, "Invalid Bitdepth: %s\n", t.c_str());
       return false;
     }
+    io.metadata.m.bit_depth.bits_per_sample = bits_per_sample;
   } else if (t == "FloatExpBits") {
     t = tok();
     size_t num = 0;
@@ -438,7 +446,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
 }
 }  // namespace
 
-int JxlFromTree(const char* in, const char* out, const char* tree_out) {
+::jxl::Status JxlFromTree(const char* in, const char* out,
+                          const char* tree_out) {
   Tree tree;
   SplineData spline_data;
   CompressParams cparams = {};
@@ -480,9 +489,9 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   JXL_ASSIGN_OR_RETURN(
       Image3F image, Image3F::Create(memory_manager, width * cparams.resampling,
                                      height * cparams.resampling));
-  io.SetFromImage(std::move(image), ColorEncoding::SRGB());
-  io.SetSize((width + x0) * cparams.resampling,
-             (height + y0) * cparams.resampling);
+  JXL_RETURN_IF_ERROR(io.SetFromImage(std::move(image), ColorEncoding::SRGB()));
+  JXL_RETURN_IF_ERROR(io.SetSize((width + x0) * cparams.resampling,
+                                 (height + y0) * cparams.resampling));
   io.metadata.m.color_encoding.DecideIfWantICC(*JxlGetDefaultCms());
   cparams.options.zero_tokens = true;
   cparams.palette_colors = 0;
@@ -491,7 +500,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   cparams.patches = jxl::Override::kOff;
   cparams.already_downsampled = true;
   cparams.custom_fixed_tree = tree;
-  cparams.custom_splines = SplinesFromSplineData(spline_data);
+  JXL_ASSIGN_OR_RETURN(cparams.custom_splines,
+                       SplinesFromSplineData(spline_data));
   PaddedBytes compressed{memory_manager};
 
   JXL_RETURN_IF_ERROR(io.CheckMetadata());
@@ -512,8 +522,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
       metadata->m.extra_channel_info.emplace_back();
       auto& eci = metadata->m.extra_channel_info.back();
       eci.type = jxl::ExtraChannel::kOptional;
-      JXL_ASSIGN_OR_DIE(ImageF ch,
-                        ImageF::Create(memory_manager, io.xsize(), io.ysize()));
+      JXL_ASSIGN_OR_RETURN(
+          ImageF ch, ImageF::Create(memory_manager, io.xsize(), io.ysize()));
       io.frames[0].extra_channels().emplace_back(std::move(ch));
     }
   }
@@ -545,7 +555,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     cparams.custom_fixed_tree = tree;
     JXL_ASSIGN_OR_RETURN(Image3F image,
                          Image3F::Create(memory_manager, width, height));
-    io.SetFromImage(std::move(image), ColorEncoding::SRGB());
+    JXL_RETURN_IF_ERROR(
+        io.SetFromImage(std::move(image), ColorEncoding::SRGB()));
     io.frames[0].blend = true;
   }
 
@@ -553,10 +564,10 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
   if (!WriteFile(out, compressed)) {
     fprintf(stderr, "Failed to write to \"%s\"\n", out);
-    return 1;
+    return JXL_FAILURE("Failed to write output");
   }
 
-  return 0;
+  return true;
 }
 }  // namespace tools
 }  // namespace jpegxl
@@ -567,6 +578,11 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Usage: %s tree_in.txt out.jxl [tree_drawing]\n", argv[0]);
     return 1;
   }
-  return jpegxl::tools::JxlFromTree(argv[1], argv[2],
-                                    argc < 4 ? nullptr : argv[3]);
+  jxl::Status result = jpegxl::tools::JxlFromTree(argv[1], argv[2],
+                                                  argc < 4 ? nullptr : argv[3]);
+  if (!result) {
+    fprintf(stderr, "FAILURE\n");
+    return EXIT_FAILURE;
+  }
+  return EXIT_SUCCESS;
 }
