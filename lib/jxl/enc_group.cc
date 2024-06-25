@@ -364,8 +364,9 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
   }
 }
 
-void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
-                         const Image3F& opsin, const Rect& rect, Image3F* dc) {
+Status ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
+                           const Image3F& opsin, const Rect& rect,
+                           Image3F* dc) {
   const Rect block_group_rect =
       enc_state->shared.frame_dim.BlockGroupRect(group_idx);
   const Rect cmap_rect(
@@ -402,10 +403,10 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
 
     int32_t* JXL_RESTRICT coeffs[3][kMaxNumPasses] = {};
     size_t num_passes = enc_state->progressive_splitter.GetNumPasses();
-    JXL_DASSERT(num_passes > 0);
+    JXL_ENSURE(num_passes > 0);
     for (size_t i = 0; i < num_passes; i++) {
       // TODO(veluca): 16-bit quantized coeffs are not implemented yet.
-      JXL_ASSERT(enc_state->coeffs[i]->Type() == ACType::k32);
+      JXL_ENSURE(enc_state->coeffs[i]->Type() == ACType::k32);
       for (size_t c = 0; c < 3; c++) {
         coeffs[c][i] = enc_state->coeffs[i]->PlaneRow(c, group_idx, 0).ptr32;
       }
@@ -503,6 +504,7 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
       }
     }
   }
+  return true;
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -513,10 +515,11 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(ComputeCoefficients);
-void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
-                         const Image3F& opsin, const Rect& rect, Image3F* dc) {
-  HWY_DYNAMIC_DISPATCH(ComputeCoefficients)
-  (group_idx, enc_state, opsin, rect, dc);
+Status ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
+                           const Image3F& opsin, const Rect& rect,
+                           Image3F* dc) {
+  return HWY_DYNAMIC_DISPATCH(ComputeCoefficients)(group_idx, enc_state, opsin,
+                                                   rect, dc);
 }
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
@@ -526,20 +529,21 @@ Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
   // Select which histogram to use among those of the current pass.
   const size_t num_histograms = enc_state.shared.num_histograms;
   // num_histograms is 0 only for lossless.
-  JXL_ASSERT(num_histograms == 0 || histogram_idx < num_histograms);
+  JXL_ENSURE(num_histograms == 0 || histogram_idx < num_histograms);
   size_t histo_selector_bits = CeilLog2Nonzero(num_histograms);
 
   if (histo_selector_bits != 0) {
     BitWriter::Allotment allotment(writer, histo_selector_bits);
     writer->Write(histo_selector_bits, histogram_idx);
-    allotment.ReclaimAndCharge(writer, LayerType::Ac, aux_out);
+    JXL_RETURN_IF_ERROR(
+        allotment.ReclaimAndCharge(writer, LayerType::Ac, aux_out));
   }
   size_t context_offset =
       histogram_idx * enc_state.shared.block_ctx_map.NumACContexts();
-  WriteTokens(enc_state.passes[pass_idx].ac_tokens[group_idx],
-              enc_state.passes[pass_idx].codes,
-              enc_state.passes[pass_idx].context_map, context_offset, writer,
-              LayerType::AcTokens, aux_out);
+  JXL_RETURN_IF_ERROR(WriteTokens(
+      enc_state.passes[pass_idx].ac_tokens[group_idx],
+      enc_state.passes[pass_idx].codes, enc_state.passes[pass_idx].context_map,
+      context_offset, writer, LayerType::AcTokens, aux_out));
 
   return true;
 }

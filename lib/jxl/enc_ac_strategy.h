@@ -63,9 +63,9 @@ struct ACSConfig {
 struct AcStrategyHeuristics {
   explicit AcStrategyHeuristics(const CompressParams& cparams)
       : cparams(cparams), mem_per_thread(0), qmem_per_thread(0) {}
-  void Init(const Image3F& src, const Rect& rect_in, const ImageF& quant_field,
-            const ImageF& mask, const ImageF& mask1x1,
-            DequantMatrices* matrices);
+  Status Init(const Image3F& src, const Rect& rect_in,
+              const ImageF& quant_field, const ImageF& mask,
+              const ImageF& mask1x1, DequantMatrices* matrices);
   void PrepareForThreads(std::size_t num_threads);
   Status ProcessRect(const Rect& rect, const ColorCorrelationMap& cmap,
                      AcStrategyImage* ac_strategy, size_t thread);

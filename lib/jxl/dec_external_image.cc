@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_external_image.cc"
@@ -259,11 +260,11 @@ Status ConvertChannelsToExternal(const ImageF* in_channels[],
                                  void* out_image, size_t out_size,
                                  const PixelCallback& out_callback,
                                  jxl::Orientation undo_orientation) {
-  JXL_DASSERT(num_channels != 0 && num_channels <= kConvertMaxChannels);
-  JXL_DASSERT(in_channels[0] != nullptr);
+  JXL_ENSURE(num_channels != 0 && num_channels <= kConvertMaxChannels);
+  JXL_ENSURE(in_channels[0] != nullptr);
   JxlMemoryManager* memory_manager = in_channels[0]->memory_manager();
-  JXL_CHECK(float_out ? bits_per_sample == 16 || bits_per_sample == 32
-                      : bits_per_sample > 0 && bits_per_sample <= 16);
+  JXL_ENSURE(float_out ? bits_per_sample == 16 || bits_per_sample == 32
+                       : bits_per_sample > 0 && bits_per_sample <= 16);
   const bool has_out_image = (out_image != nullptr);
   if (has_out_image == out_callback.IsPresent()) {
     return JXL_FAILURE(
@@ -483,10 +484,11 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
     JXL_ASSIGN_OR_RETURN(
         unpremul,
         Image3F::Create(memory_manager, color->xsize(), color->ysize()));
-    CopyImageTo(*color, &unpremul);
+    JXL_RETURN_IF_ERROR(CopyImageTo(*color, &unpremul));
+    const ImageF* alpha = ib.alpha();
     for (size_t y = 0; y < unpremul.ysize(); y++) {
       UnpremultiplyAlpha(unpremul.PlaneRow(0, y), unpremul.PlaneRow(1, y),
-                         unpremul.PlaneRow(2, y), ib.alpha().Row(y),
+                         unpremul.PlaneRow(2, y), alpha->Row(y),
                          unpremul.xsize());
     }
     color = &unpremul;
@@ -498,9 +500,9 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
     channels[c] = &color->Plane(c);
   }
   if (want_alpha) {
-    channels[c++] = ib.HasAlpha() ? &ib.alpha() : nullptr;
+    channels[c++] = ib.alpha();
   }
-  JXL_ASSERT(num_channels == c);
+  JXL_ENSURE(num_channels == c);
 
   return ConvertChannelsToExternal(
       channels, num_channels, bits_per_sample, float_out, endianness, stride,

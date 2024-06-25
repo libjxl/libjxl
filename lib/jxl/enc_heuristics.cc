@@ -218,7 +218,8 @@ Status FindBestDequantMatrices(JxlMemoryManager* memory_manager,
     JXL_RETURN_IF_ERROR(DequantMatricesSetCustom(dequant_matrices, encodings,
                                                  modular_frame_encoder));
     float dc_weights[3] = {1.0f / wp[0], 1.0f / wp[1], 1.0f / wp[2]};
-    DequantMatricesSetCustomDC(memory_manager, dequant_matrices, dc_weights);
+    JXL_RETURN_IF_ERROR(DequantMatricesSetCustomDC(
+        memory_manager, dequant_matrices, dc_weights));
   }
   return true;
 }
@@ -328,7 +329,7 @@ Status DownsampleImage2_Sharper(const ImageF& input, ImageF* output) {
 
   JXL_ASSIGN_OR_RETURN(ImageF box_downsample,
                        ImageF::Create(memory_manager, xsize, ysize));
-  CopyImageTo(input, &box_downsample);
+  JXL_RETURN_IF_ERROR(CopyImageTo(input, &box_downsample));
   JXL_ASSIGN_OR_RETURN(box_downsample, DownsampleImage(box_downsample, 2));
 
   JXL_ASSIGN_OR_RETURN(ImageF mask,
@@ -405,8 +406,8 @@ Status DownsampleImage2_Sharper(Image3F* opsin) {
       Image3F downsampled,
       Image3F::Create(memory_manager, DivCeil(opsin->xsize(), 2) + kBlockDim,
                       DivCeil(opsin->ysize(), 2) + kBlockDim));
-  downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
-                       downsampled.ysize() - kBlockDim);
+  JXL_RETURN_IF_ERROR(downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
+                                           downsampled.ysize() - kBlockDim));
 
   for (size_t c = 0; c < 3; c++) {
     JXL_RETURN_IF_ERROR(
@@ -568,13 +569,14 @@ void AntiUpsample(const ImageF& input, ImageF* d) {
 
 // Element-wise multiplies two images.
 template <typename T>
-void ElwiseMul(const Plane<T>& image1, const Plane<T>& image2, Plane<T>* out) {
+Status ElwiseMul(const Plane<T>& image1, const Plane<T>& image2,
+                 Plane<T>* out) {
   const size_t xsize = image1.xsize();
   const size_t ysize = image1.ysize();
-  JXL_CHECK(xsize == image2.xsize());
-  JXL_CHECK(ysize == image2.ysize());
-  JXL_CHECK(xsize == out->xsize());
-  JXL_CHECK(ysize == out->ysize());
+  JXL_ENSURE(xsize == image2.xsize());
+  JXL_ENSURE(ysize == image2.ysize());
+  JXL_ENSURE(xsize == out->xsize());
+  JXL_ENSURE(ysize == out->ysize());
   for (size_t y = 0; y < ysize; ++y) {
     const T* const JXL_RESTRICT row1 = image1.Row(y);
     const T* const JXL_RESTRICT row2 = image2.Row(y);
@@ -583,17 +585,19 @@ void ElwiseMul(const Plane<T>& image1, const Plane<T>& image2, Plane<T>* out) {
       row_out[x] = row1[x] * row2[x];
     }
   }
+  return true;
 }
 
 // Element-wise divides two images.
 template <typename T>
-void ElwiseDiv(const Plane<T>& image1, const Plane<T>& image2, Plane<T>* out) {
+Status ElwiseDiv(const Plane<T>& image1, const Plane<T>& image2,
+                 Plane<T>* out) {
   const size_t xsize = image1.xsize();
   const size_t ysize = image1.ysize();
-  JXL_CHECK(xsize == image2.xsize());
-  JXL_CHECK(ysize == image2.ysize());
-  JXL_CHECK(xsize == out->xsize());
-  JXL_CHECK(ysize == out->ysize());
+  JXL_ENSURE(xsize == image2.xsize());
+  JXL_ENSURE(ysize == image2.ysize());
+  JXL_ENSURE(xsize == out->xsize());
+  JXL_ENSURE(ysize == out->ysize());
   for (size_t y = 0; y < ysize; ++y) {
     const T* const JXL_RESTRICT row1 = image1.Row(y);
     const T* const JXL_RESTRICT row2 = image2.Row(y);
@@ -602,6 +606,7 @@ void ElwiseDiv(const Plane<T>& image1, const Plane<T>& image2, Plane<T>* out) {
       row_out[x] = row1[x] / row2[x];
     }
   }
+  return true;
 }
 
 void ReduceRinging(const ImageF& initial, const ImageF& mask, ImageF& down) {
@@ -652,14 +657,14 @@ Status DownsampleImage2_Iterative(const ImageF& orig, ImageF* output) {
 
   JXL_ASSIGN_OR_RETURN(ImageF box_downsample,
                        ImageF::Create(memory_manager, xsize, ysize));
-  CopyImageTo(orig, &box_downsample);
+  JXL_RETURN_IF_ERROR(CopyImageTo(orig, &box_downsample));
   JXL_ASSIGN_OR_RETURN(box_downsample, DownsampleImage(box_downsample, 2));
   JXL_ASSIGN_OR_RETURN(ImageF mask,
                        ImageF::Create(memory_manager, box_downsample.xsize(),
                                       box_downsample.ysize()));
   CreateMask(box_downsample, mask);
 
-  output->ShrinkTo(xsize2, ysize2);
+  JXL_RETURN_IF_ERROR(output->ShrinkTo(xsize2, ysize2));
 
   // Initial result image using the sharper downsampling.
   // Allocate extra space to avoid a reallocation when padding.
@@ -667,13 +672,14 @@ Status DownsampleImage2_Iterative(const ImageF& orig, ImageF* output) {
       ImageF initial,
       ImageF::Create(memory_manager, DivCeil(orig.xsize(), 2) + kBlockDim,
                      DivCeil(orig.ysize(), 2) + kBlockDim));
-  initial.ShrinkTo(initial.xsize() - kBlockDim, initial.ysize() - kBlockDim);
+  JXL_RETURN_IF_ERROR(initial.ShrinkTo(initial.xsize() - kBlockDim,
+                                       initial.ysize() - kBlockDim));
   JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(orig, &initial));
 
   JXL_ASSIGN_OR_RETURN(
       ImageF down,
       ImageF::Create(memory_manager, initial.xsize(), initial.ysize()));
-  CopyImageTo(initial, &down);
+  JXL_RETURN_IF_ERROR(CopyImageTo(initial, &down));
   JXL_ASSIGN_OR_RETURN(ImageF up, ImageF::Create(memory_manager, xsize, ysize));
   JXL_ASSIGN_OR_RETURN(ImageF corr,
                        ImageF::Create(memory_manager, xsize, ysize));
@@ -703,9 +709,9 @@ Status DownsampleImage2_Iterative(const ImageF& orig, ImageF* output) {
   for (size_t it = 0; it < num_it; ++it) {
     UpsampleImage(down, &up);
     JXL_ASSIGN_OR_RETURN(corr, LinComb<float>(1, orig, -1, up));
-    ElwiseMul(corr, weights, &corr);
+    JXL_RETURN_IF_ERROR(ElwiseMul(corr, weights, &corr));
     AntiUpsample(corr, &corr2);
-    ElwiseDiv(corr2, weights2, &corr2);
+    JXL_RETURN_IF_ERROR(ElwiseDiv(corr2, weights2, &corr2));
 
     JXL_ASSIGN_OR_RETURN(down, LinComb<float>(1, down, 1, corr2));
   }
@@ -732,15 +738,16 @@ Status DownsampleImage2_Iterative(Image3F* opsin) {
       Image3F downsampled,
       Image3F::Create(memory_manager, DivCeil(opsin->xsize(), 2) + kBlockDim,
                       DivCeil(opsin->ysize(), 2) + kBlockDim));
-  downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
-                       downsampled.ysize() - kBlockDim);
+  JXL_RETURN_IF_ERROR(downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
+                                           downsampled.ysize() - kBlockDim));
 
   JXL_ASSIGN_OR_RETURN(
       Image3F rgb,
       Image3F::Create(memory_manager, opsin->xsize(), opsin->ysize()));
   OpsinParams opsin_params;  // TODO(user): use the ones that are actually used
   opsin_params.Init(kDefaultIntensityTarget);
-  OpsinToLinear(*opsin, Rect(rgb), nullptr, &rgb, opsin_params);
+  JXL_RETURN_IF_ERROR(
+      OpsinToLinear(*opsin, Rect(rgb), nullptr, &rgb, opsin_params));
 
   JXL_ASSIGN_OR_RETURN(
       ImageF mask,
@@ -787,15 +794,15 @@ StatusOr<Image3F> ReconstructImage(
   JXL_RETURN_IF_ERROR(dec_state.output_encoding_info.MaybeSetColorEncoding(
       ColorEncoding::LinearSRGB(is_gray)));
   dec_state.shared = &shared;
-  JXL_CHECK(dec_state.Init(frame_header));
+  JXL_RETURN_IF_ERROR(dec_state.Init(frame_header));
 
   ImageBundle decoded(memory_manager, &shared.metadata->m);
   decoded.origin = frame_header.frame_origin;
   JXL_ASSIGN_OR_RETURN(
       Image3F tmp,
       Image3F::Create(memory_manager, frame_dim.xsize, frame_dim.ysize));
-  decoded.SetFromImage(std::move(tmp),
-                       dec_state.output_encoding_info.color_encoding);
+  JXL_RETURN_IF_ERROR(decoded.SetFromImage(
+      std::move(tmp), dec_state.output_encoding_info.color_encoding));
 
   PassesDecoderState::PipelineOptions options;
   options.use_slow_render_pipeline = false;
@@ -803,8 +810,8 @@ StatusOr<Image3F> ReconstructImage(
   options.render_spotcolors = false;
   options.render_noise = true;
 
-  JXL_CHECK(dec_state.PreparePipeline(frame_header, &shared.metadata->m,
-                                      &decoded, options));
+  JXL_RETURN_IF_ERROR(dec_state.PreparePipeline(
+      frame_header, &shared.metadata->m, &decoded, options));
 
   hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
   const auto allocate_storage = [&](const size_t num_threads) -> Status {
@@ -817,14 +824,15 @@ StatusOr<Image3F> ReconstructImage(
   const auto process_group = [&](const uint32_t group_index,
                                  const size_t thread) -> Status {
     if (frame_header.loop_filter.epf_iters > 0) {
-      ComputeSigma(frame_header.loop_filter,
-                   frame_dim.BlockGroupRect(group_index), &dec_state);
+      JXL_RETURN_IF_ERROR(ComputeSigma(frame_header.loop_filter,
+                                       frame_dim.BlockGroupRect(group_index),
+                                       &dec_state));
     }
     RenderPipelineInput input =
         dec_state.render_pipeline->GetInputBuffers(group_index, thread);
-    JXL_CHECK(DecodeGroupForRoundtrip(frame_header, coeffs, group_index,
-                                      &dec_state, &group_dec_caches[thread],
-                                      thread, input, nullptr, nullptr));
+    JXL_RETURN_IF_ERROR(DecodeGroupForRoundtrip(
+        frame_header, coeffs, group_index, &dec_state,
+        &group_dec_caches[thread], thread, input, nullptr, nullptr));
     if ((frame_header.flags & FrameHeader::kNoise) != 0) {
       PrepareNoiseInput(dec_state, shared.frame_dim, frame_header, group_index,
                         thread);
@@ -1104,8 +1112,9 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   }
 
   JXL_RETURN_IF_ERROR(cfl_heuristics.Init(memory_manager, rect));
-  acs_heuristics.Init(*opsin, rect, initial_quant_field, initial_quant_masking,
-                      initial_quant_masking1x1, &matrices);
+  JXL_RETURN_IF_ERROR(acs_heuristics.Init(*opsin, rect, initial_quant_field,
+                                          initial_quant_masking,
+                                          initial_quant_masking1x1, &matrices));
 
   auto process_tile = [&](const uint32_t tid, const size_t thread) -> Status {
     size_t n_enc_tiles = DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks);
@@ -1122,11 +1131,11 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     // For speeds up to Wombat, we only compute the color correlation map
     // once we know the transform type and the quantization map.
     if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-      cfl_heuristics.ComputeTile(r, *opsin, rect, matrices,
-                                 /*ac_strategy=*/nullptr,
-                                 /*raw_quant_field=*/nullptr,
-                                 /*quantizer=*/nullptr, /*fast=*/false, thread,
-                                 &cmap);
+      JXL_RETURN_IF_ERROR(cfl_heuristics.ComputeTile(
+          r, *opsin, rect, matrices,
+          /*ac_strategy=*/nullptr,
+          /*raw_quant_field=*/nullptr,
+          /*quantizer=*/nullptr, /*fast=*/false, thread, &cmap));
     }
 
     // Choose block sizes.
@@ -1137,15 +1146,15 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     // more accuracy. The initial quant field might change in slower modes, but
     // adjusting the quant field with butteraugli when all the other encoding
     // parameters are fixed is likely a more reliable choice anyway.
-    AdjustQuantField(ac_strategy, r, cparams.butteraugli_distance,
-                     &initial_quant_field);
+    JXL_RETURN_IF_ERROR(AdjustQuantField(
+        ac_strategy, r, cparams.butteraugli_distance, &initial_quant_field));
     quantizer.SetQuantFieldRect(initial_quant_field, r, &raw_quant_field);
 
     // Compute a non-default CfL map if we are at Hare speed, or slower.
     if (cparams.speed_tier <= SpeedTier::kHare) {
-      cfl_heuristics.ComputeTile(
+      JXL_RETURN_IF_ERROR(cfl_heuristics.ComputeTile(
           r, *opsin, rect, matrices, &ac_strategy, &raw_quant_field, &quantizer,
-          /*fast=*/cparams.speed_tier >= SpeedTier::kWombat, thread, &cmap);
+          /*fast=*/cparams.speed_tier >= SpeedTier::kWombat, thread, &cmap));
     }
     return true;
   };

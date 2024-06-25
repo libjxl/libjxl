@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/enc_icc_codec.h"
 
 #ifdef JXL_ICC_FUZZER_SLOW_TEST
@@ -27,6 +28,12 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result);
 }  // namespace jxl
 
 namespace {
+
+void Check(bool ok) {
+  if (!ok) {
+    JXL_CRASH();
+  }
+}
 
 using ::jxl::PaddedBytes;
 
@@ -66,7 +73,7 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     BitWriter writer{memory_manager};
     // Writing should support any random bytestream so must succeed, make
     // fuzzer fail if not.
-    JXL_ASSERT(jxl::WriteICC(icc, &writer, jxl::LayerType::Header, nullptr));
+    Check(jxl::WriteICC(icc, &writer, jxl::LayerType::Header, nullptr));
   }
 #else  // JXL_ICC_FUZZER_SLOW_TEST
   if (read) {
@@ -78,11 +85,11 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     PaddedBytes result{memory_manager};
     // Writing should support any random bytestream so must succeed, make
     // fuzzer fail if not.
-    JXL_ASSERT(jxl::PredictICC(data, size, &result));
+    Check(jxl::PredictICC(data, size, &result));
     PaddedBytes reconstructed{memory_manager};
-    JXL_ASSERT(jxl::UnpredictICC(result.data(), result.size(), &reconstructed));
-    JXL_ASSERT(reconstructed.size() == size);
-    JXL_ASSERT(memcmp(data, reconstructed.data(), size) == 0);
+    Check(jxl::UnpredictICC(result.data(), result.size(), &reconstructed));
+    Check(reconstructed.size() == size);
+    Check(memcmp(data, reconstructed.data(), size) == 0);
   }
 #endif  // JXL_ICC_FUZZER_SLOW_TEST
   return 0;

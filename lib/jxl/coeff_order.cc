@@ -53,7 +53,8 @@ Status ReadPermutation(size_t skip, size_t size, coeff_order_t* order,
     }
   }
   if (order == nullptr) return true;
-  DecodeLehmerCode(lehmer.data(), temp.data(), size, order);
+  JXL_RETURN_IF_ERROR(
+      DecodeLehmerCode(lehmer.data(), temp.data(), size, order));
   return true;
 }
 

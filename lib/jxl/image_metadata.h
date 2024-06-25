@@ -210,7 +210,7 @@ struct ImageMetadata : public Fields {
   uint32_t GetAlphaBits() const {
     const ExtraChannelInfo* alpha = Find(ExtraChannel::kAlpha);
     if (alpha == nullptr) return 0;
-    JXL_ASSERT(alpha->bit_depth.bits_per_sample != 0);
+    JXL_DASSERT(alpha->bit_depth.bits_per_sample != 0);
     return alpha->bit_depth.bits_per_sample;
   }
 
@@ -261,7 +261,7 @@ struct ImageMetadata : public Fields {
     tone_mapping.intensity_target = intensity_target;
   }
   float IntensityTarget() const {
-    JXL_ASSERT(tone_mapping.intensity_target != 0);
+    JXL_DASSERT(tone_mapping.intensity_target != 0.0f);
     return tone_mapping.intensity_target;
   }
 

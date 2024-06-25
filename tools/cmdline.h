@@ -6,11 +6,10 @@
 #ifndef TOOLS_CMDLINE_H_
 #define TOOLS_CMDLINE_H_
 
-#include <stdio.h>
-#include <string.h>
-
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -439,5 +438,15 @@ static inline bool SetBooleanFalse(bool* out) {
 
 }  // namespace tools
 }  // namespace jpegxl
+
+#define JPEGXL_TOOLS_ABORT(M)                      \
+  fprintf(stderr, "JPEGXL_TOOLS_ABORT: %s\n", #M); \
+  std::exit(EXIT_FAILURE);
+
+#define JPEGXL_TOOLS_CHECK(C)                        \
+  if (!(C)) {                                        \
+    fprintf(stderr, "JPEGXL_TOOLS_CHECK: %s\n", #C); \
+    std::exit(EXIT_FAILURE);                         \
+  }
 
 #endif  // TOOLS_CMDLINE_H_

@@ -19,7 +19,7 @@ namespace jxl {
 namespace {
 
 // Shuffles or interleaves bytes, for example with width 2, turns "ABCDabcd"
-// into "AaBbCcDc". Transposes a matrix of ceil(size / width) columns and
+// into "AaBbCcDd". Transposes a matrix of ceil(size / width) columns and
 // width rows. There are size elements, size may be < width * height, if so the
 // last elements of the rightmost column are missing, the missing spots are
 // transposed along with the filled spots, and the result has the missing
@@ -112,8 +112,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
 
   // Header
   PaddedBytes header{memory_manager};
-  header.append(ICCInitialHeaderPrediction());
-  EncodeUint32(0, osize, &header);
+  header.append(ICCInitialHeaderPrediction(osize));
   for (size_t i = 0; i <= kICCHeaderSize; i++) {
     if (result->size() == osize) {
       if (cpos != commands_end) return JXL_FAILURE("Not all commands used");
@@ -374,7 +373,7 @@ Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
       }
       decompressed_.resize(std::min<size_t>(i_ + 0x400, enc_size_));
     }
-    JXL_DASSERT(i_ >= 2);
+    JXL_ENSURE(i_ >= 2);
     decompressed_[i_] = ans_reader_.ReadHybridUint(
         ICCANSContext(i_, decompressed_[i_ - 1], decompressed_[i_ - 2]), reader,
         context_map_);

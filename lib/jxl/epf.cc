@@ -36,9 +36,9 @@ JXL_INLINE void RightMirror(float* p, size_t n) {
   }
 }
 
-void ComputeSigma(const LoopFilter& lf, const Rect& block_rect,
-                  PassesDecoderState* state) {
-  JXL_CHECK(lf.epf_iters > 0);
+Status ComputeSigma(const LoopFilter& lf, const Rect& block_rect,
+                    PassesDecoderState* state) {
+  JXL_ENSURE(lf.epf_iters > 0);
   const AcStrategyImage& ac_strategy = state->shared->ac_strategy;
   const float quant_scale = state->shared->quantizer.Scale();
 
@@ -129,6 +129,7 @@ void ComputeSigma(const LoopFilter& lf, const Rect& block_rect,
       }
     }
   }
+  return true;
 }
 
 }  // namespace jxl

@@ -17,7 +17,7 @@ namespace jxl {
 Status InitializePassesSharedState(const FrameHeader& frame_header,
                                    PassesSharedState* JXL_RESTRICT shared,
                                    bool encoder) {
-  JXL_ASSERT(frame_header.nonserialized_metadata != nullptr);
+  JXL_ENSURE(frame_header.nonserialized_metadata != nullptr);
   shared->metadata = frame_header.nonserialized_metadata;
   shared->frame_dim = frame_header.ToFrameDimensions();
   shared->image_features.patches.SetShared(&shared->reference_frames);

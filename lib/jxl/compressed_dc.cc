@@ -132,7 +132,7 @@ Status AdaptiveDCSmoothing(JxlMemoryManager* memory_manager,
   // TODO(veluca): use tile-based processing?
   // TODO(veluca): decide if changes to the y channel should be propagated to
   // the x and b channels through color correlation.
-  JXL_ASSERT(w1 + w2 < 0.25f);
+  JXL_ENSURE(w1 + w2 < 0.25f);
 
   JXL_ASSIGN_OR_RETURN(Image3F smoothed,
                        Image3F::Create(memory_manager, xsize, ysize));

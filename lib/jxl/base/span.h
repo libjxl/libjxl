@@ -59,10 +59,11 @@ class Span {
     return *(data() + i);
   }
 
-  void remove_prefix(size_t n) noexcept {
-    JXL_ASSERT(size() >= n);
+  Status remove_prefix(size_t n) noexcept {
+    JXL_ENSURE(size() >= n);
     ptr_ += n;
     len_ -= n;
+    return true;
   }
 
   void AppendTo(std::vector<NCT>& dst) const {

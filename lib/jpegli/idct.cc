@@ -612,7 +612,7 @@ void Compute1dIDCT(const float* in, float* out, size_t N) {
       break;
     }
     default:
-      JXL_ABORT("Compute1dIDCT does not support N=%d", static_cast<int>(N));
+      JXL_DEBUG_ABORT("Unreachable");
       break;
   }
 }
@@ -682,16 +682,21 @@ namespace jpegli {
 HWY_EXPORT(InverseTransformBlock8x8);
 HWY_EXPORT(InverseTransformBlockGeneric);
 
-void ChooseInverseTransform(j_decompress_ptr cinfo) {
+jxl::Status ChooseInverseTransform(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   for (int c = 0; c < cinfo->num_components; ++c) {
-    if (m->scaled_dct_size[c] == DCTSIZE) {
+    int dct_size = m->scaled_dct_size[c];
+    if (dct_size < 1 || dct_size > 16) {
+      return JXL_FAILURE("Compute1dIDCT does not support N=%d", dct_size);
+    }
+    if (dct_size == DCTSIZE) {
       m->inverse_transform[c] = HWY_DYNAMIC_DISPATCH(InverseTransformBlock8x8);
     } else {
       m->inverse_transform[c] =
           HWY_DYNAMIC_DISPATCH(InverseTransformBlockGeneric);
     }
   }
+  return true;
 }
 
 }  // namespace jpegli

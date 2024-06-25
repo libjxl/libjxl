@@ -5,21 +5,51 @@
 
 #include "lib/extras/dec/exr.h"
 
-#include "lib/jxl/base/common.h"
+#include <cstdint>
 
-#if JPEGXL_ENABLE_EXR
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+
+#if !JPEGXL_ENABLE_EXR
+
+namespace jxl {
+namespace extras {
+bool CanDecodeEXR() { return false; }
+
+Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
+                      PackedPixelFile* ppf,
+                      const SizeConstraints* constraints) {
+  (void)bytes;
+  (void)color_hints;
+  (void)ppf;
+  (void)constraints;
+  return JXL_FAILURE("EXR is not supported");
+}
+}  // namespace extras
+}  // namespace jxl
+
+#else  // JPEGXL_ENABLE_EXR
+
 #include <ImfChromaticitiesAttribute.h>
 #include <ImfIO.h>
 #include <ImfRgbaFile.h>
 #include <ImfStandardAttributes.h>
-#endif
 
 #include <vector>
+
+#ifdef __EXCEPTIONS
+#include <stdexcept>
+#define JXL_EXR_THROW_LENGTH_ERROR() throw std::length_error("");
+#else  // __EXCEPTIONS
+#define JXL_EXR_THROW_LENGTH_ERROR() JXL_CRASH()
+#endif  // __EXCEPTIONS
 
 namespace jxl {
 namespace extras {
 
-#if JPEGXL_ENABLE_EXR
 namespace {
 
 namespace OpenEXR = OPENEXR_IMF_NAMESPACE;
@@ -41,7 +71,9 @@ class InMemoryIStream : public OpenEXR::IStream {
 
   bool isMemoryMapped() const override { return true; }
   char* readMemoryMapped(const int n) override {
-    JXL_ASSERT(pos_ + n <= bytes_.size());
+    if (pos_ + n < pos_ || pos_ + n > bytes_.size()) {
+      JXL_EXR_THROW_LENGTH_ERROR();
+    }
     char* const result =
         const_cast<char*>(reinterpret_cast<const char*>(bytes_.data() + pos_));
     pos_ += n;
@@ -54,7 +86,9 @@ class InMemoryIStream : public OpenEXR::IStream {
 
   ExrInt64 tellg() override { return pos_; }
   void seekg(const ExrInt64 pos) override {
-    JXL_ASSERT(pos + 1 <= bytes_.size());
+    if (pos >= bytes_.size()) {
+      JXL_EXR_THROW_LENGTH_ERROR();
+    }
     pos_ = pos;
   }
 
@@ -64,20 +98,12 @@ class InMemoryIStream : public OpenEXR::IStream {
 };
 
 }  // namespace
-#endif
 
-bool CanDecodeEXR() {
-#if JPEGXL_ENABLE_EXR
-  return true;
-#else
-  return false;
-#endif
-}
+bool CanDecodeEXR() { return true; }
 
 Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
                       PackedPixelFile* ppf,
                       const SizeConstraints* constraints) {
-#if JPEGXL_ENABLE_EXR
   InMemoryIStream is(bytes);
 
 #ifdef __EXCEPTIONS
@@ -199,10 +225,9 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   }
   ppf->info.intensity_target = intensity_target;
   return true;
-#else
-  return false;
-#endif
 }
 
 }  // namespace extras
 }  // namespace jxl
+
+#endif  // JPEGXL_ENABLE_EXR

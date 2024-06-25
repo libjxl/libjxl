@@ -6,11 +6,11 @@
 #include "lib/jxl/modular/encoding/enc_ma.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 #include <numeric>
 #include <queue>
-#include <unordered_map>
-#include <unordered_set>
+#include <vector>
 
 #include "lib/jxl/modular/encoding/ma_common.h"
 
@@ -259,7 +259,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
         forced_split.lpred = forced_split.rpred = (*tree)[pos].predictor;
         best = &forced_split;
         best->pos = begin;
-        JXL_ASSERT(best->prop == tree_samples.PropertyFromIndex(best->prop));
+        JXL_DASSERT(best->prop == tree_samples.PropertyFromIndex(best->prop));
         for (size_t x = begin; x < end; x++) {
           if (tree_samples.Property(best->prop, x) <= best->val) {
             best->pos++;
@@ -449,17 +449,17 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       }
       auto new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
-        JXL_ASSERT(static_cast<uint32_t>(dequant + 1) <= new_sp_range[p][1]);
+        JXL_DASSERT(static_cast<uint32_t>(dequant + 1) <= new_sp_range[p][1]);
         new_sp_range[p][1] = dequant + 1;
-        JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
+        JXL_DASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
       }
       nodes.push_back(NodeInfo{(*tree)[pos].rchild, begin, best->pos,
                                used_properties, new_sp_range});
       new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
-        JXL_ASSERT(new_sp_range[p][0] <= static_cast<uint32_t>(dequant + 1));
+        JXL_DASSERT(new_sp_range[p][0] <= static_cast<uint32_t>(dequant + 1));
         new_sp_range[p][0] = dequant + 1;
-        JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
+        JXL_DASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
       }
       nodes.push_back(NodeInfo{(*tree)[pos].lchild, best->pos, end,
                                used_properties, new_sp_range});
@@ -477,10 +477,10 @@ namespace jxl {
 
 HWY_EXPORT(FindBestSplit);  // Local function.
 
-void ComputeBestTree(TreeSamples &tree_samples, float threshold,
-                     const std::vector<ModularMultiplierInfo> &mul_info,
-                     StaticPropRange static_prop_range,
-                     float fast_decode_multiplier, Tree *tree) {
+Status ComputeBestTree(TreeSamples &tree_samples, float threshold,
+                       const std::vector<ModularMultiplierInfo> &mul_info,
+                       StaticPropRange static_prop_range,
+                       float fast_decode_multiplier, Tree *tree) {
   // TODO(veluca): take into account that different contexts can have different
   // uint configs.
   //
@@ -490,13 +490,14 @@ void ComputeBestTree(TreeSamples &tree_samples, float threshold,
   tree->back().predictor = tree_samples.PredictorFromIndex(0);
   tree->back().predictor_offset = 0;
   tree->back().multiplier = 1;
-  JXL_ASSERT(tree_samples.NumProperties() < 64);
+  JXL_ENSURE(tree_samples.NumProperties() < 64);
 
-  JXL_ASSERT(tree_samples.NumDistinctSamples() <=
+  JXL_ENSURE(tree_samples.NumDistinctSamples() <=
              std::numeric_limits<uint32_t>::max());
   HWY_DYNAMIC_DISPATCH(FindBestSplit)
   (tree_samples, threshold, mul_info, static_prop_range, fast_decode_multiplier,
    tree);
+  return true;
 }
 
 #if JXL_CXX_LANG < JXL_CXX_17
@@ -559,8 +560,8 @@ Status TreeSamples::SetProperties(const std::vector<uint32_t> &properties,
   return true;
 }
 
-void TreeSamples::InitTable(size_t size) {
-  JXL_DASSERT((size & (size - 1)) == 0);
+void TreeSamples::InitTable(size_t log_size) {
+  size_t size = 1ULL << log_size;
   if (dedup_table_.size() == size) return;
   dedup_table_.resize(size, kDedupEntryUnused);
   for (size_t i = 0; i < NumDistinctSamples(); i++) {
@@ -617,8 +618,8 @@ void TreeSamples::PrepareForSamples(size_t num_samples) {
     p.reserve(p.size() + num_samples);
   }
   size_t total_num_samples = num_samples + sample_counts.size();
-  size_t next_pow2 = 1LLU << CeilLog2Nonzero(total_num_samples * 3 / 2);
-  InitTable(next_pow2);
+  size_t next_size = CeilLog2Nonzero(total_num_samples * 3 / 2);
+  InitTable(next_size);
 }
 
 size_t TreeSamples::Hash1(size_t a) const {
@@ -979,9 +980,9 @@ void CollectPixelSamples(const Image &image, const ModularOptions &options,
 }
 
 // TODO(veluca): very simple encoding scheme. This should be improved.
-void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
-                  Tree *decoder_tree) {
-  JXL_ASSERT(tree.size() <= kMaxTreeSize);
+Status TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
+                    Tree *decoder_tree) {
+  JXL_ENSURE(tree.size() <= kMaxTreeSize);
   std::queue<int> q;
   q.push(0);
   size_t leaf_id = 0;
@@ -989,7 +990,7 @@ void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
   while (!q.empty()) {
     int cur = q.front();
     q.pop();
-    JXL_ASSERT(tree[cur].property >= -1);
+    JXL_ENSURE(tree[cur].property >= -1);
     tokens->emplace_back(kPropertyContext, tree[cur].property + 1);
     if (tree[cur].property == -1) {
       tokens->emplace_back(kPredictorContext,
@@ -1000,7 +1001,7 @@ void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
       uint32_t mul_bits = (tree[cur].multiplier >> mul_log) - 1;
       tokens->emplace_back(kMultiplierLogContext, mul_log);
       tokens->emplace_back(kMultiplierBitsContext, mul_bits);
-      JXL_ASSERT(tree[cur].predictor < Predictor::Best);
+      JXL_ENSURE(tree[cur].predictor < Predictor::Best);
       decoder_tree->emplace_back(-1, 0, leaf_id++, 0, tree[cur].predictor,
                                  tree[cur].predictor_offset,
                                  tree[cur].multiplier);
@@ -1014,6 +1015,7 @@ void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
     q.push(tree[cur].rchild);
     tokens->emplace_back(kSplitValContext, PackSigned(tree[cur].splitval));
   }
+  return true;
 }
 
 }  // namespace jxl

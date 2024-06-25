@@ -45,7 +45,7 @@ class WriteVisitor : public VisitorBase {
   Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) override {
     JXL_QUIET_RETURN_IF_ERROR(VisitorBase::BeginExtensions(extensions));
     if (*extensions == 0) {
-      JXL_ASSERT(extension_bits_ == 0);
+      JXL_ENSURE(extension_bits_ == 0);
       return true;
     }
     // TODO(janwas): extend API to pass in array of extension_bits, one per
@@ -82,7 +82,7 @@ Status Bundle::Write(const Fields& fields, BitWriter* writer, LayerType layer,
   WriteVisitor visitor(extension_bits, writer);
   JXL_RETURN_IF_ERROR(visitor.VisitConst(fields));
   JXL_RETURN_IF_ERROR(visitor.OK());
-  allotment.ReclaimAndCharge(writer, layer, aux_out);
+  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
   return true;
 }
 
@@ -109,7 +109,7 @@ Status U32Coder::Write(const U32Enc enc, const uint32_t value,
   const U32Distr d = enc.GetDistr(selector);
   if (!d.IsDirect()) {  // Nothing more to write for direct encoding
     const uint32_t offset = d.Offset();
-    JXL_ASSERT(value >= offset);
+    JXL_ENSURE(value >= offset);
     writer->Write(total_bits - 2, value - offset);
   }
 
@@ -181,18 +181,18 @@ Status F16Coder::Write(float value, BitWriter* JXL_RESTRICT writer) {
   if (JXL_UNLIKELY(exp < -14)) {
     biased_exp16 = 0;
     const uint32_t sub_exp = static_cast<uint32_t>(-14 - exp);
-    JXL_ASSERT(1 <= sub_exp && sub_exp < 11);
+    JXL_ENSURE(1 <= sub_exp && sub_exp < 11);
     mantissa16 = (1 << (10 - sub_exp)) + (mantissa32 >> (13 + sub_exp));
   } else {
     // exp = [-14, 15]
     biased_exp16 = static_cast<uint32_t>(exp + 15);
-    JXL_ASSERT(1 <= biased_exp16 && biased_exp16 < 31);
+    JXL_ENSURE(1 <= biased_exp16 && biased_exp16 < 31);
     mantissa16 = mantissa32 >> 13;
   }
 
-  JXL_ASSERT(mantissa16 < 1024);
+  JXL_ENSURE(mantissa16 < 1024);
   const uint32_t bits16 = (sign << 15) | (biased_exp16 << 10) | mantissa16;
-  JXL_ASSERT(bits16 < 0x10000);
+  JXL_ENSURE(bits16 < 0x10000);
   writer->Write(16, bits16);
   return true;
 }
@@ -203,7 +203,8 @@ Status WriteCodestreamHeaders(CodecMetadata* metadata, BitWriter* writer,
   BitWriter::Allotment allotment(writer, 16);
   writer->Write(8, 0xFF);
   writer->Write(8, kCodestreamMarker);
-  allotment.ReclaimAndCharge(writer, LayerType::Header, aux_out);
+  JXL_RETURN_IF_ERROR(
+      allotment.ReclaimAndCharge(writer, LayerType::Header, aux_out));
 
   JXL_RETURN_IF_ERROR(
       WriteSizeHeader(metadata->size, writer, LayerType::Header, aux_out));

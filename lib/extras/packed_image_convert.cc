@@ -11,7 +11,9 @@
 #include <jxl/types.h>
 
 #include <cstdint>
+#include <cstdio>
 
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -29,21 +31,26 @@ Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
                                        const CodecInOut& io, ThreadPool* pool,
                                        ImageBundle* bundle) {
   JxlMemoryManager* memory_manager = io.memory_manager;
-  JXL_ASSERT(frame.color.pixels() != nullptr);
-  size_t frame_bits_per_sample =
-      input_bitdepth.type == JXL_BIT_DEPTH_FROM_PIXEL_FORMAT
-          ? PackedImage::BitsPerChannel(frame.color.format.data_type)
-          : info.bits_per_sample;
-  JXL_ASSERT(frame_bits_per_sample != 0);
+  JXL_ENSURE(frame.color.pixels() != nullptr);
+  size_t frame_bits_per_sample;
+  if (input_bitdepth.type == JXL_BIT_DEPTH_FROM_PIXEL_FORMAT) {
+    JXL_RETURN_IF_ERROR(
+        PackedImage::ValidateDataType(frame.color.format.data_type));
+    frame_bits_per_sample =
+        PackedImage::BitsPerChannel(frame.color.format.data_type);
+  } else {
+    frame_bits_per_sample = info.bits_per_sample;
+  }
+  JXL_ENSURE(frame_bits_per_sample != 0);
   // It is ok for the frame.color.format.num_channels to not match the
   // number of channels on the image.
-  JXL_ASSERT(1 <= frame.color.format.num_channels &&
+  JXL_ENSURE(1 <= frame.color.format.num_channels &&
              frame.color.format.num_channels <= 4);
 
   const Span<const uint8_t> span(
       static_cast<const uint8_t*>(frame.color.pixels()),
       frame.color.pixels_size);
-  JXL_ASSERT(Rect(frame.frame_info.layer_info.crop_x0,
+  JXL_ENSURE(Rect(frame.frame_info.layer_info.crop_x0,
                   frame.frame_info.layer_info.crop_y0,
                   frame.frame_info.layer_info.xsize,
                   frame.frame_info.layer_info.ysize)
@@ -57,7 +64,7 @@ Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
     bundle->origin.y0 = frame.frame_info.layer_info.crop_y0;
   }
   bundle->name = frame.name;  // frame.frame_info.name_length is ignored here.
-  JXL_ASSERT(io.metadata.m.color_encoding.IsGray() ==
+  JXL_ENSURE(io.metadata.m.color_encoding.IsGray() ==
              (frame.color.format.num_channels <= 2));
 
   JXL_RETURN_IF_ERROR(ConvertFromExternal(
@@ -70,9 +77,9 @@ Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
     JXL_ASSIGN_OR_RETURN(
         bundle->extra_channels()[i],
         ImageF::Create(memory_manager, ppf_ec.xsize, ppf_ec.ysize));
-    JXL_CHECK(BufferToImageF(ppf_ec.format, ppf_ec.xsize, ppf_ec.ysize,
-                             ppf_ec.pixels(), ppf_ec.pixels_size, pool,
-                             &bundle->extra_channels()[i]));
+    JXL_RETURN_IF_ERROR(BufferToImageF(
+        ppf_ec.format, ppf_ec.xsize, ppf_ec.ysize, ppf_ec.pixels(),
+        ppf_ec.pixels_size, pool, &bundle->extra_channels()[i]));
   }
   return true;
 }
@@ -81,19 +88,19 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
                                           ThreadPool* pool, CodecInOut* io) {
   JxlMemoryManager* memory_manager = io->memory_manager;
   const bool has_alpha = ppf.info.alpha_bits != 0;
-  JXL_ASSERT(!ppf.frames.empty());
+  JXL_ENSURE(!ppf.frames.empty());
   if (has_alpha) {
-    JXL_ASSERT(ppf.info.alpha_bits == ppf.info.bits_per_sample);
-    JXL_ASSERT(ppf.info.alpha_exponent_bits ==
+    JXL_ENSURE(ppf.info.alpha_bits == ppf.info.bits_per_sample);
+    JXL_ENSURE(ppf.info.alpha_exponent_bits ==
                ppf.info.exponent_bits_per_sample);
   }
 
   const bool is_gray = (ppf.info.num_color_channels == 1);
-  JXL_ASSERT(ppf.info.num_color_channels == 1 ||
+  JXL_ENSURE(ppf.info.num_color_channels == 1 ||
              ppf.info.num_color_channels == 3);
 
   // Convert the image metadata
-  io->SetSize(ppf.info.xsize, ppf.info.ysize);
+  JXL_RETURN_IF_ERROR(io->SetSize(ppf.info.xsize, ppf.info.ysize));
   io->metadata.m.bit_depth.bits_per_sample = ppf.info.bits_per_sample;
   io->metadata.m.bit_depth.exponent_bits_per_sample =
       ppf.info.exponent_bits_per_sample;
@@ -108,11 +115,11 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   if (alpha) alpha->bit_depth = io->metadata.m.bit_depth;
 
   io->metadata.m.xyb_encoded = !FROM_JXL_BOOL(ppf.info.uses_original_profile);
-  JXL_ASSERT(ppf.info.orientation > 0 && ppf.info.orientation <= 8);
+  JXL_ENSURE(ppf.info.orientation > 0 && ppf.info.orientation <= 8);
   io->metadata.m.orientation = ppf.info.orientation;
 
   // Convert animation metadata
-  JXL_ASSERT(ppf.frames.size() == 1 || ppf.info.have_animation);
+  JXL_ENSURE(ppf.frames.size() == 1 || ppf.info.have_animation);
   io->metadata.m.have_animation = FROM_JXL_BOOL(ppf.info.have_animation);
   io->metadata.m.animation.tps_numerator = ppf.info.animation.tps_numerator;
   io->metadata.m.animation.tps_denominator = ppf.info.animation.tps_denominator;
@@ -203,14 +210,14 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   return true;
 }
 
-PackedPixelFile ConvertImage3FToPackedPixelFile(const Image3F& image,
-                                                const ColorEncoding& c_enc,
-                                                JxlPixelFormat format,
-                                                ThreadPool* pool) {
-  PackedPixelFile ppf;
+StatusOr<PackedPixelFile> ConvertImage3FToPackedPixelFile(
+    const Image3F& image, const ColorEncoding& c_enc, JxlPixelFormat format,
+    ThreadPool* pool) {
+  PackedPixelFile ppf{};
   ppf.info.xsize = image.xsize();
   ppf.info.ysize = image.ysize();
   ppf.info.num_color_channels = 3;
+  JXL_RETURN_IF_ERROR(PackedImage::ValidateDataType(format.data_type));
   ppf.info.bits_per_sample = PackedImage::BitsPerChannel(format.data_type);
   ppf.info.exponent_bits_per_sample = format.data_type == JXL_TYPE_FLOAT ? 8
                                       : format.data_type == JXL_TYPE_FLOAT16
@@ -218,14 +225,15 @@ PackedPixelFile ConvertImage3FToPackedPixelFile(const Image3F& image,
                                           : 0;
   ppf.color_encoding = c_enc.ToExternal();
   ppf.frames.clear();
-  JXL_ASSIGN_OR_DIE(PackedFrame frame,
-                    PackedFrame::Create(image.xsize(), image.ysize(), format));
+  JXL_ASSIGN_OR_RETURN(
+      PackedFrame frame,
+      PackedFrame::Create(image.xsize(), image.ysize(), format));
   const ImageF* channels[3];
   for (int c = 0; c < 3; ++c) {
     channels[c] = &image.Plane(c);
   }
   bool float_samples = ppf.info.exponent_bits_per_sample > 0;
-  JXL_CHECK(ConvertChannelsToExternal(
+  JXL_RETURN_IF_ERROR(ConvertChannelsToExternal(
       channels, 3, ppf.info.bits_per_sample, float_samples, format.endianness,
       frame.color.stride, pool, frame.color.pixels(0, 0, 0),
       frame.color.pixels_size, PixelCallback(), Orientation::kIdentity));
@@ -241,13 +249,13 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
                                           PackedPixelFile* ppf) {
   JxlMemoryManager* memory_manager = io.memory_manager;
   const bool has_alpha = io.metadata.m.HasAlpha();
-  JXL_ASSERT(!io.frames.empty());
+  JXL_ENSURE(!io.frames.empty());
 
   if (has_alpha) {
-    JXL_ASSERT(io.metadata.m.GetAlphaBits() ==
+    JXL_ENSURE(io.metadata.m.GetAlphaBits() ==
                io.metadata.m.bit_depth.bits_per_sample);
     const auto* alpha_channel = io.metadata.m.Find(ExtraChannel::kAlpha);
-    JXL_ASSERT(alpha_channel->bit_depth.exponent_bits_per_sample ==
+    JXL_ENSURE(alpha_channel->bit_depth.exponent_bits_per_sample ==
                io.metadata.m.bit_depth.exponent_bits_per_sample);
     ppf->info.alpha_bits = alpha_channel->bit_depth.bits_per_sample;
     ppf->info.alpha_exponent_bits =
@@ -271,13 +279,13 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
       TO_JXL_BOOL(io.metadata.m.tone_mapping.relative_to_max_display);
 
   ppf->info.uses_original_profile = TO_JXL_BOOL(!io.metadata.m.xyb_encoded);
-  JXL_ASSERT(0 < io.metadata.m.orientation && io.metadata.m.orientation <= 8);
+  JXL_ENSURE(0 < io.metadata.m.orientation && io.metadata.m.orientation <= 8);
   ppf->info.orientation =
       static_cast<JxlOrientation>(io.metadata.m.orientation);
   ppf->info.num_color_channels = io.metadata.m.color_encoding.Channels();
 
   // Convert animation metadata
-  JXL_ASSERT(io.frames.size() == 1 || io.metadata.m.have_animation);
+  JXL_ENSURE(io.frames.size() == 1 || io.metadata.m.have_animation);
   ppf->info.have_animation = TO_JXL_BOOL(io.metadata.m.have_animation);
   ppf->info.animation.tps_numerator = io.metadata.m.animation.tps_numerator;
   ppf->info.animation.tps_denominator = io.metadata.m.animation.tps_denominator;
@@ -301,7 +309,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   // Convert the pixels
   ppf->frames.clear();
   for (const auto& frame : io.frames) {
-    JXL_ASSERT(frame.metadata()->bit_depth.bits_per_sample != 0);
+    JXL_ENSURE(frame.metadata()->bit_depth.bits_per_sample != 0);
     // It is ok for the frame.color().kNumPlanes to not match the
     // number of channels on the image.
     const uint32_t alpha_channels = has_alpha ? 1 : 0;
@@ -315,6 +323,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     JXL_ASSIGN_OR_RETURN(PackedFrame packed_frame,
                          PackedFrame::Create(frame.oriented_xsize(),
                                              frame.oriented_ysize(), format));
+    JXL_RETURN_IF_ERROR(PackedImage::ValidateDataType(pixel_format.data_type));
     const size_t bits_per_sample =
         float_out ? packed_frame.color.BitsPerChannel(pixel_format.data_type)
                   : ppf->info.bits_per_sample;
@@ -340,7 +349,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
 
     // TODO(firsching): Convert the extra channels, beside one potential alpha
     // channel. FIXME!
-    JXL_CHECK(frame.extra_channels().size() <= (has_alpha ? 1 : 0));
+    JXL_ENSURE(frame.extra_channels().size() <= (has_alpha ? 1 : 0));
     ppf->frames.push_back(std::move(packed_frame));
   }
 

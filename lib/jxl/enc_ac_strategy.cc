@@ -13,6 +13,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "lib/jxl/base/common.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_ac_strategy.cc"
 #include <hwy/foreach_target.h>
@@ -60,46 +62,49 @@ namespace {
 // Debugging utilities.
 
 // Returns a linear sRGB color (as bytes) for each AC strategy.
-const uint8_t* TypeColor(const uint8_t& raw_strategy) {
-  JXL_ASSERT(AcStrategy::IsRawStrategyValid(raw_strategy));
-  static_assert(AcStrategy::kNumValidStrategies == 27, "Change colors");
-  static constexpr uint8_t kColors[][3] = {
-      {0xFF, 0xFF, 0x00},  // DCT8
-      {0xFF, 0x80, 0x80},  // HORNUSS
-      {0xFF, 0x80, 0x80},  // DCT2x2
-      {0xFF, 0x80, 0x80},  // DCT4x4
-      {0x80, 0xFF, 0x00},  // DCT16x16
-      {0x00, 0xC0, 0x00},  // DCT32x32
-      {0xC0, 0xFF, 0x00},  // DCT16x8
-      {0xC0, 0xFF, 0x00},  // DCT8x16
-      {0x00, 0xFF, 0x00},  // DCT32x8
-      {0x00, 0xFF, 0x00},  // DCT8x32
-      {0x00, 0xFF, 0x00},  // DCT32x16
-      {0x00, 0xFF, 0x00},  // DCT16x32
-      {0xFF, 0x80, 0x00},  // DCT4x8
-      {0xFF, 0x80, 0x00},  // DCT8x4
-      {0xFF, 0xFF, 0x80},  // AFV0
-      {0xFF, 0xFF, 0x80},  // AFV1
-      {0xFF, 0xFF, 0x80},  // AFV2
-      {0xFF, 0xFF, 0x80},  // AFV3
-      {0x00, 0xC0, 0xFF},  // DCT64x64
-      {0x00, 0xFF, 0xFF},  // DCT64x32
-      {0x00, 0xFF, 0xFF},  // DCT32x64
-      {0x00, 0x40, 0xFF},  // DCT128x128
-      {0x00, 0x80, 0xFF},  // DCT128x64
-      {0x00, 0x80, 0xFF},  // DCT64x128
-      {0x00, 0x00, 0xC0},  // DCT256x256
-      {0x00, 0x00, 0xFF},  // DCT256x128
-      {0x00, 0x00, 0xFF},  // DCT128x256
+const uint8_t* TypeColor(uint8_t raw_strategy) {
+  JXL_DASSERT(AcStrategy::IsRawStrategyValid(raw_strategy));
+  static_assert(AcStrategy::kNumValidStrategies == 27, "Update colors");
+  static constexpr uint8_t kColors[AcStrategy::kNumValidStrategies + 1][3] = {
+      {0xFF, 0xFF, 0x00},  // DCT8       | yellow
+      {0xFF, 0x80, 0x80},  // HORNUSS    | vivid tangerine
+      {0xFF, 0x80, 0x80},  // DCT2x2     | vivid tangerine
+      {0xFF, 0x80, 0x80},  // DCT4x4     | vivid tangerine
+      {0x80, 0xFF, 0x00},  // DCT16x16   | chartreuse
+      {0x00, 0xC0, 0x00},  // DCT32x32   | waystone green
+      {0xC0, 0xFF, 0x00},  // DCT16x8    | lime
+      {0xC0, 0xFF, 0x00},  // DCT8x16    | lime
+      {0x00, 0xFF, 0x00},  // DCT32x8    | green
+      {0x00, 0xFF, 0x00},  // DCT8x32    | green
+      {0x00, 0xFF, 0x00},  // DCT32x16   | green
+      {0x00, 0xFF, 0x00},  // DCT16x32   | green
+      {0xFF, 0x80, 0x00},  // DCT4x8     | orange juice
+      {0xFF, 0x80, 0x00},  // DCT8x4     | orange juice
+      {0xFF, 0xFF, 0x80},  // AFV0       | butter
+      {0xFF, 0xFF, 0x80},  // AFV1       | butter
+      {0xFF, 0xFF, 0x80},  // AFV2       | butter
+      {0xFF, 0xFF, 0x80},  // AFV3       | butter
+      {0x00, 0xC0, 0xFF},  // DCT64x64   | capri
+      {0x00, 0xFF, 0xFF},  // DCT64x32   | aqua
+      {0x00, 0xFF, 0xFF},  // DCT32x64   | aqua
+      {0x00, 0x40, 0xFF},  // DCT128x128 | rare blue
+      {0x00, 0x80, 0xFF},  // DCT128x64  | magic ink
+      {0x00, 0x80, 0xFF},  // DCT64x128  | magic ink
+      {0x00, 0x00, 0xC0},  // DCT256x256 | keese blue
+      {0x00, 0x00, 0xFF},  // DCT256x128 | blue
+      {0x00, 0x00, 0xFF},  // DCT128x256 | blue
+      {0x00, 0x00, 0x00}   // invalid    | black
   };
+  raw_strategy =
+      Clamp1<uint8_t>(raw_strategy, 0, AcStrategy::kNumValidStrategies);
   return kColors[raw_strategy];
 }
 
-const uint8_t* TypeMask(const uint8_t& raw_strategy) {
-  JXL_ASSERT(AcStrategy::IsRawStrategyValid(raw_strategy));
-  static_assert(AcStrategy::kNumValidStrategies == 27, "Add masks");
+const uint8_t* TypeMask(uint8_t raw_strategy) {
+  JXL_DASSERT(AcStrategy::IsRawStrategyValid(raw_strategy));
+  static_assert(AcStrategy::kNumValidStrategies == 27, "Update masks");
   // implicitly, first row and column is made dark
-  static constexpr uint8_t kMask[][64] = {
+  static constexpr uint8_t kMask[AcStrategy::kNumValidStrategies + 1][64] = {
       {
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
@@ -208,7 +213,10 @@ const uint8_t* TypeMask(const uint8_t& raw_strategy) {
           0, 0, 0, 0, 0, 0, 1, 1,  //
           0, 0, 0, 0, 0, 1, 1, 1,  //
       },                           // AFV3
+      {}                           // invalid
   };
+  raw_strategy =
+      Clamp1<uint8_t>(raw_strategy, 0, AcStrategy::kNumValidStrategies);
   return kMask[raw_strategy];
 }
 
@@ -618,7 +626,7 @@ Status TryMergeAcs(AcStrategyType acs_raw, size_t bx, size_t by, size_t cx,
       priority[(cy + iy) * 8 + cx + ix] = candidate_priority;
     }
   }
-  ac_strategy->Set(bx + cx, by + cy, acs_raw);
+  JXL_RETURN_IF_ERROR(ac_strategy->Set(bx + cx, by + cy, acs_raw));
   entropy_estimate[cy * 8 + cx] = entropy_candidate;
   return true;
 }
@@ -765,27 +773,29 @@ Status FindBestFirstLevelDivisionForSquare(
   float costNxJ = std::min(entropy_KXJ_top, entropy[0][0] + entropy[0][1]) +
                   std::min(entropy_KXJ_bottom, entropy[1][0] + entropy[1][1]);
   if (entropy_JXJ < costJxN && entropy_JXJ < costNxJ) {
-    ac_strategy->Set(bx + cx, by + cy, acs_rawJXJ);
+    JXL_RETURN_IF_ERROR(ac_strategy->Set(bx + cx, by + cy, acs_rawJXJ));
     SetEntropyForTransform(cx, cy, acs_rawJXJ, entropy_JXJ, entropy_estimate);
   } else if (costJxN < costNxJ) {
     if (entropy_JXK_left < entropy[0][0] + entropy[1][0]) {
-      ac_strategy->Set(bx + cx, by + cy, acs_rawJXK);
+      JXL_RETURN_IF_ERROR(ac_strategy->Set(bx + cx, by + cy, acs_rawJXK));
       SetEntropyForTransform(cx, cy, acs_rawJXK, entropy_JXK_left,
                              entropy_estimate);
     }
     if (entropy_JXK_right < entropy[0][1] + entropy[1][1]) {
-      ac_strategy->Set(bx + cx + blocks_half, by + cy, acs_rawJXK);
+      JXL_RETURN_IF_ERROR(
+          ac_strategy->Set(bx + cx + blocks_half, by + cy, acs_rawJXK));
       SetEntropyForTransform(cx + blocks_half, cy, acs_rawJXK,
                              entropy_JXK_right, entropy_estimate);
     }
   } else {
     if (entropy_KXJ_top < entropy[0][0] + entropy[0][1]) {
-      ac_strategy->Set(bx + cx, by + cy, acs_rawKXJ);
+      JXL_RETURN_IF_ERROR(ac_strategy->Set(bx + cx, by + cy, acs_rawKXJ));
       SetEntropyForTransform(cx, cy, acs_rawKXJ, entropy_KXJ_top,
                              entropy_estimate);
     }
     if (entropy_KXJ_bottom < entropy[1][0] + entropy[1][1]) {
-      ac_strategy->Set(bx + cx, by + cy + blocks_half, acs_rawKXJ);
+      JXL_RETURN_IF_ERROR(
+          ac_strategy->Set(bx + cx, by + cy + blocks_half, acs_rawKXJ));
       SetEntropyForTransform(cx, cy + blocks_half, acs_rawKXJ,
                              entropy_KXJ_bottom, entropy_estimate);
     }
@@ -812,8 +822,8 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   float* JXL_RESTRICT scratch_space = block + 3 * AcStrategy::kMaxCoeffArea;
   size_t bx = rect.x0();
   size_t by = rect.y0();
-  JXL_ASSERT(rect.xsize() <= 8);
-  JXL_ASSERT(rect.ysize() <= 8);
+  JXL_ENSURE(rect.xsize() <= 8);
+  JXL_ENSURE(rect.ysize() <= 8);
   size_t tx = bx / kColorTileDimInBlocks;
   size_t ty = by / kColorTileDimInBlocks;
   const float cmap_factors[3] = {
@@ -841,7 +851,7 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
           8 * (bx + ix), 8 * (by + iy), static_cast<int>(cparams.speed_tier),
           butteraugli_target, config, cmap_factors, ac_strategy, block,
           scratch_space, quantized, &entropy, best_of_8x8s));
-      ac_strategy->Set(bx + ix, by + iy, best_of_8x8s);
+      JXL_RETURN_IF_ERROR(ac_strategy->Set(bx + ix, by + iy, best_of_8x8s));
       entropy_estimate[iy * 8 + ix] = entropy * mul8x8;
     }
   }
@@ -1036,14 +1046,14 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 HWY_EXPORT(ProcessRectACS);
 
-void AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
-                                const ImageF& quant_field, const ImageF& mask,
-                                const ImageF& mask1x1,
-                                DequantMatrices* matrices) {
+Status AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
+                                  const ImageF& quant_field, const ImageF& mask,
+                                  const ImageF& mask1x1,
+                                  DequantMatrices* matrices) {
   config.dequant = matrices;
 
   if (cparams.speed_tier >= SpeedTier::kCheetah) {
-    JXL_CHECK(matrices->EnsureComputed(1));  // DCT8 only
+    JXL_RETURN_IF_ERROR(matrices->EnsureComputed(1));  // DCT8 only
   } else {
     uint32_t acs_mask = 0;
     // All transforms up to 64x64.
@@ -1051,7 +1061,7 @@ void AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
          i++) {
       acs_mask |= (1 << i);
     }
-    JXL_CHECK(matrices->EnsureComputed(acs_mask));
+    JXL_RETURN_IF_ERROR(matrices->EnsureComputed(acs_mask));
   }
 
   // Image row pointers and strides.
@@ -1088,6 +1098,7 @@ void AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
   config.info_loss_multiplier *= std::pow(ratio, kPow1);
   config.zeros_mul *= std::pow(ratio, kPow2);
   config.cost_delta *= std::pow(ratio, kPow3);
+  return true;
 }
 
 void AcStrategyHeuristics::PrepareForThreads(std::size_t num_threads) {

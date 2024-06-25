@@ -75,10 +75,10 @@ struct QuantEncodingInternal {
   typedef std::array<std::array<float, 9>, 3> AFVWeights;
   typedef std::array<float, 3> DCT4x8Multipliers;
 
-  static constexpr QuantEncodingInternal Library(uint8_t predefined) {
-    return ((predefined < kNumPredefinedTables) ||
-            JXL_ABORT("Assert predefined < kNumPredefinedTables")),
-           QuantEncodingInternal(Tag<kQuantModeLibrary>(), predefined);
+  template <size_t A>
+  static constexpr QuantEncodingInternal Library() {
+    static_assert(A < kNumPredefinedTables);
+    return QuantEncodingInternal(Tag<kQuantModeLibrary>(), A);
   }
   constexpr QuantEncodingInternal(Tag<kQuantModeLibrary> /* tag */,
                                   uint8_t predefined)
@@ -239,8 +239,9 @@ class QuantEncoding final : public QuantEncodingInternal {
   // create a QuantEncodingInternal instance is if you need a constexpr version
   // of this class. Note that RAW() is not supported in that case since it uses
   // a std::vector.
-  static QuantEncoding Library(uint8_t predefined_arg) {
-    return QuantEncoding(QuantEncodingInternal::Library(predefined_arg));
+  template <size_t A>
+  static QuantEncoding Library() {
+    return QuantEncoding(QuantEncodingInternal::Library<A>());
   }
   static QuantEncoding Identity(const IdWeights& xybweights) {
     return QuantEncoding(QuantEncodingInternal::Identity(xybweights));

@@ -9,6 +9,7 @@
 #include <jxl/types.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -28,6 +29,7 @@
 #include "tools/benchmark/benchmark_codec_jpeg.h"
 #include "tools/benchmark/benchmark_codec_jxl.h"
 #include "tools/benchmark/benchmark_stats.h"
+#include "tools/cmdline.h"
 #include "tools/no_memory_manager.h"
 #include "tools/speed_stats.h"
 #include "tools/thread_pool_internal.h"
@@ -48,15 +50,17 @@ namespace jpegxl {
 namespace tools {
 
 using ::jxl::Image3F;
+using ::jxl::Status;
 
-void ImageCodec::ParseParameters(const std::string& parameters) {
+Status ImageCodec::ParseParameters(const std::string& parameters) {
   params_ = parameters;
   std::vector<std::string> parts = SplitString(parameters, ':');
   for (const auto& part : parts) {
     if (!ParseParam(part)) {
-      JXL_ABORT("Invalid parameter %s", part.c_str());
+      return JXL_FAILURE("Invalid parameter %s", part.c_str());
     }
   }
+  return true;
 }
 
 Status ImageCodec::ParseParam(const std::string& param) {
@@ -127,7 +131,7 @@ class NoneCodec : public ImageCodec {
                            ThreadPool* pool, CodecInOut* io,
                            jpegxl::tools::SpeedStats* speed_stats) {
     const double start = jxl::Now();
-    JXL_ASSERT(compressed.size() == 8);
+    JXL_ENSURE(compressed.size() == 8);
     uint32_t xsize;
     uint32_t ysize;
     memcpy(&xsize, compressed.data(), 4);
@@ -138,7 +142,8 @@ class NoneCodec : public ImageCodec {
     ZeroFillImage(&image);
     io->metadata.m.SetFloat32Samples();
     io->metadata.m.color_encoding = ColorEncoding::SRGB();
-    io->SetFromImage(std::move(image), io->metadata.m.color_encoding);
+    JXL_RETURN_IF_ERROR(
+        io->SetFromImage(std::move(image), io->metadata.m.color_encoding));
     const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
     return true;
@@ -181,10 +186,13 @@ ImageCodecPtr CreateImageCodec(const std::string& description,
 #endif  // BENCHMARK_AVIF
   }
   if (!result.get()) {
-    JXL_ABORT("Unknown image codec: %s", name.c_str());
+    fprintf(stderr, "Unknown image codec: %s", name.c_str());
+    JPEGXL_TOOLS_CHECK(false);
   }
   result->set_description(description);
-  if (!parameters.empty()) result->ParseParameters(parameters);
+  if (!parameters.empty()) {
+    JPEGXL_TOOLS_CHECK(result->ParseParameters(parameters));
+  }
   return result;
 }
 

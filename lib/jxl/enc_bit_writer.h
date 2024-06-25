@@ -50,8 +50,8 @@ struct BitWriter {
 
   Span<const uint8_t> GetSpan() const {
     // Callers must ensure byte alignment to avoid uninitialized bits.
-    JXL_ASSERT(bits_written_ % kBitsPerByte == 0);
-    return Bytes(storage_.data(), bits_written_ / kBitsPerByte);
+    JXL_DASSERT(bits_written_ % kBitsPerByte == 0);
+    return Bytes(storage_.data(), DivCeil(bits_written_, kBitsPerByte));
   }
 
   // Example usage: bytes = std::move(writer).TakeBytes(); Useful for the
@@ -59,20 +59,19 @@ struct BitWriter {
   // *this must be an rvalue reference and is invalid afterwards.
   PaddedBytes&& TakeBytes() && {
     // Callers must ensure byte alignment to avoid uninitialized bits.
-    JXL_ASSERT(bits_written_ % kBitsPerByte == 0);
-    storage_.resize(bits_written_ / kBitsPerByte);
+    JXL_DASSERT(bits_written_ % kBitsPerByte == 0);
+    storage_.resize(DivCeil(bits_written_, kBitsPerByte));
     return std::move(storage_);
   }
 
   // Must be byte-aligned before calling.
-  void AppendByteAligned(const Span<const uint8_t>& span);
+  Status AppendByteAligned(const Span<const uint8_t>& span);
 
   // NOTE: no allotment needed, the other BitWriters have already been charged.
-  void AppendByteAligned(const BitWriter& other);
-  void AppendByteAligned(const std::vector<std::unique_ptr<BitWriter>>& others);
-  void AppendByteAligned(const std::vector<BitWriter>& others);
+  Status AppendByteAligned(
+      const std::vector<std::unique_ptr<BitWriter>>& others);
 
-  void AppendUnaligned(const BitWriter& other);
+  Status AppendUnaligned(const BitWriter& other);
 
   class Allotment {
    public:
@@ -85,20 +84,20 @@ struct BitWriter {
     size_t MaxBits() const { return max_bits_; }
 
     // Call after writing a histogram, but before ReclaimUnused.
-    void FinishedHistogram(BitWriter* JXL_RESTRICT writer);
+    Status FinishedHistogram(BitWriter* JXL_RESTRICT writer);
 
     size_t HistogramBits() const {
-      JXL_ASSERT(called_);
+      JXL_DASSERT(called_);
       return histogram_bits_;
     }
 
-    void ReclaimAndCharge(BitWriter* JXL_RESTRICT writer, LayerType layer,
-                          AuxOut* JXL_RESTRICT aux_out);
+    Status ReclaimAndCharge(BitWriter* JXL_RESTRICT writer, LayerType layer,
+                            AuxOut* JXL_RESTRICT aux_out);
 
    private:
-    void PrivateReclaim(BitWriter* JXL_RESTRICT writer,
-                        size_t* JXL_RESTRICT used_bits,
-                        size_t* JXL_RESTRICT unused_bits);
+    Status PrivateReclaim(BitWriter* JXL_RESTRICT writer,
+                          size_t* JXL_RESTRICT used_bits,
+                          size_t* JXL_RESTRICT unused_bits);
 
     size_t prev_bits_written_;
     const size_t max_bits_;
@@ -121,7 +120,7 @@ struct BitWriter {
         RoundUpBitsToByteMultiple(bits_written_) - bits_written_;
     if (remainder_bits == 0) return;
     Write(remainder_bits, 0);
-    JXL_ASSERT(bits_written_ % kBitsPerByte == 0);
+    JXL_DASSERT(bits_written_ % kBitsPerByte == 0);
   }
 
  private:

@@ -40,7 +40,7 @@ Status ComputeACMetadata(ThreadPool* pool, PassesEncoderState* enc_state,
     const Rect r = shared.frame_dim.DCGroupRect(group_index);
     int modular_group_index = group_index;
     if (enc_state->streaming_mode) {
-      JXL_ASSERT(group_index == 0);
+      JXL_ENSURE(group_index == 0);
       modular_group_index = enc_state->dc_group_index;
     }
     JXL_RETURN_IF_ERROR(modular_frame_encoder->AddACMetadata(
@@ -85,7 +85,8 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
   if (enc_state->initialize_global_state) {
     float scale =
         shared.quantizer.ScaleGlobalScale(enc_state->cparams.quant_ac_rescale);
-    DequantMatricesScaleDC(memory_manager, &shared.matrices, scale);
+    JXL_RETURN_IF_ERROR(
+        DequantMatricesScaleDC(memory_manager, &shared.matrices, scale));
     shared.quantizer.RecomputeFromGlobalScale();
   }
 
@@ -93,7 +94,8 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
       Image3F dc, Image3F::Create(memory_manager, shared.frame_dim.xsize_blocks,
                                   shared.frame_dim.ysize_blocks));
   const auto process_group = [&](size_t group_idx, size_t _) -> Status {
-    ComputeCoefficients(group_idx, enc_state, opsin, rect, &dc);
+    JXL_RETURN_IF_ERROR(
+        ComputeCoefficients(group_idx, enc_state, opsin, rect, &dc));
     return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_groups,
@@ -111,7 +113,7 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     cparams.ec_resampling = 1;
     // The DC frame will have alpha=0. Don't erase its contents.
     cparams.keep_invisible = Override::kOn;
-    JXL_ASSERT(cparams.progressive_dc > 0);
+    JXL_ENSURE(cparams.progressive_dc > 0);
     cparams.progressive_dc--;
     // Use kVarDCT in max_error_mode for intermediate progressive DC,
     // and kModular for the smallest DC (first in the bitstream)
@@ -136,9 +138,9 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     ImageBundle ib(memory_manager, &shared.metadata->m);
     // This is a lie - dc is in XYB
     // (but EncodeFrame will skip RGB->XYB conversion anyway)
-    ib.SetFromImage(
+    JXL_RETURN_IF_ERROR(ib.SetFromImage(
         std::move(dc),
-        ColorEncoding::LinearSRGB(shared.metadata->m.color_encoding.IsGray()));
+        ColorEncoding::LinearSRGB(shared.metadata->m.color_encoding.IsGray())));
     if (!ib.metadata()->extra_channel_info.empty()) {
       // Add placeholder extra channels to the patch image: dc_level frames do
       // not yet support extra channels, but the codec expects that the amount
@@ -156,7 +158,7 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
         // instead.
         ZeroFillImage(&extra_channels.back());
       }
-      ib.SetExtraChannels(std::move(extra_channels));
+      JXL_RETURN_IF_ERROR(ib.SetExtraChannels(std::move(extra_channels)));
     }
     auto special_frame = jxl::make_unique<BitWriter>(memory_manager);
     FrameInfo dc_frame_info;
@@ -165,9 +167,9 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     dc_frame_info.ib_needs_color_transform = false;
     dc_frame_info.save_before_color_transform = true;  // Implicitly true
     AuxOut dc_aux_out;
-    JXL_CHECK(EncodeFrame(memory_manager, cparams, dc_frame_info,
-                          shared.metadata, ib, cms, pool, special_frame.get(),
-                          aux_out ? &dc_aux_out : nullptr));
+    JXL_RETURN_IF_ERROR(EncodeFrame(
+        memory_manager, cparams, dc_frame_info, shared.metadata, ib, cms, pool,
+        special_frame.get(), aux_out ? &dc_aux_out : nullptr));
     if (aux_out) {
       for (const auto& l : dc_aux_out.layers) {
         aux_out->layer(LayerType::Dc).Assimilate(l);
@@ -179,14 +181,14 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     ImageBundle decoded(memory_manager, &shared.metadata->m);
     std::unique_ptr<PassesDecoderState> dec_state =
         jxl::make_unique<PassesDecoderState>(memory_manager);
-    JXL_CHECK(
+    JXL_RETURN_IF_ERROR(
         dec_state->output_encoding_info.SetFromMetadata(*shared.metadata));
     const uint8_t* frame_start = encoded.data();
     size_t encoded_size = encoded.size();
     for (int i = 0; i <= cparams.progressive_dc; ++i) {
-      JXL_CHECK(DecodeFrame(dec_state.get(), pool, frame_start, encoded_size,
-                            /*frame_header=*/nullptr, &decoded,
-                            *shared.metadata));
+      JXL_RETURN_IF_ERROR(
+          DecodeFrame(dec_state.get(), pool, frame_start, encoded_size,
+                      /*frame_header=*/nullptr, &decoded, *shared.metadata));
       frame_start += decoded.decoded_bytes();
       encoded_size -= decoded.decoded_bytes();
     }
@@ -200,16 +202,16 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     JXL_ASSIGN_OR_RETURN(
         shared.dc_storage,
         Image3F::Create(memory_manager, dc_frame.xsize(), dc_frame.ysize()));
-    CopyImageTo(dc_frame, &shared.dc_storage);
+    JXL_RETURN_IF_ERROR(CopyImageTo(dc_frame, &shared.dc_storage));
     ZeroFillImage(&shared.quant_dc);
     shared.dc = &shared.dc_storage;
-    JXL_CHECK(encoded_size == 0);
+    JXL_ENSURE(encoded_size == 0);
   } else {
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) -> Status {
       const Rect r = enc_state->shared.frame_dim.DCGroupRect(group_index);
       int modular_group_index = group_index;
       if (enc_state->streaming_mode) {
-        JXL_ASSERT(group_index == 0);
+        JXL_ENSURE(group_index == 0);
         modular_group_index = enc_state->dc_group_index;
       }
       JXL_RETURN_IF_ERROR(modular_frame_encoder->AddVarDCTDC(

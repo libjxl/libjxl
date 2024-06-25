@@ -17,6 +17,7 @@
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 
@@ -137,8 +138,8 @@ struct AliasTable {
 };
 
 // Computes an alias table for a given distribution.
-void InitAliasTable(std::vector<int32_t> distribution, uint32_t range,
-                    size_t log_alpha_size, AliasTable::Entry* JXL_RESTRICT a);
+Status InitAliasTable(std::vector<int32_t> distribution, uint32_t log_range,
+                      size_t log_alpha_size, AliasTable::Entry* JXL_RESTRICT a);
 
 }  // namespace jxl
 

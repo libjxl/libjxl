@@ -52,14 +52,14 @@ class ImageBundle {
     JXL_ASSIGN_OR_RETURN(
         copy.color_,
         Image3F::Create(memory_manager, color_.xsize(), color_.ysize()));
-    CopyImageTo(color_, &copy.color_);
+    JXL_RETURN_IF_ERROR(CopyImageTo(color_, &copy.color_));
     copy.c_current_ = c_current_;
     copy.extra_channels_.reserve(extra_channels_.size());
     for (const ImageF& plane : extra_channels_) {
       JXL_ASSIGN_OR_RETURN(
           ImageF ec,
           ImageF::Create(memory_manager, plane.xsize(), plane.ysize()));
-      CopyImageTo(plane, &ec);
+      JXL_RETURN_IF_ERROR(CopyImageTo(plane, &ec));
       copy.extra_channels_.emplace_back(std::move(ec));
     }
 
@@ -83,7 +83,7 @@ class ImageBundle {
     if (color_.ysize() != 0) return color_.ysize();
     return extra_channels_.empty() ? 0 : extra_channels_[0].ysize();
   }
-  void ShrinkTo(size_t xsize, size_t ysize);
+  Status ShrinkTo(size_t xsize, size_t ysize);
 
   // sizes taking orientation into account
   size_t oriented_xsize() const {
@@ -133,7 +133,7 @@ class ImageBundle {
   // a decoder might return pixels in a different c_current.
   // This only sets the color channels, you must also make extra channels
   // match the amount that is in the metadata.
-  void SetFromImage(Image3F&& color, const ColorEncoding& c_current);
+  Status SetFromImage(Image3F&& color, const ColorEncoding& c_current);
 
   // -- COLOR ENCODING
 
@@ -171,7 +171,7 @@ class ImageBundle {
 
   // -- ALPHA
 
-  void SetAlpha(ImageF&& alpha);
+  Status SetAlpha(ImageF&& alpha);
   bool HasAlpha() const {
     return metadata_->Find(ExtraChannel::kAlpha) != nullptr;
   }
@@ -179,17 +179,17 @@ class ImageBundle {
     const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
     return (eci == nullptr) ? false : eci->alpha_associated;
   }
-  const ImageF& alpha() const;
+  const ImageF* alpha() const;
   ImageF* alpha();
 
   // -- EXTRA CHANNELS
   bool HasBlack() const {
     return metadata_->Find(ExtraChannel::kBlack) != nullptr;
   }
-  const ImageF& black() const;
+  const ImageF* black() const;
 
   // Extra channels of unknown interpretation (e.g. spot colors).
-  void SetExtraChannels(std::vector<ImageF>&& extra_channels);
+  Status SetExtraChannels(std::vector<ImageF>&& extra_channels);
   void ClearExtraChannels() { extra_channels_.clear(); }
   bool HasExtraChannels() const { return !extra_channels_.empty(); }
   const std::vector<ImageF>& extra_channels() const { return extra_channels_; }
@@ -242,7 +242,7 @@ class ImageBundle {
 
  private:
   // Called after any Set* to ensure their sizes are compatible.
-  void VerifySizes() const;
+  Status VerifySizes() const;
 
   // Required for TransformTo so that an ImageBundle is self-sufficient. Always
   // points to the same thing, but cannot be const-pointer because that prevents

@@ -40,8 +40,8 @@ StatusOr<ImageF> InitialQuantField(float butteraugli_target,
 
 float InitialQuantDC(float butteraugli_target);
 
-void AdjustQuantField(const AcStrategyImage& ac_strategy, const Rect& rect,
-                      float butteraugli_target, ImageF* quant_field);
+Status AdjustQuantField(const AcStrategyImage& ac_strategy, const Rect& rect,
+                        float butteraugli_target, ImageF* quant_field);
 
 // Returns a quantizer that uses an adjusted version of the provided
 // quant_field. Also computes the dequant_map corresponding to the given

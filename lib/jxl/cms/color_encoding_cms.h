@@ -213,8 +213,8 @@ struct CustomTransferFunction {
       TransferFunction::kSRGB;  // Only used if !have_gamma_.
 
   TransferFunction GetTransferFunction() const {
-    JXL_ASSERT(!have_gamma);
-    return transfer_function;
+    JXL_DASSERT(!have_gamma);
+    return have_gamma ? TransferFunction::kUnknown : transfer_function;
   }
   void SetTransferFunction(const TransferFunction tf) {
     have_gamma = false;
@@ -244,7 +244,8 @@ struct CustomTransferFunction {
   }
 
   double GetGamma() const {
-    JXL_ASSERT(have_gamma);
+    JXL_DASSERT(have_gamma);
+    if (!have_gamma) return 0.0;
     return gamma * (1.0 / kGammaMul);  // (0, 1)
   }
   Status SetGamma(double new_gamma) {
@@ -350,10 +351,10 @@ struct ColorEncoding {
 
   size_t Channels() const { return (color_space == ColorSpace::kGray) ? 1 : 3; }
 
-  PrimariesCIExy GetPrimaries() const {
-    JXL_DASSERT(have_fields);
-    JXL_ASSERT(HasPrimaries());
-    PrimariesCIExy xy{};
+  Status GetPrimaries(PrimariesCIExy& xy) const {
+    JXL_ENSURE(have_fields);
+    JXL_ENSURE(HasPrimaries());
+    xy = {};
     switch (primaries) {
       case Primaries::kCustom:
         xy.r = red.GetValue();
@@ -392,12 +393,12 @@ struct ColorEncoding {
         JXL_DEBUG_ABORT("internal: unexpected Primaries: %d",
                         static_cast<int>(primaries));
     }
-    return xy;
+    return true;
   }
 
   Status SetPrimaries(const PrimariesCIExy& xy) {
-    JXL_DASSERT(have_fields);
-    JXL_ASSERT(HasPrimaries());
+    JXL_ENSURE(have_fields);
+    JXL_ENSURE(HasPrimaries());
     if (xy.r.x == 0.0 || xy.r.y == 0.0 || xy.g.x == 0.0 || xy.g.y == 0.0 ||
         xy.b.x == 0.0 || xy.b.y == 0.0) {
       return JXL_FAILURE("Invalid primaries %f %f %f %f %f %f", xy.r.x, xy.r.y,
@@ -432,8 +433,9 @@ struct ColorEncoding {
   }
 
   CIExy GetWhitePoint() const {
-    JXL_DASSERT(have_fields);
     CIExy xy{};
+    JXL_DASSERT(have_fields);
+    if (!have_fields) return xy;
     switch (white_point) {
       case WhitePoint::kCustom:
         xy = white.GetValue();
@@ -462,7 +464,7 @@ struct ColorEncoding {
   }
 
   Status SetWhitePoint(const CIExy& xy) {
-    JXL_DASSERT(have_fields);
+    JXL_ENSURE(have_fields);
     if (xy.x == 0.0 || xy.y == 0.0) {
       return JXL_FAILURE("Invalid white point %f %f", xy.x, xy.y);
     }
@@ -516,7 +518,7 @@ struct ColorEncoding {
   // Returns false if the ICC profile is invalid or decoding it fails.
   Status SetFieldsFromICC(IccBytes&& new_icc, const JxlCmsInterface& cms) {
     // In case parsing fails, mark the ColorEncoding as invalid.
-    JXL_ASSERT(!new_icc.empty());
+    JXL_ENSURE(!new_icc.empty());
     color_space = ColorSpace::kUnknown;
     tf.transfer_function = TransferFunction::kUnknown;
     icc.clear();
@@ -534,12 +536,15 @@ struct ColorEncoding {
 
   JxlColorEncoding ToExternal() const {
     JxlColorEncoding external = {};
-    if (!have_fields) {
+    auto set_error = [&]() {
       external.color_space = JXL_COLOR_SPACE_UNKNOWN;
       external.primaries = JXL_PRIMARIES_CUSTOM;
       external.rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;  //?
       external.transfer_function = JXL_TRANSFER_FUNCTION_UNKNOWN;
       external.white_point = JXL_WHITE_POINT_CUSTOM;
+    };
+    if (!have_fields) {
+      set_error();
       return external;
     }
     external.color_space = static_cast<JxlColorSpace>(color_space);
@@ -553,7 +558,11 @@ struct ColorEncoding {
     if (external.color_space == JXL_COLOR_SPACE_RGB ||
         external.color_space == JXL_COLOR_SPACE_UNKNOWN) {
       external.primaries = static_cast<JxlPrimaries>(primaries);
-      PrimariesCIExy p = GetPrimaries();
+      PrimariesCIExy p;
+      if (!GetPrimaries(p)) {
+        set_error();
+        return external;
+      }
       external.primaries_red_xy[0] = p.r.x;
       external.primaries_red_xy[1] = p.r.y;
       external.primaries_green_xy[0] = p.g.x;

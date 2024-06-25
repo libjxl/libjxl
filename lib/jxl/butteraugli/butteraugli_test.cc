@@ -22,6 +22,7 @@
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_memory_manager.h"
+#include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -33,25 +34,26 @@ using test::TestImage;
 
 Image3F SinglePixelImage(float red, float green, float blue) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  JXL_ASSIGN_OR_DIE(Image3F img, Image3F::Create(memory_manager, 1, 1));
+  JXL_TEST_ASSIGN_OR_DIE(Image3F img, Image3F::Create(memory_manager, 1, 1));
   img.PlaneRow(0, 0)[0] = red;
   img.PlaneRow(1, 0)[0] = green;
   img.PlaneRow(2, 0)[0] = blue;
   return img;
 }
 
-Image3F GetColorImage(const PackedPixelFile& ppf) {
+StatusOr<Image3F> GetColorImage(const PackedPixelFile& ppf) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  JXL_CHECK(!ppf.frames.empty());
+  Image3F color;
+  JXL_ENSURE(!ppf.frames.empty());
   const PackedImage& image = ppf.frames[0].color;
   const JxlPixelFormat& format = image.format;
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
-  JXL_ASSIGN_OR_DIE(Image3F color,
-                    Image3F::Create(memory_manager, image.xsize, image.ysize));
+  JXL_TEST_ASSIGN_OR_DIE(
+      color, Image3F::Create(memory_manager, image.xsize, image.ysize));
   for (size_t c = 0; c < format.num_channels; ++c) {
-    JXL_CHECK(ConvertFromExternal(pixels, image.pixels_size, image.xsize,
-                                  image.ysize, ppf.info.bits_per_sample, format,
-                                  c, nullptr, &color.Plane(c)));
+    JXL_RETURN_IF_ERROR(ConvertFromExternal(
+        pixels, image.pixels_size, image.xsize, image.ysize,
+        ppf.info.bits_per_sample, format, c, nullptr, &color.Plane(c)));
   }
   return color;
 }
@@ -99,11 +101,13 @@ TEST(ButteraugliInPlaceTest, LargeImage) {
   const size_t xsize = 1024;
   const size_t ysize = 1024;
   TestImage img;
-  img.SetDimensions(xsize, ysize).AddFrame().RandomFill(777);
-  Image3F rgb0 = GetColorImage(img.ppf());
-  JXL_ASSIGN_OR_DIE(Image3F rgb1,
-                    Image3F::Create(memory_manager, xsize, ysize));
-  CopyImageTo(rgb0, &rgb1);
+  ASSERT_TRUE(img.SetDimensions(xsize, ysize));
+  JXL_TEST_ASSIGN_OR_DIE(auto frame, img.AddFrame());
+  frame.RandomFill(777);
+  JXL_TEST_ASSIGN_OR_DIE(Image3F rgb0, GetColorImage(img.ppf()));
+  JXL_TEST_ASSIGN_OR_DIE(Image3F rgb1,
+                         Image3F::Create(memory_manager, xsize, ysize));
+  ASSERT_TRUE(CopyImageTo(rgb0, &rgb1));
   AddUniformNoise(&rgb1, 0.02f, 7777);
   AddEdge(&rgb1, 0.1f, xsize / 2, xsize / 2);
   ButteraugliParams butteraugli_params;

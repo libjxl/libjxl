@@ -259,7 +259,7 @@ class ANSSymbolReader {
                                                      BitReader* JXL_RESTRICT br,
                                                      uint32_t* value,
                                                      uint32_t* run) {
-    JXL_DASSERT(HuffRleOnly());
+    JXL_DASSERT(IsHuffRleOnly());
     br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
     size_t token = ReadSymbolHuffWithoutRefill(ctx, br);
     if (JXL_UNLIKELY(token >= lz77_threshold_)) {
@@ -270,7 +270,7 @@ class ANSSymbolReader {
     }
     *value = ReadHybridUintConfig(configs[ctx], token, br);
   }
-  bool HuffRleOnly() {
+  bool IsHuffRleOnly() const {
     if (lz77_window_ == nullptr) return false;
     if (!use_prefix_code_) return false;
     for (size_t i = 0; i < kHuffmanTableBits; i++) {

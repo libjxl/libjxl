@@ -7,6 +7,7 @@
 #include <jxl/memory_manager.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <utility>
 
 #include "lib/jxl/base/compiler_specific.h"
@@ -18,6 +19,7 @@
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "tools/cmdline.h"
 #include "tools/no_memory_manager.h"
 
 namespace jpegxl {
@@ -51,7 +53,8 @@ Status PrintXybRange() {
   CodecInOut io{memory_manager};
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
-  io.SetFromImage(std::move(linear), io.metadata.m.color_encoding);
+  JXL_RETURN_IF_ERROR(
+      io.SetFromImage(std::move(linear), io.metadata.m.color_encoding));
   const ImageBundle& ib = io.Main();
   ThreadPool* null_pool = nullptr;
   JXL_ASSIGN_OR_RETURN(Image3F opsin,
@@ -92,4 +95,7 @@ Status PrintXybRange() {
 }  // namespace tools
 }  // namespace jpegxl
 
-int main() { JXL_CHECK(jpegxl::tools::PrintXybRange()); }
+int main() {
+  JPEGXL_TOOLS_CHECK(jpegxl::tools::PrintXybRange());
+  return EXIT_SUCCESS;
+}

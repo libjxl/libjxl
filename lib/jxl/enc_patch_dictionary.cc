@@ -43,10 +43,10 @@ namespace jxl {
 static constexpr size_t kPatchFrameReferenceId = 3;
 
 // static
-void PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
-                                    BitWriter* writer, LayerType layer,
-                                    AuxOut* aux_out) {
-  JXL_ASSERT(pdic.HasAny());
+Status PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
+                                      BitWriter* writer, LayerType layer,
+                                      AuxOut* aux_out) {
+  JXL_ENSURE(pdic.HasAny());
   JxlMemoryManager* memory_manager = writer->memory_manager();
   std::vector<std::vector<Token>> tokens(1);
 
@@ -76,7 +76,7 @@ void PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
       i++;
     }
     size_t num = i - i_start;
-    JXL_ASSERT(num > 0);
+    JXL_ENSURE(num > 0);
     add_num(kReferenceFrameContext, ref_pos.ref);
     add_num(kPatchReferencePositionContext, ref_pos.x0);
     add_num(kPatchReferencePositionContext, ref_pos.y0);
@@ -109,10 +109,15 @@ void PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
 
   EntropyEncodingData codes;
   std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(memory_manager, HistogramParams(),
-                           kNumPatchDictionaryContexts, tokens, &codes,
-                           &context_map, writer, layer, aux_out);
-  WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out);
+  JXL_ASSIGN_OR_RETURN(
+      size_t cost,
+      BuildAndEncodeHistograms(memory_manager, HistogramParams(),
+                               kNumPatchDictionaryContexts, tokens, &codes,
+                               &context_map, writer, layer, aux_out));
+  (void)cost;
+  JXL_RETURN_IF_ERROR(
+      WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out));
+  return true;
 }
 
 // static
@@ -135,8 +140,8 @@ Status PatchDictionaryEncoder::SubtractFrom(const PatchDictionary& pdic,
       size_t by = pos.y;
       size_t bx = pos.x;
       size_t xsize = ref_pos.xsize;
-      JXL_DASSERT(y >= by);
-      JXL_DASSERT(y < by + ref_pos.ysize);
+      JXL_ENSURE(y >= by);
+      JXL_ENSURE(y < by + ref_pos.ysize);
       size_t iy = y - by;
       size_t ref = ref_pos.ref;
       const float* JXL_RESTRICT ref_rows[3] = {
@@ -541,7 +546,7 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
   }
 
   if (paint_ccs) {
-    JXL_ASSERT(WantDebugOutput(cparams));
+    JXL_ENSURE(WantDebugOutput(cparams));
     JXL_RETURN_IF_ERROR(DumpPlaneNormalized(cparams, "ccs", ccs));
   }
   if (info.empty()) {
@@ -703,7 +708,7 @@ Status FindBestPatchDictionary(const Image3F& opsin,
     if (success) break;
   } while (true);
 
-  JXL_ASSERT(ref_ysize >= max_y);
+  JXL_ENSURE(ref_ysize >= max_y);
 
   ref_ysize = max_y;
 
@@ -792,8 +797,8 @@ Status RoundtripPatchFrame(Image3F* reference_frame,
   // TODO(veluca): metadata.color_encoding is a lie: ib is in XYB, but there is
   // no simple way to express that yet.
   patch_frame_info.ib_needs_color_transform = false;
-  ib.SetFromImage(std::move(*reference_frame),
-                  state->shared.metadata->m.color_encoding);
+  JXL_RETURN_IF_ERROR(ib.SetFromImage(
+      std::move(*reference_frame), state->shared.metadata->m.color_encoding));
   if (!ib.metadata()->extra_channel_info.empty()) {
     // Add placeholder extra channels to the patch image: patch encoding does
     // not yet support extra channels, but the codec expects that the amount of
@@ -809,11 +814,11 @@ Status RoundtripPatchFrame(Image3F* reference_frame,
       // TODO(lode): patches must copy and use the real extra channels instead.
       ZeroFillImage(&extra_channels.back());
     }
-    ib.SetExtraChannels(std::move(extra_channels));
+    JXL_RETURN_IF_ERROR(ib.SetExtraChannels(std::move(extra_channels)));
   }
   auto special_frame = jxl::make_unique<BitWriter>(memory_manager);
   AuxOut patch_aux_out;
-  JXL_CHECK(EncodeFrame(
+  JXL_RETURN_IF_ERROR(EncodeFrame(
       memory_manager, cparams, patch_frame_info, state->shared.metadata, ib,
       cms, pool, special_frame.get(), aux_out ? &patch_aux_out : nullptr));
   if (aux_out) {
@@ -826,24 +831,24 @@ Status RoundtripPatchFrame(Image3F* reference_frame,
   if (subtract) {
     ImageBundle decoded(memory_manager, &state->shared.metadata->m);
     PassesDecoderState dec_state(memory_manager);
-    JXL_CHECK(dec_state.output_encoding_info.SetFromMetadata(
+    JXL_RETURN_IF_ERROR(dec_state.output_encoding_info.SetFromMetadata(
         *state->shared.metadata));
     const uint8_t* frame_start = encoded.data();
     size_t encoded_size = encoded.size();
-    JXL_CHECK(DecodeFrame(&dec_state, pool, frame_start, encoded_size,
-                          /*frame_header=*/nullptr, &decoded,
-                          *state->shared.metadata));
+    JXL_RETURN_IF_ERROR(DecodeFrame(&dec_state, pool, frame_start, encoded_size,
+                                    /*frame_header=*/nullptr, &decoded,
+                                    *state->shared.metadata));
     frame_start += decoded.decoded_bytes();
     encoded_size -= decoded.decoded_bytes();
     size_t ref_xsize =
         dec_state.shared_storage.reference_frames[idx].frame->color()->xsize();
     // if the frame itself uses patches, we need to decode another frame
     if (!ref_xsize) {
-      JXL_CHECK(DecodeFrame(&dec_state, pool, frame_start, encoded_size,
-                            /*frame_header=*/nullptr, &decoded,
-                            *state->shared.metadata));
+      JXL_RETURN_IF_ERROR(DecodeFrame(
+          &dec_state, pool, frame_start, encoded_size,
+          /*frame_header=*/nullptr, &decoded, *state->shared.metadata));
     }
-    JXL_CHECK(encoded_size == 0);
+    JXL_ENSURE(encoded_size == 0);
     state->shared.reference_frames[idx] =
         std::move(dec_state.shared_storage.reference_frames[idx]);
   } else {

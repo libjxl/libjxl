@@ -103,14 +103,14 @@ void SingleFromSingleAccurate(const size_t xsize,
 
 // convert custom [bits]-bit float (with [exp_bits] exponent bits) stored as int
 // back to binary32 float
-void int_to_float(const pixel_type* const JXL_RESTRICT row_in,
-                  float* const JXL_RESTRICT row_out, const size_t xsize,
-                  const int bits, const int exp_bits) {
+Status int_to_float(const pixel_type* const JXL_RESTRICT row_in,
+                    float* const JXL_RESTRICT row_out, const size_t xsize,
+                    const int bits, const int exp_bits) {
+  static_assert(sizeof(pixel_type) == sizeof(float));
   if (bits == 32) {
-    JXL_ASSERT(sizeof(pixel_type) == sizeof(float));
-    JXL_ASSERT(exp_bits == 8);
+    JXL_ENSURE(exp_bits == 8);
     memcpy(row_out, row_in, xsize * sizeof(float));
-    return;
+    return true;
   }
   int exp_bias = (1 << (exp_bits - 1)) - 1;
   int sign_shift = bits - 1;
@@ -143,12 +143,13 @@ void int_to_float(const pixel_type* const JXL_RESTRICT row_in,
     // broke up the arbitrary float into its parts, now reassemble into
     // binary32
     exp += 127;
-    JXL_ASSERT(exp >= 0);
+    JXL_ENSURE(exp >= 0);
     f = (signbit ? 0x80000000 : 0);
     f |= (exp << 23);
     f |= mantissa;
     memcpy(&row_out[x], &f, 4);
   }
+  return true;
 }
 
 #if JXL_DEBUG_V_LEVEL >= 1
@@ -305,8 +306,8 @@ Status ModularFrameDecoder::DecodeGroup(
   JXL_DEBUG_V(6, "Decoding %s with rect %s and shift bracket %d..%d %s",
               stream.DebugString().c_str(), Description(rect).c_str(), minShift,
               maxShift, zerofill ? "using zerofill" : "");
-  JXL_DASSERT(stream.kind == ModularStreamId::Kind::ModularDC ||
-              stream.kind == ModularStreamId::Kind::ModularAC);
+  JXL_ENSURE(stream.kind == ModularStreamId::Kind::ModularDC ||
+             stream.kind == ModularStreamId::Kind::ModularAC);
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
   JXL_ASSIGN_OR_RETURN(Image gi, Image::Create(memory_manager_, xsize, ysize,
@@ -365,7 +366,7 @@ Status ModularFrameDecoder::DecodeGroup(
   }
   // Undo global transforms that have been pushed to the group level
   if (!use_full_image) {
-    JXL_ASSERT(render_pipeline_input);
+    JXL_ENSURE(render_pipeline_input);
     for (const auto& t : global_transform) {
       JXL_RETURN_IF_ERROR(t.Inverse(gi, global_header.wp_header));
     }
@@ -383,10 +384,11 @@ Status ModularFrameDecoder::DecodeGroup(
     Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
            rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
     if (r.xsize() == 0 || r.ysize() == 0) continue;
-    JXL_ASSERT(use_full_image);
-    CopyImageTo(/*rect_from=*/Rect(0, 0, r.xsize(), r.ysize()),
-                /*from=*/gi.channel[gic].plane,
-                /*rect_to=*/r, /*to=*/&fc.plane);
+    JXL_ENSURE(use_full_image);
+    JXL_RETURN_IF_ERROR(
+        CopyImageTo(/*rect_from=*/Rect(0, 0, r.xsize(), r.ysize()),
+                    /*from=*/gi.channel[gic].plane,
+                    /*rect_to=*/r, /*to=*/&fc.plane));
     gic++;
   }
   return true;
@@ -462,10 +464,12 @@ Status ModularFrameDecoder::DecodeAcMetadata(const FrameHeader& frame_header,
           /*undo_transforms=*/true, &tree, &code, &context_map)) {
     return JXL_FAILURE("Failed to decode AC metadata");
   }
-  ConvertPlaneAndClamp(Rect(image.channel[0].plane), image.channel[0].plane, cr,
-                       &dec_state->shared_storage.cmap.ytox_map);
-  ConvertPlaneAndClamp(Rect(image.channel[1].plane), image.channel[1].plane, cr,
-                       &dec_state->shared_storage.cmap.ytob_map);
+  JXL_RETURN_IF_ERROR(
+      ConvertPlaneAndClamp(Rect(image.channel[0].plane), image.channel[0].plane,
+                           cr, &dec_state->shared_storage.cmap.ytox_map));
+  JXL_RETURN_IF_ERROR(
+      ConvertPlaneAndClamp(Rect(image.channel[1].plane), image.channel[1].plane,
+                           cr, &dec_state->shared_storage.cmap.ytob_map));
   size_t num = 0;
   bool is444 = frame_header.chroma_subsampling.Is444();
   auto& ac_strategy = dec_state->shared_storage.ac_strategy;
@@ -522,7 +526,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(const FrameHeader& frame_header,
   }
   dec_state->used_acs |= local_used_acs;
   if (frame_header.loop_filter.epf_iters > 0) {
-    ComputeSigma(frame_header.loop_filter, r, dec_state);
+    JXL_RETURN_IF_ERROR(ComputeSigma(frame_header.loop_filter, r, dec_state));
   }
   return true;
 }
@@ -532,7 +536,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     jxl::ThreadPool* pool, RenderPipelineInput& render_pipeline_input,
     Rect modular_rect) const {
   const auto* metadata = frame_header.nonserialized_metadata;
-  JXL_CHECK(gi.transform.empty());
+  JXL_ENSURE(gi.transform.empty());
 
   auto get_row = [&](size_t c, size_t y) {
     const auto& buffer = render_pipeline_input.GetBuffer(c);
@@ -558,13 +562,13 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       } else if (rgb_from_gray) {
         c_in = 0;
       }
-      JXL_ASSERT(c_in < gi.channel.size());
+      JXL_ENSURE(c_in < gi.channel.size());
       Channel& ch_in = gi.channel[c_in];
       // TODO(eustas): could we detect it on earlier stage?
       if (ch_in.w == 0 || ch_in.h == 0) {
         return JXL_FAILURE("Empty image");
       }
-      JXL_CHECK(ch_in.hshift <= 3 && ch_in.vshift <= 3);
+      JXL_ENSURE(ch_in.hshift <= 3 && ch_in.vshift <= 3);
       Rect r = render_pipeline_input.GetBuffer(c).second;
       Rect mr(modular_rect.x0() >> ch_in.hshift,
               modular_rect.y0() >> ch_in.vshift,
@@ -581,7 +585,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
                            mr.xsize(), mr.ysize(), r.xsize(), r.ysize());
       }
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
-        JXL_ASSERT(!fp);
+        JXL_ENSURE(!fp);
         const auto process_row = [&](const uint32_t task,
                                      size_t /* thread */) -> Status {
           const size_t y = task;
@@ -606,11 +610,13 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
           if (rgb_from_gray) {
             for (size_t cc = 0; cc < 3; cc++) {
               float* const JXL_RESTRICT row_out = get_row(cc, y);
-              int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
+              JXL_RETURN_IF_ERROR(
+                  int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits));
             }
           } else {
             float* const JXL_RESTRICT row_out = get_row(c, y);
-            int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
+            JXL_RETURN_IF_ERROR(
+                int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits));
           }
           return true;
         };
@@ -664,11 +670,12 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     int bits = eci.bit_depth.bits_per_sample;
     int exp_bits = eci.bit_depth.exponent_bits_per_sample;
     bool fp = eci.bit_depth.floating_point_sample;
-    JXL_ASSERT(fp || bits < 32);
+    JXL_ENSURE(fp || bits < 32);
     const double factor = fp ? 0 : (1.0 / ((1u << bits) - 1));
-    JXL_ASSERT(c < gi.channel.size());
+    JXL_ENSURE(c < gi.channel.size());
     Channel& ch_in = gi.channel[c];
-    Rect r = render_pipeline_input.GetBuffer(3 + ec).second;
+    const auto& buffer = render_pipeline_input.GetBuffer(3 + ec);
+    Rect r = buffer.second;
     Rect mr(modular_rect.x0() >> ch_in.hshift,
             modular_rect.y0() >> ch_in.vshift,
             DivCeil(modular_rect.xsize(), 1 << ch_in.hshift),
@@ -682,11 +689,11 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
                          mr.xsize(), mr.ysize(), r.xsize(), r.ysize());
     }
     for (size_t y = 0; y < r.ysize(); ++y) {
-      float* const JXL_RESTRICT row_out =
-          r.Row(render_pipeline_input.GetBuffer(3 + ec).first, y);
+      float* const JXL_RESTRICT row_out = r.Row(buffer.first, y);
       const pixel_type* const JXL_RESTRICT row_in = mr.Row(&ch_in.plane, y);
       if (fp) {
-        int_to_float(row_in, row_out, r.xsize(), bits, exp_bits);
+        JXL_RETURN_IF_ERROR(
+            int_to_float(row_in, row_out, r.xsize(), bits, exp_bits));
       } else {
         if (full_image.bitdepth < 23) {
           HWY_DYNAMIC_DISPATCH(SingleFromSingle)
@@ -723,7 +730,7 @@ Status ModularFrameDecoder::FinalizeDecoding(const FrameHeader& frame_header,
 
   // Undo the global transforms
   gi.undo_transforms(global_header.wp_header, pool);
-  JXL_DASSERT(global_transform.empty());
+  JXL_ENSURE(global_transform.empty());
   if (gi.error) return JXL_FAILURE("Undoing transforms failed");
 
   for (size_t i = 0; i < dec_state->shared->frame_dim.num_groups; i++) {
@@ -770,9 +777,9 @@ Status ModularFrameDecoder::DecodeQuantTable(
       Image::Create(memory_manager, required_size_x, required_size_y, 8, 3));
   ModularOptions options;
   if (modular_frame_decoder) {
+    JXL_ASSIGN_OR_RETURN(ModularStreamId qt, ModularStreamId::QuantTable(idx));
     JXL_RETURN_IF_ERROR(ModularGenericDecompress(
-        br, image, /*header=*/nullptr,
-        ModularStreamId::QuantTable(idx).ID(modular_frame_decoder->frame_dim),
+        br, image, /*header=*/nullptr, qt.ID(modular_frame_decoder->frame_dim),
         &options, /*undo_transforms=*/true, &modular_frame_decoder->tree,
         &modular_frame_decoder->code, &modular_frame_decoder->context_map));
   } else {
@@ -784,8 +791,8 @@ Status ModularFrameDecoder::DecodeQuantTable(
     encoding->qraw.qtable =
         new std::vector<int>(required_size_x * required_size_y * 3);
   } else {
-    JXL_CHECK(encoding->qraw.qtable->size() ==
-              required_size_x * required_size_y * 3);
+    JXL_ENSURE(encoding->qraw.qtable->size() ==
+               required_size_x * required_size_y * 3);
   }
   int* qtable = encoding->qraw.qtable->data();
   for (size_t c = 0; c < 3; c++) {

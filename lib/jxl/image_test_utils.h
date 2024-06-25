@@ -23,7 +23,10 @@ template <typename T>
 bool SamePixels(const Plane<T>& image1, const Plane<T>& image2,
                 std::stringstream& failures) {
   const Rect rect(image1);
-  JXL_CHECK(SameSize(image1, image2));
+  if (!SameSize(image1, image2)) {
+    failures << "size mismatch\n";
+    return false;
+  }
   size_t mismatches = 0;
   for (size_t y = rect.y0(); y < rect.ysize(); ++y) {
     const T* const JXL_RESTRICT row1 = image1.Row(y);
@@ -45,7 +48,10 @@ bool SamePixels(const Plane<T>& image1, const Plane<T>& image2,
 template <typename T>
 bool SamePixels(const Image3<T>& image1, const Image3<T>& image2,
                 std::stringstream& failures) {
-  JXL_CHECK(SameSize(image1, image2));
+  if (!SameSize(image1, image2)) {
+    failures << "size mismatch\n";
+    return false;
+  }
   for (size_t c = 0; c < 3; ++c) {
     if (!SamePixels(image1.Plane(c), image2.Plane(c), failures)) {
       return false;
@@ -62,7 +68,10 @@ bool VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
                          const double threshold_relative,
                          std::stringstream& failures, const intptr_t border = 0,
                          const int c = 0) {
-  JXL_CHECK(SameSize(expected, actual));
+  if (!SameSize(expected, actual)) {
+    failures << "size mismatch\n";
+    return false;
+  }
   const intptr_t xsize = expected.xsize();
   const intptr_t ysize = expected.ysize();
 

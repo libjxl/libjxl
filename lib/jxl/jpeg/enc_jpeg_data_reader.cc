@@ -356,7 +356,7 @@ bool ProcessAPP(const uint8_t* data, const size_t len, size_t* pos,
   size_t marker_len = ReadUint16(data, pos);
   JXL_JPEG_VERIFY_INPUT(marker_len, 2, 65535, MARKER_LEN);
   JXL_JPEG_VERIFY_LEN(marker_len - 2);
-  JXL_DASSERT(*pos >= 3);
+  JXL_ENSURE(*pos >= 3);
   // Save the marker type together with the app data.
   const uint8_t* app_str_start = data + *pos - 3;
   std::vector<uint8_t> app_str(app_str_start, app_str_start + marker_len + 1);

@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 
 #include <cstdint>
+#include <vector>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
@@ -61,10 +62,10 @@ void EncodeAllStartingPoints(const std::vector<Spline::Point>& points,
 
 }  // namespace
 
-void EncodeSplines(const Splines& splines, BitWriter* writer,
-                   const LayerType layer,
-                   const HistogramParams& histogram_params, AuxOut* aux_out) {
-  JXL_ASSERT(splines.HasAny());
+Status EncodeSplines(const Splines& splines, BitWriter* writer,
+                     const LayerType layer,
+                     const HistogramParams& histogram_params, AuxOut* aux_out) {
+  JXL_ENSURE(splines.HasAny());
 
   const std::vector<QuantizedSpline>& quantized_splines =
       splines.QuantizedSplines();
@@ -81,10 +82,15 @@ void EncodeSplines(const Splines& splines, BitWriter* writer,
 
   EntropyEncodingData codes;
   std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(writer->memory_manager(), histogram_params,
-                           kNumSplineContexts, tokens, &codes, &context_map,
-                           writer, layer, aux_out);
-  WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out);
+  JXL_ASSIGN_OR_RETURN(
+      size_t cost,
+      BuildAndEncodeHistograms(writer->memory_manager(), histogram_params,
+                               kNumSplineContexts, tokens, &codes, &context_map,
+                               writer, layer, aux_out));
+  (void)cost;
+  JXL_RETURN_IF_ERROR(
+      WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out));
+  return true;
 }
 
 Splines FindSplines(const Image3F& opsin) {

@@ -30,9 +30,9 @@ struct AuxOut;
 enum class LayerType : uint8_t;
 class Quantizer;
 
-void ColorCorrelationEncodeDC(const ColorCorrelation& color_correlation,
-                              BitWriter* writer, LayerType layer,
-                              AuxOut* aux_out);
+Status ColorCorrelationEncodeDC(const ColorCorrelation& color_correlation,
+                                BitWriter* writer, LayerType layer,
+                                AuxOut* aux_out);
 
 struct CfLHeuristics {
   Status Init(JxlMemoryManager* memory_manager, const Rect& rect);
@@ -41,11 +41,11 @@ struct CfLHeuristics {
     mem = hwy::AllocateAligned<float>(num_threads * ItemsPerThread());
   }
 
-  void ComputeTile(const Rect& r, const Image3F& opsin, const Rect& opsin_rect,
-                   const DequantMatrices& dequant,
-                   const AcStrategyImage* ac_strategy,
-                   const ImageI* raw_quant_field, const Quantizer* quantizer,
-                   bool fast, size_t thread, ColorCorrelationMap* cmap);
+  Status ComputeTile(const Rect& r, const Image3F& opsin,
+                     const Rect& opsin_rect, const DequantMatrices& dequant,
+                     const AcStrategyImage* ac_strategy,
+                     const ImageI* raw_quant_field, const Quantizer* quantizer,
+                     bool fast, size_t thread, ColorCorrelationMap* cmap);
 
   ImageF dc_values;
   hwy::AlignedFreeUniquePtr<float[]> mem;

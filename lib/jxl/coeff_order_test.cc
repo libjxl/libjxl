@@ -33,16 +33,18 @@ void RoundtripPermutation(coeff_order_t* perm, coeff_order_t* out, size_t len,
                           size_t* size) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   BitWriter writer{memory_manager};
-  EncodePermutation(perm, 0, len, &writer, LayerType::Header, nullptr);
+  ASSERT_TRUE(
+      EncodePermutation(perm, 0, len, &writer, LayerType::Header, nullptr));
   writer.ZeroPadToByte();
   Status status = true;
+  Bytes bytes = writer.GetSpan();
   {
-    BitReader reader(writer.GetSpan());
-    BitReaderScopedCloser closer(&reader, &status);
+    BitReader reader(bytes);
+    BitReaderScopedCloser closer(reader, status);
     ASSERT_TRUE(DecodePermutation(memory_manager, 0, len, out, &reader));
   }
   ASSERT_TRUE(status);
-  *size = writer.GetSpan().size();
+  *size = bytes.size();
 }
 
 enum Permutation { kIdentity, kFewSwaps, kFewSlides, kRandom };

@@ -49,8 +49,8 @@ class LowMemoryRenderPipeline final : public RenderPipeline {
                     Rect image_max_color_channel_rect);
   Status RenderPadding(size_t thread_id, Rect rect);
 
-  void SaveBorders(size_t group_id, size_t c, const ImageF& in);
-  void LoadBorders(size_t group_id, size_t c, const Rect& r, ImageF* out);
+  Status SaveBorders(size_t group_id, size_t c, const ImageF& in);
+  Status LoadBorders(size_t group_id, size_t c, const Rect& r, ImageF* out);
 
   std::pair<size_t, size_t> ColorDimensionsToChannelDimensions(
       std::pair<size_t, size_t> in, size_t c, size_t stage) const;

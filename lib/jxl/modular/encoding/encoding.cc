@@ -7,9 +7,14 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <queue>
+#include <utility>
+#include <vector>
 
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/scope_guard.h"
@@ -223,7 +228,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       }
       return true;
     } else if (uses_lz77 && predictor == Predictor::Gradient && offset == 0 &&
-               multiplier == 1 && reader->HuffRleOnly()) {
+               multiplier == 1 && reader->IsHuffRleOnly()) {
       JXL_DEBUG_V(8, "Gradient RLE (fjxl) very fast track.");
       uint32_t run = 0;
       uint32_t v = 0;
@@ -656,12 +661,11 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
                                 const Tree *tree, const ANSCode *code,
                                 const std::vector<uint8_t> *ctx_map,
                                 bool allow_truncated_group) {
-#ifdef JXL_ENABLE_ASSERT
-  std::vector<std::pair<uint32_t, uint32_t>> req_sizes(image.channel.size());
-  for (size_t c = 0; c < req_sizes.size(); c++) {
-    req_sizes[c] = {image.channel[c].w, image.channel[c].h};
+  std::vector<std::pair<uint32_t, uint32_t>> req_sizes;
+  req_sizes.reserve(image.channel.size());
+  for (const auto &c : image.channel) {
+    req_sizes.emplace_back(c.w, c.h);
   }
-#endif
   GroupHeader local_header;
   if (header == nullptr) header = &local_header;
   size_t bit_pos = br->TotalBitsConsumed();
@@ -678,17 +682,16 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
               (br->TotalBitsConsumed() - bit_pos) / 8);
   JXL_DEBUG_V(5, "Modular image: %s", image.DebugString().c_str());
   (void)bit_pos;
-#ifdef JXL_ENABLE_ASSERT
-  // Check that after applying all transforms we are back to the requested image
-  // sizes, otherwise there's a programming error with the transformations.
+  // Check that after applying all transforms we are back to the requested
+  // image sizes, otherwise there's a programming error with the
+  // transformations.
   if (undo_transforms) {
-    JXL_ASSERT(image.channel.size() == req_sizes.size());
+    JXL_ENSURE(image.channel.size() == req_sizes.size());
     for (size_t c = 0; c < req_sizes.size(); c++) {
-      JXL_ASSERT(req_sizes[c].first == image.channel[c].w);
-      JXL_ASSERT(req_sizes[c].second == image.channel[c].h);
+      JXL_ENSURE(req_sizes[c].first == image.channel[c].w);
+      JXL_ENSURE(req_sizes[c].second == image.channel[c].h);
     }
   }
-#endif
   return dec_status;
 }
 

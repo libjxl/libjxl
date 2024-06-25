@@ -23,9 +23,7 @@
 #include "lib/extras/alpha_blend.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
-#include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
-#include "lib/extras/enc/exr.h"
 #include "lib/extras/enc/jpg.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
@@ -581,7 +579,10 @@ int main(int argc, const char* argv[]) {
           fprintf(stderr, "Invalid background color %s\n",
                   args.background_spec.c_str());
         }
-        AlphaBlend(&ppf, background);
+        if (!AlphaBlend(&ppf, background)) {
+          fprintf(stderr, "AlphaBlend failed\n");
+          return EXIT_FAILURE;
+        }
       }
       std::ostringstream os;
       os << args.jpeg_quality;

@@ -17,7 +17,6 @@
 #include <initializer_list>
 #include <utility>  // swap
 
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/memory_manager_internal.h"
 
@@ -100,15 +99,18 @@ class PaddedBytes {
     size_t new_capacity = std::max(capacity, 3 * capacity_ / 2);
     new_capacity = std::max<size_t>(64, new_capacity);
 
-    // BitWriter writes up to 7 bytes past the end.
-    StatusOr<AlignedMemory> new_data_or =
-        AlignedMemory::Create(memory_manager_, new_capacity + 8);
-    if (!new_data_or.ok()) {
-      // Allocation failed, discard all data to ensure this is noticed.
+    AlignedMemory new_data;
+    bool ok = [&]() -> Status {
+      // BitWriter writes up to 7 bytes past the end.
+      JXL_ASSIGN_OR_RETURN(
+          new_data, AlignedMemory::Create(memory_manager_, new_capacity + 8));
+      return true;
+    }();
+    // On allocation failure - discard all data to ensure this is noticed.
+    if (!ok) {
       size_ = capacity_ = 0;
       return;
     }
-    AlignedMemory new_data = std::move(new_data_or).value();
 
     if (data_.address<void>() == nullptr) {
       // First allocation: ensure first byte is initialized (won't be copied).
@@ -183,15 +185,6 @@ class PaddedBytes {
     return data()[i];
   }
 
-  uint8_t& back() {
-    JXL_ASSERT(size() != 0);
-    return data()[size() - 1];
-  }
-  const uint8_t& back() const {
-    JXL_ASSERT(size() != 0);
-    return data()[size() - 1];
-  }
-
   template <typename T>
   void append(const T& other) {
     append(reinterpret_cast<const uint8_t*>(other.data()),
@@ -209,7 +202,7 @@ class PaddedBytes {
  private:
   void BoundsCheck(size_t i) const {
     // <= is safe due to padding and required by BitWriter.
-    JXL_ASSERT(i <= size());
+    JXL_DASSERT(i <= size());
   }
 
   JxlMemoryManager* memory_manager_;
@@ -217,14 +210,6 @@ class PaddedBytes {
   size_t capacity_;
   AlignedMemory data_;
 };
-
-template <typename T>
-static inline void Append(const T& s, PaddedBytes* out,
-                          size_t* JXL_RESTRICT byte_pos) {
-  memcpy(out->data() + *byte_pos, s.data(), s.size());
-  *byte_pos += s.size();
-  JXL_CHECK(*byte_pos <= out->size());
-}
 
 }  // namespace jxl
 

@@ -71,7 +71,7 @@ JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
 class JxlEncoderOutputProcessorWrapper;
 #endif
 
-void JxlFastLosslessProcessFrame(
+bool JxlFastLosslessProcessFrame(
     JxlFastLosslessFrameState* frame_state, bool is_last, void* runner_opaque,
     FJxlParallelRunner runner,
     JxlEncoderOutputProcessorWrapper* output_processor);
@@ -109,7 +109,7 @@ void JxlFastLosslessFreeFrameState(JxlFastLosslessFrameState* frame);
 #endif
 
 #if !FJXL_STANDALONE
-void JxlFastLosslessOutputFrame(
+bool JxlFastLosslessOutputFrame(
     JxlFastLosslessFrameState* frame_state,
     JxlEncoderOutputProcessorWrapper* output_process);
 #endif

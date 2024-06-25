@@ -8,9 +8,8 @@
 
 // Constants needed to encode/decode fields; avoids including the full fields.h.
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <hwy/base.h>
 #include <vector>
 
@@ -21,7 +20,7 @@ namespace jxl {
 
 // Macro to define the Fields' derived class Name when compiling with debug
 // names.
-#if JXL_IS_DEBUG_BUILD
+#if (JXL_IS_DEBUG_BUILD)
 #define JXL_FIELDS_NAME(X) \
   const char* Name() const override { return #X; }
 #else
@@ -32,7 +31,7 @@ class Visitor;
 class Fields {
  public:
   virtual ~Fields() = default;
-#if JXL_IS_DEBUG_BUILD
+#if (JXL_IS_DEBUG_BUILD)
   virtual const char* Name() const = 0;
 #endif  // JXL_IS_DEBUG_BUILD
   virtual Status VisitFields(Visitor* JXL_RESTRICT visitor) = 0;
@@ -81,7 +80,7 @@ class U32Enc {
 
   // Returns the U32Distr at `selector` = 0..3, least-significant first.
   U32Distr GetDistr(const uint32_t selector) const {
-    JXL_ASSERT(selector < 4);
+    JXL_DASSERT(selector < 4);
     return d_[selector];
   }
 

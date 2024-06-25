@@ -39,9 +39,9 @@ enum class LayerType : uint8_t;
 
 class ModularFrameEncoder {
  public:
-  ModularFrameEncoder(JxlMemoryManager* memory_manager,
-                      const FrameHeader& frame_header,
-                      const CompressParams& cparams_orig, bool streaming_mode);
+  static StatusOr<ModularFrameEncoder> Create(
+      JxlMemoryManager* memory_manager, const FrameHeader& frame_header,
+      const CompressParams& cparams_orig, bool streaming_mode);
   Status ComputeEncodingData(
       const FrameHeader& frame_header, const ImageMetadata& metadata,
       Image3F* JXL_RESTRICT color, const std::vector<ImageF>& extra_channels,
@@ -95,6 +95,10 @@ class ModularFrameEncoder {
   JxlMemoryManager* memory_manager() const { return memory_manager_; }
 
  private:
+  explicit ModularFrameEncoder(JxlMemoryManager* memory_manager);
+  Status Init(const FrameHeader& frame_header,
+              const CompressParams& cparams_orig, bool streaming_mode);
+
   Status PrepareStreamParams(const Rect& rect, const CompressParams& cparams,
                              int minShift, int maxShift,
                              const ModularStreamId& stream, bool do_color,

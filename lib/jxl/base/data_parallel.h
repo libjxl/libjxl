@@ -47,7 +47,7 @@ class ThreadPool {
   template <class InitFunc, class DataFunc>
   Status Run(uint32_t begin, uint32_t end, const InitFunc& init_func,
              const DataFunc& data_func, const char* caller) {
-    JXL_ASSERT(begin <= end);
+    JXL_ENSURE(begin <= end);
     if (begin == end) return true;
     RunCallState<InitFunc, DataFunc> call_state(init_func, data_func);
     // The runner_ uses the C convention and returns 0 in case of error, so we

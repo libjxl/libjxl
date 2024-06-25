@@ -195,7 +195,7 @@ engineers on the required backports.
 A security bug is a bug that can potentially be exploited to let an attacker
 gain unauthorized access or privileges. For example, gaining code execution in
 libjxl decoder by decoding a malicious .jxl file is a security but hitting a
-`JXL_ASSERT()` is not necessarily one.
+`JXL_DASSERT` is not necessarily one.
 
 The supported use cases to consider in the context of security bugs that require
 a vulnerability disclosure are "release" builds. The disclosure is intended for
@@ -215,22 +215,9 @@ released software will not have the developer code. This developer code is in
 the same libjxl repository for convenience.
 
 When considering the impact of a bug, "release" mode should be assumed. In
-release mode `JXL_ASSERT()` and `JXL_CHECK()` are enabled, but `JXL_DASSERT()`
-are not. This means that if a `JXL_DASSERT()` protects an out-of-bounds (OOB)
-write, then the impact of a bug hitting the `JXL_DASSERT()` is at least an
-OOB write. On the other hand, if a bug ends up hitting a `JXL_CHECK()` instead
-of continuing, the only impact is the process abort instead of whatever else is
-possible after the `JXL_CHECK()`.
-
-Asserts in `libjxl` *tools* cause the tool process to abort, but don't affect
-the caller. Either crashing or returning an error (non-zero exit code) would
-have the same effect, so `JXL_ASSERT()` failures in the tools have no security
-or functional impact.
-
-Asserts in `libjxl` libraries, meant to be linked into other processes, cause
-the caller process to abort, potentially causing a Denial of Service, however,
-Denial of Service issues are *not* considered security bugs by this policy.
-These are still issues and should be fixed, but they are not security issues.
+non-release mode `JXL_DASSERT` is enabled. This means that if a
+`JXL_DASSERT` protects an out-of-bounds (OOB) write, then the impact of a bug
+hitting the `JXL_DASSERT` is at least an OOB write.
 
 Out-of-bounds (OOB) reads in process memory are considered security
 vulnerabilities. OOB reads may allow an attacker to read other buffers from the

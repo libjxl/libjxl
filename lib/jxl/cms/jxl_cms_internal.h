@@ -194,14 +194,14 @@ static Status ToneMapPixel(const JxlColorEncoding& c, const float in[3],
   return true;
 }
 
-static std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf,
-                                              bool tone_map) {
+template <size_t N, ExtraTF tf>
+static std::vector<uint16_t> CreateTableCurve(bool tone_map) {
   // The generated PQ curve will make room for highlights up to this luminance.
   // TODO(sboukortt): make this variable?
   static constexpr float kPQIntensityTarget = 10000;
 
-  JXL_ASSERT(N <= 4096);  // ICC MFT2 only allows 4K entries
-  JXL_ASSERT(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG);
+  static_assert(N <= 4096);  // ICC MFT2 only allows 4K entries
+  static_assert(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG);
 
   static constexpr Vector3 kLuminances{1.f / 3, 1.f / 3, 1.f / 3};
   Rec2408ToneMapperBase tone_mapper(
@@ -222,9 +222,9 @@ static std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf,
       tone_mapper.ToneMap(gray);
       y = gray[0];
     }
-    JXL_ASSERT(y >= 0.0);
+    JXL_DASSERT(y >= 0.0);
     // Clamp to table range - necessary for HLG.
-    if (y > 1.0) y = 1.0;
+    y = Clamp1(y, 0.0, 1.0);
     // 1.0 corresponds to table value 0xFFFF.
     table[i] = static_cast<uint16_t>(roundf(y * 65535.0));
   }
@@ -1038,11 +1038,11 @@ static Status MaybeCreateProfileImpl(const JxlColorEncoding& c,
       switch (tf) {
         case JXL_TRANSFER_FUNCTION_HLG:
           CreateICCCurvCurvTag(
-              CreateTableCurve(64, ExtraTF::kHLG, CanToneMap(c)), &tags);
+              CreateTableCurve<64, ExtraTF::kHLG>(CanToneMap(c)), &tags);
           break;
         case JXL_TRANSFER_FUNCTION_PQ:
           CreateICCCurvCurvTag(
-              CreateTableCurve(64, ExtraTF::kPQ, CanToneMap(c)), &tags);
+              CreateTableCurve<64, ExtraTF::kPQ>(CanToneMap(c)), &tags);
           break;
         case JXL_TRANSFER_FUNCTION_SRGB:
           JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(

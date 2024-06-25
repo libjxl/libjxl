@@ -163,8 +163,8 @@ class WriteToOutputStage : public RenderPipelineStage {
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
-    JXL_DASSERT(xextra == 0);
-    JXL_DASSERT(main_.run_opaque_ || main_.buffer_);
+    JXL_ENSURE(xextra == 0);
+    JXL_ENSURE(main_.run_opaque_ || main_.buffer_);
     if (ypos >= height_) return true;
     if (xpos >= width_) return true;
     if (flip_y_) {
@@ -577,18 +577,17 @@ class WriteToImageBundleStage : public RenderPipelineStage {
   Status SetInputSizes(
       const std::vector<std::pair<size_t, size_t>>& input_sizes) override {
     JxlMemoryManager* memory_manager = image_bundle_->memory_manager();
-#if JXL_ENABLE_ASSERT
-    JXL_ASSERT(input_sizes.size() >= 3);
+    JXL_ENSURE(input_sizes.size() >= 3);
     for (size_t c = 1; c < input_sizes.size(); c++) {
-      JXL_ASSERT(input_sizes[c].first == input_sizes[0].first);
-      JXL_ASSERT(input_sizes[c].second == input_sizes[0].second);
+      JXL_ENSURE(input_sizes[c].first == input_sizes[0].first);
+      JXL_ENSURE(input_sizes[c].second == input_sizes[0].second);
     }
-#endif
     // TODO(eustas): what should we do in the case of "want only ECs"?
     JXL_ASSIGN_OR_RETURN(Image3F tmp,
                          Image3F::Create(memory_manager, input_sizes[0].first,
                                          input_sizes[0].second));
-    image_bundle_->SetFromImage(std::move(tmp), color_encoding_);
+    JXL_RETURN_IF_ERROR(
+        image_bundle_->SetFromImage(std::move(tmp), color_encoding_));
     // TODO(veluca): consider not reallocating ECs if not needed.
     image_bundle_->extra_channels().clear();
     for (size_t c = 3; c < input_sizes.size(); c++) {
@@ -609,7 +608,7 @@ class WriteToImageBundleStage : public RenderPipelineStage {
              sizeof(float) * (xsize + 2 * xextra));
     }
     for (size_t ec = 0; ec < image_bundle_->extra_channels().size(); ec++) {
-      JXL_ASSERT(image_bundle_->extra_channels()[ec].xsize() >=
+      JXL_ENSURE(image_bundle_->extra_channels()[ec].xsize() >=
                  xpos + xsize + xextra);
       memcpy(image_bundle_->extra_channels()[ec].Row(ypos) + xpos - xextra,
              GetInputRow(input_rows, 3 + ec, 0) - xextra,
@@ -638,13 +637,11 @@ class WriteToImage3FStage : public RenderPipelineStage {
 
   Status SetInputSizes(
       const std::vector<std::pair<size_t, size_t>>& input_sizes) override {
-#if JXL_ENABLE_ASSERT
-    JXL_ASSERT(input_sizes.size() >= 3);
+    JXL_ENSURE(input_sizes.size() >= 3);
     for (size_t c = 1; c < 3; ++c) {
-      JXL_ASSERT(input_sizes[c].first == input_sizes[0].first);
-      JXL_ASSERT(input_sizes[c].second == input_sizes[0].second);
+      JXL_ENSURE(input_sizes[c].first == input_sizes[0].first);
+      JXL_ENSURE(input_sizes[c].second == input_sizes[0].second);
     }
-#endif
     JXL_ASSIGN_OR_RETURN(*image_,
                          Image3F::Create(memory_manager_, input_sizes[0].first,
                                          input_sizes[0].second));
