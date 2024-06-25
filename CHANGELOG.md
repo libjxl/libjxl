@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     afterwards and still imply that the previous box must be complete.
 
 ### Changed / clarified
-  - avoiding abort in release build (#3631 and ##3639)
+  - avoiding abort in release build (#3631 and #3639)
 
 ## [0.10.2] - 2024-03-08
 
