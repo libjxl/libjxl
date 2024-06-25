@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Gain Map API (#3552 and #3628)
 
 ### Changed / clarified
-  - avoiding abort in release build (TODO(eustas): add pull requests here)
+  - avoiding abort in release build (#3631 and ##3639)
 
 ## [0.10.2] - 2024-03-08
 
