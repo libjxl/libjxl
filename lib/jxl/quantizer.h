@@ -27,6 +27,8 @@
 
 namespace jxl {
 
+enum class AcStrategyType : uint32_t;
+
 static constexpr int kGlobalScaleDenom = 1 << 16;
 static constexpr int kGlobalScaleNumerator = 4096;
 
@@ -58,8 +60,8 @@ struct QuantizerParams;
 
 class Quantizer {
  public:
-  explicit Quantizer(const DequantMatrices* dequant);
-  Quantizer(const DequantMatrices* dequant, int quant_dc, int global_scale);
+  explicit Quantizer(const DequantMatrices& dequant);
+  Quantizer(const DequantMatrices& dequant, int quant_dc, int global_scale);
 
   static constexpr int32_t kQuantMax = 256;
 
@@ -97,8 +99,8 @@ class Quantizer {
   void SetQuantFieldRect(const ImageF& qf, const Rect& rect,
                          ImageI* JXL_RESTRICT raw_quant_field) const;
 
-  void SetQuantField(float quant_dc, const ImageF& qf,
-                     ImageI* JXL_RESTRICT raw_quant_field);
+  Status SetQuantField(float quant_dc, const ImageF& qf,
+                       ImageI* JXL_RESTRICT raw_quant_field);
 
   void SetQuant(float quant_dc, float quant_ac,
                 ImageI* JXL_RESTRICT raw_quant_field);
@@ -117,11 +119,13 @@ class Quantizer {
 
   void DumpQuantizationMap(const ImageI& raw_quant_field) const;
 
-  JXL_INLINE const float* DequantMatrix(size_t quant_kind, size_t c) const {
+  JXL_INLINE const float* DequantMatrix(AcStrategyType quant_kind,
+                                        size_t c) const {
     return dequant_->Matrix(quant_kind, c);
   }
 
-  JXL_INLINE const float* InvDequantMatrix(size_t quant_kind, size_t c) const {
+  JXL_INLINE const float* InvDequantMatrix(AcStrategyType quant_kind,
+                                           size_t c) const {
     return dequant_->InvMatrix(quant_kind, c);
   }
 

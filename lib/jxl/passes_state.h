@@ -63,7 +63,7 @@ struct PassesSharedState {
 
   // Dequant matrices + quantizer.
   DequantMatrices matrices;
-  Quantizer quantizer{&matrices};
+  Quantizer quantizer{matrices};
   ImageI raw_quant_field;
 
   // Per-block side information for EPF detail preservation.

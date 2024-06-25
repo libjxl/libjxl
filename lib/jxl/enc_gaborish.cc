@@ -56,13 +56,14 @@ Status GaborishInverse(Image3F* in_out, const Rect& rect, const float mul[3],
   JXL_ASSIGN_OR_RETURN(temp,
                        ImageF::Create(memory_manager, in_out->Plane(2).xsize(),
                                       in_out->Plane(2).ysize()));
-  CopyImageTo(in_out->Plane(2), &temp);
+  JXL_RETURN_IF_ERROR(CopyImageTo(in_out->Plane(2), &temp));
   Rect xrect = rect.Extend(3, Rect(*in_out));
-  Symmetric5(in_out->Plane(0), xrect, weights[0], pool, &in_out->Plane(2),
-             xrect);
-  Symmetric5(in_out->Plane(1), xrect, weights[1], pool, &in_out->Plane(0),
-             xrect);
-  Symmetric5(temp, xrect, weights[2], pool, &in_out->Plane(1), xrect);
+  JXL_RETURN_IF_ERROR(Symmetric5(in_out->Plane(0), xrect, weights[0], pool,
+                                 &in_out->Plane(2), xrect));
+  JXL_RETURN_IF_ERROR(Symmetric5(in_out->Plane(1), xrect, weights[1], pool,
+                                 &in_out->Plane(0), xrect));
+  JXL_RETURN_IF_ERROR(
+      Symmetric5(temp, xrect, weights[2], pool, &in_out->Plane(1), xrect));
   // Now planes are 1, 2, 0.
   in_out->Plane(0).Swap(in_out->Plane(1));
   // 2 1 0

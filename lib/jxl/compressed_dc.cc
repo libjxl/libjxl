@@ -132,7 +132,7 @@ Status AdaptiveDCSmoothing(JxlMemoryManager* memory_manager,
   // TODO(veluca): use tile-based processing?
   // TODO(veluca): decide if changes to the y channel should be propagated to
   // the x and b channels through color correlation.
-  JXL_ASSERT(w1 + w2 < 0.25f);
+  JXL_ENSURE(w1 + w2 < 0.25f);
 
   JXL_ASSIGN_OR_RETURN(Image3F smoothed,
                        Image3F::Create(memory_manager, xsize, ysize));
@@ -143,7 +143,7 @@ Status AdaptiveDCSmoothing(JxlMemoryManager* memory_manager,
              xsize * sizeof(float));
     }
   }
-  auto process_row = [&](const uint32_t y, size_t /*thread*/) {
+  auto process_row = [&](const uint32_t y, size_t /*thread*/) -> Status {
     const float* JXL_RESTRICT rows_top[3]{
         dc->ConstPlaneRow(0, y - 1),
         dc->ConstPlaneRow(1, y - 1),
@@ -186,9 +186,10 @@ Status AdaptiveDCSmoothing(JxlMemoryManager* memory_manager,
       ComputePixel<DScalar>(dc_factors, rows_top, rows, rows_bottom, rows_out,
                             x);
     }
+    return true;
   };
-  JXL_CHECK(RunOnPool(pool, 1, ysize - 1, ThreadPool::NoInit, process_row,
-                      "DCSmoothingRow"));
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 1, ysize - 1, ThreadPool::NoInit,
+                                process_row, "DCSmoothingRow"));
   dc->Swap(smoothed);
   return true;
 }

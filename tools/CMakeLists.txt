@@ -160,7 +160,7 @@ if(JPEGXL_ENABLE_TOOLS)
   endif()
 
   add_executable(jxlinfo jxlinfo.c)
-  target_link_libraries(jxlinfo jxl)
+  target_link_libraries(jxlinfo jxl jxl_extras_nocodec-internal)
   list(APPEND TOOL_BINARIES jxlinfo)
 
   if(NOT SANITIZER STREQUAL "none")
@@ -508,3 +508,7 @@ if (BASH_PROGRAM)
   endforeach()
 endif()  # BASH_PROGRAM
 endif()  # JPEGXL_TEST_TOOLS
+
+add_library(enc_fast_lossless ${PROJECT_SOURCE_DIR}/lib/jxl/enc_fast_lossless.cc)
+target_include_directories(enc_fast_lossless PRIVATE "${PROJECT_SOURCE_DIR}")
+set_target_properties(enc_fast_lossless PROPERTIES COMPILE_FLAGS "-DFJXL_STANDALONE ${FJXL_COMPILE_FLAGS}")

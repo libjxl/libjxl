@@ -18,6 +18,12 @@
 #define JPEGLI_INSTANTIATE_TEST_SUITE_P INSTANTIATE_TEST_CASE_P
 #endif
 
+// Replacement for ASSERT_TRUE inside try-catch blocks.
+#define JPEGLI_TEST_ENSURE_TRUE(C) \
+  if (!(C)) return false;
+
+#define QUIT(M) FAIL() << M
+
 // Ensures that we don't make our test bounds too lax, effectively disabling the
 // tests.
 #define EXPECT_SLIGHTLY_BELOW(A, E)       \

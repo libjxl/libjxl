@@ -56,7 +56,7 @@ Status DecodeFile(const Span<const uint8_t> file, bool use_slow_pipeline,
   Status ret = true;
   {
     BitReader reader(file);
-    BitReaderScopedCloser reader_closer(&reader, &ret);
+    BitReaderScopedCloser reader_closer(reader, ret);
     JXL_RETURN_IF_ERROR(reader.ReadFixedBits<16>() == 0x0AFF);
     JXL_RETURN_IF_ERROR(ReadSizeHeader(&reader, &io->metadata.size));
     JXL_RETURN_IF_ERROR(ReadImageMetadata(&reader, &io->metadata.m));
@@ -98,7 +98,7 @@ Status DecodeFile(const Span<const uint8_t> file, bool use_slow_pipeline,
     if (!reader.AllReadsWithinBounds()) {
       return JXL_FAILURE("Reader out of bounds read.");
     }
-    io->CheckMetadata();
+    JXL_RETURN_IF_ERROR(io->CheckMetadata());
     // reader is closed here.
   }
   return ret;
@@ -107,36 +107,39 @@ Status DecodeFile(const Span<const uint8_t> file, bool use_slow_pipeline,
 TEST(RenderPipelineTest, Build) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   RenderPipeline::Builder builder(memory_manager, /*num_c=*/1);
-  builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
-  builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
-  builder.AddStage(jxl::make_unique<Check0FinalStage>());
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<UpsampleXSlowStage>()));
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<UpsampleYSlowStage>()));
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   builder.UseSimpleImplementation();
   FrameDimensions frame_dimensions;
   frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
-  std::move(builder).Finalize(frame_dimensions).value();
+  JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
+                         std::move(builder).Finalize(frame_dimensions));
+  (void)pipeline;
 }
 
 TEST(RenderPipelineTest, CallAllGroups) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   RenderPipeline::Builder builder(memory_manager, /*num_c=*/1);
-  builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
-  builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
-  builder.AddStage(jxl::make_unique<Check0FinalStage>());
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<UpsampleXSlowStage>()));
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<UpsampleYSlowStage>()));
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   builder.UseSimpleImplementation();
   FrameDimensions frame_dimensions;
   frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
-  auto pipeline = std::move(builder).Finalize(frame_dimensions).value();
+  JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
+                         std::move(builder).Finalize(frame_dimensions));
   ASSERT_TRUE(pipeline->PrepareForThreads(1, /*use_group_ids=*/false));
 
   for (size_t i = 0; i < frame_dimensions.num_groups; i++) {
     auto input_buffers = pipeline->GetInputBuffers(i, 0);
-    FillPlane(0.0f, input_buffers.GetBuffer(0).first,
-              input_buffers.GetBuffer(0).second);
-    JXL_CHECK(input_buffers.Done());
+    const auto& buffer = input_buffers.GetBuffer(0);
+    FillPlane(0.0f, buffer.first, buffer.second);
+    ASSERT_TRUE(input_buffers.Done());
   }
 
   EXPECT_EQ(pipeline->PassesWithAllInput(), 1);
@@ -145,35 +148,38 @@ TEST(RenderPipelineTest, CallAllGroups) {
 TEST(RenderPipelineTest, BuildFast) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   RenderPipeline::Builder builder(memory_manager, /*num_c=*/1);
-  builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
-  builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
-  builder.AddStage(jxl::make_unique<Check0FinalStage>());
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<UpsampleXSlowStage>()));
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<UpsampleYSlowStage>()));
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   FrameDimensions frame_dimensions;
   frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
-  std::move(builder).Finalize(frame_dimensions).value();
+  JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
+                         std::move(builder).Finalize(frame_dimensions));
+  (void)pipeline;
 }
 
 TEST(RenderPipelineTest, CallAllGroupsFast) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   RenderPipeline::Builder builder(memory_manager, /*num_c=*/1);
-  builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
-  builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
-  builder.AddStage(jxl::make_unique<Check0FinalStage>());
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<UpsampleXSlowStage>()));
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<UpsampleYSlowStage>()));
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   builder.UseSimpleImplementation();
   FrameDimensions frame_dimensions;
   frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
-  auto pipeline = std::move(builder).Finalize(frame_dimensions).value();
+  JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
+                         std::move(builder).Finalize(frame_dimensions));
   ASSERT_TRUE(pipeline->PrepareForThreads(1, /*use_group_ids=*/false));
 
   for (size_t i = 0; i < frame_dimensions.num_groups; i++) {
     auto input_buffers = pipeline->GetInputBuffers(i, 0);
-    FillPlane(0.0f, input_buffers.GetBuffer(0).first,
-              input_buffers.GetBuffer(0).second);
-    JXL_CHECK(input_buffers.Done());
+    const auto& buffer = input_buffers.GetBuffer(0);
+    FillPlane(0.0f, buffer.first, buffer.second);
+    ASSERT_TRUE(input_buffers.Done());
   }
 
   EXPECT_EQ(pipeline->PassesWithAllInput(), 1);
@@ -213,11 +219,12 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   } else {
     ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, &pool));
   }
-  io.ShrinkTo(config.xsize, config.ysize);
+  ASSERT_TRUE(io.ShrinkTo(config.xsize, config.ysize));
 
   if (config.add_spot_color) {
-    JXL_ASSIGN_OR_DIE(ImageF spot, ImageF::Create(memory_manager, config.xsize,
-                                                  config.ysize));
+    JXL_TEST_ASSIGN_OR_DIE(
+        ImageF spot,
+        ImageF::Create(memory_manager, config.xsize, config.ysize));
     jxl::ZeroFillImage(&spot);
 
     for (size_t y = 0; y < config.ysize; y++) {
@@ -238,7 +245,7 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
     io.metadata.m.extra_channel_info.push_back(info);
     std::vector<ImageF> ec;
     ec.push_back(std::move(spot));
-    io.frames[0].SetExtraChannels(std::move(ec));
+    ASSERT_TRUE(io.frames[0].SetExtraChannels(std::move(ec)));
   }
 
   std::vector<uint8_t> compressed;
@@ -262,17 +269,17 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 #endif
     Image3F def = std::move(*io_default.frames[i].color());
     Image3F pip = std::move(*io_slow_pipeline.frames[i].color());
-    JXL_ASSERT_OK(VerifyRelativeError(pip, def, kMaxError, kMaxError, _));
+    JXL_TEST_ASSERT_OK(VerifyRelativeError(pip, def, kMaxError, kMaxError, _));
     for (size_t ec = 0; ec < io_default.frames[i].extra_channels().size();
          ec++) {
-      JXL_ASSERT_OK(VerifyRelativeError(
+      JXL_TEST_ASSERT_OK(VerifyRelativeError(
           io_slow_pipeline.frames[i].extra_channels()[ec],
           io_default.frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
     }
   }
 }
 
-Splines CreateTestSplines() {
+StatusOr<Splines> CreateTestSplines() {
   const ColorCorrelation color_correlation{};
   std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
                                             {10, 40}, {150, 25},  {120, 300}};
@@ -285,9 +292,12 @@ Splines CreateTestSplines() {
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
   for (const Spline& spline : spline_data) {
-    quantized_splines.emplace_back(spline, /*quantization_adjustment=*/0,
-                                   color_correlation.YtoXRatio(0),
-                                   color_correlation.YtoBRatio(0));
+    JXL_ASSIGN_OR_RETURN(
+        QuantizedSpline qspline,
+        QuantizedSpline::Create(spline, /*quantization_adjustment=*/0,
+                                color_correlation.YtoXRatio(0),
+                                color_correlation.YtoBRatio(0)));
+    quantized_splines.emplace_back(std::move(qspline));
     starting_points.push_back(spline.control_points.front());
   }
   return Splines(/*quantization_adjustment=*/0, std::move(quantized_splines),
@@ -367,7 +377,7 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     {
       auto s = settings;
       s.cparams_descr = "Splines";
-      s.splines = CreateTestSplines();
+      JXL_TEST_ASSIGN_OR_DIE(s.splines, CreateTestSplines());
       all_tests.push_back(s);
     }
 
@@ -575,11 +585,11 @@ TEST(RenderPipelineDecodingTest, Animation) {
 
     Image3F fast_pipeline = std::move(*io_default.frames[i].color());
     Image3F slow_pipeline = std::move(*io_slow_pipeline.frames[i].color());
-    JXL_ASSERT_OK(VerifyRelativeError(slow_pipeline, fast_pipeline, kMaxError,
-                                      kMaxError, _))
+    JXL_TEST_ASSERT_OK(VerifyRelativeError(slow_pipeline, fast_pipeline,
+                                           kMaxError, kMaxError, _))
     for (size_t ec = 0; ec < io_default.frames[i].extra_channels().size();
          ec++) {
-      JXL_ASSERT_OK(VerifyRelativeError(
+      JXL_TEST_ASSERT_OK(VerifyRelativeError(
           io_slow_pipeline.frames[i].extra_channels()[ec],
           io_default.frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
     }

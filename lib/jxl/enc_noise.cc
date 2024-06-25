@@ -11,6 +11,7 @@
 #include <numeric>
 #include <utility>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_optimize.h"
 
@@ -314,11 +315,12 @@ std::vector<NoiseLevel> GetNoiseLevel(
   return noise_level_per_intensity;
 }
 
-void EncodeFloatParam(float val, float precision, BitWriter* writer) {
-  JXL_ASSERT(val >= 0);
+Status EncodeFloatParam(float val, float precision, BitWriter* writer) {
+  JXL_ENSURE(val >= 0);
   const int absval_quant = static_cast<int>(std::lround(val * precision));
-  JXL_ASSERT(absval_quant < (1 << 10));
+  JXL_ENSURE(absval_quant < (1 << 10));
   writer->Write(10, absval_quant);
+  return true;
 }
 
 }  // namespace
@@ -353,15 +355,16 @@ Status GetNoiseParameter(const Image3F& opsin, NoiseParams* noise_params,
   return noise_params->HasAny();
 }
 
-void EncodeNoise(const NoiseParams& noise_params, BitWriter* writer,
-                 size_t layer, AuxOut* aux_out) {
-  JXL_ASSERT(noise_params.HasAny());
+Status EncodeNoise(const NoiseParams& noise_params, BitWriter* writer,
+                   LayerType layer, AuxOut* aux_out) {
+  JXL_ENSURE(noise_params.HasAny());
 
   BitWriter::Allotment allotment(writer, NoiseParams::kNumNoisePoints * 16);
   for (float i : noise_params.lut) {
-    EncodeFloatParam(i, kNoisePrecision, writer);
+    JXL_RETURN_IF_ERROR(EncodeFloatParam(i, kNoisePrecision, writer));
   }
-  allotment.ReclaimAndCharge(writer, layer, aux_out);
+  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
+  return true;
 }
 
 }  // namespace jxl

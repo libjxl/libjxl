@@ -139,7 +139,7 @@ void DequantLane(Vec<D> scaled_dequant_x, Vec<D> scaled_dequant_y,
 template <ACType ac_type>
 void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
                   float x_dm_multiplier, float b_dm_multiplier, Vec<D> x_cc_mul,
-                  Vec<D> b_cc_mul, size_t kind, size_t size,
+                  Vec<D> b_cc_mul, AcStrategyType kind, size_t size,
                   const Quantizer& quantizer, size_t covered_blocks,
                   const size_t* sbx,
                   const float* JXL_RESTRICT* JXL_RESTRICT dc_row,
@@ -216,6 +216,7 @@ Status DecodeGroupImpl(const FrameHeader& frame_header,
       return JXL_FAILURE("The CfL map is not JPEG-compatible");
     }
     jpeg_is_gray = (jpeg_data->components.size() == 1);
+    JXL_ENSURE(frame_header.color_transform != ColorTransform::kXYB);
     jpeg_c_map = JpegOrder(frame_header.color_transform, jpeg_is_gray);
     const std::vector<QuantEncoding>& qe =
         dec_state->shared->matrices.encodings();
@@ -224,14 +225,16 @@ Status DecodeGroupImpl(const FrameHeader& frame_header,
       return JXL_FAILURE(
           "Quantization table is not a JPEG quantization table.");
     }
+    JXL_ENSURE(qe[0].qraw.qtable->size() == 3 * 8 * 8);
+    int* qtable = qe[0].qraw.qtable->data();
     for (size_t c = 0; c < 3; c++) {
       if (frame_header.color_transform == ColorTransform::kNone) {
-        dcoff[c] = 1024 / (*qe[0].qraw.qtable)[64 * c];
+        dcoff[c] = 1024 / qtable[64 * c];
       }
       for (size_t i = 0; i < 64; i++) {
         // Transpose the matrix, as it will be used on the transposed block.
-        int n = qe[0].qraw.qtable->at(64 + i);
-        int d = qe[0].qraw.qtable->at(64 * c + i);
+        int n = qtable[64 + i];
+        int d = qtable[64 * c + i];
         if (n <= 0 || d <= 0 || n >= 65536 || d >= 65536) {
           return JXL_FAILURE("Invalid JPEG quantization table");
         }
@@ -279,8 +282,8 @@ Status DecodeGroupImpl(const FrameHeader& frame_header,
     float* JXL_RESTRICT idct_row[3];
     int16_t* JXL_RESTRICT jpeg_row[3];
     for (size_t c = 0; c < 3; c++) {
-      idct_row[c] = render_pipeline_input.GetBuffer(c).second.Row(
-          render_pipeline_input.GetBuffer(c).first, sby[c] * kBlockDim);
+      const auto& buffer = render_pipeline_input.GetBuffer(c);
+      idct_row[c] = buffer.second.Row(buffer.first, sby[c] * kBlockDim);
       if (jpeg_data) {
         auto& component = jpeg_data->components[jpeg_c_map[c]];
         jpeg_row[c] =
@@ -321,7 +324,7 @@ Status DecodeGroupImpl(const FrameHeader& frame_header,
         } else {
           // No point in reading from bitstream without accumulating and not
           // drawing.
-          JXL_ASSERT(draw == kDraw);
+          JXL_ENSURE(draw == kDraw);
           if (ac_type == ACType::k16) {
             memset(group_dec_cache->dec_group_qblock16, 0,
                    size * 3 * sizeof(int16_t));
@@ -345,7 +348,7 @@ Status DecodeGroupImpl(const FrameHeader& frame_header,
         }
 
         if (JXL_UNLIKELY(jpeg_data)) {
-          if (acs.Strategy() != AcStrategy::Type::DCT) {
+          if (acs.Strategy() != AcStrategyType::DCT) {
             return JXL_FAILURE(
                 "Can only decode to JPEG if only DCT-8 is used.");
           }
@@ -414,7 +417,7 @@ Status DecodeGroupImpl(const FrameHeader& frame_header,
           // Dequantize and add predictions.
           dequant_block(
               acs, inv_global_scale, row_quant[bx], dec_state->x_dm_multiplier,
-              dec_state->b_dm_multiplier, x_cc_mul, b_cc_mul, acs.RawStrategy(),
+              dec_state->b_dm_multiplier, x_cc_mul, b_cc_mul, acs.Strategy(),
               size, dec_state->shared->quantizer,
               acs.covered_blocks_y() * acs.covered_blocks_x(), sbx, dc_rows,
               dc_stride,
@@ -613,7 +616,7 @@ struct GetBlockFromBitstream : public GetBlock {
     }
     nzeros_stride = group_dec_cache->num_nzeroes[0].PixelsPerRow();
     for (size_t i = 0; i < num_passes; i++) {
-      JXL_ASSERT(
+      JXL_ENSURE(
           nzeros_stride ==
           static_cast<size_t>(group_dec_cache->num_nzeroes[i].PixelsPerRow()));
     }
@@ -647,7 +650,7 @@ struct GetBlockFromEncoder : public GetBlock {
   Status LoadBlock(size_t bx, size_t by, const AcStrategy& acs, size_t size,
                    size_t log2_covered_blocks, ACPtr block[3],
                    ACType ac_type) override {
-    JXL_DASSERT(ac_type == ACType::k32);
+    JXL_ENSURE(ac_type == ACType::k32);
     for (size_t c = 0; c < 3; c++) {
       // for each pass
       for (size_t i = 0; i < quantized_ac->size(); i++) {
@@ -662,22 +665,29 @@ struct GetBlockFromEncoder : public GetBlock {
     return true;
   }
 
-  GetBlockFromEncoder(const std::vector<std::unique_ptr<ACImage>>& ac,
-                      size_t group_idx, const uint32_t* shift_for_pass)
-      : quantized_ac(&ac), shift_for_pass(shift_for_pass) {
+  static StatusOr<GetBlockFromEncoder> Create(
+      const std::vector<std::unique_ptr<ACImage>>& ac, size_t group_idx,
+      const uint32_t* shift_for_pass) {
+    GetBlockFromEncoder result(ac, group_idx, shift_for_pass);
     // TODO(veluca): not supported with chroma subsampling.
-    for (size_t i = 0; i < quantized_ac->size(); i++) {
-      JXL_CHECK((*quantized_ac)[i]->Type() == ACType::k32);
+    for (size_t i = 0; i < ac.size(); i++) {
+      JXL_ENSURE(ac[i]->Type() == ACType::k32);
       for (size_t c = 0; c < 3; c++) {
-        rows[i][c] = (*quantized_ac)[i]->PlaneRow(c, group_idx, 0).ptr32;
+        result.rows[i][c] = ac[i]->PlaneRow(c, group_idx, 0).ptr32;
       }
     }
+    return result;
   }
 
   const std::vector<std::unique_ptr<ACImage>>* JXL_RESTRICT quantized_ac;
   size_t offset = 0;
   const int32_t* JXL_RESTRICT rows[kMaxNumPasses][3];
   const uint32_t* shift_for_pass = nullptr;  // not owned
+
+ private:
+  GetBlockFromEncoder(const std::vector<std::unique_ptr<ACImage>>& ac,
+                      size_t group_idx, const uint32_t* shift_for_pass)
+      : quantized_ac(&ac), shift_for_pass(shift_for_pass) {}
 };
 
 HWY_EXPORT(DecodeGroupImpl);
@@ -716,8 +726,9 @@ Status DecodeGroup(const FrameHeader& frame_header,
                src_rect_precs.xsize() >> hs, src_rect_precs.ysize() >> vs);
       const Rect copy_rect(kRenderPipelineXOffset, 2, src_rect.xsize(),
                            src_rect.ysize());
-      CopyImageToWithPadding(src_rect, dec_state->shared->dc->Plane(c), 2,
-                             copy_rect, &group_dec_cache->dc_buffer);
+      JXL_RETURN_IF_ERROR(
+          CopyImageToWithPadding(src_rect, dec_state->shared->dc->Plane(c), 2,
+                                 copy_rect, &group_dec_cache->dc_buffer));
       // Mirrorpad. Interleaving left and right padding ensures that padding
       // works out correctly even for images with DC size of 1.
       for (size_t y = 0; y < src_rect.ysize() + 4; y++) {
@@ -736,9 +747,10 @@ Status DecodeGroup(const FrameHeader& frame_header,
           }
         }
       }
-      Rect dst_rect = render_pipeline_input.GetBuffer(c).second;
-      ImageF* upsampling_dst = render_pipeline_input.GetBuffer(c).first;
-      JXL_ASSERT(dst_rect.IsInside(*upsampling_dst));
+      const auto& buffer = render_pipeline_input.GetBuffer(c);
+      Rect dst_rect = buffer.second;
+      ImageF* upsampling_dst = buffer.first;
+      JXL_ENSURE(dst_rect.IsInside(*upsampling_dst));
 
       RenderPipelineStage::RowInfo input_rows(1, std::vector<float*>(5));
       RenderPipelineStage::RowInfo output_rows(1, std::vector<float*>(8));
@@ -766,9 +778,9 @@ Status DecodeGroup(const FrameHeader& frame_header,
 
   size_t histo_selector_bits = 0;
   if (dc_only) {
-    JXL_ASSERT(num_passes == 0);
+    JXL_ENSURE(num_passes == 0);
   } else {
-    JXL_ASSERT(dec_state->shared->num_histograms > 0);
+    JXL_ENSURE(dec_state->shared->num_histograms > 0);
     histo_selector_bits = CeilLog2Nonzero(dec_state->shared->num_histograms);
   }
 
@@ -800,7 +812,9 @@ Status DecodeGroupForRoundtrip(const FrameHeader& frame_header,
                                jpeg::JPEGData* JXL_RESTRICT jpeg_data,
                                AuxOut* aux_out) {
   JxlMemoryManager* memory_manager = dec_state->memory_manager();
-  GetBlockFromEncoder get_block(ac, group_idx, frame_header.passes.shift);
+  JXL_ASSIGN_OR_RETURN(
+      GetBlockFromEncoder get_block,
+      GetBlockFromEncoder::Create(ac, group_idx, frame_header.passes.shift));
   JXL_RETURN_IF_ERROR(group_dec_cache->InitOnce(
       memory_manager,
       /*num_passes=*/0,

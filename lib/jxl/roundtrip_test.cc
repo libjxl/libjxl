@@ -23,7 +23,6 @@
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
@@ -49,7 +48,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
                                  const JxlPixelFormat& pixel_format,
                                  const jxl::Bytes& icc_profile) {
   jxl::CodecInOut io{jxl::test::MemoryManager()};
-  io.SetSize(xsize, ysize);
+  jxl::test::Check(io.SetSize(xsize, ysize));
 
   bool is_gray = pixel_format.num_channels < 3;
   bool has_alpha =
@@ -238,15 +237,16 @@ void VerifyRoundtripCompression(
     }
   }
   if (alpha_in_extra_channels_vector && !has_interleaved_alpha) {
-    JXL_ASSIGN_OR_DIE(ImageF alpha_channel,
-                      ImageF::Create(jxl::test::MemoryManager(), xsize, ysize));
+    JXL_TEST_ASSIGN_OR_DIE(
+        ImageF alpha_channel,
+        ImageF::Create(jxl::test::MemoryManager(), xsize, ysize));
     EXPECT_TRUE(jxl::ConvertFromExternal(
         extra_channel_bytes.data(), extra_channel_bytes.size(), xsize, ysize,
         basic_info.bits_per_sample, extra_channel_pixel_format, 0,
         /*pool=*/nullptr, &alpha_channel));
 
     original_io.metadata.m.SetAlphaBits(basic_info.bits_per_sample);
-    original_io.Main().SetAlpha(std::move(alpha_channel));
+    ASSERT_TRUE(original_io.Main().SetAlpha(std::move(alpha_channel)));
     output_pixel_format_with_extra_channel_alpha.num_channels++;
   }
   // Those are the num_extra_channels including a potential alpha channel.
@@ -419,12 +419,12 @@ void VerifyRoundtripCompression(
 
   if (already_downsampled) {
     jxl::Image3F* color = decoded_io.Main().color();
-    JXL_ASSIGN_OR_DIE(*color, jxl::DownsampleImage(*color, resampling));
+    JXL_TEST_ASSIGN_OR_DIE(*color, jxl::DownsampleImage(*color, resampling));
     if (decoded_io.Main().HasAlpha()) {
       ImageF* alpha = decoded_io.Main().alpha();
-      JXL_ASSIGN_OR_DIE(*alpha, jxl::DownsampleImage(*alpha, resampling));
+      JXL_TEST_ASSIGN_OR_DIE(*alpha, jxl::DownsampleImage(*alpha, resampling));
     }
-    decoded_io.SetSize(color->xsize(), color->ysize());
+    EXPECT_TRUE(decoded_io.SetSize(color->xsize(), color->ysize()));
   }
 
   if (lossless && !already_downsampled) {

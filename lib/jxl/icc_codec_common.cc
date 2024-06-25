@@ -6,6 +6,7 @@
 #include "lib/jxl/icc_codec_common.h"
 
 #include <cstdint>
+#include <tuple>
 
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/padded_bytes.h"
@@ -48,14 +49,10 @@ uint32_t DecodeUint32(const uint8_t* data, size_t size, size_t pos) {
   return pos + 4 > size ? 0 : LoadBE32(data + pos);
 }
 
-void EncodeUint32(size_t pos, uint32_t value, PaddedBytes* data) {
-  if (pos + 4 > data->size()) return;
-  StoreBE32(value, data->data() + pos);
-}
-
 void AppendUint32(uint32_t value, PaddedBytes* data) {
-  data->resize(data->size() + 4);
-  EncodeUint32(data->size() - 4, value, data);
+  size_t pos = data->size();
+  data->resize(pos + 4);
+  StoreBE32(value, data->data() + pos);
 }
 
 typedef std::array<uint8_t, 4> Tag;
@@ -71,7 +68,7 @@ void EncodeKeyword(const Tag& keyword, uint8_t* data, size_t size, size_t pos) {
 }
 
 void AppendKeyword(const Tag& keyword, PaddedBytes* data) {
-  JXL_ASSERT(keyword.size() == 4);
+  static_assert(std::tuple_size<Tag>{} == 4);
   data->append(keyword);
 }
 
@@ -89,7 +86,7 @@ Status CheckIs32Bit(uint64_t v) {
   return true;
 }
 
-const uint8_t kIccInitialHeaderPrediction[kICCHeaderSize] = {
+const std::array<uint8_t, kICCHeaderSize> kIccInitialHeaderPrediction = {
     0,   0,   0,   0,   0,   0,   0,   0,   4, 0, 0, 0, 'm', 'n', 't', 'r',
     'R', 'G', 'B', ' ', 'X', 'Y', 'Z', ' ', 0, 0, 0, 0, 0,   0,   0,   0,
     0,   0,   0,   0,   'a', 'c', 's', 'p', 0, 0, 0, 0, 0,   0,   0,   0,
@@ -100,8 +97,10 @@ const uint8_t kIccInitialHeaderPrediction[kICCHeaderSize] = {
     0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0,   0,   0,   0,
 };
 
-Span<const uint8_t> ICCInitialHeaderPrediction() {
-  return Bytes(kIccInitialHeaderPrediction);
+std::array<uint8_t, kICCHeaderSize> ICCInitialHeaderPrediction(uint32_t size) {
+  std::array<uint8_t, kICCHeaderSize> copy(kIccInitialHeaderPrediction);
+  StoreBE32(size, copy.data());
+  return copy;
 }
 
 void ICCPredictHeader(const uint8_t* icc, size_t size, uint8_t* header,

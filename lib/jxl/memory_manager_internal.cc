@@ -85,26 +85,28 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
     bytes_per_row += align;
   }
 
-  JXL_ASSERT(bytes_per_row % align == 0);
+  JXL_DASSERT(bytes_per_row % align == 0);
   return bytes_per_row;
 }
 
 StatusOr<AlignedMemory> AlignedMemory::Create(JxlMemoryManager* memory_manager,
-                                              size_t size) {
-  size_t allocation_size = size + memory_manager_internal::kAlias;
+                                              size_t size, size_t pre_padding) {
+  JXL_ENSURE(pre_padding <= memory_manager_internal::kAlias);
+  size_t allocation_size = size + pre_padding + memory_manager_internal::kAlias;
   if (size > allocation_size) {
     return JXL_FAILURE("Requested allocation is too large");
   }
-  JXL_CHECK(memory_manager);
+  JXL_ENSURE(memory_manager);
   void* allocated =
       memory_manager->alloc(memory_manager->opaque, allocation_size);
   if (allocated == nullptr) {
     return JXL_FAILURE("Allocation failed");
   }
-  return AlignedMemory{memory_manager, allocated};
+  return AlignedMemory(memory_manager, allocated, pre_padding);
 }
 
-AlignedMemory::AlignedMemory(JxlMemoryManager* memory_manager, void* allocation)
+AlignedMemory::AlignedMemory(JxlMemoryManager* memory_manager, void* allocation,
+                             size_t pre_padding)
     : allocation_(allocation), memory_manager_(memory_manager) {
   // Congruence to `offset` (mod kAlias) reduces cache conflicts and load/store
   // stalls, especially with large allocations that would otherwise have similar
@@ -116,9 +118,10 @@ AlignedMemory::AlignedMemory(JxlMemoryManager* memory_manager, void* allocation)
   size_t offset = memory_manager_internal::kAlignment * group;
 
   // Actual allocation.
-  uintptr_t address = reinterpret_cast<uintptr_t>(allocation);
+  uintptr_t address = reinterpret_cast<uintptr_t>(allocation) + pre_padding;
 
-  // Aligned address, but might land before allocation (50%/50%).
+  // Aligned address, but might land before allocation (50%/50%) or not have
+  // enough pre-padding.
   uintptr_t aligned_address =
       (address & ~(memory_manager_internal::kAlias - 1)) + offset;
   if (aligned_address < address)

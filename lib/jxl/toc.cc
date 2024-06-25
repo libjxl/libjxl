@@ -49,7 +49,7 @@ Status ReadToc(JxlMemoryManager* memory_manager, size_t toc_entries,
     return JXL_STATUS(StatusCode::kNotEnoughBytes, "Not enough bytes for TOC");
   };
 
-  JXL_DASSERT(toc_entries > 0);
+  JXL_ENSURE(toc_entries > 0);
   if (reader->ReadFixedBits<1>() == 1) {
     JXL_RETURN_IF_ERROR(check_bit_budget(toc_entries));
     permutation->resize(toc_entries);

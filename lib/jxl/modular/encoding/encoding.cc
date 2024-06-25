@@ -7,9 +7,14 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <queue>
+#include <utility>
+#include <vector>
 
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/scope_guard.h"
@@ -140,7 +145,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const Tree &global_tree,
                                  const weighted::Header &wp_header,
                                  pixel_type chan, size_t group_id,
-                                 TreeLut<uint8_t, true> &tree_lut,
+                                 TreeLut<uint8_t, false, false> &tree_lut,
                                  Image *image) {
   JxlMemoryManager *memory_manager = image->memory_manager();
   Channel &channel = image->channel[chan];
@@ -223,7 +228,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       }
       return true;
     } else if (uses_lz77 && predictor == Predictor::Gradient && offset == 0 &&
-               multiplier == 1 && reader->HuffRleOnly()) {
+               multiplier == 1 && reader->IsHuffRleOnly()) {
       JXL_DEBUG_V(8, "Gradient RLE (fjxl) very fast track.");
       uint32_t run = 0;
       uint32_t v = 0;
@@ -303,9 +308,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         uint32_t ctx_id = tree_lut.context_lookup[pos];
         uint64_t v =
             reader->ReadHybridUintClusteredMaybeInlined<uses_lz77>(ctx_id, br);
-        r[x] = make_pixel(
-            v, tree_lut.multipliers[pos],
-            static_cast<pixel_type_w>(tree_lut.offsets[pos]) + guess);
+        r[x] = make_pixel(v, 1, guess);
       }
     }
   } else if (!uses_lz77 && is_wp_only && channel.w > 8) {
@@ -336,9 +339,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         uint32_t ctx_id = tree_lut.context_lookup[pos];
         uint64_t v =
             reader->ReadHybridUintClusteredInlined<uses_lz77>(ctx_id, br);
-        r[x] = make_pixel(
-            v, tree_lut.multipliers[pos],
-            static_cast<pixel_type_w>(tree_lut.offsets[pos]) + guess);
+        r[x] = make_pixel(v, 1, guess);
         wp_state.UpdateErrors(r[x], x, y, channel.w);
       }
       for (x = 1; x + 1 < channel.w; x++) {
@@ -352,9 +353,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         uint32_t ctx_id = tree_lut.context_lookup[pos];
         uint64_t v =
             reader->ReadHybridUintClusteredInlined<uses_lz77>(ctx_id, br);
-        r[x] = make_pixel(
-            v, tree_lut.multipliers[pos],
-            static_cast<pixel_type_w>(tree_lut.offsets[pos]) + guess);
+        r[x] = make_pixel(v, 1, guess);
         wp_state.UpdateErrors(r[x], x, y, channel.w);
       }
       {
@@ -368,9 +367,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         uint32_t ctx_id = tree_lut.context_lookup[pos];
         uint64_t v =
             reader->ReadHybridUintClusteredInlined<uses_lz77>(ctx_id, br);
-        r[x] = make_pixel(
-            v, tree_lut.multipliers[pos],
-            static_cast<pixel_type_w>(tree_lut.offsets[pos]) + guess);
+        r[x] = make_pixel(v, 1, guess);
         wp_state.UpdateErrors(r[x], x, y, channel.w);
       }
     }
@@ -489,7 +486,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const Tree &global_tree,
                                  const weighted::Header &wp_header,
                                  pixel_type chan, size_t group_id,
-                                 TreeLut<uint8_t, true> &tree_lut,
+                                 TreeLut<uint8_t, false, false> &tree_lut,
                                  Image *image) {
   if (reader->UsesLZ77()) {
     return detail::DecodeModularChannelMAANS</*uses_lz77=*/true>(
@@ -627,7 +624,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   // Read channels
   JXL_ASSIGN_OR_RETURN(ANSSymbolReader reader,
                        ANSSymbolReader::Create(code, br, distance_multiplier));
-  auto tree_lut = jxl::make_unique<TreeLut<uint8_t, true>>();
+  auto tree_lut = jxl::make_unique<TreeLut<uint8_t, false, false>>();
   for (; next_channel < nb_channels; next_channel++) {
     Channel &channel = image.channel[next_channel];
     if (!channel.w || !channel.h) {
@@ -664,12 +661,11 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
                                 const Tree *tree, const ANSCode *code,
                                 const std::vector<uint8_t> *ctx_map,
                                 bool allow_truncated_group) {
-#ifdef JXL_ENABLE_ASSERT
-  std::vector<std::pair<uint32_t, uint32_t>> req_sizes(image.channel.size());
-  for (size_t c = 0; c < req_sizes.size(); c++) {
-    req_sizes[c] = {image.channel[c].w, image.channel[c].h};
+  std::vector<std::pair<uint32_t, uint32_t>> req_sizes;
+  req_sizes.reserve(image.channel.size());
+  for (const auto &c : image.channel) {
+    req_sizes.emplace_back(c.w, c.h);
   }
-#endif
   GroupHeader local_header;
   if (header == nullptr) header = &local_header;
   size_t bit_pos = br->TotalBitsConsumed();
@@ -686,17 +682,16 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
               (br->TotalBitsConsumed() - bit_pos) / 8);
   JXL_DEBUG_V(5, "Modular image: %s", image.DebugString().c_str());
   (void)bit_pos;
-#ifdef JXL_ENABLE_ASSERT
-  // Check that after applying all transforms we are back to the requested image
-  // sizes, otherwise there's a programming error with the transformations.
+  // Check that after applying all transforms we are back to the requested
+  // image sizes, otherwise there's a programming error with the
+  // transformations.
   if (undo_transforms) {
-    JXL_ASSERT(image.channel.size() == req_sizes.size());
+    JXL_ENSURE(image.channel.size() == req_sizes.size());
     for (size_t c = 0; c < req_sizes.size(); c++) {
-      JXL_ASSERT(req_sizes[c].first == image.channel[c].w);
-      JXL_ASSERT(req_sizes[c].second == image.channel[c].h);
+      JXL_ENSURE(req_sizes[c].first == image.channel[c].w);
+      JXL_ENSURE(req_sizes[c].second == image.channel[c].h);
     }
   }
-#endif
   return dec_status;
 }
 

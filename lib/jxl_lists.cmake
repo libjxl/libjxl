@@ -185,13 +185,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/entropy_coder.h
   jxl/epf.cc
   jxl/epf.h
-  jxl/fast_dct-inl.h
-  jxl/fast_dct128-inl.h
-  jxl/fast_dct16-inl.h
-  jxl/fast_dct256-inl.h
-  jxl/fast_dct32-inl.h
-  jxl/fast_dct64-inl.h
-  jxl/fast_dct8-inl.h
   jxl/field_encodings.h
   jxl/fields.cc
   jxl/fields.h
@@ -367,7 +360,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_modular.h
   jxl/enc_noise.cc
   jxl/enc_noise.h
-  jxl/enc_optimize.cc
   jxl/enc_optimize.h
   jxl/enc_params.h
   jxl/enc_patch_dictionary.cc
@@ -608,7 +600,6 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/enc_photon_noise_test.cc
   jxl/encode_test.cc
   jxl/entropy_coder_test.cc
-  jxl/fast_dct_test.cc
   jxl/fast_math_test.cc
   jxl/fields_test.cc
   jxl/gamma_correct_test.cc

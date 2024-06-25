@@ -48,10 +48,11 @@ std::vector<std::string> SplitString(const std::string& s, char c) {
   return result;
 }
 
-int ParseIntParam(const std::string& param, int lower_bound, int upper_bound) {
-  int val = strtol(param.substr(1).c_str(), nullptr, 10);
-  JXL_CHECK(val >= lower_bound && val <= upper_bound);
-  return val;
+Status ParseIntParam(const std::string& param, int lower_bound, int upper_bound,
+                     int& val) {
+  val = strtol(param.substr(1).c_str(), nullptr, 10);
+  JXL_ENSURE(val >= lower_bound && val <= upper_bound);
+  return true;
 }
 
 BenchmarkArgs* Args() {

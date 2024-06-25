@@ -5,6 +5,8 @@
 
 #include "lib/extras/dec/gif.h"
 
+#include "lib/jxl/base/status.h"
+
 #if JPEGXL_ENABLE_GIF
 #include <gif_lib.h>
 #endif
@@ -43,21 +45,22 @@ struct PackedRgb {
   uint8_t r, g, b;
 };
 
-void ensure_have_alpha(PackedFrame* frame) {
-  if (!frame->extra_channels.empty()) return;
+Status ensure_have_alpha(PackedFrame* frame) {
+  if (!frame->extra_channels.empty()) return true;
   const JxlPixelFormat alpha_format{
       /*num_channels=*/1u,
       /*data_type=*/JXL_TYPE_UINT8,
       /*endianness=*/JXL_NATIVE_ENDIAN,
       /*align=*/0,
   };
-  JXL_ASSIGN_OR_DIE(PackedImage image,
-                    PackedImage::Create(frame->color.xsize, frame->color.ysize,
-                                        alpha_format));
+  JXL_ASSIGN_OR_RETURN(PackedImage image,
+                       PackedImage::Create(frame->color.xsize,
+                                           frame->color.ysize, alpha_format));
   frame->extra_channels.emplace_back(std::move(image));
   // We need to set opaque-by-default.
   std::fill_n(static_cast<uint8_t*>(frame->extra_channels[0].pixels()),
               frame->color.xsize * frame->color.ysize, 255u);
+  return true;
 }
 }  // namespace
 #endif
@@ -84,7 +87,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
       n = state->bytes.size();
     }
     memcpy(bytes, state->bytes.data(), n);
-    state->bytes.remove_prefix(n);
+    if (!state->bytes.remove_prefix(n)) return 0;
     return n;
   };
   GifUniquePtr gif(DGifOpen(&state, ReadFromSpan, &error));
@@ -248,19 +251,20 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
     // We cannot tell right from the start whether there will be a
     // need for an alpha channel. This is discovered only as soon as
     // we see a transparent pixel. We hence initialize alpha lazily.
-    auto set_pixel_alpha = [&frame](size_t x, size_t y, uint8_t a) {
+    auto set_pixel_alpha = [&frame](size_t x, size_t y, uint8_t a) -> Status {
       // If we do not have an alpha-channel and a==255 (fully opaque),
       // we can skip setting this pixel-value and rely on
       // "no alpha channel = no transparency".
-      if (a == 255 && !frame->extra_channels.empty()) return;
-      ensure_have_alpha(frame);
+      if (a == 255 && !frame->extra_channels.empty()) return true;
+      JXL_RETURN_IF_ERROR(ensure_have_alpha(frame));
       static_cast<uint8_t*>(
           frame->extra_channels[0].pixels())[y * frame->color.xsize + x] = a;
+      return true;
     };
 
     const ColorMapObject* const color_map =
         image.ImageDesc.ColorMap ? image.ImageDesc.ColorMap : gif->SColorMap;
-    JXL_CHECK(color_map);
+    JXL_ENSURE(color_map);
     msan::UnpoisonMemory(color_map, sizeof(*color_map));
     msan::UnpoisonMemory(color_map->Colors,
                          sizeof(*color_map->Colors) * color_map->ColorCount);
@@ -351,7 +355,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
           row_out[x].r = row_in[x].r;
           row_out[x].g = row_in[x].g;
           row_out[x].b = row_in[x].b;
-          set_pixel_alpha(x, y, row_in[x].a);
+          JXL_RETURN_IF_ERROR(set_pixel_alpha(x, y, row_in[x].a));
         }
       }
     } else {
@@ -368,14 +372,14 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
             row[x].r = 0;
             row[x].g = 0;
             row[x].b = 0;
-            set_pixel_alpha(x, y, 0);
+            JXL_RETURN_IF_ERROR(set_pixel_alpha(x, y, 0));
             continue;
           }
           GifColorType color = color_map->Colors[byte];
           row[x].r = color.Red;
           row[x].g = color.Green;
           row[x].b = color.Blue;
-          set_pixel_alpha(x, y, 255);
+          JXL_RETURN_IF_ERROR(set_pixel_alpha(x, y, 255));
         }
       }
     }
@@ -415,7 +419,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
   }
   if (seen_alpha) {
     for (PackedFrame& frame : ppf->frames) {
-      ensure_have_alpha(&frame);
+      JXL_RETURN_IF_ERROR(ensure_have_alpha(&frame));
     }
   }
   return true;

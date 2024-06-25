@@ -10,7 +10,8 @@
 #include <cstring>  // memcpy
 
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
 
 namespace jxl {
@@ -29,53 +30,52 @@ BitWriter::Allotment::Allotment(BitWriter* JXL_RESTRICT writer, size_t max_bits)
 BitWriter::Allotment::~Allotment() {
   if (!called_) {
     // Not calling is a bug - unused storage will not be reclaimed.
-    JXL_UNREACHABLE("Did not call Allotment::ReclaimUnused");
+    JXL_DEBUG_ABORT("Did not call Allotment::ReclaimUnused");
   }
 }
 
-void BitWriter::Allotment::FinishedHistogram(BitWriter* JXL_RESTRICT writer) {
-  if (writer == nullptr) return;
-  JXL_ASSERT(!called_);              // Call before ReclaimUnused
-  JXL_ASSERT(histogram_bits_ == 0);  // Do not call twice
-  JXL_ASSERT(writer->BitsWritten() >= prev_bits_written_);
-  histogram_bits_ = writer->BitsWritten() - prev_bits_written_;
+Status BitWriter::Allotment::FinishedHistogram(BitWriter* JXL_RESTRICT writer) {
+  if (writer == nullptr) return true;
+  JXL_ENSURE(!called_);              // Call before ReclaimUnused
+  JXL_ENSURE(histogram_bits_ == 0);  // Do not call twice
+  JXL_ENSURE(writer->BitsWritten() >= prev_bits_written_);
+  if (writer->BitsWritten() >= prev_bits_written_) {
+    histogram_bits_ = writer->BitsWritten() - prev_bits_written_;
+  }
+  return true;
 }
 
-void BitWriter::Allotment::ReclaimAndCharge(BitWriter* JXL_RESTRICT writer,
-                                            size_t layer,
-                                            AuxOut* JXL_RESTRICT aux_out) {
+Status BitWriter::Allotment::ReclaimAndCharge(BitWriter* JXL_RESTRICT writer,
+                                              LayerType layer,
+                                              AuxOut* JXL_RESTRICT aux_out) {
   size_t used_bits = 0;
   size_t unused_bits = 0;
-  PrivateReclaim(writer, &used_bits, &unused_bits);
-
-#if JXL_FALSE
-  printf("Layer %s bits: max %" PRIuS " used %" PRIuS " unused %" PRIuS "\n",
-         LayerName(layer), MaxBits(), used_bits, unused_bits);
-#endif
+  JXL_RETURN_IF_ERROR(PrivateReclaim(writer, &used_bits, &unused_bits));
 
   // This may be a nested call with aux_out == null. Whenever we know that
   // aux_out is null, we can call ReclaimUnused directly.
   if (aux_out != nullptr) {
-    aux_out->layers[layer].total_bits += used_bits;
-    aux_out->layers[layer].histogram_bits += HistogramBits();
+    aux_out->layer(layer).total_bits += used_bits;
+    aux_out->layer(layer).histogram_bits += HistogramBits();
   }
+  return true;
 }
 
-void BitWriter::Allotment::PrivateReclaim(BitWriter* JXL_RESTRICT writer,
-                                          size_t* JXL_RESTRICT used_bits,
-                                          size_t* JXL_RESTRICT unused_bits) {
-  JXL_ASSERT(!called_);  // Do not call twice
+Status BitWriter::Allotment::PrivateReclaim(BitWriter* JXL_RESTRICT writer,
+                                            size_t* JXL_RESTRICT used_bits,
+                                            size_t* JXL_RESTRICT unused_bits) {
+  JXL_DASSERT(!called_);  // Do not call twice
   called_ = true;
-  if (writer == nullptr) return;
+  if (writer == nullptr) return true;
 
-  JXL_ASSERT(writer->BitsWritten() >= prev_bits_written_);
+  JXL_DASSERT(writer->BitsWritten() >= prev_bits_written_);
   *used_bits = writer->BitsWritten() - prev_bits_written_;
-  JXL_ASSERT(*used_bits <= max_bits_);
+  JXL_DASSERT(*used_bits <= max_bits_);
   *unused_bits = max_bits_ - *used_bits;
 
   // Reclaim unused bytes whole bytes from writer's allotment.
   const size_t unused_bytes = *unused_bits / kBitsPerByte;  // truncate
-  JXL_ASSERT(writer->storage_.size() >= unused_bytes);
+  JXL_ENSURE(writer->storage_.size() >= unused_bytes);
   writer->storage_.resize(writer->storage_.size() - unused_bytes);
   writer->current_allotment_ = parent_;
   // Ensure we don't also charge the parent for these bits.
@@ -84,30 +84,25 @@ void BitWriter::Allotment::PrivateReclaim(BitWriter* JXL_RESTRICT writer,
     parent->prev_bits_written_ += *used_bits;
     parent = parent->parent_;
   }
+  return true;
 }
 
-void BitWriter::AppendByteAligned(const Span<const uint8_t>& span) {
-  if (span.empty()) return;
+Status BitWriter::AppendByteAligned(const Span<const uint8_t>& span) {
+  if (span.empty()) return true;
   storage_.resize(storage_.size() + span.size() + 1);  // extra zero padding
 
   // Concatenate by copying bytes because both source and destination are bytes.
-  JXL_ASSERT(BitsWritten() % kBitsPerByte == 0);
+  JXL_ENSURE(BitsWritten() % kBitsPerByte == 0);
   size_t pos = BitsWritten() / kBitsPerByte;
   memcpy(storage_.data() + pos, span.data(), span.size());
   pos += span.size();
+  JXL_ENSURE(pos < storage_.size());
   storage_[pos++] = 0;  // for next Write
-  JXL_ASSERT(pos <= storage_.size());
   bits_written_ += span.size() * kBitsPerByte;
+  return true;
 }
 
-void BitWriter::AppendByteAligned(const BitWriter& other) {
-  JXL_ASSERT(other.BitsWritten() % kBitsPerByte == 0);
-  JXL_ASSERT(other.BitsWritten() / kBitsPerByte != 0);
-
-  AppendByteAligned(other.GetSpan());
-}
-
-void BitWriter::AppendUnaligned(const BitWriter& other) {
+Status BitWriter::AppendUnaligned(const BitWriter& other) {
   Allotment allotment(this, other.BitsWritten());
   size_t full_bytes = other.BitsWritten() / kBitsPerByte;
   size_t remaining_bits = other.BitsWritten() % kBitsPerByte;
@@ -118,67 +113,40 @@ void BitWriter::AppendUnaligned(const BitWriter& other) {
     Write(remaining_bits,
           other.storage_[full_bytes] & ((1u << remaining_bits) - 1));
   }
-  allotment.ReclaimAndCharge(this, 0, nullptr);
-}
-
-void BitWriter::AppendByteAligned(const std::vector<BitWriter>& others) {
-  // Total size to add so we can preallocate
-  size_t other_bytes = 0;
-  for (const BitWriter& writer : others) {
-    JXL_ASSERT(writer.BitsWritten() % kBitsPerByte == 0);
-    other_bytes += writer.BitsWritten() / kBitsPerByte;
-  }
-  if (other_bytes == 0) {
-    // No bytes to append: this happens for example when creating per-group
-    // storage for groups, but not writing anything in them for e.g. lossless
-    // images with no alpha. Do nothing.
-    return;
-  }
-  storage_.resize(storage_.size() + other_bytes + 1);  // extra zero padding
-
-  // Concatenate by copying bytes because both source and destination are bytes.
-  JXL_ASSERT(BitsWritten() % kBitsPerByte == 0);
-  size_t pos = BitsWritten() / kBitsPerByte;
-  for (const BitWriter& writer : others) {
-    const Span<const uint8_t> span = writer.GetSpan();
-    if (!span.empty()) {
-      memcpy(storage_.data() + pos, span.data(), span.size());
-      pos += span.size();
-    }
-  }
-  storage_[pos++] = 0;  // for next Write
-  JXL_ASSERT(pos <= storage_.size());
-  bits_written_ += other_bytes * kBitsPerByte;
+  JXL_RETURN_IF_ERROR(
+      allotment.ReclaimAndCharge(this, LayerType::Header, nullptr));
+  return true;
 }
 
 // TODO(lode): avoid code duplication
-void BitWriter::AppendByteAligned(
+Status BitWriter::AppendByteAligned(
     const std::vector<std::unique_ptr<BitWriter>>& others) {
   // Total size to add so we can preallocate
   size_t other_bytes = 0;
   for (const auto& writer : others) {
-    JXL_ASSERT(writer->BitsWritten() % kBitsPerByte == 0);
-    other_bytes += writer->BitsWritten() / kBitsPerByte;
+    JXL_ENSURE(writer->BitsWritten() % kBitsPerByte == 0);
+    other_bytes += DivCeil(writer->BitsWritten(), kBitsPerByte);
   }
   if (other_bytes == 0) {
     // No bytes to append: this happens for example when creating per-group
     // storage for groups, but not writing anything in them for e.g. lossless
     // images with no alpha. Do nothing.
-    return;
+    return true;
   }
   storage_.resize(storage_.size() + other_bytes + 1);  // extra zero padding
 
   // Concatenate by copying bytes because both source and destination are bytes.
-  JXL_ASSERT(BitsWritten() % kBitsPerByte == 0);
-  size_t pos = BitsWritten() / kBitsPerByte;
+  JXL_ENSURE(BitsWritten() % kBitsPerByte == 0);
+  size_t pos = DivCeil(BitsWritten(), kBitsPerByte);
   for (const auto& writer : others) {
     const Span<const uint8_t> span = writer->GetSpan();
     memcpy(storage_.data() + pos, span.data(), span.size());
     pos += span.size();
   }
+  JXL_ENSURE(pos < storage_.size());
   storage_[pos++] = 0;  // for next Write
-  JXL_ASSERT(pos <= storage_.size());
   bits_written_ += other_bytes * kBitsPerByte;
+  return true;
 }
 
 // Example: let's assume that 3 bits (Rs below) have been written already:
@@ -193,7 +161,8 @@ void BitWriter::AppendByteAligned(
 void BitWriter::Write(size_t n_bits, uint64_t bits) {
   JXL_DASSERT((bits >> n_bits) == 0);
   JXL_DASSERT(n_bits <= kMaxBitsPerCall);
-  uint8_t* p = &storage_[bits_written_ / kBitsPerByte];
+  size_t bytes_written = bits_written_ / kBitsPerByte;
+  uint8_t* p = &storage_[bytes_written];
   const size_t bits_in_first_byte = bits_written_ % kBitsPerByte;
   bits <<= bits_in_first_byte;
 #if JXL_BYTE_ORDER_LITTLE

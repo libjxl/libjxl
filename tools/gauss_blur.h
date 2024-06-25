@@ -50,10 +50,10 @@ typedef std::function<const float*(size_t /*y*/)> GetConstRow;
 typedef std::function<float*(size_t /*y*/)> GetRow;
 
 // 2D Gaussian with zero-pad boundary handling and runtime independent of sigma.
-void FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                  size_t xsize, size_t ysize, const GetConstRow& in,
-                  const GetRow& temp, const GetRow& out,
-                  ThreadPool* pool = nullptr);
+Status FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
+                    size_t xsize, size_t ysize, const GetConstRow& in,
+                    const GetRow& temp, const GetRow& out,
+                    ThreadPool* pool = nullptr);
 
 }  // namespace jxl
 

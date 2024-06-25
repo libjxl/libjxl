@@ -20,7 +20,6 @@
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
 #include "lib/jpegli/types.h"
-#include "lib/jxl/base/status.h"
 
 namespace jpegli {
 namespace {
@@ -154,7 +153,7 @@ TEST(EncodeAPITest, ReuseCinfoSameMemOutput) {
 TEST(EncodeAPITest, ReuseCinfoSameStdOutput) {
   std::vector<TestConfig> all_configs = GenerateBasicConfigs();
   FILE* tmpf = tmpfile();
-  JXL_CHECK(tmpf);
+  ASSERT_TRUE(tmpf);
   {
     jpeg_compress_struct cinfo;
     const auto try_catch_block = [&]() -> bool {
@@ -172,7 +171,7 @@ TEST(EncodeAPITest, ReuseCinfoSameStdOutput) {
   size_t total_size = ftell(tmpf);
   fseek(tmpf, 0, SEEK_SET);
   std::vector<uint8_t> compressed(total_size);
-  JXL_CHECK(total_size == fread(compressed.data(), 1, total_size, tmpf));
+  ASSERT_TRUE(total_size == fread(compressed.data(), 1, total_size, tmpf));
   fclose(tmpf);
   size_t pos = 0;
   for (auto& config : all_configs) {

@@ -23,6 +23,7 @@ namespace {
 
 using jxl::Image3F;
 using jxl::ImageF;
+using jxl::Status;
 using jxl::StatusOr;
 
 const float kC1 = 0.0001f;
@@ -185,26 +186,27 @@ class Blur {
     return result;
   }
 
-  void operator()(const ImageF& in, ImageF* JXL_RESTRICT out) {
-    FastGaussian(
+  Status BlurPlane(const ImageF& in, ImageF* JXL_RESTRICT out) {
+    JXL_RETURN_IF_ERROR(FastGaussian(
         rg_, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
         [&](size_t y) { return temp_.Row(y); },
-        [&](size_t y) { return out->Row(y); });
+        [&](size_t y) { return out->Row(y); }));
+    return true;
   }
 
   StatusOr<Image3F> operator()(const Image3F& in) {
     JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
     JXL_ASSIGN_OR_RETURN(
         Image3F out, Image3F::Create(memory_manager, in.xsize(), in.ysize()));
-    operator()(in.Plane(0), &out.Plane(0));
-    operator()(in.Plane(1), &out.Plane(1));
-    operator()(in.Plane(2), &out.Plane(2));
+    JXL_RETURN_IF_ERROR(BlurPlane(in.Plane(0), &out.Plane(0)));
+    JXL_RETURN_IF_ERROR(BlurPlane(in.Plane(1), &out.Plane(1)));
+    JXL_RETURN_IF_ERROR(BlurPlane(in.Plane(2), &out.Plane(2)));
     return out;
   }
 
   // Allows reusing across scales.
-  void ShrinkTo(const size_t xsize, const size_t ysize) {
-    temp_.ShrinkTo(xsize, ysize);
+  Status ShrinkTo(const size_t xsize, const size_t ysize) {
+    return temp_.ShrinkTo(xsize, ysize);
   }
 
  private:
@@ -310,8 +312,8 @@ StatusOr<Ssimulacra> ComputeDiff(const Image3F& orig, const Image3F& distorted,
       JXL_ASSIGN_OR_RETURN(img1, Downsample(img1, 2, 2));
       JXL_ASSIGN_OR_RETURN(img2, Downsample(img2, 2, 2));
     }
-    mul.ShrinkTo(img1.xsize(), img2.ysize());
-    blur.ShrinkTo(img1.xsize(), img2.ysize());
+    JXL_RETURN_IF_ERROR(mul.ShrinkTo(img1.xsize(), img2.ysize()));
+    JXL_RETURN_IF_ERROR(blur.ShrinkTo(img1.xsize(), img2.ysize()));
 
     Multiply(img1, img1, &mul);
     JXL_ASSIGN_OR_RETURN(Image3F sigma1_sq, blur(mul));

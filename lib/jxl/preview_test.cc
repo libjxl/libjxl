@@ -13,7 +13,6 @@
 
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_params.h"
@@ -35,12 +34,12 @@ TEST(PreviewTest, RoundtripGivenPreview) {
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io{memory_manager};
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
+  ASSERT_TRUE(io.ShrinkTo(io.xsize() / 8, io.ysize() / 8));
   // Same as main image
-  JXL_ASSIGN_OR_DIE(io.preview_frame, io.Main().Copy());
+  JXL_TEST_ASSIGN_OR_DIE(io.preview_frame, io.Main().Copy());
   const size_t preview_xsize = 15;
   const size_t preview_ysize = 27;
-  io.preview_frame.ShrinkTo(preview_xsize, preview_ysize);
+  ASSERT_TRUE(io.preview_frame.ShrinkTo(preview_xsize, preview_ysize));
   io.metadata.m.have_preview = true;
   ASSERT_TRUE(io.metadata.m.preview_size.Set(io.preview_frame.xsize(),
                                              io.preview_frame.ysize()));

@@ -102,13 +102,13 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
 #endif
 
 Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
-  JXL_ASSERT(c < input.channel.size());
-  JXL_ASSERT(rc < input.channel.size());
+  JXL_ENSURE(c < input.channel.size());
+  JXL_ENSURE(rc < input.channel.size());
   Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
-  JXL_ASSERT(chin.w == DivCeil(chin.w + chin_residual.w, 2));
-  JXL_ASSERT(chin.h == chin_residual.h);
+  JXL_ENSURE(chin.w == DivCeil(chin.w + chin_residual.w, 2));
+  JXL_ENSURE(chin.h == chin_residual.h);
   JxlMemoryManager *memory_manager = input.memory_manager();
 
   if (chin_residual.w == 0) {
@@ -155,7 +155,8 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   // 8 rows at a time and treat it as a vertical unsqueeze of a
   // transposed 8x8 block (or 9x8 for one input).
   static constexpr const size_t kRowsPerThread = 8;
-  const auto unsqueeze_span = [&](const uint32_t task, size_t /* thread */) {
+  const auto unsqueeze_span = [&](const uint32_t task,
+                                  size_t /* thread */) -> Status {
     const size_t y0 = task * kRowsPerThread;
     const size_t rows = std::min(kRowsPerThread, chin.h - y0);
     size_t x = 0;
@@ -205,6 +206,7 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
     for (size_t y = 0; y < rows; y++) {
       unsqueeze_row(y0 + y, x);
     }
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, DivCeil(chin.h, kRowsPerThread),
                                 ThreadPool::NoInit, unsqueeze_span,
@@ -214,13 +216,13 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
 }
 
 Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
-  JXL_ASSERT(c < input.channel.size());
-  JXL_ASSERT(rc < input.channel.size());
+  JXL_ENSURE(c < input.channel.size());
+  JXL_ENSURE(rc < input.channel.size());
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
-  JXL_ASSERT(chin.h == DivCeil(chin.h + chin_residual.h, 2));
-  JXL_ASSERT(chin.w == chin_residual.w);
+  JXL_ENSURE(chin.h == DivCeil(chin.h + chin_residual.h, 2));
+  JXL_ENSURE(chin.w == chin_residual.w);
   JxlMemoryManager *memory_manager = input.memory_manager();
 
   if (chin_residual.h == 0) {
@@ -247,7 +249,8 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   }
 
   static constexpr const int kColsPerThread = 64;
-  const auto unsqueeze_slice = [&](const uint32_t task, size_t /* thread */) {
+  const auto unsqueeze_slice = [&](const uint32_t task,
+                                   size_t /* thread */) -> Status {
     const size_t x0 = task * kColsPerThread;
     const size_t x1 =
         std::min(static_cast<size_t>(task + 1) * kColsPerThread, chin.w);
@@ -284,6 +287,7 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
         p_nout[x] = out - diff;
       }
     }
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, DivCeil(chin.w, kColsPerThread),
                                 ThreadPool::NoInit, unsqueeze_slice,
@@ -318,7 +322,7 @@ Status InvSqueeze(Image &input, const std::vector<SqueezeParams> &parameters,
     }
     if (beginc < input.nb_meta_channels) {
       // This is checked in MetaSqueeze.
-      JXL_ASSERT(input.nb_meta_channels > parameters[i].num_c);
+      JXL_ENSURE(input.nb_meta_channels > parameters[i].num_c);
       input.nb_meta_channels -= parameters[i].num_c;
     }
 
@@ -326,7 +330,7 @@ Status InvSqueeze(Image &input, const std::vector<SqueezeParams> &parameters,
       uint32_t rc = offset + c - beginc;
       // MetaApply should imply that `rc` is within range, otherwise there's a
       // programming bug.
-      JXL_ASSERT(rc < input.channel.size());
+      JXL_ENSURE(rc < input.channel.size());
       if ((input.channel[c].w < input.channel[rc].w) ||
           (input.channel[c].h < input.channel[rc].h)) {
         return JXL_FAILURE("Corrupted squeeze transform");

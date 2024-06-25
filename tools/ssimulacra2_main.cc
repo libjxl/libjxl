@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
-#include <utility>
 #include <vector>
 
 #include "lib/extras/codec.h"
@@ -18,6 +17,10 @@
 #include "tools/file_io.h"
 #include "tools/no_memory_manager.h"
 #include "tools/ssimulacra2.h"
+
+#define QUIT(M)               \
+  fprintf(stderr, "%s\n", M); \
+  return EXIT_FAILURE;
 
 int PrintUsage(char** argv) {
   fprintf(stderr, "Usage: %s orig.png distorted.png\n", argv[0]);
@@ -68,42 +71,28 @@ int main(int argc, char** argv) {
       return 1;
     }
     if (io[i]->xsize() < 8 || io[i]->ysize() < 8) {
-      fprintf(stderr, "Minimum image size is 8x8 pixels\n");
-      return 1;
+      QUIT("Minimum image size is 8x8 pixels.");
     }
   }
 
   if (io1.xsize() != io2.xsize() || io1.ysize() != io2.ysize()) {
-    fprintf(stderr, "Image size mismatch\n");
-    return 1;
+    QUIT("Image size mismatch.");
   }
 
   if (!io1.Main().HasAlpha()) {
-    jxl::StatusOr<Msssim> msssim_or =
-        ComputeSSIMULACRA2(io1.Main(), io2.Main());
-    if (!msssim_or.ok()) {
-      fprintf(stderr, "ComputeSSIMULACRA2 failed\n");
-      return 1;
-    }
-    Msssim msssim = std::move(msssim_or).value();
+    JXL_ASSIGN_OR_QUIT(Msssim msssim,
+                       ComputeSSIMULACRA2(io1.Main(), io2.Main()),
+                       "ComputeSSIMULACRA2 failed.");
     printf("%.8f\n", msssim.Score());
   } else {
     // in case of alpha transparency: blend against dark and bright backgrounds
     // and return the worst of both scores
-    jxl::StatusOr<Msssim> msssim0_or =
-        ComputeSSIMULACRA2(io1.Main(), io2.Main(), 0.1f);
-    if (!msssim0_or.ok()) {
-      fprintf(stderr, "ComputeSSIMULACRA2 failed\n");
-      return 1;
-    }
-    Msssim msssim0 = std::move(msssim0_or).value();
-    jxl::StatusOr<Msssim> msssim1_or =
-        ComputeSSIMULACRA2(io1.Main(), io2.Main(), 0.9f);
-    if (!msssim1_or.ok()) {
-      fprintf(stderr, "ComputeSSIMULACRA2 failed\n");
-      return 1;
-    }
-    Msssim msssim1 = std::move(msssim1_or).value();
+    JXL_ASSIGN_OR_QUIT(Msssim msssim0,
+                       ComputeSSIMULACRA2(io1.Main(), io2.Main(), 0.1f),
+                       "ComputeSSIMULACRA2 failed.");
+    JXL_ASSIGN_OR_QUIT(Msssim msssim1,
+                       ComputeSSIMULACRA2(io1.Main(), io2.Main(), 0.9f),
+                       "ComputeSSIMULACRA2 failed.");
     printf("%.8f\n", std::min(msssim0.Score(), msssim1.Score()));
   }
   return 0;

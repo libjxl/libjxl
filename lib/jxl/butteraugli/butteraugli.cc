@@ -40,11 +40,14 @@
 #include <hwy/foreach_target.h>
 
 #include "lib/jxl/base/fast_math-inl.h"
-#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/image_ops.h"
+
+#if BUTTERAUGLI_ENABLE_CHECKS
+#include "lib/jxl/base/printf_macros.h"
+#endif
 
 #ifndef JXL_BUTTERAUGLI_ONCE
 #define JXL_BUTTERAUGLI_ONCE
@@ -101,11 +104,11 @@ void ConvolveBorderColumn(const ImageF& in, const std::vector<float>& kernel,
 }
 
 // Computes a horizontal convolution and transposes the result.
-void ConvolutionWithTranspose(const ImageF& in,
-                              const std::vector<float>& kernel,
-                              ImageF* BUTTERAUGLI_RESTRICT out) {
-  JXL_CHECK(out->xsize() == in.ysize());
-  JXL_CHECK(out->ysize() == in.xsize());
+Status ConvolutionWithTranspose(const ImageF& in,
+                                const std::vector<float>& kernel,
+                                ImageF* BUTTERAUGLI_RESTRICT out) {
+  JXL_ENSURE(out->xsize() == in.ysize());
+  JXL_ENSURE(out->ysize() == in.xsize());
   const size_t len = kernel.size();
   const size_t offset = len / 2;
   float weight_no_border = 0.0f;
@@ -202,7 +205,8 @@ void ConvolutionWithTranspose(const ImageF& in,
       break;
     }
     default:
-      JXL_UNREACHABLE("Kernel size %" PRIuS " not implemented", len);
+      return JXL_UNREACHABLE("kernel size %d not implemented",
+                             static_cast<int>(len));
   }
   // left border
   for (size_t x = 0; x < border1; ++x) {
@@ -213,6 +217,7 @@ void ConvolutionWithTranspose(const ImageF& in,
   for (size_t x = border2; x < in.xsize(); ++x) {
     ConvolveBorderColumn(in, kernel, x, out->Row(x));
   }
+  return true;
 }
 
 // A blur somewhat similar to a 2D Gaussian blur.
@@ -243,14 +248,15 @@ Status Blur(const ImageF& in, float sigma, const ButteraugliParams& params,
         {HWY_REP4(w0), HWY_REP4(w1), HWY_REP4(w2)},
         {HWY_REP4(w0), HWY_REP4(w1), HWY_REP4(w2)},
     };
-    Separable5(in, Rect(in), weights, /*pool=*/nullptr, out);
+    JXL_RETURN_IF_ERROR(
+        Separable5(in, Rect(in), weights, /*pool=*/nullptr, out));
     return true;
   }
 
   ImageF* temp_t;
   JXL_RETURN_IF_ERROR(temp->GetTransposed(in, &temp_t));
-  ConvolutionWithTranspose(in, kernel, temp_t);
-  ConvolutionWithTranspose(*temp_t, kernel, out);
+  JXL_RETURN_IF_ERROR(ConvolutionWithTranspose(in, kernel, temp_t));
+  JXL_RETURN_IF_ERROR(ConvolutionWithTranspose(*temp_t, kernel, out));
   return true;
 }
 
@@ -355,8 +361,8 @@ void XybLowFreqToVals(Image3F* xyb_lf) {
   }
 }
 
-void SuppressXByY(const ImageF& in_y, ImageF* HWY_RESTRICT inout_x) {
-  JXL_DASSERT(SameSize(*inout_x, in_y));
+Status SuppressXByY(const ImageF& in_y, ImageF* HWY_RESTRICT inout_x) {
+  JXL_ENSURE(SameSize(*inout_x, in_y));
   const size_t xsize = in_y.xsize();
   const size_t ysize = in_y.ysize();
   const HWY_FULL(float) d;
@@ -377,6 +383,7 @@ void SuppressXByY(const ImageF& in_y, ImageF* HWY_RESTRICT inout_x) {
       Store(Mul(scaler, vx), d, row_x + x);
     }
   }
+  return true;
 }
 
 void Subtract(const ImageF& a, const ImageF& b, ImageF* c) {
@@ -459,7 +466,7 @@ Status SeparateMFAndHF(const ButteraugliParams& params, Image3F* mf, ImageF* hf,
     }
   }
   // Suppress red-green by intensity change in the high freq channels.
-  SuppressXByY(hf[1], &hf[0]);
+  JXL_RETURN_IF_ERROR(SuppressXByY(hf[1], &hf[0]));
   return true;
 }
 
@@ -975,12 +982,13 @@ static BUTTERAUGLI_INLINE float PaddedMaltaUnit(const ImageF& diffs,
 }
 
 template <class Tag>
-static void MaltaDiffMapT(const Tag tag, const ImageF& lum0, const ImageF& lum1,
-                          const double w_0gt1, const double w_0lt1,
-                          const double norm1, const double len,
-                          const double mulli, ImageF* HWY_RESTRICT diffs,
-                          ImageF* HWY_RESTRICT block_diff_ac) {
-  JXL_DASSERT(SameSize(lum0, lum1) && SameSize(lum0, *diffs));
+static Status MaltaDiffMapT(const Tag tag, const ImageF& lum0,
+                            const ImageF& lum1, const double w_0gt1,
+                            const double w_0lt1, const double norm1,
+                            const double len, const double mulli,
+                            ImageF* HWY_RESTRICT diffs,
+                            ImageF* HWY_RESTRICT block_diff_ac) {
+  JXL_ENSURE(SameSize(lum0, lum1) && SameSize(lum0, *diffs));
   const size_t xsize_ = lum0.xsize();
   const size_t ysize_ = lum0.ysize();
 
@@ -1070,27 +1078,30 @@ static void MaltaDiffMapT(const Tag tag, const ImageF& lum0, const ImageF& lum1,
       row_diff[x0] += PaddedMaltaUnit<Tag>(*diffs, x0, y0);
     }
   }
+  return true;
 }
 
 // Need non-template wrapper functions for HWY_EXPORT.
-void MaltaDiffMap(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
-                  const double w_0lt1, const double norm1,
-                  ImageF* HWY_RESTRICT diffs,
-                  ImageF* HWY_RESTRICT block_diff_ac) {
-  const double len = 3.75;
-  static const double mulli = 0.39905817637;
-  MaltaDiffMapT(MaltaTag(), lum0, lum1, w_0gt1, w_0lt1, norm1, len, mulli,
-                diffs, block_diff_ac);
-}
-
-void MaltaDiffMapLF(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
+Status MaltaDiffMap(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
                     const double w_0lt1, const double norm1,
                     ImageF* HWY_RESTRICT diffs,
                     ImageF* HWY_RESTRICT block_diff_ac) {
   const double len = 3.75;
+  static const double mulli = 0.39905817637;
+  JXL_RETURN_IF_ERROR(MaltaDiffMapT(MaltaTag(), lum0, lum1, w_0gt1, w_0lt1,
+                                    norm1, len, mulli, diffs, block_diff_ac));
+  return true;
+}
+
+Status MaltaDiffMapLF(const ImageF& lum0, const ImageF& lum1,
+                      const double w_0gt1, const double w_0lt1,
+                      const double norm1, ImageF* HWY_RESTRICT diffs,
+                      ImageF* HWY_RESTRICT block_diff_ac) {
+  const double len = 3.75;
   static const double mulli = 0.611612573796;
-  MaltaDiffMapT(MaltaTagLF(), lum0, lum1, w_0gt1, w_0lt1, norm1, len, mulli,
-                diffs, block_diff_ac);
+  JXL_RETURN_IF_ERROR(MaltaDiffMapT(MaltaTagLF(), lum0, lum1, w_0gt1, w_0lt1,
+                                    norm1, len, mulli, diffs, block_diff_ac));
+  return true;
 }
 
 void CombineChannelsForMasking(const ImageF* hf, const ImageF* uhf,
@@ -1282,10 +1293,11 @@ inline float MaskColor(const float color[3], const float mask) {
 }
 
 // Diffmap := sqrt of sum{diff images by multiplied by X and Y/B masks}
-void CombineChannelsToDiffmap(const ImageF& mask, const Image3F& block_diff_dc,
-                              const Image3F& block_diff_ac, float xmul,
-                              ImageF* result) {
-  JXL_CHECK(SameSize(mask, *result));
+Status CombineChannelsToDiffmap(const ImageF& mask,
+                                const Image3F& block_diff_dc,
+                                const Image3F& block_diff_ac, float xmul,
+                                ImageF* result) {
+  JXL_ENSURE(SameSize(mask, *result));
   size_t xsize = mask.xsize();
   size_t ysize = mask.ysize();
   for (size_t y = 0; y < ysize; ++y) {
@@ -1306,6 +1318,7 @@ void CombineChannelsToDiffmap(const ImageF& mask, const Image3F& block_diff_dc,
                              MaskColor(diff_ac, maskval));
     }
   }
+  return true;
 }
 
 // Adds weighted L2 difference between i0 and i1 to diffmap.
@@ -1459,6 +1472,7 @@ BUTTERAUGLI_INLINE void OpsinAbsorbance(const DF df, const V& in0, const V& in1,
 // `blurred` is a temporary image used inside this function and not returned.
 Status OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
                           Image3F* blurred, BlurTemp* blur_temp, Image3F* xyb) {
+  JXL_ENSURE(blurred != nullptr);
   const double kSigma = 1.2;
   JXL_RETURN_IF_ERROR(
       Blur(rgb.Plane(0), kSigma, params, blur_temp, &blurred->Plane(0)));
@@ -1580,10 +1594,12 @@ Status ButteraugliDiffmapInPlace(Image3F& image0, Image3F& image1,
   {
     JXL_ASSIGN_OR_RETURN(ImageF diffs,
                          ImageF::Create(memory_manager, xsize, ysize));
-    MaltaDiffMapLF(image0.Plane(1), image1.Plane(1), wMfMalta, wMfMalta,
-                   norm1Mf, &diffs, &block_diff_ac);
-    MaltaDiffMapLF(image0.Plane(0), image1.Plane(0), wMfMaltaX, wMfMaltaX,
-                   norm1MfX, &diffs, &block_diff_ac);
+    JXL_RETURN_IF_ERROR(MaltaDiffMapLF(image0.Plane(1), image1.Plane(1),
+                                       wMfMalta, wMfMalta, norm1Mf, &diffs,
+                                       &block_diff_ac));
+    JXL_RETURN_IF_ERROR(MaltaDiffMapLF(image0.Plane(0), image1.Plane(0),
+                                       wMfMaltaX, wMfMaltaX, norm1MfX, &diffs,
+                                       &block_diff_ac));
   }
   for (size_t c = 0; c < 3; ++c) {
     L2Diff(image0.Plane(c), image1.Plane(c), wmul[3 + c], &block_diff_ac);
@@ -1603,16 +1619,18 @@ Status ButteraugliDiffmapInPlace(Image3F& image0, Image3F& image1,
   {
     JXL_ASSIGN_OR_RETURN(ImageF diffs,
                          ImageF::Create(memory_manager, xsize, ysize));
-    MaltaDiffMap(uhf0[1], uhf1[1], wUhfMalta * hf_asymmetry,
-                 wUhfMalta / hf_asymmetry, norm1Uhf, &diffs, &block_diff_ac);
-    MaltaDiffMap(uhf0[0], uhf1[0], wUhfMaltaX * hf_asymmetry,
-                 wUhfMaltaX / hf_asymmetry, norm1UhfX, &diffs, &block_diff_ac);
-    MaltaDiffMapLF(hf0[1], hf1[1], wHfMalta * std::sqrt(hf_asymmetry),
-                   wHfMalta / std::sqrt(hf_asymmetry), norm1Hf, &diffs,
-                   &block_diff_ac);
-    MaltaDiffMapLF(hf0[0], hf1[0], wHfMaltaX * std::sqrt(hf_asymmetry),
-                   wHfMaltaX / std::sqrt(hf_asymmetry), norm1HfX, &diffs,
-                   &block_diff_ac);
+    JXL_RETURN_IF_ERROR(MaltaDiffMap(uhf0[1], uhf1[1], wUhfMalta * hf_asymmetry,
+                                     wUhfMalta / hf_asymmetry, norm1Uhf, &diffs,
+                                     &block_diff_ac));
+    JXL_RETURN_IF_ERROR(MaltaDiffMap(
+        uhf0[0], uhf1[0], wUhfMaltaX * hf_asymmetry, wUhfMaltaX / hf_asymmetry,
+        norm1UhfX, &diffs, &block_diff_ac));
+    JXL_RETURN_IF_ERROR(MaltaDiffMapLF(
+        hf0[1], hf1[1], wHfMalta * std::sqrt(hf_asymmetry),
+        wHfMalta / std::sqrt(hf_asymmetry), norm1Hf, &diffs, &block_diff_ac));
+    JXL_RETURN_IF_ERROR(MaltaDiffMapLF(
+        hf0[0], hf1[0], wHfMaltaX * std::sqrt(hf_asymmetry),
+        wHfMaltaX / std::sqrt(hf_asymmetry), norm1HfX, &diffs, &block_diff_ac));
   }
   for (size_t c = 0; c < 2; ++c) {
     L2DiffAsymmetric(hf0[c], hf1[c], wmul[c] * hf_asymmetry,
@@ -1766,8 +1784,7 @@ static void AddSupersampled2x(const ImageF& src, float w, ImageF& dest) {
 
 Image3F* ButteraugliComparator::Temp() const {
   bool was_in_use = temp_in_use_.test_and_set(std::memory_order_acq_rel);
-  JXL_ASSERT(!was_in_use);
-  (void)was_in_use;
+  if (was_in_use) return nullptr;
   return &temp_;
 }
 
@@ -1804,11 +1821,8 @@ StatusOr<std::unique_ptr<ButteraugliComparator>> ButteraugliComparator::Make(
   // This is an after-thought and possibly somewhat parallel in
   // functionality with the PsychoImage multi-resolution approach.
   JXL_ASSIGN_OR_RETURN(Image3F subsampledRgb0, SubSample2x(rgb0));
-  StatusOr<std::unique_ptr<ButteraugliComparator>> sub =
-      ButteraugliComparator::Make(subsampledRgb0, params);
-  if (!sub.ok()) return sub.status();
-  result->sub_ = std::move(sub).value();
-
+  JXL_ASSIGN_OR_RETURN(result->sub_,
+                       ButteraugliComparator::Make(subsampledRgb0, params));
   return result;
 }
 
@@ -1864,20 +1878,20 @@ Status ButteraugliComparator::DiffmapOpsinDynamicsImage(const Image3F& xyb1,
 
 namespace {
 
-void MaltaDiffMap(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
-                  const double w_0lt1, const double norm1,
-                  ImageF* HWY_RESTRICT diffs,
-                  Image3F* HWY_RESTRICT block_diff_ac, size_t c) {
-  HWY_DYNAMIC_DISPATCH(MaltaDiffMap)
-  (lum0, lum1, w_0gt1, w_0lt1, norm1, diffs, &block_diff_ac->Plane(c));
-}
-
-void MaltaDiffMapLF(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
+Status MaltaDiffMap(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
                     const double w_0lt1, const double norm1,
                     ImageF* HWY_RESTRICT diffs,
                     Image3F* HWY_RESTRICT block_diff_ac, size_t c) {
-  HWY_DYNAMIC_DISPATCH(MaltaDiffMapLF)
-  (lum0, lum1, w_0gt1, w_0lt1, norm1, diffs, &block_diff_ac->Plane(c));
+  return HWY_DYNAMIC_DISPATCH(MaltaDiffMap)(lum0, lum1, w_0gt1, w_0lt1, norm1,
+                                            diffs, &block_diff_ac->Plane(c));
+}
+
+Status MaltaDiffMapLF(const ImageF& lum0, const ImageF& lum1,
+                      const double w_0gt1, const double w_0lt1,
+                      const double norm1, ImageF* HWY_RESTRICT diffs,
+                      Image3F* HWY_RESTRICT block_diff_ac, size_t c) {
+  return HWY_DYNAMIC_DISPATCH(MaltaDiffMapLF)(lum0, lum1, w_0gt1, w_0lt1, norm1,
+                                              diffs, &block_diff_ac->Plane(c));
 }
 
 }  // namespace
@@ -1898,21 +1912,25 @@ Status ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
   JXL_ASSIGN_OR_RETURN(Image3F block_diff_ac,
                        Image3F::Create(memory_manager, xsize_, ysize_));
   ZeroFillImage(&block_diff_ac);
-  MaltaDiffMap(pi0_.uhf[1], pi1.uhf[1], wUhfMalta * hf_asymmetry_,
-               wUhfMalta / hf_asymmetry_, norm1Uhf, &diffs, &block_diff_ac, 1);
-  MaltaDiffMap(pi0_.uhf[0], pi1.uhf[0], wUhfMaltaX * hf_asymmetry_,
-               wUhfMaltaX / hf_asymmetry_, norm1UhfX, &diffs, &block_diff_ac,
-               0);
-  MaltaDiffMapLF(pi0_.hf[1], pi1.hf[1], wHfMalta * std::sqrt(hf_asymmetry_),
-                 wHfMalta / std::sqrt(hf_asymmetry_), norm1Hf, &diffs,
-                 &block_diff_ac, 1);
-  MaltaDiffMapLF(pi0_.hf[0], pi1.hf[0], wHfMaltaX * std::sqrt(hf_asymmetry_),
-                 wHfMaltaX / std::sqrt(hf_asymmetry_), norm1HfX, &diffs,
-                 &block_diff_ac, 0);
-  MaltaDiffMapLF(pi0_.mf.Plane(1), pi1.mf.Plane(1), wMfMalta, wMfMalta, norm1Mf,
-                 &diffs, &block_diff_ac, 1);
-  MaltaDiffMapLF(pi0_.mf.Plane(0), pi1.mf.Plane(0), wMfMaltaX, wMfMaltaX,
-                 norm1MfX, &diffs, &block_diff_ac, 0);
+  JXL_RETURN_IF_ERROR(MaltaDiffMap(
+      pi0_.uhf[1], pi1.uhf[1], wUhfMalta * hf_asymmetry_,
+      wUhfMalta / hf_asymmetry_, norm1Uhf, &diffs, &block_diff_ac, 1));
+  JXL_RETURN_IF_ERROR(MaltaDiffMap(
+      pi0_.uhf[0], pi1.uhf[0], wUhfMaltaX * hf_asymmetry_,
+      wUhfMaltaX / hf_asymmetry_, norm1UhfX, &diffs, &block_diff_ac, 0));
+  JXL_RETURN_IF_ERROR(MaltaDiffMapLF(
+      pi0_.hf[1], pi1.hf[1], wHfMalta * std::sqrt(hf_asymmetry_),
+      wHfMalta / std::sqrt(hf_asymmetry_), norm1Hf, &diffs, &block_diff_ac, 1));
+  JXL_RETURN_IF_ERROR(MaltaDiffMapLF(pi0_.hf[0], pi1.hf[0],
+                                     wHfMaltaX * std::sqrt(hf_asymmetry_),
+                                     wHfMaltaX / std::sqrt(hf_asymmetry_),
+                                     norm1HfX, &diffs, &block_diff_ac, 0));
+  JXL_RETURN_IF_ERROR(MaltaDiffMapLF(pi0_.mf.Plane(1), pi1.mf.Plane(1),
+                                     wMfMalta, wMfMalta, norm1Mf, &diffs,
+                                     &block_diff_ac, 1));
+  JXL_RETURN_IF_ERROR(MaltaDiffMapLF(pi0_.mf.Plane(0), pi1.mf.Plane(0),
+                                     wMfMaltaX, wMfMaltaX, norm1MfX, &diffs,
+                                     &block_diff_ac, 0));
 
   JXL_ASSIGN_OR_RETURN(Image3F block_diff_dc,
                        Image3F::Create(memory_manager, xsize_, ysize_));
@@ -1933,8 +1951,8 @@ Status ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
       pi0_, pi1, xsize_, ysize_, params_, &blur_temp_, &mask,
       &block_diff_ac.Plane(1)));
 
-  HWY_DYNAMIC_DISPATCH(CombineChannelsToDiffmap)
-  (mask, block_diff_dc, block_diff_ac, xmul_, &diffmap);
+  JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(CombineChannelsToDiffmap)(
+      mask, block_diff_dc, block_diff_ac, xmul_, &diffmap));
   return true;
 }
 

@@ -64,7 +64,8 @@ void Roundtrip(size_t num_entries, bool permute, Rng* rng) {
     }
     writer->ZeroPadToByte();
     AuxOut aux_out;
-    allotment.ReclaimAndCharge(writer.get(), 0, &aux_out);
+    ASSERT_TRUE(
+        allotment.ReclaimAndCharge(writer.get(), LayerType::Header, &aux_out));
   }
 
   BitWriter writer{memory_manager};

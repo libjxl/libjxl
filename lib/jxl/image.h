@@ -60,13 +60,14 @@ struct PlaneBase {
   // and later reporting the actual valid dimensions. May also be used to
   // un-shrink the image. Caller is responsible for ensuring xsize/ysize are <=
   // the original dimensions.
-  void ShrinkTo(const size_t xsize, const size_t ysize) {
-    JXL_CHECK(xsize <= orig_xsize_);
-    JXL_CHECK(ysize <= orig_ysize_);
+  Status ShrinkTo(const size_t xsize, const size_t ysize) {
+    JXL_ENSURE(xsize <= orig_xsize_);
+    JXL_ENSURE(ysize <= orig_ysize_);
     xsize_ = static_cast<uint32_t>(xsize);
     ysize_ = static_cast<uint32_t>(ysize);
     // NOTE: we can't recompute bytes_per_row for more compact storage and
     // better locality because that would invalidate the image contents.
+    return true;
   }
 
   // How many pixels.
@@ -92,19 +93,12 @@ struct PlaneBase {
   }
 
  protected:
-  PlaneBase(size_t xsize, size_t ysize, size_t sizeof_t);
-  Status Allocate(JxlMemoryManager* memory_manager);
+  PlaneBase(uint32_t xsize, uint32_t ysize, size_t sizeof_t);
+  Status Allocate(JxlMemoryManager* memory_manager, size_t pre_padding);
 
   // Returns pointer to the start of a row.
   JXL_INLINE void* VoidRow(const size_t y) const {
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
-    defined(THREAD_SANITIZER)
-    if (y >= ysize_) {
-      JXL_ABORT("Row(%" PRIu64 ") in (%u x %u) image\n",
-                static_cast<uint64_t>(y), xsize_, ysize_);
-    }
-#endif
-
+    JXL_DASSERT(y < ysize_);
     uint8_t* row = bytes_.address<uint8_t>() + y * bytes_per_row_;
     return JXL_ASSUME_ALIGNED(row, 64);
   }
@@ -151,9 +145,16 @@ class Plane : public detail::PlaneBase {
   Plane() = default;
 
   static StatusOr<Plane> Create(JxlMemoryManager* memory_manager,
-                                const size_t xsize, const size_t ysize) {
-    Plane plane(xsize, ysize, sizeof(T));
-    JXL_RETURN_IF_ERROR(plane.Allocate(memory_manager));
+                                const size_t xsize, const size_t ysize,
+                                const size_t pre_padding = 0) {
+    static_assert(sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 ||
+                  sizeof(T) == 8);
+    uint32_t xsize32 = static_cast<uint32_t>(xsize);
+    uint32_t ysize32 = static_cast<uint32_t>(ysize);
+    JXL_ENSURE(xsize32 == xsize);
+    JXL_ENSURE(ysize32 == ysize);
+    Plane plane(xsize32, ysize32, sizeof(T));
+    JXL_RETURN_IF_ERROR(plane.Allocate(memory_manager, pre_padding));
     return plane;
   }
 
@@ -177,7 +178,7 @@ class Plane : public detail::PlaneBase {
   }
 
  private:
-  Plane(size_t xsize, size_t ysize, size_t sizeof_t)
+  Plane(uint32_t xsize, uint32_t ysize, size_t sizeof_t)
       : detail::PlaneBase(xsize, ysize, sizeof_t) {}
 };
 
@@ -235,14 +236,13 @@ class Image3 {
 
   static StatusOr<Image3> Create(JxlMemoryManager* memory_manager,
                                  const size_t xsize, const size_t ysize) {
-    StatusOr<PlaneT> plane0 = PlaneT::Create(memory_manager, xsize, ysize);
-    JXL_RETURN_IF_ERROR(plane0.status());
-    StatusOr<PlaneT> plane1 = PlaneT::Create(memory_manager, xsize, ysize);
-    JXL_RETURN_IF_ERROR(plane1.status());
-    StatusOr<PlaneT> plane2 = PlaneT::Create(memory_manager, xsize, ysize);
-    JXL_RETURN_IF_ERROR(plane2.status());
-    return Image3(std::move(plane0).value(), std::move(plane1).value(),
-                  std::move(plane2).value());
+    JXL_ASSIGN_OR_RETURN(PlaneT plane0,
+                         PlaneT::Create(memory_manager, xsize, ysize));
+    JXL_ASSIGN_OR_RETURN(PlaneT plane1,
+                         PlaneT::Create(memory_manager, xsize, ysize));
+    JXL_ASSIGN_OR_RETURN(PlaneT plane2,
+                         PlaneT::Create(memory_manager, xsize, ysize));
+    return Image3(std::move(plane0), std::move(plane1), std::move(plane2));
   }
 
   // Returns row pointer; usage: PlaneRow(idx_plane, y)[x] = val.
@@ -283,10 +283,11 @@ class Image3 {
   // and later reporting the actual valid dimensions. May also be used to
   // un-shrink the image. Caller is responsible for ensuring xsize/ysize are <=
   // the original dimensions.
-  void ShrinkTo(const size_t xsize, const size_t ysize) {
+  Status ShrinkTo(const size_t xsize, const size_t ysize) {
     for (PlaneT& plane : planes_) {
-      plane.ShrinkTo(xsize, ysize);
+      JXL_RETURN_IF_ERROR(plane.ShrinkTo(xsize, ysize));
     }
+    return true;
   }
 
   // Sizes of all three images are guaranteed to be equal.
@@ -312,15 +313,7 @@ class Image3 {
   }
 
   void PlaneRowBoundsCheck(const size_t c, const size_t y) const {
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
-    defined(THREAD_SANITIZER)
-    if (c >= kNumPlanes || y >= ysize()) {
-      JXL_ABORT("PlaneRow(%" PRIu64 ", %" PRIu64 ") in (%" PRIu64 " x %" PRIu64
-                ") image\n",
-                static_cast<uint64_t>(c), static_cast<uint64_t>(y),
-                static_cast<uint64_t>(xsize()), static_cast<uint64_t>(ysize()));
-    }
-#endif
+    JXL_DASSERT(c < kNumPlanes && y < ysize());
   }
 
   PlaneT planes_[kNumPlanes];

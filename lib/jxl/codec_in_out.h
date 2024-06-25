@@ -62,37 +62,43 @@ class CodecInOut {
   const ImageBundle& Main() const { return frames[LastStillFrame()]; }
 
   // If c_current.IsGray(), all planes must be identical.
-  void SetFromImage(Image3F&& color, const ColorEncoding& c_current) {
-    Main().SetFromImage(std::move(color), c_current);
+  Status SetFromImage(Image3F&& color, const ColorEncoding& c_current) {
+    JXL_RETURN_IF_ERROR(Main().SetFromImage(std::move(color), c_current));
     SetIntensityTarget(&this->metadata.m);
-    SetSize(Main().xsize(), Main().ysize());
+    JXL_RETURN_IF_ERROR(SetSize(Main().xsize(), Main().ysize()));
+    return true;
   }
 
-  void SetSize(size_t xsize, size_t ysize) {
-    JXL_CHECK(metadata.size.Set(xsize, ysize));
+  Status SetSize(size_t xsize, size_t ysize) {
+    JXL_RETURN_IF_ERROR(metadata.size.Set(xsize, ysize));
+    return true;
   }
 
-  void CheckMetadata() const {
-    JXL_CHECK(metadata.m.bit_depth.bits_per_sample != 0);
-    JXL_CHECK(!metadata.m.color_encoding.ICC().empty());
+  Status CheckMetadata() const {
+    JXL_ENSURE(metadata.m.bit_depth.bits_per_sample != 0);
+    JXL_ENSURE(!metadata.m.color_encoding.ICC().empty());
 
-    if (preview_frame.xsize() != 0) preview_frame.VerifyMetadata();
-    JXL_CHECK(preview_frame.metadata() == &metadata.m);
+    if (preview_frame.xsize() != 0) {
+      JXL_RETURN_IF_ERROR(preview_frame.VerifyMetadata());
+    }
+    JXL_ENSURE(preview_frame.metadata() == &metadata.m);
 
     for (const ImageBundle& ib : frames) {
-      ib.VerifyMetadata();
-      JXL_CHECK(ib.metadata() == &metadata.m);
+      JXL_RETURN_IF_ERROR(ib.VerifyMetadata());
+      JXL_ENSURE(ib.metadata() == &metadata.m);
     }
+    return true;
   }
 
   size_t xsize() const { return metadata.size.xsize(); }
   size_t ysize() const { return metadata.size.ysize(); }
-  void ShrinkTo(size_t xsize, size_t ysize) {
+  Status ShrinkTo(size_t xsize, size_t ysize) {
     // preview is unaffected.
     for (ImageBundle& ib : frames) {
-      ib.ShrinkTo(xsize, ysize);
+      JXL_RETURN_IF_ERROR(ib.ShrinkTo(xsize, ysize));
     }
-    SetSize(xsize, ysize);
+    JXL_RETURN_IF_ERROR(SetSize(xsize, ysize));
+    return true;
   }
 
   // -- DECODER OUTPUT, ENCODER INPUT:

@@ -25,6 +25,7 @@
 #include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
@@ -32,7 +33,7 @@
 namespace jpegxl {
 namespace tools {
 
-static inline jxl::Status TransformCodecInOutTo(
+static JXL_MAYBE_UNUSED jxl::Status TransformCodecInOutTo(
     jxl::CodecInOut& io, const jxl::ColorEncoding& c_desired,
     jxl::ThreadPool* pool) {
   const JxlCmsInterface& cms = *JxlGetDefaultCms();
@@ -52,9 +53,9 @@ static inline jxl::Status Encode(const jxl::CodecInOut& io,
                                  std::vector<uint8_t>* bytes,
                                  jxl::ThreadPool* pool) {
   bytes->clear();
-  JXL_CHECK(!io.Main().c_current().ICC().empty());
-  JXL_CHECK(!c_desired.ICC().empty());
-  io.CheckMetadata();
+  JXL_ENSURE(!io.Main().c_current().ICC().empty());
+  JXL_ENSURE(!c_desired.ICC().empty());
+  JXL_RETURN_IF_ERROR(io.CheckMetadata());
   if (io.Main().IsJPEG()) {
     JXL_WARNING("Writing JPEG data as pixels");
   }
@@ -131,7 +132,7 @@ static inline jxl::Status Encode(const jxl::CodecInOut& io,
   }
   jxl::extras::EncodedImage encoded_image;
   JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded_image, pool));
-  JXL_ASSERT(encoded_image.bitstreams.size() == 1);
+  JXL_ENSURE(encoded_image.bitstreams.size() == 1);
   *bytes = encoded_image.bitstreams[0];
 
   return true;

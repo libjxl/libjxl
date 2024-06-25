@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dec_ans.h"
@@ -19,6 +20,9 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 
 namespace jxl {
+
+static_assert(AcStrategy::kNumValidStrategies == kStrategyOrder.size(),
+              "Update this array when adding or removing AC strategies.");
 
 uint32_t CoeffOrderContext(uint32_t val) {
   uint32_t token, nbits, bits;
@@ -49,7 +53,8 @@ Status ReadPermutation(size_t skip, size_t size, coeff_order_t* order,
     }
   }
   if (order == nullptr) return true;
-  DecodeLehmerCode(lehmer.data(), temp.data(), size, order);
+  JXL_RETURN_IF_ERROR(
+      DecodeLehmerCode(lehmer.data(), temp.data(), size, order));
   return true;
 }
 

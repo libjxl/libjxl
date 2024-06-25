@@ -27,7 +27,6 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/jxl_cms_internal.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
@@ -37,6 +36,7 @@
 #else  // JPEGXL_ENABLE_SKCMS
 #include "lcms2.h"
 #include "lcms2_plugin.h"
+#include "lib/jxl/base/span.h"
 #endif  // JPEGXL_ENABLE_SKCMS
 
 #define JXL_CMS_VERBOSE 0
@@ -99,7 +99,7 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src,
                        size_t buf_size) {
   switch (t->preprocess) {
     case ExtraTF::kNone:
-      JXL_DASSERT(false);  // unreachable
+      JXL_ENSURE(false);  // unreachable
       break;
 
     case ExtraTF::kPQ: {
@@ -155,7 +155,7 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src,
 Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst, size_t buf_size) {
   switch (t->postprocess) {
     case ExtraTF::kNone:
-      JXL_DASSERT(false);  // unreachable
+      JXL_DEBUG_ABORT("Unreachable");
       break;
     case ExtraTF::kPQ: {
       HWY_FULL(float) df;
@@ -251,7 +251,7 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
     }  // else: in-place, no need to copy
   } else {
 #if JPEGXL_ENABLE_SKCMS
-    JXL_CHECK(
+    JXL_ENSURE(
         skcms_Transform(xform_src,
                         (t->channels_src == 4 ? skcms_PixelFormat_RGBA_ffff
                                               : skcms_PixelFormat_RGB_fff),
@@ -508,9 +508,9 @@ bool IsApproximatelyEqual(const skcms_ICCProfile& profile,
   return true;
 }
 
-void DetectTransferFunction(const skcms_ICCProfile& profile,
-                            ColorEncoding* JXL_RESTRICT c) {
-  JXL_CHECK(c->color_space != ColorSpace::kXYB);
+Status DetectTransferFunction(const skcms_ICCProfile& profile,
+                              ColorEncoding* JXL_RESTRICT c) {
+  JXL_ENSURE(c->color_space != ColorSpace::kXYB);
 
   float gamma[3] = {};
   if (profile.has_trc) {
@@ -538,7 +538,7 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
   if (gamma[0] != 0 && std::abs(gamma[0] - gamma[1]) < 1e-4f &&
       std::abs(gamma[1] - gamma[2]) < 1e-4f) {
     if (c->tf.SetGamma(gamma[0])) {
-      if (IsApproximatelyEqual(profile, *c)) return;
+      if (IsApproximatelyEqual(profile, *c)) return true;
     }
   }
 
@@ -546,10 +546,11 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
     // Can only create profile from known transfer function.
     if (tf == TransferFunction::kUnknown) continue;
     c->tf.SetTransferFunction(tf);
-    if (IsApproximatelyEqual(profile, *c)) return;
+    if (IsApproximatelyEqual(profile, *c)) return true;
   }
 
   c->tf.SetTransferFunction(TransferFunction::kUnknown);
+  return true;
 }
 
 #else  // JPEGXL_ENABLE_SKCMS
@@ -730,9 +731,9 @@ Status IdentifyPrimaries(const cmsContext context, const Profile& profile,
   return c->SetPrimaries(rgb);
 }
 
-void DetectTransferFunction(const cmsContext context, const Profile& profile,
-                            ColorEncoding* JXL_RESTRICT c) {
-  JXL_CHECK(c->color_space != ColorSpace::kXYB);
+Status DetectTransferFunction(const cmsContext context, const Profile& profile,
+                              ColorEncoding* JXL_RESTRICT c) {
+  JXL_ENSURE(c->color_space != ColorSpace::kXYB);
 
   float gamma = 0;
   if (const auto* gray_trc = reinterpret_cast<const cmsToneCurve*>(
@@ -767,7 +768,7 @@ void DetectTransferFunction(const cmsContext context, const Profile& profile,
     IccBytes icc_test;
     if (MaybeCreateProfile(c->ToExternal(), &icc_test) &&
         ProfileEquivalentToICC(context, profile, icc_test, *c)) {
-      return;
+      return true;
     }
   }
 
@@ -780,11 +781,12 @@ void DetectTransferFunction(const cmsContext context, const Profile& profile,
     IccBytes icc_test;
     if (MaybeCreateProfile(c->ToExternal(), &icc_test) &&
         ProfileEquivalentToICC(context, profile, icc_test, *c)) {
-      return;
+      return true;
     }
   }
 
   c->tf.SetTransferFunction(TransferFunction::kUnknown);
+  return true;
 }
 
 void ErrorHandler(cmsContext context, cmsUInt32Number code, const char* text) {
@@ -796,7 +798,7 @@ cmsContext GetContext() {
   static thread_local void* context_;
   if (context_ == nullptr) {
     context_ = cmsCreateContext(nullptr, nullptr);
-    JXL_ASSERT(context_ != nullptr);
+    JXL_DASSERT(context_ != nullptr);
 
     cmsSetLogErrorHandlerTHR(static_cast<cmsContext>(context_), &ErrorHandler);
   }
@@ -835,7 +837,8 @@ Status GetPrimariesLuminances(const ColorEncoding& encoding,
   CIExy wp = encoding.GetWhitePoint();
   JXL_RETURN_IF_ERROR(CIEXYZFromWhiteCIExy(wp.x, wp.y, white_XYZ));
 
-  const PrimariesCIExy primaries = encoding.GetPrimaries();
+  PrimariesCIExy primaries;
+  JXL_RETURN_IF_ERROR(encoding.GetPrimaries(primaries));
   Matrix3x3d chromaticities{
       {{primaries.r.x, primaries.g.x, primaries.b.x},
        {primaries.r.y, primaries.g.y, primaries.b.y},
@@ -1019,7 +1022,7 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
   JXL_RETURN_IF_ERROR(IdentifyPrimaries(profile, wp_unadapted, &c_enc));
 
   // Relies on color_space/white point/primaries being set already.
-  DetectTransferFunction(profile, &c_enc);
+  JXL_RETURN_IF_ERROR(DetectTransferFunction(profile, &c_enc));
 #else  // JPEGXL_ENABLE_SKCMS
 
   const cmsContext context = GetContext();
@@ -1063,7 +1066,7 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
       IdentifyPrimaries(context, profile, wp_unadapted, &c_enc));
 
   // Relies on color_space/white point/primaries being set already.
-  DetectTransferFunction(context, profile, &c_enc);
+  JXL_RETURN_IF_ERROR(DetectTransferFunction(context, profile, &c_enc));
 
 #endif  // JPEGXL_ENABLE_SKCMS
 
@@ -1102,7 +1105,10 @@ void AllocateBuffer(size_t length, size_t num_threads,
 void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
                  const JxlColorProfile* input, const JxlColorProfile* output,
                  float intensity_target) {
-  JXL_ASSERT(init_data != nullptr);
+  if (init_data == nullptr) {
+    JXL_NOTIFY_ERROR("JxlCmsInit: init_data is nullptr");
+    return nullptr;
+  }
   const auto* cms = static_cast<const JxlCmsInterface*>(init_data);
   auto t = jxl::make_unique<JxlCms>();
   IccBytes icc_src;

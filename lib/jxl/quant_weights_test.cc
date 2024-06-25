@@ -61,20 +61,23 @@ TEST(QuantWeightsTest, DC) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   DequantMatrices mat;
   float dc_quant[3] = {1e+5, 1e+3, 1e+1};
-  DequantMatricesSetCustomDC(memory_manager, &mat, dc_quant);
+  ASSERT_TRUE(DequantMatricesSetCustomDC(memory_manager, &mat, dc_quant));
   for (size_t c = 0; c < 3; c++) {
     CheckSimilar(mat.InvDCQuant(c), dc_quant[c]);
   }
 }
 
 void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
-  ASSERT_TRUE(encodings.size() == DequantMatrices::kNum);
+  ASSERT_TRUE(encodings.size() == kNumQuantTables);
   DequantMatrices mat;
   CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
-  ModularFrameEncoder encoder(jxl::test::MemoryManager(), frame_header,
-                              CompressParams{}, false);
-  JXL_CHECK(DequantMatricesSetCustom(&mat, encodings, &encoder));
+  JXL_ASSIGN_OR_QUIT(
+      ModularFrameEncoder encoder,
+      ModularFrameEncoder::Create(jxl::test::MemoryManager(), frame_header,
+                                  CompressParams{}, false),
+      "Failed to create ModularFrameEncoder.");
+  ASSERT_TRUE(DequantMatricesSetCustom(&mat, encodings, &encoder));
   const std::vector<QuantEncoding>& encodings_dec = mat.encodings();
   for (size_t i = 0; i < encodings.size(); i++) {
     const QuantEncoding& e = encodings[i];
@@ -98,7 +101,7 @@ void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
       EXPECT_FALSE(!d.qraw.qtable);
       EXPECT_EQ(e.qraw.qtable->size(), d.qraw.qtable->size());
       for (size_t j = 0; j < e.qraw.qtable->size(); j++) {
-        EXPECT_EQ((*e.qraw.qtable)[j], (*d.qraw.qtable)[j]);
+        EXPECT_EQ(e.qraw.qtable->at(j), d.qraw.qtable->at(j));
       }
       EXPECT_NEAR(e.qraw.qtable_den, d.qraw.qtable_den, 1e-7f);
     } else {
@@ -128,56 +131,49 @@ void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
 }
 
 TEST(QuantWeightsTest, AllDefault) {
-  std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
-                                       QuantEncoding::Library(0));
+  std::vector<QuantEncoding> encodings(kNumQuantTables,
+                                       QuantEncoding::Library<0>());
   RoundtripMatrices(encodings);
 }
 
-void TestSingleQuantMatrix(DequantMatrices::QuantTable kind) {
-  std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
-                                       QuantEncoding::Library(0));
-  encodings[kind] = DequantMatrices::Library()[kind];
+void TestSingleQuantMatrix(QuantTable kind) {
+  std::vector<QuantEncoding> encodings(kNumQuantTables,
+                                       QuantEncoding::Library<0>());
+  size_t quant_table_idx = static_cast<size_t>(kind);
+  encodings[quant_table_idx] = DequantMatrices::Library()[quant_table_idx];
   RoundtripMatrices(encodings);
 }
 
 // Ensure we can reasonably represent default quant tables.
-TEST(QuantWeightsTest, DCT) { TestSingleQuantMatrix(DequantMatrices::DCT); }
+TEST(QuantWeightsTest, DCT) { TestSingleQuantMatrix(QuantTable::DCT); }
 TEST(QuantWeightsTest, IDENTITY) {
-  TestSingleQuantMatrix(DequantMatrices::IDENTITY);
+  TestSingleQuantMatrix(QuantTable::IDENTITY);
 }
-TEST(QuantWeightsTest, DCT2X2) {
-  TestSingleQuantMatrix(DequantMatrices::DCT2X2);
-}
-TEST(QuantWeightsTest, DCT4X4) {
-  TestSingleQuantMatrix(DequantMatrices::DCT4X4);
-}
+TEST(QuantWeightsTest, DCT2X2) { TestSingleQuantMatrix(QuantTable::DCT2X2); }
+TEST(QuantWeightsTest, DCT4X4) { TestSingleQuantMatrix(QuantTable::DCT4X4); }
 TEST(QuantWeightsTest, DCT16X16) {
-  TestSingleQuantMatrix(DequantMatrices::DCT16X16);
+  TestSingleQuantMatrix(QuantTable::DCT16X16);
 }
 TEST(QuantWeightsTest, DCT32X32) {
-  TestSingleQuantMatrix(DequantMatrices::DCT32X32);
+  TestSingleQuantMatrix(QuantTable::DCT32X32);
 }
-TEST(QuantWeightsTest, DCT8X16) {
-  TestSingleQuantMatrix(DequantMatrices::DCT8X16);
-}
-TEST(QuantWeightsTest, DCT8X32) {
-  TestSingleQuantMatrix(DequantMatrices::DCT8X32);
-}
+TEST(QuantWeightsTest, DCT8X16) { TestSingleQuantMatrix(QuantTable::DCT8X16); }
+TEST(QuantWeightsTest, DCT8X32) { TestSingleQuantMatrix(QuantTable::DCT8X32); }
 TEST(QuantWeightsTest, DCT16X32) {
-  TestSingleQuantMatrix(DequantMatrices::DCT16X32);
+  TestSingleQuantMatrix(QuantTable::DCT16X32);
 }
-TEST(QuantWeightsTest, DCT4X8) {
-  TestSingleQuantMatrix(DequantMatrices::DCT4X8);
-}
-TEST(QuantWeightsTest, AFV0) { TestSingleQuantMatrix(DequantMatrices::AFV0); }
+TEST(QuantWeightsTest, DCT4X8) { TestSingleQuantMatrix(QuantTable::DCT4X8); }
+TEST(QuantWeightsTest, AFV0) { TestSingleQuantMatrix(QuantTable::AFV0); }
 TEST(QuantWeightsTest, RAW) {
-  std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
-                                       QuantEncoding::Library(0));
+  std::vector<QuantEncoding> encodings(kNumQuantTables,
+                                       QuantEncoding::Library<0>());
   std::vector<int> matrix(3 * 32 * 32);
   Rng rng(0);
   for (int& v : matrix) v = rng.UniformI(1, 256);
-  encodings[DequantMatrices::kQuantTable[AcStrategy::DCT32X32]] =
-      QuantEncoding::RAW(matrix, 2);
+  QuantTable quant_table =
+      kAcStrategyToQuantTableMap[static_cast<size_t>(AcStrategyType::DCT32X32)];
+  encodings[static_cast<size_t>(quant_table)] =
+      QuantEncoding::RAW(std::move(matrix), 2);
   RoundtripMatrices(encodings);
 }
 
@@ -191,19 +187,23 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
                          {1.0f / kUniformQuant, 0},
                          {1.0f / kUniformQuant, 0}};
   DctQuantWeightParams dct_params(weights);
-  std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
+  std::vector<QuantEncoding> encodings(kNumQuantTables,
                                        QuantEncoding::DCT(dct_params));
   DequantMatrices dequant_matrices;
   CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
-  ModularFrameEncoder encoder(jxl::test::MemoryManager(), frame_header,
-                              CompressParams{}, false);
-  JXL_CHECK(DequantMatricesSetCustom(&dequant_matrices, encodings, &encoder));
-  JXL_CHECK(dequant_matrices.EnsureComputed(~0u));
+  JXL_ASSIGN_OR_QUIT(
+      ModularFrameEncoder encoder,
+      ModularFrameEncoder::Create(jxl::test::MemoryManager(), frame_header,
+                                  CompressParams{}, false),
+      "Failed to create ModularFrameEncoder.");
+  ASSERT_TRUE(DequantMatricesSetCustom(&dequant_matrices, encodings, &encoder));
+  ASSERT_TRUE(dequant_matrices.EnsureComputed(~0u));
 
   const float dc_quant[3] = {1.0f / kUniformQuant, 1.0f / kUniformQuant,
                              1.0f / kUniformQuant};
-  DequantMatricesSetCustomDC(memory_manager, &dequant_matrices, dc_quant);
+  ASSERT_TRUE(
+      DequantMatricesSetCustomDC(memory_manager, &dequant_matrices, dc_quant));
 
   HWY_ALIGN_MAX float scratch_space[16 * 16 * 5];
 
@@ -212,7 +212,7 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
     HWY_ALIGN_MAX float pixels[64];
     std::iota(std::begin(pixels), std::end(pixels), 0);
     HWY_ALIGN_MAX float coeffs[64];
-    const AcStrategy::Type dct = AcStrategy::DCT;
+    const AcStrategyType dct = AcStrategyType::DCT;
     TransformFromPixels(dct, pixels, 8, coeffs, scratch_space);
     HWY_ALIGN_MAX double slow_coeffs[64];
     for (size_t i = 0; i < 64; i++) slow_coeffs[i] = pixels[i];
@@ -236,7 +236,7 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
     HWY_ALIGN_MAX float pixels[64 * 4];
     std::iota(std::begin(pixels), std::end(pixels), 0);
     HWY_ALIGN_MAX float coeffs[64 * 4];
-    const AcStrategy::Type dct = AcStrategy::DCT16X16;
+    const AcStrategyType dct = AcStrategyType::DCT16X16;
     TransformFromPixels(dct, pixels, 16, coeffs, scratch_space);
     HWY_ALIGN_MAX double slow_coeffs[64 * 4];
     for (size_t i = 0; i < 64 * 4; i++) slow_coeffs[i] = pixels[i];
@@ -258,7 +258,8 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
   // Check that all matrices have the same DC quantization, i.e. that they all
   // have the same scaling.
   for (size_t i = 0; i < AcStrategy::kNumValidStrategies; i++) {
-    EXPECT_NEAR(dequant_matrices.Matrix(i, 0)[0], kUniformQuant, 1e-6);
+    AcStrategyType kind = static_cast<AcStrategyType>(i);
+    EXPECT_NEAR(dequant_matrices.Matrix(kind, 0)[0], kUniformQuant, 1e-6);
   }
 }
 

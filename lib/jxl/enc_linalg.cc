@@ -12,10 +12,8 @@
 namespace jxl {
 
 void ConvertToDiagonal(const Matrix2x2& A, Vector2& diag, Matrix2x2& U) {
-#if JXL_ENABLE_ASSERT
   // Check A is symmetric.
-  JXL_ASSERT(std::abs(A[0][1] - A[1][0]) < 1e-15);
-#endif
+  JXL_DASSERT(std::abs(A[0][1] - A[1][0]) < 1e-15);
 
   double b = -(A[0][0] + A[1][1]);
   double c = A[0][0] * A[1][1] - A[0][1] * A[0][1];

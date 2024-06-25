@@ -9,7 +9,6 @@
 
 #include <jxl/color_encoding.h>
 #include <jxl/types.h>
-#include <stdint.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -93,7 +92,7 @@ Status EncodeWithLibjpeg(const PackedPixelFile& ppf, int quality,
 
 std::string Description(const JxlColorEncoding& color_encoding) {
   ColorEncoding c_enc;
-  JXL_CHECK(c_enc.FromExternal(color_encoding));
+  EXPECT_TRUE(c_enc.FromExternal(color_encoding));
   return Description(c_enc);
 }
 
@@ -165,9 +164,10 @@ TEST(JpegliTest, JpegliDecodeTestLargeSmoothArea) {
   TestImage t;
   const size_t xsize = 2070;
   const size_t ysize = 1063;
-  t.SetDimensions(xsize, ysize).SetChannels(3);
+  ASSERT_TRUE(t.SetDimensions(xsize, ysize));
+  ASSERT_TRUE(t.SetChannels(3));
   t.SetAllBitDepths(8).SetEndianness(JXL_NATIVE_ENDIAN);
-  TestImage::Frame frame = t.AddFrame();
+  JXL_TEST_ASSIGN_OR_DIE(TestImage::Frame frame, t.AddFrame());
   frame.RandomFill();
   // Create a large smooth area in the top half of the image. This is to test
   // that the bias statistics calculation can handle many blocks with all-zero
@@ -175,7 +175,7 @@ TEST(JpegliTest, JpegliDecodeTestLargeSmoothArea) {
   for (size_t y = 0; y < ysize / 2; ++y) {
     for (size_t x = 0; x < xsize; ++x) {
       for (size_t c = 0; c < 3; ++c) {
-        frame.SetValue(y, x, c, 0.5f);
+        ASSERT_TRUE(frame.SetValue(y, x, c, 0.5f));
       }
     }
   }

@@ -133,8 +133,7 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
       }
       for (size_t j = 0; j < blendings_stride_; j++) {
         uint32_t blend_mode = read_num(kPatchBlendModeContext);
-        if (blend_mode >=
-            static_cast<uint32_t>(PatchBlendMode::kNumBlendModes)) {
+        if (blend_mode >= kNumPatchBlendModes) {
           return JXL_FAILURE("Invalid patch blend mode: %u", blend_mode);
         }
         PatchBlending info;
@@ -319,7 +318,7 @@ Status PatchDictionary::AddOneRow(
     float* const* inout, size_t y, size_t x0, size_t xsize,
     const std::vector<ExtraChannelInfo>& extra_channel_info) const {
   size_t num_ec = extra_channel_info.size();
-  JXL_ASSERT(num_ec + 1 <= blendings_stride_);
+  JXL_ENSURE(num_ec + 1 <= blendings_stride_);
   std::vector<const float*> fg_ptrs(3 + num_ec);
   for (size_t pos_idx : GetPatchesForRow(y)) {
     const size_t blending_idx = pos_idx * blendings_stride_;
@@ -328,8 +327,8 @@ Status PatchDictionary::AddOneRow(
     size_t by = pos.y;
     size_t bx = pos.x;
     size_t patch_xsize = ref_pos.xsize;
-    JXL_DASSERT(y >= by);
-    JXL_DASSERT(y < by + ref_pos.ysize);
+    JXL_ENSURE(y >= by);
+    JXL_ENSURE(y < by + ref_pos.ysize);
     size_t iy = y - by;
     size_t ref = ref_pos.ref;
     if (bx >= x0 + xsize) continue;

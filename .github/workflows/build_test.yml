@@ -81,7 +81,6 @@ jobs:
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
             mode: release
-            cxxflags: -DJXL_DEBUG_ON_ABORT=0
             cmake_args: >-
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
@@ -103,7 +102,6 @@ jobs:
           # reconstructing pixels is disabled.
           - name: release:minimal
             mode: release
-            cxxflags: -DJXL_DEBUG_ON_ABORT=0
             cmake_args: >-
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
               -DJPEGXL_ENABLE_BOXES=OFF
@@ -148,7 +146,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f086349bfa2bd1361f7909c78558e816508cdc10 # v2.8.0
+      uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
       with:
         egress-policy: audit
 
@@ -192,7 +190,7 @@ jobs:
         brew install binutils ccache coreutils google-benchmark googletest ninja sdl2
 
     - name: Checkout the source
-      uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
         submodules: true
         fetch-depth: 2
@@ -224,7 +222,7 @@ jobs:
 
     - name: Checkout the LLVM source
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
         submodules: false
         repository: llvm/llvm-project
@@ -330,7 +328,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@125fc84a9a348dbcf27191600683ec096ec9021c # v4.4.1
+      uses: codecov/codecov-action@e28ff129e5465c2c0dcc6f003fc735cb6ae0c673 # v4.5.0
       with:
         flags: unittests
         files: build/coverage.xml

@@ -77,14 +77,14 @@ struct OutputEncodingInfo {
 
 // Converts `inout` (not padded) from opsin to linear sRGB in-place. Called from
 // per-pass postprocessing, hence parallelized.
-void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
-                          const OpsinParams& opsin_params);
+Status OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
+                            const OpsinParams& opsin_params);
 
 // Converts `opsin:rect` (opsin may be padded, rect.x0 must be vector-aligned)
 // to linear sRGB. Called from whole-frame encoder, hence parallelized.
-void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
-                   Image3F* JXL_RESTRICT linear,
-                   const OpsinParams& opsin_params);
+Status OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
+                     Image3F* JXL_RESTRICT linear,
+                     const OpsinParams& opsin_params);
 
 // Bt.601 to match JPEG/JFIF. Inputs are _signed_ YCbCr values suitable for DCT,
 // see F.1.1.3 of T.81 (because our data type is float, there is no need to add
@@ -92,8 +92,8 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 void YcbcrToRgb(const Image3F& ycbcr, Image3F* rgb, const Rect& rect);
 
 bool HasFastXYBTosRGB8();
-void FastXYBTosRGB8(const float* input[4], uint8_t* output, bool is_rgba,
-                    size_t xsize);
+Status FastXYBTosRGB8(const float* input[4], uint8_t* output, bool is_rgba,
+                      size_t xsize);
 
 }  // namespace jxl
 

@@ -27,7 +27,6 @@
 #include <iostream>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "lib/extras/dec/color_hints.h"
@@ -1045,13 +1044,16 @@ int main(int argc, char** argv) {
   bool try_non_streaming = true;
   jxl::extras::ChunkedPNMDecoder pnm_dec;
   if (args.streaming_input) {
-    auto dec = jxl::extras::ChunkedPNMDecoder::Init(args.file_in);
-    if (!dec.ok()) {
+    bool ok = [&]() -> jxl::Status {
+      JXL_ASSIGN_OR_RETURN(pnm_dec,
+                           jxl::extras::ChunkedPNMDecoder::Init(args.file_in));
+      return true;
+    }();
+    if (!ok) {
       std::cerr << "Warning PPM/PGM streaming decoding failed, trying "
                    "non-streaming mode.\n"
                 << std::flush;
-    } else {
-      pnm_dec = std::move(dec).value();
+    } else {  // ok
       JXL_RETURN_IF_ERROR(
           pnm_dec.InitializePPF(args.color_hints_proxy.target, &ppf));
       codec = jxl::extras::Codec::kPNM;
@@ -1222,7 +1224,7 @@ int main(int argc, char** argv) {
           static_cast<double>(compressed_size * jxl::kBitsPerByte) / pixels;
       cmdline.VerbosePrintf(0, "(%.3f bpp%s).\n", bpp / ppf.num_frames(),
                             ppf.num_frames() == 1 ? "" : "/frame");
-      JXL_CHECK(stats.Print(num_worker_threads));
+      JPEGXL_TOOLS_CHECK(stats.Print(num_worker_threads));
     } else {
       cmdline.VerbosePrintf(0, "\n");
     }

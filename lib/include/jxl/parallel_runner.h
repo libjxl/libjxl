@@ -45,15 +45,20 @@ extern "C" {
 #endif
 
 /** Return code used in the JxlParallel* functions as return value. A value
- * of 0 means success and any other value means error. The special value
- * ::JXL_PARALLEL_RET_RUNNER_ERROR can be used by the runner to indicate any
- * other error.
+ * of ::JXL_PARALLEL_RET_SUCCESS means success and any other value means error.
+ * The special value ::JXL_PARALLEL_RET_RUNNER_ERROR can be used by the runner
+ * to indicate any other error.
  */
 typedef int JxlParallelRetCode;
 
 /**
- * General error returned by the @ref JxlParallelRunInit function to indicate
- * an error.
+ * Code returned by the @ref JxlParallelRunInit function to indicate success.
+ */
+#define JXL_PARALLEL_RET_SUCCESS (0)
+
+/**
+ * Code returned by the @ref JxlParallelRunInit function to indicate a general
+ * error.
  */
 #define JXL_PARALLEL_RET_RUNNER_ERROR (-1)
 
@@ -146,7 +151,7 @@ typedef JxlParallelRetCode (*JxlParallelRunner)(
       // order.
       (*func)(jpegxl_opaque, i, 0);
     }
-    return 0;
+    return JXL_PARALLEL_RET_SUCCESS;
   }
  */
 

@@ -45,7 +45,7 @@ class RenderPipelineInput {
   Status Done();
 
   const std::pair<ImageF*, Rect>& GetBuffer(size_t c) const {
-    JXL_ASSERT(c < buffers_.size());
+    JXL_DASSERT(c < buffers_.size());
     return buffers_[c];
   }
 
@@ -63,12 +63,12 @@ class RenderPipeline {
    public:
     explicit Builder(JxlMemoryManager* memory_manager, size_t num_c)
         : memory_manager_(memory_manager), num_c_(num_c) {
-      JXL_ASSERT(num_c > 0);
+      JXL_DASSERT(num_c > 0);
     }
 
     // Adds a stage to the pipeline. Must be called at least once; the last
     // added stage cannot have kInOut channels.
-    void AddStage(std::unique_ptr<RenderPipelineStage> stage);
+    Status AddStage(std::unique_ptr<RenderPipelineStage> stage);
 
     // Enables using the simple (i.e. non-memory-efficient) implementation of
     // the pipeline.

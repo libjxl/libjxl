@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "lib/jpegli/decode.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 
@@ -114,25 +115,26 @@ void MyErrorExit(j_common_ptr cinfo) {
 }
 
 void MyOutputMessage(j_common_ptr cinfo) {
-#if JXL_DEBUG_WARNING == 1
-  char buf[JMSG_LENGTH_MAX + 1];
-  (*cinfo->err->format_message)(cinfo, buf);
-  buf[JMSG_LENGTH_MAX] = 0;
-  JXL_WARNING("%s", buf);
-#endif
+  if (JXL_IS_DEBUG_BUILD) {
+    char buf[JMSG_LENGTH_MAX + 1];
+    (*cinfo->err->format_message)(cinfo, buf);
+    buf[JMSG_LENGTH_MAX] = 0;
+    JXL_WARNING("%s", buf);
+  }
 }
 
-void UnmapColors(uint8_t* row, size_t xsize, int components,
-                 JSAMPARRAY colormap, size_t num_colors) {
-  JXL_CHECK(colormap != nullptr);
+Status UnmapColors(uint8_t* row, size_t xsize, int components,
+                   JSAMPARRAY colormap, size_t num_colors) {
+  JXL_ENSURE(colormap != nullptr);
   std::vector<uint8_t> tmp(xsize * components);
   for (size_t x = 0; x < xsize; ++x) {
-    JXL_CHECK(row[x] < num_colors);
+    JXL_ENSURE(row[x] < num_colors);
     for (int c = 0; c < components; ++c) {
       tmp[x * components + c] = colormap[c][row[x]];
     }
   }
   memcpy(row, tmp.data(), tmp.size());
+  return true;
 }
 
 }  // namespace
@@ -255,9 +257,10 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
       ppf->frames.emplace_back(std::move(frame));
     }
     const auto& frame = ppf->frames.back();
-    JXL_ASSERT(sizeof(JSAMPLE) * cinfo.out_color_components *
+    JXL_ENSURE(sizeof(JSAMPLE) * cinfo.out_color_components *
                    cinfo.image_width <=
                frame.color.stride);
+    if (dparams.num_colors > 0) JXL_ENSURE(cinfo.colormap != nullptr);
 
     for (size_t y = 0; y < cinfo.image_height; ++y) {
       JSAMPROW rows[] = {reinterpret_cast<JSAMPLE*>(
@@ -265,8 +268,9 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
           frame.color.stride * y)};
       jpegli_read_scanlines(&cinfo, rows, 1);
       if (dparams.num_colors > 0) {
-        UnmapColors(rows[0], cinfo.output_width, cinfo.out_color_components,
-                    cinfo.colormap, cinfo.actual_number_of_colors);
+        JXL_RETURN_IF_ERROR(
+            UnmapColors(rows[0], cinfo.output_width, cinfo.out_color_components,
+                        cinfo.colormap, cinfo.actual_number_of_colors));
       }
     }
 

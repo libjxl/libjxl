@@ -20,7 +20,6 @@
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
@@ -45,7 +44,7 @@ TEST(PassesTest, RoundtripSmallPasses) {
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io{memory_manager};
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
+  ASSERT_TRUE(io.ShrinkTo(io.xsize() / 8, io.ysize() / 8));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
@@ -67,7 +66,7 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io{memory_manager};
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  io.ShrinkTo(io.xsize() / 12, io.ysize() / 7);
+  ASSERT_TRUE(io.ShrinkTo(io.xsize() / 12, io.ysize() / 7));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 2.0;
@@ -91,7 +90,7 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
     ThreadPoolForTests pool(4);
     ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, pool.get()));
   }
-  io.ShrinkTo(600, 1024);  // partial X, full Y group
+  ASSERT_TRUE(io.ShrinkTo(600, 1024));  // partial X, full Y group
 
   auto test = [&](float target_distance, float threshold) {
     ThreadPoolForTests pool(4);
@@ -148,7 +147,7 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
 
   // Try each xsize mod kBlockDim to verify right border handling.
   for (size_t xsize = 48; xsize > 40; --xsize) {
-    io.ShrinkTo(xsize, 15);
+    ASSERT_TRUE(io.ShrinkTo(xsize, 15));
 
     CodecInOut io2{memory_manager};
     size_t size2;
@@ -200,12 +199,12 @@ TEST(PassesTest, AllDownsampleFeasible) {
   // TODO(veluca): re-enable downsampling 16.
   std::vector<size_t> downsamplings = {1, 2, 4, 8};  //, 16};
 
-  auto check = [&](const uint32_t task, size_t /* thread */) -> void {
+  auto check = [&](const uint32_t task, size_t /* thread */) -> Status {
     const size_t downsampling = downsamplings[task];
     extras::JXLDecompressParams dparams;
     dparams.max_downsampling = downsampling;
     CodecInOut output{memory_manager};
-    ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &output));
+    JXL_RETURN_IF_ERROR(test::DecodeFile(dparams, Bytes(compressed), &output));
     EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
     EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
     EXPECT_LE(ButteraugliDistance(io.frames, output.frames, ButteraugliParams(),
@@ -213,6 +212,7 @@ TEST(PassesTest, AllDownsampleFeasible) {
                                   /*distmap=*/nullptr, nullptr),
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
+    return true;
   };
   EXPECT_TRUE(RunOnPool(pool.get(), 0, downsamplings.size(), ThreadPool::NoInit,
                         check, "TestDownsampling"));
@@ -246,12 +246,12 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   // factors achievable.
   std::vector<size_t> downsamplings = {1, 2, 4, 8};
 
-  auto check = [&](const uint32_t task, size_t /* thread */) -> void {
+  auto check = [&](const uint32_t task, size_t /* thread */) -> Status {
     const size_t downsampling = downsamplings[task];
     extras::JXLDecompressParams dparams;
     dparams.max_downsampling = downsampling;
     CodecInOut output{memory_manager};
-    ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &output));
+    JXL_RETURN_IF_ERROR(test::DecodeFile(dparams, Bytes(compressed), &output));
     EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
     EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
     EXPECT_LE(ButteraugliDistance(io.frames, output.frames, ButteraugliParams(),
@@ -259,6 +259,7 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
                                   /*distmap=*/nullptr),
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
+    return true;
   };
   EXPECT_TRUE(RunOnPool(pool.get(), 0, downsamplings.size(), ThreadPool::NoInit,
                         check, "TestQProgressive"));
@@ -273,13 +274,13 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_orig, pool.get()));
   Rect rect(0, 0, io_orig.xsize(), 128);
   // need 2 DC groups for the DC frame to actually be progressive.
-  JXL_ASSIGN_OR_DIE(Image3F large,
-                    Image3F::Create(memory_manager, 4242, rect.ysize()));
+  JXL_TEST_ASSIGN_OR_DIE(Image3F large,
+                         Image3F::Create(memory_manager, 4242, rect.ysize()));
   ZeroFillImage(&large);
-  CopyImageTo(rect, *io_orig.Main().color(), rect, &large);
+  ASSERT_TRUE(CopyImageTo(rect, *io_orig.Main().color(), rect, &large));
   CodecInOut io{memory_manager};
   io.metadata = io_orig.metadata;
-  io.SetFromImage(std::move(large), io_orig.Main().c_current());
+  ASSERT_TRUE(io.SetFromImage(std::move(large), io_orig.Main().c_current()));
 
   std::vector<uint8_t> compressed;
 
@@ -319,12 +320,12 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_orig, pool.get()));
   Rect rect(0, 0, io_orig.xsize(), 128);
   // need 2 DC groups for the DC frame to actually be progressive.
-  JXL_ASSIGN_OR_DIE(Image3F large,
-                    Image3F::Create(memory_manager, 4242, rect.ysize()));
+  JXL_TEST_ASSIGN_OR_DIE(Image3F large,
+                         Image3F::Create(memory_manager, 4242, rect.ysize()));
   ZeroFillImage(&large);
-  CopyImageTo(rect, *io_orig.Main().color(), rect, &large);
+  ASSERT_TRUE(CopyImageTo(rect, *io_orig.Main().color(), rect, &large));
   CodecInOut io{memory_manager};
-  io.SetFromImage(std::move(large), io_orig.Main().c_current());
+  ASSERT_TRUE(io.SetFromImage(std::move(large), io_orig.Main().c_current()));
 
   std::vector<uint8_t> compressed;
 
@@ -388,7 +389,7 @@ TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io{memory_manager};
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
+  ASSERT_TRUE(io.ShrinkTo(io.xsize() / 8, io.ysize() / 8));
 
   CompressParams cparams;
   cparams.gaborish = Override::kOff;
