@@ -146,7 +146,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const weighted::Header &wp_header,
                                  pixel_type chan, size_t group_id,
                                  TreeLut<uint8_t, false, false> &tree_lut,
-                                 Image *image) {
+                                 Image *image, uint32_t &fl_run,
+                                 uint32_t &fl_v) {
   JxlMemoryManager *memory_manager = image->memory_manager();
   Channel &channel = image->channel[chan];
 
@@ -230,20 +231,19 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     } else if (uses_lz77 && predictor == Predictor::Gradient && offset == 0 &&
                multiplier == 1 && reader->IsHuffRleOnly()) {
       JXL_DEBUG_V(8, "Gradient RLE (fjxl) very fast track.");
-      uint32_t run = 0;
-      uint32_t v = 0;
-      pixel_type_w sv = 0;
+      pixel_type_w sv = UnpackSigned(fl_v);
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         const pixel_type *JXL_RESTRICT rtop = (y ? channel.Row(y - 1) : r - 1);
         const pixel_type *JXL_RESTRICT rtopleft =
             (y ? channel.Row(y - 1) - 1 : r - 1);
         pixel_type_w guess = (y ? rtop[0] : 0);
-        if (run == 0) {
-          reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &v, &run);
-          sv = UnpackSigned(v);
+        if (fl_run == 0) {
+          reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &fl_v,
+                                                     &fl_run);
+          sv = UnpackSigned(fl_v);
         } else {
-          run--;
+          fl_run--;
         }
         r[0] = sv + guess;
         for (size_t x = 1; x < channel.w; x++) {
@@ -251,11 +251,12 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
           pixel_type top = rtop[x];
           pixel_type topleft = rtopleft[x];
           pixel_type_w guess = ClampedGradient(top, left, topleft);
-          if (!run) {
-            reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &v, &run);
-            sv = UnpackSigned(v);
+          if (!fl_run) {
+            reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &fl_v,
+                                                       &fl_run);
+            sv = UnpackSigned(fl_v);
           } else {
-            run--;
+            fl_run--;
           }
           r[x] = sv + guess;
         }
@@ -487,15 +488,16 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const weighted::Header &wp_header,
                                  pixel_type chan, size_t group_id,
                                  TreeLut<uint8_t, false, false> &tree_lut,
-                                 Image *image) {
+                                 Image *image, uint32_t &fl_run,
+                                 uint32_t &fl_v) {
   if (reader->UsesLZ77()) {
     return detail::DecodeModularChannelMAANS</*uses_lz77=*/true>(
         br, reader, context_map, global_tree, wp_header, chan, group_id,
-        tree_lut, image);
+        tree_lut, image, fl_run, fl_v);
   } else {
     return detail::DecodeModularChannelMAANS</*uses_lz77=*/false>(
         br, reader, context_map, global_tree, wp_header, chan, group_id,
-        tree_lut, image);
+        tree_lut, image, fl_run, fl_v);
   }
 }
 
@@ -625,6 +627,8 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   JXL_ASSIGN_OR_RETURN(ANSSymbolReader reader,
                        ANSSymbolReader::Create(code, br, distance_multiplier));
   auto tree_lut = jxl::make_unique<TreeLut<uint8_t, false, false>>();
+  uint32_t fl_run = 0;
+  uint32_t fl_v = 0;
   for (; next_channel < nb_channels; next_channel++) {
     Channel &channel = image.channel[next_channel];
     if (!channel.w || !channel.h) {
@@ -637,7 +641,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     }
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
         br, &reader, *context_map, *tree, header.wp_header, next_channel,
-        group_id, *tree_lut, &image));
+        group_id, *tree_lut, &image, fl_run, fl_v));
 
     // Truncated group.
     if (!br->AllReadsWithinBounds()) {
