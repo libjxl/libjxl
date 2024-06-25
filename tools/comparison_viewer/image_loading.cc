@@ -29,6 +29,7 @@ using jxl::CodecInOut;
 using jxl::ColorEncoding;
 using jxl::Image3F;
 using jxl::ImageBundle;
+using jxl::ImageF;
 using jxl::Rect;
 using jxl::Span;
 using jxl::Status;
@@ -107,7 +108,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   };
 
   if (ib.HasAlpha()) {
-    ImageF* alpha = ib.alpha();
+    const ImageF* alpha = ib.alpha();
     for (int y = 0; y < image.height(); ++y) {
       QRgb* const row = reinterpret_cast<QRgb*>(image.scanLine(y));
       const float* const alphaRow = alpha->ConstRow(y);
