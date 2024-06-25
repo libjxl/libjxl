@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
-  - Gain Map API (#3552 and #3628)
+  - Gain Map API (#3552 and #3628):  `JxlGainMapBundle` struct and API functions
+    to read and write gain map bundles`JxlGainMapWriteBundle` and
+    `JxlGainMapReadBundle` as well as handling compressed ICC profiles:
+    `JxlICCProfileEncode` and `JxlICCProfileDecode`.
   - decoder API: added `JXL_DEC_BOX_COMPLETE` event to signal that the output
     buffer for the current box has received all contents. Previously, this was
     to be determined from the fact that the decoder had moved on either to
