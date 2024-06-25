@@ -402,10 +402,10 @@ Status DecodeBlob(const png_text_struct& info, PackedMetadata* metadata) {
       bytes.erase(bytes.begin(), bytes.begin() + kExifPrefix.size());
     }
     if (!metadata->exif.empty()) {
-      JXL_DEBUG(2,
-                "overwriting EXIF (%" PRIuS " bytes) with base16 (%" PRIuS
-                " bytes)",
-                metadata->exif.size(), bytes.size());
+      JXL_DEBUG_V(2,
+                  "overwriting EXIF (%" PRIuS " bytes) with base16 (%" PRIuS
+                  " bytes)",
+                  metadata->exif.size(), bytes.size());
     }
     metadata->exif = std::move(bytes);
   } else if (type == "iptc") {
@@ -414,14 +414,14 @@ Status DecodeBlob(const png_text_struct& info, PackedMetadata* metadata) {
     // TODO(jon): Deal with 8bim in some way
   } else if (type == "xmp") {
     if (!metadata->xmp.empty()) {
-      JXL_DEBUG(2,
-                "overwriting XMP (%" PRIuS " bytes) with base16 (%" PRIuS
-                " bytes)",
-                metadata->xmp.size(), bytes.size());
+      JXL_DEBUG_V(2,
+                  "overwriting XMP (%" PRIuS " bytes) with base16 (%" PRIuS
+                  " bytes)",
+                  metadata->xmp.size(), bytes.size());
     }
     metadata->xmp = std::move(bytes);
   } else {
-    JXL_DEBUG(
+    JXL_DEBUG_V(
         2, "Unknown type in 'Raw format type' text chunk: %s: %" PRIuS " bytes",
         type.c_str(), bytes.size());
   }
@@ -678,7 +678,7 @@ void SetColorData(PackedPixelFile* ppf, uint8_t color_type, uint8_t bit_depth,
   bool alpha_channel_used = ((color_type & 4) != 0);
   if (palette_used) {
     if (!color_used || alpha_channel_used) {
-      JXL_DEBUG(2, "Unexpected PNG color type");
+      JXL_DEBUG_V(2, "Unexpected PNG color type");
     }
   }
 
@@ -698,11 +698,11 @@ void SetColorData(PackedPixelFile* ppf, uint8_t color_type, uint8_t bit_depth,
       } else {
         int maxbps =
             std::max(sig_bits->red, std::max(sig_bits->green, sig_bits->blue));
-        JXL_DEBUG(2,
-                  "sBIT chunk: bit depths for R, G, and B are not the same (%i "
-                  "%i %i), while in JPEG XL they have to be the same. Setting "
-                  "RGB bit depth to %i.",
-                  sig_bits->red, sig_bits->green, sig_bits->blue, maxbps);
+        JXL_DEBUG_V(2,
+                    "sBIT chunk: bit depths for R, G, and B are not the same "
+                    "(%i %i %i), while in JPEG XL they have to be the same. "
+                    "Setting RGB bit depth to %i.",
+                    sig_bits->red, sig_bits->green, sig_bits->blue, maxbps);
         ppf->info.bits_per_sample = maxbps;
       }
     }
@@ -714,11 +714,11 @@ void SetColorData(PackedPixelFile* ppf, uint8_t color_type, uint8_t bit_depth,
   if (alpha_channel_used || has_transparency) {
     ppf->info.alpha_bits = ppf->info.bits_per_sample;
     if (sig_bits && sig_bits->alpha != ppf->info.bits_per_sample) {
-      JXL_DEBUG(2,
-                "sBIT chunk: bit depths for RGBA are inconsistent "
-                "(%i %i %i %i). Setting A bitdepth to %i.",
-                sig_bits->red, sig_bits->green, sig_bits->blue, sig_bits->alpha,
-                ppf->info.bits_per_sample);
+      JXL_DEBUG_V(2,
+                  "sBIT chunk: bit depths for RGBA are inconsistent "
+                  "(%i %i %i %i). Setting A bitdepth to %i.",
+                  sig_bits->red, sig_bits->green, sig_bits->blue,
+                  sig_bits->alpha, ppf->info.bits_per_sample);
     }
   } else {
     ppf->info.alpha_bits = 0;
@@ -886,11 +886,11 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     switch (id) {
       case MakeTag('a', 'c', 'T', 'L'):
         if (seen_idat) {
-          JXL_DEBUG(2, "aCTL after IDAT ignored");
+          JXL_DEBUG_V(2, "aCTL after IDAT ignored");
           continue;
         }
         if (seen_actl) {
-          JXL_DEBUG(2, "Duplicate aCTL chunk ignored");
+          JXL_DEBUG_V(2, "Duplicate aCTL chunk ignored");
           continue;
         }
         seen_actl = true;
@@ -1039,7 +1039,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
       case MakeTag('c', 'I', 'C', 'P'):
         if (color_info_type == ColorInfoType::CICP) {
-          JXL_DEBUG(2, "Excessive colorspace definition; cICP chunk ignored");
+          JXL_DEBUG_V(2, "Excessive colorspace definition; cICP chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeCicpChunk(payload, &ppf->color_encoding));
@@ -1054,7 +1054,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           return JXL_FAILURE("Repeated iCCP / sRGB chunk");
         }
         if (color_info_type > ColorInfoType::ICCP_OR_SRGB) {
-          JXL_DEBUG(2, "Excessive colorspace definition; iCCP chunk ignored");
+          JXL_DEBUG_V(2, "Excessive colorspace definition; iCCP chunk ignored");
           continue;
         }
         // Let PNG decoder deal with chunk processing.
@@ -1085,7 +1085,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           return JXL_FAILURE("Repeated iCCP / sRGB chunk");
         }
         if (color_info_type > ColorInfoType::ICCP_OR_SRGB) {
-          JXL_DEBUG(2, "Excessive colorspace definition; sRGB chunk ignored");
+          JXL_DEBUG_V(2, "Excessive colorspace definition; sRGB chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeSrgbChunk(payload, &ppf->color_encoding));
@@ -1094,7 +1094,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
       case MakeTag('g', 'A', 'M', 'A'):
         if (color_info_type >= ColorInfoType::GAMA_OR_CHRM) {
-          JXL_DEBUG(2, "Excessive colorspace definition; gAMA chunk ignored");
+          JXL_DEBUG_V(2, "Excessive colorspace definition; gAMA chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeGamaChunk(payload, &ppf->color_encoding));
@@ -1103,7 +1103,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
       case MakeTag('c', 'H', 'R', 'M'):
         if (color_info_type >= ColorInfoType::GAMA_OR_CHRM) {
-          JXL_DEBUG(2, "Excessive colorspace definition; cHRM chunk ignored");
+          JXL_DEBUG_V(2, "Excessive colorspace definition; cHRM chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeChrmChunk(payload, &ppf->color_encoding));
