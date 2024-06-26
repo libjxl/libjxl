@@ -164,7 +164,7 @@ Status ParsePrimaries(Tokenizer* tokenizer, JxlColorEncoding* c) {
   JXL_RETURN_IF_ERROR(ParseDouble(&xy_tokenizer, c->primaries_blue_xy + 1));
   c->primaries = JXL_PRIMARIES_CUSTOM;
 
-  return JXL_FAILURE("Invalid primaries %s", str.c_str());
+  return true;
 }
 
 Status ParseRenderingIntent(Tokenizer* tokenizer, JxlColorEncoding* c) {
