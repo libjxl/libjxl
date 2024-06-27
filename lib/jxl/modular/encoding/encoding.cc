@@ -129,8 +129,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const std::vector<uint8_t> &context_map,
                                  const Tree &global_tree,
                                  const weighted::Header &wp_header,
-                                 pixel_type chan, size_t group_id,
-                                 Image *image) {
+                                 pixel_type chan, size_t group_id, Image *image,
+                                 uint32_t &fl_run, uint32_t &fl_v) {
   Channel &channel = image->channel[chan];
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
@@ -209,20 +209,19 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     } else if (predictor == Predictor::Gradient && offset == 0 &&
                multiplier == 1 && reader->HuffRleOnly()) {
       JXL_DEBUG_V(8, "Gradient RLE (fjxl) very fast track.");
-      uint32_t run = 0;
-      uint32_t v = 0;
-      pixel_type_w sv = 0;
+      pixel_type_w sv = UnpackSigned(fl_v);
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         const pixel_type *JXL_RESTRICT rtop = (y ? channel.Row(y - 1) : r - 1);
         const pixel_type *JXL_RESTRICT rtopleft =
             (y ? channel.Row(y - 1) - 1 : r - 1);
         pixel_type_w guess = (y ? rtop[0] : 0);
-        if (run == 0) {
-          reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &v, &run);
-          sv = UnpackSigned(v);
+        if (fl_run == 0) {
+          reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &fl_v,
+                                                     &fl_run);
+          sv = UnpackSigned(fl_v);
         } else {
-          run--;
+          fl_run--;
         }
         r[0] = sv + guess;
         for (size_t x = 1; x < channel.w; x++) {
@@ -230,11 +229,12 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
           pixel_type top = rtop[x];
           pixel_type topleft = rtopleft[x];
           pixel_type_w guess = ClampedGradient(top, left, topleft);
-          if (!run) {
-            reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &v, &run);
-            sv = UnpackSigned(v);
+          if (!fl_run) {
+            reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &fl_v,
+                                                       &fl_run);
+            sv = UnpackSigned(fl_v);
           } else {
-            run--;
+            fl_run--;
           }
           r[x] = sv + guess;
         }
@@ -548,6 +548,8 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
 
   // Read channels
   ANSSymbolReader reader(code, br, distance_multiplier);
+  uint32_t fl_run = 0;
+  uint32_t fl_v = 0;
   for (; next_channel < nb_channels; next_channel++) {
     Channel &channel = image.channel[next_channel];
     if (!channel.w || !channel.h) {
@@ -560,7 +562,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     }
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
         br, &reader, *context_map, *tree, header.wp_header, next_channel,
-        group_id, &image));
+        group_id, &image, fl_run, fl_v));
     // Truncated group.
     if (!br->AllReadsWithinBounds()) {
       if (!allow_truncated_group) return JXL_FAILURE("Truncated input");
