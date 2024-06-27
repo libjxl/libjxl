@@ -22,7 +22,7 @@ jobs:
         sudo apt update
         sudo apt install -y \
           ccache \
-          clang-7 \
+          clang \
           cmake \
           doxygen \
           libbrotli-dev \
@@ -39,8 +39,8 @@ jobs:
           xvfb \
           ${{ matrix.apt_pkgs }} \
         #
-        echo "CC=clang-7" >> $GITHUB_ENV
-        echo "CXX=clang++-7" >> $GITHUB_ENV
+        echo "CC=clang" >> $GITHUB_ENV
+        echo "CXX=clang++" >> $GITHUB_ENV
     - name: Checkout the source
       uses: actions/checkout@v2
       with:

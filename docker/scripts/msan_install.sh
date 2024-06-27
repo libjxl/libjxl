@@ -27,8 +27,8 @@ detect_clang_version() {
     "clang version 6."*)
       CLANG_VERSION="6.0"
       ;;
-    "clang version 7."*)
-      CLANG_VERSION="7"
+    "clang version 14."*)
+      CLANG_VERSION="14"
       ;;
     "clang version 8."*)
       CLANG_VERSION="8"

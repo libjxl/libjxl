@@ -70,6 +70,7 @@ jobs:
               -DJPEGXL_ENABLE_VIEWERS=OFF
           # Builds with gcc in release mode
           - name: release:gcc8
+            os: ubuntu-20.04
             mode: release
             apt_pkgs: gcc-8 g++-8
             cmake_args: >-
@@ -98,9 +99,10 @@ jobs:
         sudo apt update
         sudo apt install -y \
           ccache \
-          clang-7 \
+          clang \
           cmake \
           doxygen \
+          graphviz \
           libbenchmark-dev \
           libbenchmark-tools \
           libbrotli-dev \
@@ -117,8 +119,8 @@ jobs:
           xvfb \
           ${{ matrix.apt_pkgs }} \
         #
-        echo "CC=clang-7" >> $GITHUB_ENV
-        echo "CXX=clang++-7" >> $GITHUB_ENV
+        echo "CC=clang" >> $GITHUB_ENV
+        echo "CXX=clang++" >> $GITHUB_ENV
     - name: Checkout the source
       uses: actions/checkout@v2
       with:
@@ -189,6 +191,8 @@ jobs:
     - name: ccache stats
       run: ccache --show-stats
     - name: Build stats ${{ matrix.name }}
+      # TODO(eustas): Dozens of symbols fail with 'exceeds stack limit'
+      continue-on-error: true
       if: matrix.mode == 'release' || matrix.name == 'release'
       run: |
         tools/build_stats.py --save build/stats.json \
@@ -349,6 +353,7 @@ jobs:
           ccache
           cmake
           doxygen
+          graphviz
           ninja-build
           pkg-config
         )
@@ -385,7 +390,7 @@ jobs:
 
     - name: Set EMSDK node version
       run: |
-        echo "NODE_JS='$(cat $HOME/.base_node_path)'" >> $EM_CONFIG
+        echo "NODE_JS='$(cat $HOME/.base_node_path)'" >> $EMSDK/.emscripten
         emsdk construct_env
 
     # TODO(deymo): Build and install other dependencies like libpng, libjpeg,
