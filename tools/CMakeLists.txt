@@ -443,8 +443,9 @@ find_package(Java QUIET)
 
 if (JNI_FOUND AND Java_FOUND)
   include(UseJava)
+  # NB: *_jni_onload.cc might be necessary for Android; not used yet.
 
-  # decoder_jni_onload.cc might be necessary for Android; not used yet.
+  # JPEGXL wrapper
   add_library(jxl_jni SHARED jni/org/jpeg/jpegxl/wrapper/decoder_jni.cc)
   target_include_directories(jxl_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
   target_link_libraries(jxl_jni PUBLIC jxl_dec-internal jxl_threads)
@@ -474,6 +475,29 @@ if (JNI_FOUND AND Java_FOUND)
   )
   get_target_property(JXL_JNI_WRAPPER_TEST_JAR jxl_jni_wrapper_test JAR_FILE)
 
+  # jpegli wrapper
+
+  if(JPEGXL_ENABLE_JPEGLI)
+    add_library(jpegli_jni SHARED jni/org/jpeg/jpegli/wrapper/encoder_jni.cc)
+    target_include_directories(jpegli_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
+    target_include_directories(jpegli_jni PRIVATE
+      "${CMAKE_CURRENT_BINARY_DIR}/include/jpegli"
+    )
+    target_link_libraries(jpegli_jni PUBLIC jpegli-static)
+
+    add_jar(jpegli_jni_wrapper SOURCES
+      jni/org/jpeg/jpegli/wrapper/Encoder.java
+      OUTPUT_NAME org.jpeg.jpegli
+    )
+    get_target_property(JPEGLI_JNI_WRAPPER_JAR jpegli_jni_wrapper JAR_FILE)
+
+    add_jar(jpegli_jni_wrapper_test
+      SOURCES jni/org/jpeg/jpegli/wrapper/EncoderTest.java
+      INCLUDE_JARS jpegli_jni_wrapper
+    )
+    get_target_property(JPEGLI_JNI_WRAPPER_TEST_JAR jpegli_jni_wrapper_test JAR_FILE)
+  endif()
+
   if(NOT SANITIZER MATCHES ".san")
     # NB: Vanilla OpenJDK 8 / 11 are known to work well (i.e. either
     #     "which java" or JAVA_HOME environment variable point to the path like
@@ -485,6 +509,15 @@ if (JNI_FOUND AND Java_FOUND)
               -Dorg.jpeg.jpegxl.wrapper.lib=$<TARGET_FILE:jxl_jni>
               org.jpeg.jpegxl.wrapper.DecoderTest
     )
+    if(JPEGXL_ENABLE_JPEGLI)
+      add_test(
+        NAME test_jpegli_jni_wrapper
+        COMMAND ${Java_JAVA_EXECUTABLE}
+                -cp "${JPEGLI_JNI_WRAPPER_JAR}:${JPEGLI_JNI_WRAPPER_TEST_JAR}"
+                -Dorg.jpeg.jpegli.wrapper.lib=$<TARGET_FILE:jpegli_jni>
+                org.jpeg.jpegli.wrapper.EncoderTest
+      )
+    endif()
   endif()  # JPEGXL_ENABLE_FUZZERS
 endif()  # JNI_FOUND & Java_FOUND
 endif()  # JPEGXL_ENABLE_JNI
