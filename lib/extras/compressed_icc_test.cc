@@ -5,6 +5,13 @@
 
 #include "jxl/compressed_icc.h"
 
+#include <jxl/memory_manager.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"

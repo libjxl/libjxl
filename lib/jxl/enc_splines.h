@@ -8,6 +8,7 @@
 
 #include <cstdint>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/image.h"

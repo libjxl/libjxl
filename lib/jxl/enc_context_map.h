@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "lib/jxl/ac_context.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_bit_writer.h"
 
 namespace jxl {

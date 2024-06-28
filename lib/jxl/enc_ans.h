@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_bit_writer.h"

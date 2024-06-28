@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 

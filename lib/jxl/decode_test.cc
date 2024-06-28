@@ -40,7 +40,6 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -283,7 +282,7 @@ std::vector<uint8_t> CreateTestJXLCodestream(
                                  &jpeg_data, params.cparams));
       io.metadata.m.xyb_encoded = false;
     } else {
-      EXPECT_TRUE(false);
+      ADD_FAILURE();
     }
   }
   if (params.preview_mode) {
@@ -1512,7 +1511,7 @@ std::ostream& operator<<(std::ostream& os, const PixelTestConfig& c) {
       os << "f16";
       break;
     default:
-      EXPECT_TRUE(false);
+      ADD_FAILURE();
   };
   if (jxl::test::GetDataBits(c.data_type) > jxl::kBitsPerByte) {
     if (c.endianness == JXL_NATIVE_ENDIAN) {

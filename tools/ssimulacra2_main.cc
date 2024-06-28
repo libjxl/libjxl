@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include "lib/extras/codec.h"
@@ -95,5 +96,5 @@ int main(int argc, char** argv) {
                        "ComputeSSIMULACRA2 failed.");
     printf("%.8f\n", std::min(msssim0.Score(), msssim1.Score()));
   }
-  return 0;
+  return EXIT_SUCCESS;
 }

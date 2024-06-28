@@ -5,11 +5,14 @@
 
 #include "jxl/gain_map.h"
 
+#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
+#include <jxl/types.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -90,7 +93,7 @@ TEST_P(GainMapTest, GainMapRoundtrip) {
   orig_bundle.gain_map_metadata = gain_map_metadata.data();
 
   // Use the ICC profile from the parameter
-  orig_bundle.has_color_encoding = params.has_color_encoding;
+  orig_bundle.has_color_encoding = TO_JXL_BOOL(params.has_color_encoding);
   if (orig_bundle.has_color_encoding) {
     JxlColorEncoding color_encoding = {};
     JxlColorEncodingSetToLinearSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
