@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+
+## [0.8.3] - 2024-06-28
+
+### Fixed
+  - decoding of some special images (#3662)
+
+## [0.8.2] - 2023-06-14
+
+### Changed
+ - Security: Fix an integer underflow bug in patch decoding (#2551- CVE-2023-35790).
+
+## [0.8.1] - 2023-02-03
+
+### Changed
+ - Allow fast-lossless for 16-bit float input (#2093)
+ - Fix bug in palette (#2120)
+ - Security: Fix OOB read in exif.h (#2101 - [CVE-2023-0645](https://www.cve.org/cverecord?id=CVE-2023-0645))
+
+## [0.8.0] - 2023-01-18
 
 ### Added
  - decoder API: new function `JxlDecoderSetImageBitDepth` to set the bit depth
@@ -29,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed / clarified
  - encoder API: `JxlEncoderProcessOutput` requires at least 32 bytes of output
    space to proceed and guarantees that at least one byte will be written
+
 ## [0.7] - 2022-07-21
 
 ### Added
