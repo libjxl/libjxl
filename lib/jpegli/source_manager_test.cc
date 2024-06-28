@@ -3,11 +3,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/libjpeg_test_util.h"
+#include "lib/jpegli/test_params.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
 #include "lib/jxl/base/status.h"

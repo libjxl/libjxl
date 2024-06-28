@@ -7,8 +7,11 @@
 #define LIB_JXL_MODULAR_ENCODING_ENC_MA_H_
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/modular_image.h"

@@ -13,6 +13,7 @@
 #include <hwy/tests/hwy_gtest.h>
 #include <iterator>
 #include <numeric>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/ac_strategy.h"

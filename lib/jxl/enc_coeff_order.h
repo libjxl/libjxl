@@ -8,9 +8,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
