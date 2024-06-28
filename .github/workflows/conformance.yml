@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  warmup: # If necessary, fetch files just once, before tests are run. 
+  warmup: # If necessary, fetch files just once, before tests are run.
     name: Warmup caches
     runs-on: ubuntu-latest
     steps:
@@ -125,8 +125,8 @@ jobs:
         cp tools/conformance/conformance.py build/tools/conformance
         cp tools/conformance/lcms2.py build/tools/conformance
         cp build/tools/djxl build/tools/conformance
-        cp build/libjxl.so.0.7.0 build/tools/conformance
-        cp build/libjxl_threads.so.0.7.0 build/tools/conformance
+        cp build/libjxl.so.0.7.1 build/tools/conformance
+        cp build/libjxl_threads.so.0.7.1 build/tools/conformance
       env:
         SKIP_TEST: 1
     - uses: actions/upload-artifact@v2
@@ -136,8 +136,8 @@ jobs:
           build/tools/conformance/conformance.py
           build/tools/conformance/lcms2.py
           build/tools/conformance/djxl
-          build/tools/conformance/libjxl.so.0.7.0
-          build/tools/conformance/libjxl_threads.so.0.7.0
+          build/tools/conformance/libjxl.so.0.7.1
+          build/tools/conformance/libjxl_threads.so.0.7.1
     - name: ccache stats
       run: ccache --show-stats
 
@@ -174,8 +174,8 @@ jobs:
     - name: Run conformance tests
       run: |
         chmod +x djxl
-        ln -s libjxl.so.0.7.0 libjxl.so.0.7
-        ln -s libjxl_threads.so.0.7.0 libjxl_threads.so.0.7
+        ln -s libjxl.so.0.7.1 libjxl.so.0.7
+        ln -s libjxl_threads.so.0.7.1 libjxl_threads.so.0.7
         export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:`pwd`
         python conformance.py \
           --decoder=`pwd`/djxl \
