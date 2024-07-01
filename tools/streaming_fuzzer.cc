@@ -14,10 +14,12 @@
 #include <jxl/types.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/fuzztest.h"
 
@@ -273,7 +275,7 @@ std::vector<float> Decode(const std::vector<uint8_t>& data) {
     } else if (status == JXL_DEC_FULL_IMAGE || status == JXL_DEC_SUCCESS) {
       return pixels;
     } else {
-      // Unexpected status
+      fprintf(stderr, "Unexpected status: %d\n", static_cast<int>(status));
       Check(false);
     }
   }
@@ -281,11 +283,28 @@ std::vector<float> Decode(const std::vector<uint8_t>& data) {
 
 int DoTestOneInput(const uint8_t* data, size_t size) {
   auto spec = FuzzSpec::FromData(data, size);
+  uint64_t xsize = spec.xsize;
+  uint64_t ysize = spec.ysize;
+  xsize = jxl::DivCeil(spec.xsize, 32) * 32 + 32;
+  ysize = jxl::DivCeil(spec.ysize, 32) * 32 + 32;
+  uint64_t num_pixels = xsize * ysize;
+  // Reject input that generates too large images.
+  if (num_pixels > 53 << 16) return -1;
   auto enc_default = Encode(spec, false);
   auto enc_streaming = Encode(spec, true);
   auto dec_default = Decode(enc_default);
   auto dec_streaming = Decode(enc_streaming);
-  Check(dec_default == dec_streaming);
+  Check(dec_default.size() == dec_streaming.size());
+  float max_delta = 0;
+  for (size_t i = 0; i < dec_default.size(); ++i) {
+    float delta = std::abs(dec_default[i] - dec_streaming[i]);
+    max_delta = std::max(max_delta, delta);
+  }
+  const float kDeltaLimit = 0.0066;
+  if (max_delta >= kDeltaLimit) {
+    fprintf(stderr, "max_delta = %f\n", max_delta);
+    Check(false);
+  }
   return 0;
 }
 

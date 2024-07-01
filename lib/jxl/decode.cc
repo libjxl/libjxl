@@ -17,6 +17,7 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/padded_bytes.h"
@@ -1021,7 +1022,9 @@ JxlDecoderStatus JxlDecoderReadBasicInfo(JxlDecoder* dec) {
 
   if (!CheckSizeLimit(dec, dec->metadata.size.xsize(),
                       dec->metadata.size.ysize())) {
-    return JXL_INPUT_ERROR("image is too large");
+    return JXL_INPUT_ERROR("image is too large: %" PRIuS " x %" PRIuS,
+                           dec->metadata.size.xsize(),
+                           dec->metadata.size.ysize());
   }
 
   return JXL_DEC_SUCCESS;
