@@ -32,6 +32,7 @@
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_group.h"
 #include "lib/jxl/dec_noise.h"
 #include "lib/jxl/dec_xyb.h"
@@ -52,6 +53,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 
@@ -813,12 +815,19 @@ StatusOr<Image3F> ReconstructImage(
   JXL_RETURN_IF_ERROR(dec_state.PreparePipeline(
       frame_header, &shared.metadata->m, &decoded, options));
 
-  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
+  AlignedMemory group_dec_caches;
   const auto allocate_storage = [&](const size_t num_threads) -> Status {
     JXL_RETURN_IF_ERROR(
         dec_state.render_pipeline->PrepareForThreads(num_threads,
                                                      /*use_group_ids=*/false));
-    group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
+    size_t group_dec_caches_bytes = num_threads * sizeof(GroupDecCache);
+    JXL_ASSIGN_OR_RETURN(
+        group_dec_caches,
+        AlignedMemory::Create(memory_manager, group_dec_caches_bytes));
+    GroupDecCache* caches = group_dec_caches.address<GroupDecCache>();
+    for (size_t i = 0; i < num_threads; ++i) {
+      new (caches + i) GroupDecCache();
+    }
     return true;
   };
   const auto process_group = [&](const uint32_t group_index,
@@ -832,7 +841,8 @@ StatusOr<Image3F> ReconstructImage(
         dec_state.render_pipeline->GetInputBuffers(group_index, thread);
     JXL_RETURN_IF_ERROR(DecodeGroupForRoundtrip(
         frame_header, coeffs, group_index, &dec_state,
-        &group_dec_caches[thread], thread, input, nullptr, nullptr));
+        group_dec_caches.address<GroupDecCache>() + thread, thread, input,
+        nullptr, nullptr));
     if ((frame_header.flags & FrameHeader::kNoise) != 0) {
       PrepareNoiseInput(dec_state, shared.frame_dim, frame_header, group_index,
                         thread);
@@ -1049,8 +1059,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   //
   // output: Gaborished XYB, CfL, ACS, raw quant field, EPF control field.
 
-  AcStrategyHeuristics acs_heuristics(cparams);
-  CfLHeuristics cfl_heuristics;
+  AcStrategyHeuristics acs_heuristics(memory_manager, cparams);
+  CfLHeuristics cfl_heuristics(memory_manager);
   ImageF initial_quant_field;
   ImageF initial_quant_masking;
 
@@ -1111,7 +1121,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
         memory_manager, cparams, modular_frame_encoder, &matrices));
   }
 
-  JXL_RETURN_IF_ERROR(cfl_heuristics.Init(memory_manager, rect));
+  JXL_RETURN_IF_ERROR(cfl_heuristics.Init(rect));
   JXL_RETURN_IF_ERROR(acs_heuristics.Init(*opsin, rect, initial_quant_field,
                                           initial_quant_masking,
                                           initial_quant_masking1x1, &matrices));
@@ -1161,8 +1171,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   size_t num_tiles = DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks) *
                      DivCeil(frame_dim.ysize_blocks, kEncTileDimInBlocks);
   const auto prepare = [&](const size_t num_threads) -> Status {
-    acs_heuristics.PrepareForThreads(num_threads);
-    cfl_heuristics.PrepareForThreads(num_threads);
+    JXL_RETURN_IF_ERROR(acs_heuristics.PrepareForThreads(num_threads));
+    JXL_RETURN_IF_ERROR(cfl_heuristics.PrepareForThreads(num_threads));
     return true;
   };
   JXL_RETURN_IF_ERROR(

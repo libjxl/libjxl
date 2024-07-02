@@ -11,10 +11,10 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdlib>
+#include <hwy/base.h>  // HWY_ALIGN_MAX
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_chroma_from_luma.cc"
-#include <hwy/aligned_allocator.h>
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
@@ -355,7 +355,7 @@ namespace jxl {
 HWY_EXPORT(InitDCStorage);
 HWY_EXPORT(ComputeTile);
 
-Status CfLHeuristics::Init(JxlMemoryManager* memory_manager, const Rect& rect) {
+Status CfLHeuristics::Init(const Rect& rect) {
   size_t xsize_blocks = rect.xsize() / kBlockDim;
   size_t ysize_blocks = rect.ysize() / kBlockDim;
   return HWY_DYNAMIC_DISPATCH(InitDCStorage)(
@@ -373,7 +373,7 @@ Status CfLHeuristics::ComputeTile(const Rect& r, const Image3F& opsin,
   return HWY_DYNAMIC_DISPATCH(ComputeTile)(
       opsin, opsin_rect, dequant, ac_strategy, raw_quant_field, quantizer, r,
       fast, use_dct8, &cmap->ytox_map, &cmap->ytob_map, &dc_values,
-      mem.get() + thread * ItemsPerThread());
+      mem.address<float>() + thread * ItemsPerThread());
 }
 
 Status ColorCorrelationEncodeDC(const ColorCorrelation& color_correlation,

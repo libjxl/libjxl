@@ -199,7 +199,7 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
                                   CompressParams{}, false),
       "Failed to create ModularFrameEncoder.");
   ASSERT_TRUE(DequantMatricesSetCustom(&dequant_matrices, encodings, &encoder));
-  ASSERT_TRUE(dequant_matrices.EnsureComputed(~0u));
+  ASSERT_TRUE(dequant_matrices.EnsureComputed(memory_manager, ~0u));
 
   const float dc_quant[3] = {1.0f / kUniformQuant, 1.0f / kUniformQuant,
                              1.0f / kUniformQuant};

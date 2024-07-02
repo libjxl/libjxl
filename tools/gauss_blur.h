@@ -8,7 +8,7 @@
 
 #include <cstddef>
 #include <functional>
-#include <hwy/aligned_allocator.h>
+#include <hwy/base.h>  // HWY_ALIGN_MAX
 
 #include "lib/jxl/base/data_parallel.h"
 
@@ -16,7 +16,7 @@ namespace jxl {
 
 // Only for use by CreateRecursiveGaussian and FastGaussian*.
 #pragma pack(push, 1)
-struct RecursiveGaussian {
+struct HWY_ALIGN_MAX RecursiveGaussian {
   // For k={1,3,5} in that order, each broadcasted 4x for LoadDup128. Used only
   // for vertical passes.
   float n2[3 * 4];
@@ -39,21 +39,19 @@ struct RecursiveGaussian {
 
 // Precomputation for FastGaussian*; users may use the same pointer/storage in
 // subsequent calls to FastGaussian* with the same sigma.
-hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma);
+RecursiveGaussian CreateRecursiveGaussian(double sigma);
 
 // 1D Gaussian with zero-pad boundary handling and runtime independent of sigma.
-void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                    size_t xsize, const float* JXL_RESTRICT in,
-                    float* JXL_RESTRICT out);
+void FastGaussian1D(const RecursiveGaussian& rg, size_t xsize,
+                    const float* JXL_RESTRICT in, float* JXL_RESTRICT out);
 
 typedef std::function<const float*(size_t /*y*/)> GetConstRow;
 typedef std::function<float*(size_t /*y*/)> GetRow;
 
 // 2D Gaussian with zero-pad boundary handling and runtime independent of sigma.
-Status FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                    size_t xsize, size_t ysize, const GetConstRow& in,
-                    const GetRow& temp, const GetRow& out,
-                    ThreadPool* pool = nullptr);
+Status FastGaussian(const RecursiveGaussian& rg, size_t xsize, size_t ysize,
+                    const GetConstRow& in, const GetRow& temp,
+                    const GetRow& out, ThreadPool* pool = nullptr);
 
 }  // namespace jxl
 

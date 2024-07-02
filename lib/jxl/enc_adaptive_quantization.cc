@@ -15,6 +15,8 @@
 #include <string>
 #include <vector>
 
+#include "lib/jxl/memory_manager_internal.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_adaptive_quantization.cc"
 #include <hwy/foreach_target.h>
@@ -835,12 +837,19 @@ StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,
   JXL_RETURN_IF_ERROR(dec_state->PreparePipeline(
       frame_header, &enc_state->shared.metadata->m, &decoded, options));
 
-  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
+  AlignedMemory group_dec_caches;
   const auto allocate_storage = [&](const size_t num_threads) -> Status {
     JXL_RETURN_IF_ERROR(
         dec_state->render_pipeline->PrepareForThreads(num_threads,
                                                       /*use_group_ids=*/false));
-    group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
+    size_t group_dec_caches_bytes = num_threads * sizeof(GroupDecCache);
+    JXL_ASSIGN_OR_RETURN(
+        group_dec_caches,
+        AlignedMemory::Create(memory_manager, group_dec_caches_bytes));
+    GroupDecCache* caches = group_dec_caches.address<GroupDecCache>();
+    for (size_t i = 0; i < num_threads; ++i) {
+      new (caches + i) GroupDecCache();
+    }
     return true;
   };
   const auto process_group = [&](const uint32_t group_index,
@@ -855,7 +864,8 @@ StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,
         dec_state->render_pipeline->GetInputBuffers(group_index, thread);
     JXL_RETURN_IF_ERROR(DecodeGroupForRoundtrip(
         frame_header, enc_state->coeffs, group_index, dec_state.get(),
-        &group_dec_caches[thread], thread, input, nullptr, nullptr));
+        group_dec_caches.address<GroupDecCache>() + thread, thread, input,
+        nullptr, nullptr));
     for (size_t c = 0; c < metadata.num_extra_channels; c++) {
       std::pair<ImageF*, Rect> ri = input.GetBuffer(3 + c);
       FillPlane(0.0f, ri.first, ri.second);

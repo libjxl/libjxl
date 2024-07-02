@@ -15,6 +15,7 @@
 #include "lib/jxl/dct_scales.h"
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/quant_weights.cc"
@@ -1199,13 +1200,17 @@ DequantMatrices::DequantMatrices() {
   }
 }
 
-Status DequantMatrices::EnsureComputed(uint32_t acs_mask) {
+Status DequantMatrices::EnsureComputed(JxlMemoryManager* memory_manager,
+                                       uint32_t acs_mask) {
   const QuantEncoding* library = Library();
 
   if (!table_storage_) {
-    table_storage_ = hwy::AllocateAligned<float>(2 * kTotalTableSize);
-    table_ = table_storage_.get();
-    inv_table_ = table_storage_.get() + kTotalTableSize;
+    size_t table_storage_bytes = 2 * kTotalTableSize * sizeof(float);
+    JXL_ASSIGN_OR_RETURN(
+        table_storage_,
+        AlignedMemory::Create(memory_manager, table_storage_bytes));
+    table_ = table_storage_.address<float>();
+    inv_table_ = table_ + kTotalTableSize;
   }
 
   size_t offsets[kNumQuantTables * 3 + 1];
@@ -1237,16 +1242,15 @@ Status DequantMatrices::EnsureComputed(uint32_t acs_mask) {
     if ((1 << table) & computed_kind_mask) continue;
     if ((1 << table) & ~kind_mask) continue;
     size_t pos = offsets[table * 3];
+    float* mutable_table = table_storage_.address<float>();
     if (encodings_[table].mode == QuantEncoding::kQuantModeLibrary) {
       JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(ComputeQuantTable)(
-          library[table], table_storage_.get(),
-          table_storage_.get() + kTotalTableSize, table, QuantTable(table),
-          &pos));
+          library[table], mutable_table, mutable_table + kTotalTableSize, table,
+          QuantTable(table), &pos));
     } else {
       JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(ComputeQuantTable)(
-          encodings_[table], table_storage_.get(),
-          table_storage_.get() + kTotalTableSize, table, QuantTable(table),
-          &pos));
+          encodings_[table], mutable_table, mutable_table + kTotalTableSize,
+          table, QuantTable(table), &pos));
     }
     JXL_ENSURE(pos == offsets[table * 3 + 3]);
   }
