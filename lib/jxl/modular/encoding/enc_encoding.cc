@@ -356,7 +356,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   // Check if this tree is a WP-only tree with a small enough property value
   // range.
   // Initialized to avoid clang-tidy complaining.
-  auto tree_lut = jxl::make_unique<TreeLut<uint8_t, false, false>>();
+  auto tree_lut = jxl::make_unique<TreeLut<uint16_t, false, false>>();
   if (is_wp_only) {
     is_wp_only = TreeToLookupTable(tree, *tree_lut);
   }
