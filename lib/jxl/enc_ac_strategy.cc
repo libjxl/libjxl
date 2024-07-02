@@ -14,6 +14,7 @@
 #include <cstring>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_ac_strategy.cc"
@@ -1053,7 +1054,8 @@ Status AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
   config.dequant = matrices;
 
   if (cparams.speed_tier >= SpeedTier::kCheetah) {
-    JXL_RETURN_IF_ERROR(matrices->EnsureComputed(1));  // DCT8 only
+    JXL_RETURN_IF_ERROR(
+        matrices->EnsureComputed(memory_manager, 1));  // DCT8 only
   } else {
     uint32_t acs_mask = 0;
     // All transforms up to 64x64.
@@ -1061,7 +1063,7 @@ Status AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
          i++) {
       acs_mask |= (1 << i);
     }
-    JXL_RETURN_IF_ERROR(matrices->EnsureComputed(acs_mask));
+    JXL_RETURN_IF_ERROR(matrices->EnsureComputed(memory_manager, acs_mask));
   }
 
   // Image row pointers and strides.
@@ -1101,13 +1103,16 @@ Status AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
   return true;
 }
 
-void AcStrategyHeuristics::PrepareForThreads(std::size_t num_threads) {
+Status AcStrategyHeuristics::PrepareForThreads(std::size_t num_threads) {
   const size_t dct_scratch_size =
       3 * (MaxVectorSize() / sizeof(float)) * AcStrategy::kMaxBlockDim;
   mem_per_thread = 6 * AcStrategy::kMaxCoeffArea + dct_scratch_size;
-  mem = hwy::AllocateAligned<float>(num_threads * mem_per_thread);
+  size_t mem_bytes = num_threads * mem_per_thread * sizeof(float);
+  JXL_ASSIGN_OR_RETURN(mem, AlignedMemory::Create(memory_manager, mem_bytes));
   qmem_per_thread = AcStrategy::kMaxCoeffArea;
-  qmem = hwy::AllocateAligned<uint32_t>(num_threads * qmem_per_thread);
+  size_t qmem_bytes = num_threads * qmem_per_thread * sizeof(uint32_t);
+  JXL_ASSIGN_OR_RETURN(qmem, AlignedMemory::Create(memory_manager, qmem_bytes));
+  return true;
 }
 
 Status AcStrategyHeuristics::ProcessRect(const Rect& rect,
@@ -1120,8 +1125,9 @@ Status AcStrategyHeuristics::ProcessRect(const Rect& rect,
     return true;
   }
   return HWY_DYNAMIC_DISPATCH(ProcessRectACS)(
-      cparams, config, rect, cmap, mem.get() + thread * mem_per_thread,
-      qmem.get() + thread * qmem_per_thread, ac_strategy);
+      cparams, config, rect, cmap,
+      mem.address<float>() + thread * mem_per_thread,
+      qmem.address<uint32_t>() + thread * qmem_per_thread, ac_strategy);
 }
 
 Status AcStrategyHeuristics::Finalize(const FrameDimensions& frame_dim,

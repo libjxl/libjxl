@@ -13,7 +13,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <hwy/aligned_allocator.h>
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/rect.h"
@@ -21,6 +20,7 @@
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/simd_util.h"
 
@@ -35,10 +35,15 @@ Status ColorCorrelationEncodeDC(const ColorCorrelation& color_correlation,
                                 AuxOut* aux_out);
 
 struct CfLHeuristics {
-  Status Init(JxlMemoryManager* memory_manager, const Rect& rect);
+  explicit CfLHeuristics(JxlMemoryManager* memory_manager)
+      : memory_manager(memory_manager) {}
 
-  void PrepareForThreads(size_t num_threads) {
-    mem = hwy::AllocateAligned<float>(num_threads * ItemsPerThread());
+  Status Init(const Rect& rect);
+
+  Status PrepareForThreads(size_t num_threads) {
+    size_t mem_bytes = num_threads * ItemsPerThread() * sizeof(float);
+    JXL_ASSIGN_OR_RETURN(mem, AlignedMemory::Create(memory_manager, mem_bytes));
+    return true;
   }
 
   Status ComputeTile(const Rect& r, const Image3F& opsin,
@@ -47,8 +52,9 @@ struct CfLHeuristics {
                      const ImageI* raw_quant_field, const Quantizer* quantizer,
                      bool fast, size_t thread, ColorCorrelationMap* cmap);
 
+  JxlMemoryManager* memory_manager;
   ImageF dc_values;
-  hwy::AlignedFreeUniquePtr<float[]> mem;
+  AlignedMemory mem;
 
   // Working set is too large for stack; allocate dynamically.
   static size_t ItemsPerThread() {

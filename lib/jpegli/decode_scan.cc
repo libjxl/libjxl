@@ -7,7 +7,7 @@
 
 #include <string.h>
 
-#include <hwy/base.h>
+#include <hwy/base.h>  // HWY_ALIGN_MAX
 
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"

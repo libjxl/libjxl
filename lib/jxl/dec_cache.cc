@@ -14,6 +14,7 @@
 #include "lib/jxl/blending.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/render_pipeline/stage_blending.h"
 #include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_cms.h"
@@ -60,16 +61,25 @@ Status GroupDecCache::InitOnce(JxlMemoryManager* memory_manager,
     max_block_area_ = max_block_area;
     // We need 3x float blocks for dequantized coefficients and 1x for scratch
     // space for transforms.
-    float_memory_ = hwy::AllocateAligned<float>(max_block_area_ * 7);
+    JXL_ASSIGN_OR_RETURN(
+        float_memory_,
+        AlignedMemory::Create(memory_manager,
+                              max_block_area_ * 7 * sizeof(float)));
     // We need 3x int32 or int16 blocks for quantized coefficients.
-    int32_memory_ = hwy::AllocateAligned<int32_t>(max_block_area_ * 3);
-    int16_memory_ = hwy::AllocateAligned<int16_t>(max_block_area_ * 3);
+    JXL_ASSIGN_OR_RETURN(
+        int32_memory_,
+        AlignedMemory::Create(memory_manager,
+                              max_block_area_ * 3 * sizeof(int32_t)));
+    JXL_ASSIGN_OR_RETURN(
+        int16_memory_,
+        AlignedMemory::Create(memory_manager,
+                              max_block_area_ * 3 * sizeof(int16_t)));
   }
 
-  dec_group_block = float_memory_.get();
+  dec_group_block = float_memory_.address<float>();
   scratch_space = dec_group_block + max_block_area_ * 3;
-  dec_group_qblock = int32_memory_.get();
-  dec_group_qblock16 = int16_memory_.get();
+  dec_group_qblock = int32_memory_.address<int32_t>();
+  dec_group_qblock16 = int16_memory_.address<int16_t>();
   return true;
 }
 

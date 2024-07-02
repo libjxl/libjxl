@@ -5,9 +5,10 @@
 
 #include "lib/jxl/ac_strategy.h"
 
+#include <jxl/memory_manager.h>
+
 #include <algorithm>
 #include <cstring>
-#include <hwy/aligned_allocator.h>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 #include <hwy/tests/hwy_gtest.h>
 
@@ -15,7 +16,10 @@
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dec_transforms_testonly.h"
 #include "lib/jxl/enc_transforms.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/simd_util.h"
+#include "lib/jxl/test_memory_manager.h"
+#include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -25,14 +29,17 @@ namespace {
 class AcStrategyRoundtrip : public ::hwy::TestWithParamTargetAndT<int> {
  protected:
   void Run() {
+    JxlMemoryManager* memory_manager = test::MemoryManager();
     const AcStrategyType type = static_cast<AcStrategyType>(GetParam());
     const AcStrategy acs = AcStrategy::FromRawStrategy(type);
     const size_t dct_scratch_size =
         3 * (MaxVectorSize() / sizeof(float)) * AcStrategy::kMaxBlockDim;
 
-    auto mem = hwy::AllocateAligned<float>(4 * AcStrategy::kMaxCoeffArea +
-                                           dct_scratch_size);
-    float* coeffs = mem.get();
+    size_t mem_bytes =
+        (4 * AcStrategy::kMaxCoeffArea + dct_scratch_size) * sizeof(float);
+    JXL_TEST_ASSIGN_OR_DIE(AlignedMemory mem,
+                           AlignedMemory::Create(memory_manager, mem_bytes));
+    float* coeffs = mem.address<float>();
     float* idct = coeffs + AcStrategy::kMaxCoeffArea;
     float* input = idct + AcStrategy::kMaxCoeffArea;
     float* scratch_space = input + AcStrategy::kMaxCoeffArea;
@@ -89,14 +96,17 @@ class AcStrategyRoundtripDownsample
     : public ::hwy::TestWithParamTargetAndT<int> {
  protected:
   void Run() {
+    JxlMemoryManager* memory_manager = test::MemoryManager();
     const AcStrategyType type = static_cast<AcStrategyType>(GetParam());
     const AcStrategy acs = AcStrategy::FromRawStrategy(type);
     const size_t dct_scratch_size =
         3 * (MaxVectorSize() / sizeof(float)) * AcStrategy::kMaxBlockDim;
 
-    auto mem = hwy::AllocateAligned<float>(4 * AcStrategy::kMaxCoeffArea +
-                                           dct_scratch_size);
-    float* coeffs = mem.get();
+    size_t mem_bytes =
+        (4 * AcStrategy::kMaxCoeffArea + dct_scratch_size) * sizeof(float);
+    JXL_TEST_ASSIGN_OR_DIE(AlignedMemory mem,
+                           AlignedMemory::Create(memory_manager, mem_bytes));
+    float* coeffs = mem.address<float>();
     float* idct = coeffs + AcStrategy::kMaxCoeffArea;
     float* dc = idct + AcStrategy::kMaxCoeffArea;
     float* scratch_space = dc + AcStrategy::kMaxCoeffArea;
@@ -149,6 +159,7 @@ TEST_P(AcStrategyRoundtripDownsample, Test) { Run(); }
 class AcStrategyDownsample : public ::hwy::TestWithParamTargetAndT<int> {
  protected:
   void Run() {
+    JxlMemoryManager* memory_manager = test::MemoryManager();
     const AcStrategyType type = static_cast<AcStrategyType>(GetParam());
     const AcStrategy acs = AcStrategy::FromRawStrategy(type);
     const size_t dct_scratch_size =
@@ -157,9 +168,11 @@ class AcStrategyDownsample : public ::hwy::TestWithParamTargetAndT<int> {
     size_t cy = acs.covered_blocks_x();
     CoefficientLayout(&cy, &cx);
 
-    auto mem = hwy::AllocateAligned<float>(4 * AcStrategy::kMaxCoeffArea +
-                                           dct_scratch_size);
-    float* idct = mem.get();
+    size_t mem_bytes =
+        (4 * AcStrategy::kMaxCoeffArea + dct_scratch_size) * sizeof(float);
+    JXL_TEST_ASSIGN_OR_DIE(AlignedMemory mem,
+                           AlignedMemory::Create(memory_manager, mem_bytes));
+    float* idct = mem.address<float>();
     float* idct_acs_downsampled = idct + AcStrategy::kMaxCoeffArea;
     float* coeffs = idct + AcStrategy::kMaxCoeffArea;
     float* scratch_space = coeffs + AcStrategy::kMaxCoeffArea;
@@ -227,13 +240,16 @@ TEST_P(AcStrategyTargetTest, RoundtripAFVDCT) {
 }
 
 TEST_P(AcStrategyTargetTest, BenchmarkAFV) {
+  JxlMemoryManager* memory_manager = test::MemoryManager();
   const AcStrategyType type = AcStrategyType::AFV0;
   HWY_ALIGN_MAX float pixels[64] = {1};
   HWY_ALIGN_MAX float coeffs[64] = {};
   const size_t dct_scratch_size =
       3 * (MaxVectorSize() / sizeof(float)) * AcStrategy::kMaxBlockDim;
-  auto mem = hwy::AllocateAligned<float>(64 + dct_scratch_size);
-  float* scratch_space = mem.get();
+  size_t mem_bytes = (64 + dct_scratch_size) * sizeof(float);
+  JXL_TEST_ASSIGN_OR_DIE(AlignedMemory mem,
+                         AlignedMemory::Create(memory_manager, mem_bytes));
+  float* scratch_space = mem.address<float>();
   for (size_t i = 0; i < 1 << 14; i++) {
     TransformToPixels(type, coeffs, pixels, 8, scratch_space);
     TransformFromPixels(type, pixels, 8, coeffs, scratch_space);
