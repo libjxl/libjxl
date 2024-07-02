@@ -11,7 +11,6 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <hwy/aligned_allocator.h>
 #include <vector>
 
 #include "lib/jxl/ac_strategy.h"
@@ -20,6 +19,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 namespace jxl {
 
@@ -418,14 +418,14 @@ class DequantMatrices {
   // MUST be equal `sum(dot(required_size_x, required_size_y))`.
   static constexpr size_t kSumRequiredXy = 2056;
 
-  Status EnsureComputed(uint32_t acs_mask);
+  Status EnsureComputed(JxlMemoryManager* memory_manager, uint32_t acs_mask);
 
  private:
   static constexpr size_t kTotalTableSize = kSumRequiredXy * kDCTBlockSize * 3;
 
   uint32_t computed_mask_ = 0;
   // kTotalTableSize entries followed by kTotalTableSize for inv_table
-  hwy::AlignedFreeUniquePtr<float[]> table_storage_;
+  AlignedMemory table_storage_;
   const float* table_;
   const float* inv_table_;
   float dc_quant_[3] = {kDCQuant[0], kDCQuant[1], kDCQuant[2]};

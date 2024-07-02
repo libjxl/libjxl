@@ -6,6 +6,7 @@
 #include <jxl/memory_manager.h>
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 // Suppress any -Wdeprecated-declarations warning that might be emitted by
 // GCC or Clang by std::stable_sort in C++17 or later mode
@@ -27,7 +28,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <hwy/aligned_allocator.h>
 #include <vector>
 
 #include "lib/jxl/ac_strategy.h"
@@ -80,6 +80,7 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
                          uint32_t current_used_acs,
                          uint32_t current_used_orders,
                          coeff_order_t* JXL_RESTRICT order) {
+  JxlMemoryManager* memory_manager = ac_strategy.memory_manager();
   std::vector<int32_t> num_zeros(kCoeffOrderMaxSize);
   // If compressing at high speed and only using 8x8 DCTs, only consider a
   // subset of blocks.
@@ -165,7 +166,9 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
     uint32_t pos;
     uint32_t count;
   };
-  auto mem = hwy::AllocateAligned<PosAndCount>(AcStrategy::kMaxCoeffArea);
+  size_t mem_bytes = AcStrategy::kMaxCoeffArea * sizeof(PosAndCount);
+  JXL_ASSIGN_OR_RETURN(auto mem,
+                       AlignedMemory::Create(memory_manager, mem_bytes));
 
   std::vector<coeff_order_t> natural_order_buffer;
 
@@ -202,7 +205,7 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
     bool is_nondefault = false;
     for (uint8_t c = 0; c < 3; c++) {
       // Apply zig-zag order.
-      PosAndCount* pos_and_val = mem.get();
+      PosAndCount* pos_and_val = mem.address<PosAndCount>();
       size_t offset = CoeffOrderOffset(ord, c);
       JXL_ENSURE(CoeffOrderOffset(ord, c + 1) - offset == sz);
       float inv_sqrt_sz = 1.0f / std::sqrt(sz);
@@ -295,7 +298,9 @@ Status EncodeCoeffOrders(uint16_t used_orders,
                          BitWriter* writer, LayerType layer,
                          AuxOut* JXL_RESTRICT aux_out) {
   JxlMemoryManager* memory_manager = writer->memory_manager();
-  auto mem = hwy::AllocateAligned<coeff_order_t>(AcStrategy::kMaxCoeffArea);
+  size_t mem_bytes = AcStrategy::kMaxCoeffArea * sizeof(coeff_order_t);
+  JXL_ASSIGN_OR_RETURN(auto mem,
+                       AlignedMemory::Create(memory_manager, mem_bytes));
   uint16_t computed = 0;
   std::vector<std::vector<Token>> tokens(1);
   std::vector<coeff_order_t> natural_order_lut;
@@ -310,9 +315,9 @@ Status EncodeCoeffOrders(uint16_t used_orders,
     if (natural_order_lut.size() < size) natural_order_lut.resize(size);
     acs.ComputeNaturalCoeffOrderLut(natural_order_lut.data());
     for (size_t c = 0; c < 3; c++) {
-      JXL_RETURN_IF_ERROR(EncodeCoeffOrder(&order[CoeffOrderOffset(ord, c)],
-                                           acs, tokens.data(), mem.get(),
-                                           natural_order_lut));
+      JXL_RETURN_IF_ERROR(
+          EncodeCoeffOrder(&order[CoeffOrderOffset(ord, c)], acs, tokens.data(),
+                           mem.address<coeff_order_t>(), natural_order_lut));
     }
   }
   // Do not write anything if no order is used.

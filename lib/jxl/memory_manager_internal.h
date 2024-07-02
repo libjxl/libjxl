@@ -106,6 +106,8 @@ class AlignedMemory {
   static StatusOr<AlignedMemory> Create(JxlMemoryManager* memory_manager,
                                         size_t size, size_t pre_padding = 0);
 
+  explicit operator bool() const noexcept { return (address_ != nullptr); }
+
   template <typename T>
   T* address() const {
     return reinterpret_cast<T*>(address_);

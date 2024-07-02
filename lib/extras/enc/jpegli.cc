@@ -391,11 +391,12 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
   unsigned char* output_buffer = nullptr;
   unsigned long output_size = 0;  // NOLINT
   std::vector<uint8_t> row_bytes;
-  size_t rowlen = RoundUpTo(ppf.info.xsize, MaxVectorSize());
+  const size_t max_vector_size = MaxVectorSize();
+  size_t rowlen = RoundUpTo(ppf.info.xsize, max_vector_size);
   hwy::AlignedFreeUniquePtr<float[]> xyb_tmp =
       hwy::AllocateAligned<float>(6 * rowlen);
   hwy::AlignedFreeUniquePtr<float[]> premul_absorb =
-      hwy::AllocateAligned<float>(MaxVectorSize() * 12);
+      hwy::AllocateAligned<float>(max_vector_size * 12);
   ComputePremulAbsorb(255.0f, premul_absorb.get());
 
   jpeg_compress_struct cinfo;

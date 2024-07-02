@@ -8,6 +8,7 @@
 #include <jxl/memory_manager.h>
 
 #include <cmath>
+#include <hwy/base.h>  // HWY_ALIGN_MAX
 #include <hwy/targets.h>
 #include <vector>
 
@@ -112,21 +113,21 @@ void TestImpulseResponse(size_t width, size_t peak) {
   const auto rg4 = CreateRecursiveGaussian(4.0);
   const auto rg5 = CreateRecursiveGaussian(5.0);
 
+  HWY_ALIGN_MAX float in[36];
   // Extra padding for 4x unrolling
-  auto in = hwy::AllocateAligned<float>(width + 3);
-  memset(in.get(), 0, sizeof(float) * (width + 3));
+  memset(in, 0, sizeof(float) * (width + 3));
   in[peak] = 1.0f;
 
-  auto out3 = hwy::AllocateAligned<float>(width + 3);
-  auto out4 = hwy::AllocateAligned<float>(width + 3);
-  auto out5 = hwy::AllocateAligned<float>(width + 3);
-  FastGaussian1D(rg3, width, in.get(), out3.get());
-  FastGaussian1D(rg4, width, out3.get(), out4.get());
-  FastGaussian1D(rg5, width, in.get(), out5.get());
+  HWY_ALIGN_MAX float out3[36];
+  HWY_ALIGN_MAX float out4[36];
+  HWY_ALIGN_MAX float out5[36];
+  FastGaussian1D(rg3, width, in, out3);
+  FastGaussian1D(rg4, width, out3, out4);
+  FastGaussian1D(rg5, width, in, out5);
 
-  VerifySymmetric(width, peak, out3.get());
-  VerifySymmetric(width, peak, out4.get());
-  VerifySymmetric(width, peak, out5.get());
+  VerifySymmetric(width, peak, out3);
+  VerifySymmetric(width, peak, out4);
+  VerifySymmetric(width, peak, out5);
 
   // Wider kernel has flatter peak
   EXPECT_LT(out5[peak] + 0.05, out3[peak]);
@@ -256,16 +257,16 @@ TEST(GaussBlurTest, DISABLED_SlowTestDirac1D) {
                          ImageF::Create(memory_manager, length, 1));
   ZeroFillImage(&inputs);
 
-  auto outputs = hwy::AllocateAligned<float>(length);
+  HWY_ALIGN_MAX float outputs[length];
 
   // One per center position
-  auto sum_abs_err = hwy::AllocateAligned<double>(length);
-  std::fill(sum_abs_err.get(), sum_abs_err.get() + length, 0.0);
+  HWY_ALIGN_MAX double sum_abs_err[length];
+  std::fill(sum_abs_err, sum_abs_err + length, 0.0);
 
   for (size_t center = radius; center < length - radius; ++center) {
     inputs.Row(0)[center - 1] = 0.0f;  // reset last peak, entire array now 0
     inputs.Row(0)[center] = 1.0f;
-    FastGaussian1D(rg, length, inputs.Row(0), outputs.get());
+    FastGaussian1D(rg, length, inputs.Row(0), outputs);
 
     const ImageF outputs_fir = ConvolveF64(inputs, kernel);
 
@@ -276,7 +277,7 @@ TEST(GaussBlurTest, DISABLED_SlowTestDirac1D) {
   }
 
   const double max_abs_err =
-      *std::max_element(sum_abs_err.get(), sum_abs_err.get() + length);
+      *std::max_element(sum_abs_err, sum_abs_err + length);
   printf("Max abs err: %.8e\n", max_abs_err);
 }
 
