@@ -20,7 +20,6 @@
 #include <numeric>
 #include <string>
 #include <thread>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -42,7 +41,6 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_comparator.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
@@ -60,6 +58,7 @@
 #include "tools/speed_stats.h"
 #include "tools/ssimulacra2.h"
 #include "tools/thread_pool_internal.h"
+#include "tools/tracking_memory_manager.h"
 
 namespace jpegxl {
 namespace tools {
@@ -81,73 +80,6 @@ using ::jxl::StatusOr;
 using ::jxl::ThreadPool;
 using ::jxl::extras::PackedPixelFile;
 
-class TrackingMemoryManager {
- public:
-  explicit TrackingMemoryManager(JxlMemoryManager* inner) : inner_(inner) {
-    outer_.opaque = reinterpret_cast<void*>(this);
-    outer_.alloc = &Alloc;
-    outer_.free = &Free;
-  }
-
-  JxlMemoryManager* get() { return &outer_; }
-
-  void PrintStats() const {
-    fprintf(stderr, "Allocations: %" PRIuS " (max bytes in use: %E)\n",
-            static_cast<size_t>(num_allocations_),
-            static_cast<double>(max_bytes_in_use_));
-  }
-
- private:
-  static void* Alloc(void* opaque, size_t size) {
-    if (opaque == nullptr) {
-      JXL_DEBUG_ABORT("Internal logic error");
-      return nullptr;
-    }
-    TrackingMemoryManager* self =
-        reinterpret_cast<TrackingMemoryManager*>(opaque);
-    void* result = self->inner_->alloc(self->inner_->opaque, size);
-    if (result != nullptr) {
-      std::lock_guard<std::mutex> guard(self->mutex_);
-      self->num_allocations_++;
-      self->bytes_in_use_ += size;
-      self->max_bytes_in_use_ =
-          std::max(self->max_bytes_in_use_, self->bytes_in_use_);
-      self->allocations_[result] = size;
-    }
-    return result;
-  }
-
-  static void Free(void* opaque, void* address) {
-    if (opaque == nullptr) {
-      JXL_DEBUG_ABORT("Internal logic error");
-      return;
-    }
-    if (address == nullptr) return;
-    TrackingMemoryManager* self =
-        reinterpret_cast<TrackingMemoryManager*>(opaque);
-    {
-      std::lock_guard<std::mutex> guard(self->mutex_);
-      auto entry = self->allocations_.find(address);
-      if (entry != self->allocations_.end()) {
-        self->num_allocations_--;
-        self->bytes_in_use_ -= entry->second;
-        self->allocations_.erase(entry);
-      } else {
-        JXL_DEBUG_ABORT("Internal logic error");
-      }
-    }
-    self->inner_->free(self->inner_->opaque, address);
-  }
-
-  std::unordered_map<void*, size_t> allocations_;
-  std::mutex mutex_;
-  uint64_t bytes_in_use_ = 0;
-  uint64_t max_bytes_in_use_ = 0;
-  uint64_t num_allocations_ = 0;
-  JxlMemoryManager outer_;
-  JxlMemoryManager* inner_;
-};
-
 Status WriteImage(const Image3F& image, ThreadPool* pool,
                   const std::string& filename) {
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
@@ -155,7 +87,14 @@ Status WriteImage(const Image3F& image, ThreadPool* pool,
                        jxl::extras::ConvertImage3FToPackedPixelFile(
                            image, ColorEncoding::SRGB(), format, pool));
   std::vector<uint8_t> encoded;
-  return Encode(ppf, filename, &encoded, pool) && WriteFile(filename, encoded);
+  return jxl::Encode(ppf, filename, &encoded, pool) &&
+         WriteFile(filename, encoded);
+}
+
+void PrintStats(const TrackingMemoryManager& memory_manager) {
+  fprintf(stderr, "Allocations: %" PRIuS " (max bytes in use: %E)\n",
+          static_cast<size_t>(memory_manager.num_allocations),
+          static_cast<double>(memory_manager.max_bytes_in_use));
 }
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
@@ -164,7 +103,7 @@ Status ReadPNG(const std::string& filename, Image3F* image) {
   std::vector<uint8_t> encoded;
   JXL_RETURN_IF_ERROR(ReadFile(filename, &encoded));
   JXL_RETURN_IF_ERROR(
-      jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(), &io));
+      jxl::SetFromBytes(Bytes(encoded), jxl::extras::ColorHints(), &io));
   JXL_ASSIGN_OR_RETURN(*image,
                        Image3F::Create(memory_manager, io.xsize(), io.ysize()));
   JXL_RETURN_IF_ERROR(CopyImageTo(*io.Main().color(), image));
@@ -924,7 +863,7 @@ class Benchmark {
       }
     }
 
-    memory_manager.PrintStats();
+    PrintStats(memory_manager);
     if (!ok) return JXL_FAILURE("RunTasks error");
     return true;
   }
