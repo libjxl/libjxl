@@ -317,7 +317,8 @@ void TestRandom(size_t xsize, size_t ysize, float min, float max, double sigma,
          min, max, sigma);
   JXL_TEST_ASSIGN_OR_DIE(ImageF in,
                          ImageF::Create(memory_manager, xsize, ysize));
-  RandomFillImage(&in, min, max, 65537 + xsize * 129 + ysize);
+  RandomFillImage(&in, min, max,
+                  static_cast<uint64_t>(65537) + xsize * 129 + ysize);
   // FastGaussian/Convolve handle borders differently, so keep those pixels 0.
   const size_t border = 4 * sigma;
   SetBorder(border, 0.0f, &in);

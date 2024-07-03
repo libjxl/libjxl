@@ -19,7 +19,7 @@ namespace tools {
 
 class TrackingMemoryManager {
  public:
-  explicit TrackingMemoryManager(JxlMemoryManager* inner, size_t cap = 0);
+  explicit TrackingMemoryManager(JxlMemoryManager* inner, uint64_t cap = 0);
 
   JxlMemoryManager* get() { return &outer_; }
 

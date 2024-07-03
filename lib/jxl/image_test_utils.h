@@ -212,7 +212,7 @@ void GenerateImage(Rng& rng, Plane<T>* image, U begin, U end) {
 
 template <typename T>
 void RandomFillImage(Plane<T>* image, const T begin, const T end,
-                     const int seed = 129) {
+                     const uint64_t seed = 129) {
   Rng rng(seed);
   GenerateImage(rng, image, begin, end);
 }
@@ -252,7 +252,7 @@ JXL_INLINE void RandomFillImage(Image3F* image) {
 
 template <typename T, typename U>
 void RandomFillImage(Image3<T>* image, const U begin, const U end,
-                     const int seed = 129) {
+                     const uint64_t seed = 129) {
   Rng rng(seed);
   GenerateImage(rng, image, begin, end);
 }

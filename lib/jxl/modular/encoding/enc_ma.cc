@@ -916,7 +916,7 @@ void TreeSamples::PreQuantizeProperties(
 }
 
 void CollectPixelSamples(const Image &image, const ModularOptions &options,
-                         size_t group_id,
+                         uint32_t group_id,
                          std::vector<uint32_t> &group_pixel_count,
                          std::vector<uint32_t> &channel_pixel_count,
                          std::vector<pixel_type> &pixel_samples,
