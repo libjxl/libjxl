@@ -56,6 +56,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #if JPEGXL_ENABLE_APNG
@@ -624,13 +625,15 @@ struct Context {
     png_process_data(png_ptr, info_ptr, const_cast<uint8_t*>(kFooter.data()),
                      kFooter.size());
     // before destroying: check if we encountered any metadata chunks
-    png_textp text_ptr;
-    int num_text;
-    png_get_text(png_ptr, info_ptr, &text_ptr, &num_text);
-    for (int i = 0; i < num_text; i++) {
-      Status result = DecodeBlob(text_ptr[i], metadata);
-      // Ignore unknown / malformed blob.
-      (void)result;
+    png_textp text_ptr = nullptr;
+    int num_text = 0;
+    if (png_get_text(png_ptr, info_ptr, &text_ptr, &num_text) != 0) {
+      msan::UnpoisonMemory(text_ptr, sizeof(png_text_struct) * num_text);
+      for (int i = 0; i < num_text; i++) {
+        Status result = DecodeBlob(text_ptr[i], metadata);
+        // Ignore unknown / malformed blob.
+        (void)result;
+      }
     }
 
     return true;
