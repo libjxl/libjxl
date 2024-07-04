@@ -58,7 +58,7 @@ StatusOr<Image3F> GetColorImage(const PackedPixelFile& ppf) {
   return color;
 }
 
-void AddUniformNoise(Image3F* img, float d, size_t seed) {
+void AddUniformNoise(Image3F* img, float d, uint64_t seed) {
   Rng generator(seed);
   for (size_t y = 0; y < img->ysize(); ++y) {
     for (int c = 0; c < 3; ++c) {

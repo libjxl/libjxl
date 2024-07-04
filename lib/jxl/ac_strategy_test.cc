@@ -44,7 +44,7 @@ class AcStrategyRoundtrip : public ::hwy::TestWithParamTargetAndT<int> {
     float* input = idct + AcStrategy::kMaxCoeffArea;
     float* scratch_space = input + AcStrategy::kMaxCoeffArea;
 
-    Rng rng(static_cast<int>(type) * 65537 + 13);
+    Rng rng(static_cast<uint64_t>(type) * 65537 + 13);
 
     for (size_t j = 0; j < 64; j++) {
       size_t i = (acs.log2_covered_blocks()
@@ -112,7 +112,7 @@ class AcStrategyRoundtripDownsample
     float* scratch_space = dc + AcStrategy::kMaxCoeffArea;
 
     std::fill_n(coeffs, AcStrategy::kMaxCoeffArea, 0.0f);
-    Rng rng(static_cast<int>(type) * 65537 + 13);
+    Rng rng(static_cast<uint64_t>(type) * 65537 + 13);
 
     for (size_t y = 0; y < acs.covered_blocks_y(); y++) {
       for (size_t x = 0; x < acs.covered_blocks_x(); x++) {
@@ -177,7 +177,7 @@ class AcStrategyDownsample : public ::hwy::TestWithParamTargetAndT<int> {
     float* coeffs = idct + AcStrategy::kMaxCoeffArea;
     float* scratch_space = coeffs + AcStrategy::kMaxCoeffArea;
 
-    Rng rng(static_cast<int>(type) * 65537 + 13);
+    Rng rng(static_cast<uint64_t>(type) * 65537 + 13);
 
     for (size_t y = 0; y < cy; y++) {
       for (size_t x = 0; x < cx; x++) {

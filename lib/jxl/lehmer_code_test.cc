@@ -37,11 +37,11 @@ struct WorkingSet {
 };
 
 template <typename PermutationT>
-void Roundtrip(size_t n, WorkingSet<PermutationT>* ws) {
+void Roundtrip(uint32_t n, WorkingSet<PermutationT>* ws) {
   EXPECT_TRUE(n != 0);
   const size_t padded_n = 1ull << CeilLog2Nonzero(n);
 
-  Rng rng(n * 65537 + 13);
+  Rng rng(static_cast<uint64_t>(n) * 65537 + 13);
 
   // Ensure indices fit into PermutationT
   EXPECT_LE(n, 1ULL << (sizeof(PermutationT) * 8));

@@ -1150,7 +1150,7 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
       std::vector<pixel_type> diff_samples;
       std::vector<uint32_t> group_pixel_count;
       std::vector<uint32_t> channel_pixel_count;
-      for (size_t i = start; i < stop; i++) {
+      for (uint32_t i = start; i < stop; i++) {
         max_c = std::max<uint32_t>(stream_images_[i].channel.size(), max_c);
         CollectPixelSamples(stream_images_[i], stream_options_[i], i,
                             group_pixel_count, channel_pixel_count,

@@ -7,6 +7,7 @@
 
 #include <jxl/memory_manager.h>
 
+#include <cstdint>
 #include <mutex>
 
 #include "lib/jxl/base/status.h"
@@ -15,7 +16,7 @@ namespace jpegxl {
 namespace tools {
 
 TrackingMemoryManager::TrackingMemoryManager(JxlMemoryManager* inner,
-                                             size_t cap)
+                                             uint64_t cap)
     : cap_(cap), inner_(inner) {
   outer_.opaque = reinterpret_cast<void*>(this);
   outer_.alloc = &Alloc;
@@ -31,8 +32,9 @@ void* TrackingMemoryManager::Alloc(void* opaque, size_t size) {
       reinterpret_cast<TrackingMemoryManager*>(opaque);
   {
     std::lock_guard<std::mutex> guard(self->numbers_mutex_);
-    size_t new_bytes_in_use = self->bytes_in_use_ + size;
-    if (self->cap_ && new_bytes_in_use > self->cap_) {
+    uint64_t new_bytes_in_use = self->bytes_in_use_ + size;
+    if (new_bytes_in_use < size ||
+        (self->cap_ && new_bytes_in_use > self->cap_)) {
       // Soft "OOM"
       return nullptr;
     }
