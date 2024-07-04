@@ -15,7 +15,6 @@
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/compressed_dc.cc"
-#include <hwy/aligned_allocator.h>
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 

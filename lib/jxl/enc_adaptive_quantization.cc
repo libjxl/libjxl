@@ -15,6 +15,8 @@
 #include <string>
 #include <vector>
 
+#include "lib/jxl/memory_manager_internal.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_adaptive_quantization.cc"
 #include <hwy/foreach_target.h>
@@ -835,12 +837,13 @@ StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,
   JXL_RETURN_IF_ERROR(dec_state->PreparePipeline(
       frame_header, &enc_state->shared.metadata->m, &decoded, options));
 
-  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
+  AlignedArray<GroupDecCache> group_dec_caches;
   const auto allocate_storage = [&](const size_t num_threads) -> Status {
     JXL_RETURN_IF_ERROR(
         dec_state->render_pipeline->PrepareForThreads(num_threads,
                                                       /*use_group_ids=*/false));
-    group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
+    JXL_ASSIGN_OR_RETURN(group_dec_caches, AlignedArray<GroupDecCache>::Create(
+                                               memory_manager, num_threads));
     return true;
   };
   const auto process_group = [&](const uint32_t group_index,

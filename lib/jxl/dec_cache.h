@@ -17,7 +17,6 @@
 #include <memory>
 #include <vector>
 
-#include "hwy/aligned_allocator.h"
 #include "lib/jxl/base/common.h"  // kMaxNumPasses
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -31,6 +30,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/render_pipeline/render_pipeline.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
@@ -188,7 +188,7 @@ struct PassesDecoderState {
 
 // Temp images required for decoding a single group. Reduces memory allocations
 // for large images because we only initialize min(#threads, #groups) instances.
-struct GroupDecCache {
+struct HWY_ALIGN_MAX GroupDecCache {
   Status InitOnce(JxlMemoryManager* memory_manager, size_t num_passes,
                   size_t used_acs);
 
@@ -221,9 +221,9 @@ struct GroupDecCache {
   ImageF dc_buffer;
 
  private:
-  hwy::AlignedFreeUniquePtr<float[]> float_memory_;
-  hwy::AlignedFreeUniquePtr<int32_t[]> int32_memory_;
-  hwy::AlignedFreeUniquePtr<int16_t[]> int16_memory_;
+  AlignedMemory float_memory_;
+  AlignedMemory int32_memory_;
+  AlignedMemory int16_memory_;
   size_t max_block_area_ = 0;
 };
 

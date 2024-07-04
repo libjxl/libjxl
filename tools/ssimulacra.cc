@@ -211,7 +211,7 @@ class Blur {
 
  private:
   Blur() : rg_(jxl::CreateRecursiveGaussian(1.5)) {}
-  hwy::AlignedUniquePtr<jxl::RecursiveGaussian> rg_;
+  jxl::RecursiveGaussian rg_;
   ImageF temp_;
 };
 
