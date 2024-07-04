@@ -6,6 +6,9 @@
 
 set -euo pipefail
 
+self=$(realpath "$0")
+mydir=$(dirname "${self}")
+
 original="$1"
 decoded="$2"
 output="$3"
@@ -33,11 +36,11 @@ srgb=(-colorspace bt709 -color_primaries bt709 -color_trc iec61966-2-1)
 ffmpeg "${srgb[@]}" -i "$exr_original" -pix_fmt yuv444p10le "${srgb[@]}" -y "$yuv_original" &>/dev/null
 ffmpeg "${srgb[@]}" -i "$exr_decoded" -pix_fmt yuv444p10le "${srgb[@]}" -y "$yuv_decoded" &>/dev/null
 
-"$(dirname "$0")"/../../../third_party/vmaf/libvmaf/build/tools/vmafossexec \
+"${mydir}"/../../../third_party/vmaf/libvmaf/build/tools/vmafossexec \
   yuv444p10le \
   "$(identify -format '%w' "$original")" "$(identify -format '%h' "$original")" \
   "$yuv_original" "$yuv_decoded" \
-  "$(dirname "$0")/../../../third_party/vmaf/model/vmaf_v0.6.1.pkl" \
+  "${mydir}/../../../third_party/vmaf/model/vmaf_v0.6.1.pkl" \
   --log-fmt csv --log "$vmaf_csv" &>/dev/null
 
 read_csv="$(cat <<'END'

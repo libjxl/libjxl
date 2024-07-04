@@ -5,21 +5,23 @@
 # license that can be found in the LICENSE file.
 
 set -eu
-dir="$(dirname "$0")"
+
+self=$(realpath "$0")
+mydir=$(dirname "${self}")
 
 main() {
   local metrics=(
-    HDR-VDP:"${dir}"/hdrvdp.sh
-    MRSE:"${dir}"/mrse.sh
-    puPSNR:"${dir}"/pupsnr.sh
-    puSSIM:"${dir}"/pussim.sh
+    HDR-VDP:"${mydir}"/hdrvdp.sh
+    MRSE:"${mydir}"/mrse.sh
+    puPSNR:"${mydir}"/pupsnr.sh
+    puSSIM:"${mydir}"/pussim.sh
   )
 
   local metrics_args=$(printf '%s' "${metrics[@]/#/,}")
   metrics_args=${metrics_args:1}
 
 
-  "${dir}/../../../build/tools/benchmark_xl" \
+  "${mydir}/../../../build/tools/benchmark_xl" \
     --print_details_csv \
     --num_threads=32 \
     --error_pnorm=6 \

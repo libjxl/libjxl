@@ -5,9 +5,11 @@
 # license that can be found in the LICENSE file.
 set -e
 
-DIR=$(realpath "$(dirname "$0")")
-mkdir -p "$DIR"/build
-cd "$DIR"/build
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
+
+mkdir -p "${MYDIR}"/build
+cd "${MYDIR}"/build
 
 # set CXX to clang++ if not set in the environment
 CXX="${CXX-clang++}"
@@ -22,7 +24,7 @@ fi
 
 "$CXX" -O3 \
   -I. -g lodepng.o \
-  -I"$DIR"/../../ \
-  "$DIR"/../../lib/jxl/enc_fast_lossless.cc "$DIR"/fast_lossless_main.cc \
+  -I"${MYDIR}"/../../ \
+  "${MYDIR}"/../../lib/jxl/enc_fast_lossless.cc "${MYDIR}"/fast_lossless_main.cc \
   -lpthread \
   -o fast_lossless

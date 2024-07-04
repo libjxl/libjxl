@@ -9,7 +9,8 @@
 
 set -eu
 
-MYDIR=$(dirname $(realpath "$0"))
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 
 # Temporary files cleanup hooks.
 CLEANUP_FILES=()
@@ -23,7 +24,7 @@ trap 'retcode=$?; { set +x; } 2>/dev/null; cleanup' INT TERM EXIT
 
 main() {
   # Run from the repo's top level directory.
-  cd "${MYDIR[@]}/.."
+  cd "${MYDIR}/.."
 
   local deps=(
     third_party/brotli

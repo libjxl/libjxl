@@ -4,6 +4,9 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-"$(dirname "$0")"/compute_octave_metric.sh "$@" \
-  --path "$(dirname "$0")"/../../../third_party/hdrvdp-2.2.2/ \
-  "$(dirname "$0")"/compute-hdrvdp.m
+self=$(realpath "$0")
+mydir=$(dirname "${self}")
+
+"${mydir}"/compute_octave_metric.sh "$@" \
+  --path "${mydir}"/../../../third_party/hdrvdp-2.2.2/ \
+  "${mydir}"/compute-hdrvdp.m

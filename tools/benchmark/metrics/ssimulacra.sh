@@ -4,4 +4,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-"$(dirname "$0")"/../../../build/tools/ssimulacra_main "$1" "$2" > "$3" 2>/dev/null
+self=$(realpath "$0")
+mydir=$(dirname "${self}")
+
+"${mydir}"/../../../build/tools/ssimulacra_main "$1" "$2" > "$3" 2>/dev/null

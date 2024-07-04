@@ -5,9 +5,11 @@
 # license that can be found in the LICENSE file.
 set -e
 
-DIR=$(realpath "$(dirname "$0")")
-mkdir -p "$DIR"/build-aarch64
-cd "$DIR"/build-aarch64
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
+
+mkdir -p "${MYDIR}"/build-aarch64
+cd "${MYDIR}"/build-aarch64
 
 CXX="${CXX-aarch64-linux-gnu-c++}"
 if ! command -v "$CXX" >/dev/null ; then
@@ -21,6 +23,6 @@ fi
 
 "$CXX" -O3 -static \
   -I. lodepng.o \
-  -I"$DIR"/../../ \
-  "$DIR"/../../lib/jxl/enc_fast_lossless.cc "$DIR"/fast_lossless_main.cc \
+  -I"${MYDIR}"/../../ \
+  "${MYDIR}"/../../lib/jxl/enc_fast_lossless.cc "${MYDIR}"/fast_lossless_main.cc \
   -o fast_lossless
