@@ -12,7 +12,8 @@ set -eu
 
 OS=`uname -s`
 
-MYDIR=$(dirname $(realpath "$0"))
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 
 ### Environment parameters:
 TEST_STACK_LIMIT="${TEST_STACK_LIMIT:-256}"
@@ -1209,7 +1210,7 @@ cmd_lint() {
   # It is ok, if buildifier is not installed.
   if which buildifier >/dev/null; then
     local buildifier_patch="${tmpdir}/buildifier.patch"
-    local bazel_files=`git -C ${MYDIR} ls-files | grep -E "/BUILD$|WORKSPACE|.bzl$"`
+    local bazel_files=`git -C "${MYDIR}" ls-files | grep -E "/BUILD$|WORKSPACE|.bzl$"`
     set -x
     buildifier -d ${bazel_files} >"${buildifier_patch}"|| true
     { set +x; } 2>/dev/null
@@ -1225,8 +1226,8 @@ cmd_lint() {
   # It is ok, if spell-checker is not installed.
   if which typos >/dev/null; then
     local src_ext="bazel|bzl|c|cc|cmake|gni|h|html|in|java|js|m|md|nix|py|rst|sh|ts|txt|yaml|yml"
-    local sources=`git -C ${MYDIR} ls-files | grep -E "\.(${src_ext})$"`
-    typos -c ${MYDIR}/tools/scripts/typos.toml ${sources}
+    local sources=`git -C "${MYDIR}" ls-files | grep -E "\.(${src_ext})$"`
+    typos -c "${MYDIR}/tools/scripts/typos.toml" ${sources}
   else
     echo "Consider installing https://github.com/crate-ci/typos for spell-checking"
   fi

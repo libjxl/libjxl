@@ -6,6 +6,9 @@
 
 set -euo pipefail
 
+self=$(realpath "$0")
+mydir=$(dirname "${self}")
+
 original="$1"
 decoded="$2"
 output="$3"
@@ -31,6 +34,6 @@ linearize() {
 linearize "$original" "$linearized_original"
 linearize "$decoded" "$linearized_decoded"
 
-"$(dirname "$0")"/../../../third_party/difftest_ng/difftest_ng --mrse "$linearized_original" "$linearized_decoded" \
+"${mydir}"/../../../third_party/difftest_ng/difftest_ng --mrse "$linearized_original" "$linearized_decoded" \
   | sed -e 's/^MRSE:\s*//' \
   > "$output"

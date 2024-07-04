@@ -7,6 +7,9 @@
 
 set -eu
 
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
+
 TMPDIR=$(mktemp -d)
 
 cleanup() {
@@ -15,13 +18,12 @@ cleanup() {
 
 trap cleanup EXIT
 
+CJXL=${MYDIR}/../../build/tools/cjxl
+DJXL=${MYDIR}/../../build/tools/djxl
 
-CJXL=$(realpath $(dirname "$0"))/../../build/tools/cjxl
-DJXL=$(realpath $(dirname "$0"))/../../build/tools/djxl
-
-${CJXL} "$@" ${TMPDIR}/x.jxl &>/dev/null
-S1=$(${DJXL} ${TMPDIR}/x.jxl --print_read_bytes -s 1 2>&1 | grep 'Decoded' | grep -o '[0-9]*')
-S2=$(${DJXL} ${TMPDIR}/x.jxl --print_read_bytes -s 2 2>&1 | grep 'Decoded' | grep -o '[0-9]*')
-S8=$(${DJXL} ${TMPDIR}/x.jxl --print_read_bytes -s 8 2>&1 | grep 'Decoded' | grep -o '[0-9]*')
+"${CJXL}" "$@" ${TMPDIR}/x.jxl &>/dev/null
+S1=$("${DJXL}" ${TMPDIR}/x.jxl --print_read_bytes -s 1 2>&1 | grep 'Decoded' | grep -o '[0-9]*')
+S2=$("${DJXL}" ${TMPDIR}/x.jxl --print_read_bytes -s 2 2>&1 | grep 'Decoded' | grep -o '[0-9]*')
+S8=$("${DJXL}" ${TMPDIR}/x.jxl --print_read_bytes -s 8 2>&1 | grep 'Decoded' | grep -o '[0-9]*')
 
 echo "8x: $S8 2x: $S2 1x: $S1"

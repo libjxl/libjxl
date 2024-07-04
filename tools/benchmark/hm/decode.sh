@@ -7,7 +7,9 @@
 
 set -euo pipefail
 
-decoder="$(dirname "$0")"/TAppDecoderHighBitDepthStatic
+self=$(realpath "$0")
+mydir=$(dirname "${self}")
+decoder=${mydir}/TAppDecoderHighBitDepthStatic
 
 usage() {
   echo "$0 [-v] <input.bin> <output.png>" >&2
@@ -84,7 +86,7 @@ width="$(cat "$width_file")"
 height="$(cat "$height_file")"
 
 start="$EPOCHREALTIME"
-run "$decoder" --OutputBitDepth=10 -b "$bin" -o "$yuv"
+run "${decoder}" --OutputBitDepth=10 -b "$bin" -o "$yuv"
 end="$EPOCHREALTIME"
 
 elapsed="$(echo "$end - $start" | bc)"

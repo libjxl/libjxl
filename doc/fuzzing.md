@@ -103,7 +103,7 @@ clang package for that version outside the container and using `clang-NN`
 (for example `clang-11`) instead of `clang` in the following commands:
 
 ```bash
-symbolizer=$($(realpath $(which clang)) -print-prog-name=llvm-symbolizer)
+symbolizer=$($(realpath "$(which clang)") -print-prog-name=llvm-symbolizer)
 export MSAN_SYMBOLIZER_PATH="${symbolizer}"
 export UBSAN_SYMBOLIZER_PATH="${symbolizer}"
 export ASAN_SYMBOLIZER_PATH="${symbolizer}"

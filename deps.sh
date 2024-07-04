@@ -9,7 +9,8 @@
 
 set -eu
 
-MYDIR=$(dirname $(realpath "$0"))
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 
 # Git revisions we use for the given submodules. Update these whenever you
 # update a git submodule.

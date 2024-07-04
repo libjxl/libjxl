@@ -4,4 +4,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-python3 "$(dirname "$0")/iqa.py" "$0" "$@" 
+self=$(realpath "$0")
+mydir=$(dirname "${self}")
+
+python3 "${mydir}/iqa.py" "$0" "$@" 

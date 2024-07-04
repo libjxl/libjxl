@@ -9,7 +9,8 @@
 
 set -eux
 
-MYDIR=$(dirname $(realpath "$0"))
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 JPEGXL_TEST_DATA_PATH="${MYDIR}/../../testdata"
 
 # Temporary files cleanup hooks.

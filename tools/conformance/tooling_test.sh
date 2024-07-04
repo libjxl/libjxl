@@ -8,7 +8,8 @@
 # runner. This test that the tooling to generate the conformance test and the
 # conformance test runner work together.
 
-MYDIR=$(dirname $(realpath "$0"))
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 
 if [[ $# -eq 2 ]]; then
     JPEGXL_TEST_DATA_PATH="$2"

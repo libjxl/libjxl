@@ -5,7 +5,8 @@
 # license that can be found in the LICENSE file.
 set -e
 
-DIR=$(realpath "$(dirname "$0")")
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 
 mkdir -p /tmp/build-android
 cd /tmp/build-android
@@ -22,6 +23,6 @@ fi
 
 "$CXX" -O3 \
   -I. lodepng.o \
-  -I"${DIR}"/../../ \
-  "${DIR}"/../../lib/jxl/enc_fast_lossless.cc "${DIR}"/fast_lossless_main.cc \
+  -I"${MYDIR}"/../../ \
+  "${MYDIR}"/../../lib/jxl/enc_fast_lossless.cc "${MYDIR}"/fast_lossless_main.cc \
   -o fast_lossless
