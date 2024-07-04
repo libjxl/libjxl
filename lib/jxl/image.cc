@@ -10,6 +10,7 @@
 #include <algorithm>  // fill, swap
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/memory_manager_internal.h"
@@ -78,6 +79,11 @@ Status PlaneBase::Allocate(JxlMemoryManager* memory_manager,
   // if nonzero, because "zero" bytes still have padding/bookkeeping overhead.
   if (xsize_ == 0 || ysize_ == 0) {
     return true;
+  }
+
+  size_t max_y_size = std::numeric_limits<size_t>::max() / bytes_per_row_;
+  if (ysize_ > max_y_size) {
+    return JXL_FAILURE("Image dimensions are too large");
   }
 
   JXL_ASSIGN_OR_RETURN(
