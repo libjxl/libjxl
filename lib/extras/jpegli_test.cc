@@ -39,9 +39,9 @@ namespace jxl {
 namespace extras {
 namespace {
 
-using test::Butteraugli3Norm;
-using test::ButteraugliDistance;
-using test::TestImage;
+using ::jxl::test::Butteraugli3Norm;
+using ::jxl::test::ButteraugliDistance;
+using ::jxl::test::TestImage;
 
 Status ReadTestImage(const std::string& pathname, PackedPixelFile* ppf) {
   const std::vector<uint8_t> encoded = jxl::test::ReadTestData(pathname);

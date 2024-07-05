@@ -34,13 +34,13 @@
 
 namespace {
 
-using jpegxl::tools::ThreadPoolInternal;
-using jxl::ButteraugliParams;
-using jxl::CodecInOut;
-using jxl::Image3F;
-using jxl::ImageF;
-using jxl::JxlButteraugliComparator;
-using jxl::Status;
+using ::jpegxl::tools::ThreadPoolInternal;
+using ::jxl::ButteraugliParams;
+using ::jxl::CodecInOut;
+using ::jxl::Image3F;
+using ::jxl::ImageF;
+using ::jxl::JxlButteraugliComparator;
+using ::jxl::Status;
 
 Status WriteImage(const Image3F& image, const std::string& filename) {
   ThreadPoolInternal pool(4);

@@ -14,7 +14,7 @@
 #include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 
-using jxl::Image3F;
+using ::jxl::Image3F;
 
 #define QUIT(M) JPEGXL_TOOLS_ABORT(M)
 

@@ -587,10 +587,10 @@ std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-using jxl::Image3F;
-using jxl::ImageF;
-using jxl::test::BoolToCStr;
-using jxl::test::ButteraugliDistance;
+using ::jxl::Image3F;
+using ::jxl::ImageF;
+using ::jxl::test::BoolToCStr;
+using ::jxl::test::ButteraugliDistance;
 
 TEST(DecodeTest, JxlSignatureCheckTest) {
   std::vector<std::pair<int, std::vector<uint8_t>>> tests = {

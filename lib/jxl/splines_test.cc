@@ -47,7 +47,7 @@ std::ostream& operator<<(std::ostream& os, const Spline& spline) {
 
 namespace {
 
-using test::ReadTestData;
+using ::jxl::test::ReadTestData;
 
 constexpr int kQuantizationAdjustment = 0;
 const ColorCorrelation color_correlation{};

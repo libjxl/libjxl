@@ -21,10 +21,10 @@
 namespace ssimulacra {
 namespace {
 
-using jxl::Image3F;
-using jxl::ImageF;
-using jxl::Status;
-using jxl::StatusOr;
+using ::jxl::Image3F;
+using ::jxl::ImageF;
+using ::jxl::Status;
+using ::jxl::StatusOr;
 
 const float kC1 = 0.0001f;
 const float kC2 = 0.0004f;
