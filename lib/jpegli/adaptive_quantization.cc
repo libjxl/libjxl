@@ -279,8 +279,8 @@ V GammaModulation(const D d, const size_t x, const size_t y,
   // ideally -1.0, but likely optimal correction adds some entropy, so slightly
   // less than that.
   // ln(2) constant folded in because we want std::log but have FastLog2f.
-  const auto kGam = Set(d, -0.15526878023684174f * 0.693147180559945f);
-  return MulAdd(kGam, FastLog2f(d, overall_ratio), out_val);
+  const auto kGamma = Set(d, -0.15526878023684174f * 0.693147180559945f);
+  return MulAdd(kGamma, FastLog2f(d, overall_ratio), out_val);
 }
 
 // Change precision in 8x8 blocks that have high frequency content.
