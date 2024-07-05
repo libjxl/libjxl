@@ -25,7 +25,7 @@ struct ICCReader {
   explicit ICCReader(JxlMemoryManager* memory_manager)
       : decompressed_(memory_manager) {}
 
-  Status Init(BitReader* reader, size_t output_limit);
+  Status Init(BitReader* reader);
   Status Process(BitReader* reader, PaddedBytes* icc);
   void Reset() {
     bits_to_skip_ = 0;

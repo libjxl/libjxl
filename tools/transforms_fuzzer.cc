@@ -22,10 +22,12 @@
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/transform.h"
-#include "tools/no_memory_manager.h"
+#include "tools/tracking_memory_manager.h"
 
 namespace {
 
+using ::jpegxl::tools::kGiB;
+using ::jpegxl::tools::TrackingMemoryManager;
 using ::jxl::BitReader;
 using ::jxl::BitReaderScopedCloser;
 using ::jxl::Bytes;
@@ -50,18 +52,14 @@ void FillChannel(Channel& ch, Rng& rng) {
     }
   }
 }
+
 void Check(bool ok) {
   if (!ok) {
     JXL_CRASH();
   }
 }
 
-int DoTestOneInput(const uint8_t* data, size_t size) {
-  if (size < 15) return 0;
-  static Status nevermind = true;
-  BitReader reader(Bytes(data, size));
-  BitReaderScopedCloser reader_closer(reader, nevermind);
-
+void Run(BitReader& reader, JxlMemoryManager* memory_manager) {
   Rng rng(reader.ReadFixedBits<56>());
 
   // One of {0, 1, _2_, 3}; "2" will be filtered out soon.
@@ -82,7 +80,7 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
 
   if ((nb_chans == 2) || ((nb_chans + nb_extra) == 0) || (w * h == 0) ||
       ((w_orig * h_orig * (nb_chans + nb_extra)) > (1 << 23))) {
-    return 0;
+    return;
   }
 
   std::vector<int> hshift;
@@ -101,7 +99,6 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     ec_upsampling.push_back(1 << log_ec_upsampling);
   }
 
-  JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
   Image image{memory_manager};
   bool ok = [&]() -> Status {
     JXL_ASSIGN_OR_RETURN(image, Image::Create(memory_manager, w, h, bit_depth,
@@ -109,7 +106,7 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     return true;
   }();
   // OOM is ok here.
-  if (!ok) return 0;
+  if (!ok) return;
 
   for (size_t c = 0; c < nb_chans; c++) {
     Channel& ch = image.channel[c];
@@ -129,21 +126,21 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   }
 
   GroupHeader header;
-  if (!jxl::Bundle::Read(&reader, &header)) return 0;
+  if (!jxl::Bundle::Read(&reader, &header)) return;
   Header w_header;
-  if (!jxl::Bundle::Read(&reader, &w_header)) return 0;
+  if (!jxl::Bundle::Read(&reader, &w_header)) return;
 
   // TODO(eustas): give it a try?
-  if (!reader.AllReadsWithinBounds()) return 0;
+  if (!reader.AllReadsWithinBounds()) return;
 
   image.transform = header.transforms;
   for (Transform& transform : image.transform) {
-    if (!transform.MetaApply(image)) return 0;
+    if (!transform.MetaApply(image)) return;
   }
-  if (image.error) return 0;
+  if (image.error) return;
 
   ModularOptions options;
-  if (!ValidateChannelDimensions(image, options)) return 0;
+  if (!ValidateChannelDimensions(image, options)) return;
 
   for (Channel& ch : image.channel) {
     FillChannel(ch, rng);
@@ -173,6 +170,20 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     Check(ch.hshift == up_level);
     Check(ch.vshift == up_level);
   }
+}
+
+int DoTestOneInput(const uint8_t* data, size_t size) {
+  if (size < 15) return 0;
+
+  TrackingMemoryManager memory_manager{/* cap */ 1 * kGiB,
+                                       /* total_cap */ 5 * kGiB};
+  {
+    static Status nevermind = true;
+    BitReader reader(Bytes(data, size));
+    BitReaderScopedCloser reader_closer(reader, nevermind);
+    Run(reader, memory_manager.get());
+  }
+  Check(memory_manager.Reset());
 
   return 0;
 }

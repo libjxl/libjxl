@@ -69,8 +69,7 @@ uint64_t DecodeVarInt(const uint8_t* input, size_t inputSize, size_t* pos) {
 
 // Mimics the beginning of UnpredictICC for quick validity check.
 // At least kPreambleSize bytes of data should be valid at invocation time.
-Status CheckPreamble(const PaddedBytes& data, size_t enc_size,
-                     size_t output_limit) {
+Status CheckPreamble(const PaddedBytes& data, size_t enc_size) {
   const uint8_t* enc = data.data();
   size_t size = data.size();
   size_t pos = 0;
@@ -82,6 +81,9 @@ Status CheckPreamble(const PaddedBytes& data, size_t enc_size,
   JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, csize, size));
   // We expect that UnpredictICC inflates input, not the other way round.
   if (osize + 65536 < enc_size) return JXL_FAILURE("Malformed ICC");
+
+  // NB(eustas): 64 MiB ICC should be enough for everything!?
+  const size_t output_limit = 1 << 28;
   if (output_limit && osize > output_limit) {
     return JXL_FAILURE("Decoded ICC is too large");
   }
@@ -305,7 +307,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
   return true;
 }
 
-Status ICCReader::Init(BitReader* reader, size_t output_limit) {
+Status ICCReader::Init(BitReader* reader) {
   JXL_RETURN_IF_ERROR(CheckEOI(reader));
   JxlMemoryManager* memory_manager = decompressed_.memory_manager();
   used_bits_base_ = reader->TotalBitsConsumed();
@@ -333,8 +335,7 @@ Status ICCReader::Init(BitReader* reader, size_t output_limit) {
             reader, context_map_);
       }
       JXL_RETURN_IF_ERROR(CheckEOI(reader));
-      JXL_RETURN_IF_ERROR(
-          CheckPreamble(decompressed_, enc_size_, output_limit));
+      JXL_RETURN_IF_ERROR(CheckPreamble(decompressed_, enc_size_));
     }
     bits_to_skip_ = reader->TotalBitsConsumed() - used_bits_base_;
   } else {

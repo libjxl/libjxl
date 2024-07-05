@@ -9,6 +9,7 @@
 #include <jxl/decode_cxx.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
+#include <jxl/memory_manager.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
@@ -19,9 +20,16 @@
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/fuzztest.h"
+#include "tools/tracking_memory_manager.h"
 
 namespace {
+
+using ::jpegxl::tools::kGiB;
+using ::jpegxl::tools::TrackingMemoryManager;
+using ::jxl::Status;
+using ::jxl::StatusOr;
 
 void Check(bool ok) {
   if (!ok) {
@@ -142,9 +150,11 @@ struct FuzzSpec {
   }
 };
 
-std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
+StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
+                                      TrackingMemoryManager& memory_manager,
+                                      bool streaming) {
   auto runner = JxlThreadParallelRunnerMake(nullptr, spec.num_threads);
-  JxlEncoderPtr enc_ptr = JxlEncoderMake(/*memory_manager=*/nullptr);
+  JxlEncoderPtr enc_ptr = JxlEncoderMake(memory_manager.get());
   JxlEncoder* enc = enc_ptr.get();
 
   Check(JxlEncoderSetParallelRunner(enc, JxlThreadParallelRunner,
@@ -220,9 +230,15 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
       }
     }
   }
-  Check(JxlEncoderAddImageFrame(frame_settings, &pixelformat, pixels.data(),
-                                pixels.size() * sizeof(uint16_t)) ==
-        JXL_ENC_SUCCESS);
+  JxlEncoderStatus status =
+      JxlEncoderAddImageFrame(frame_settings, &pixelformat, pixels.data(),
+                              pixels.size() * sizeof(uint16_t));
+  // TODO(eustas): update when API will provide OOM status.
+  if (memory_manager.seen_oom) {
+    // Actually, that is fine.
+    return JXL_FAILURE("OOM");
+  }
+  Check(status == JXL_ENC_SUCCESS);
   JxlEncoderCloseInput(enc);
   // Reading compressed output
   JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
@@ -235,15 +251,21 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
     process_result = JxlEncoderProcessOutput(enc, &next_out, &avail_out);
     written = next_out - buf.data();
   }
+  // TODO(eustas): update when API will provide OOM status.
+  if (memory_manager.seen_oom) {
+    // Actually, that is fine.
+    return JXL_FAILURE("OOM");
+  }
   Check(process_result == JXL_ENC_SUCCESS);
   buf.resize(written);
 
   return buf;
 }
 
-std::vector<float> Decode(const std::vector<uint8_t>& data) {
+StatusOr<std::vector<float>> Decode(const std::vector<uint8_t>& data,
+                                    TrackingMemoryManager& memory_manager) {
   // Multi-threaded parallel runner.
-  auto dec = JxlDecoderMake(nullptr);
+  auto dec = JxlDecoderMake(memory_manager.get());
   Check(JxlDecoderSubscribeEvents(dec.get(),
                                   JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE) ==
         JXL_DEC_SUCCESS);
@@ -273,19 +295,50 @@ std::vector<float> Decode(const std::vector<uint8_t>& data) {
     } else if (status == JXL_DEC_FULL_IMAGE || status == JXL_DEC_SUCCESS) {
       return pixels;
     } else {
+      // TODO(eustas): update when API will provide OOM status.
+      if (memory_manager.seen_oom) {
+        // Actually, that is fine.
+        return JXL_FAILURE("OOM");
+      }
       // Unexpected status
       Check(false);
     }
   }
 }
 
+Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
+  std::vector<uint8_t> enc_default;
+  std::vector<uint8_t> enc_streaming;
+
+  const auto encode = [&]() -> Status {
+    // It is not clear, which approach eatc more memory.
+    JXL_ASSIGN_OR_RETURN(enc_default, Encode(spec, memory_manager, false));
+    Check(memory_manager.Reset());
+    JXL_ASSIGN_OR_RETURN(enc_streaming, Encode(spec, memory_manager, true));
+    Check(memory_manager.Reset());
+    return true;
+  };
+  // It is fine, if encoder OOMs.
+  if (!encode()) return true;
+
+  // It is NOT OK, it decoder OOMs - it should not consume more than encoder.
+  JXL_ASSIGN_OR_RETURN(auto dec_default, Decode(enc_default, memory_manager));
+  Check(memory_manager.Reset());
+  JXL_ASSIGN_OR_RETURN(auto dec_streaming,
+                       Decode(enc_streaming, memory_manager));
+  Check(memory_manager.Reset());
+
+  Check(dec_default == dec_streaming);
+
+  return true;
+}
+
 int DoTestOneInput(const uint8_t* data, size_t size) {
   auto spec = FuzzSpec::FromData(data, size);
-  auto enc_default = Encode(spec, false);
-  auto enc_streaming = Encode(spec, true);
-  auto dec_default = Decode(enc_default);
-  auto dec_streaming = Decode(enc_streaming);
-  Check(dec_default == dec_streaming);
+
+  TrackingMemoryManager memory_manager{/* cap */ 1 * kGiB,
+                                       /* total_cap */ 5 * kGiB};
+  Check(Run(spec, memory_manager));
   return 0;
 }
 

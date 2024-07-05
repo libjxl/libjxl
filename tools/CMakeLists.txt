@@ -378,6 +378,7 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
     target_link_libraries("${BINARY}"
       jxl_dec-internal
       jxl_threads
+      jxl_tool
     )
   elseif(FUZZER STREQUAL jpegli_dec_fuzzer)
     target_link_libraries("${BINARY}" jpegli-static)

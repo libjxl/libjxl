@@ -10,21 +10,36 @@
 #include <vector>
 
 #include "lib/jxl/fuzztest.h"
+#include "tools/tracking_memory_manager.h"
 
 namespace {
 
+using ::jpegxl::tools::kGiB;
+using ::jpegxl::tools::TrackingMemoryManager;
+
+void Check(bool ok) {
+  if (!ok) {
+    JXL_CRASH();
+  }
+}
+
 int DoTestOneInput(const uint8_t* data, size_t size) {
   JxlDecoderStatus status;
-  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+  TrackingMemoryManager memory_manager{/* cap */ 1 * kGiB,
+                                       /* total_cap */ 5 * kGiB};
+  JxlDecoder* dec = JxlDecoderCreate(memory_manager.get());
+  const auto finish = [&]() -> int {
+    JxlDecoderDestroy(dec);
+    Check(memory_manager.Reset());
+    return 0;
+  };
+
   JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING);
   JxlDecoderSetInput(dec, data, size);
 
   status = JxlDecoderProcessInput(dec);
 
-  if (status != JXL_DEC_BASIC_INFO) {
-    JxlDecoderDestroy(dec);
-    return 0;
-  }
+  if (status != JXL_DEC_BASIC_INFO) return finish();
 
   JxlBasicInfo info;
   status = JxlDecoderGetBasicInfo(dec, &info);
@@ -40,10 +55,7 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   }
   status = JxlDecoderProcessInput(dec);
 
-  if (status != JXL_DEC_COLOR_ENCODING) {
-    JxlDecoderDestroy(dec);
-    return 0;
-  }
+  if (status != JXL_DEC_COLOR_ENCODING) return finish();
 
   JxlDecoderGetColorAsEncodedProfile(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                                      nullptr);
@@ -51,8 +63,7 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                               &dec_profile_size);
 
-  JxlDecoderDestroy(dec);
-  return 0;
+  return finish();
 }
 
 }  // namespace

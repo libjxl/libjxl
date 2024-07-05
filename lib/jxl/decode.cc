@@ -652,29 +652,16 @@ struct JxlDecoderStruct {
     // processed, so this check works.
     return stage != DecoderStage::kCodestreamFinished;
   }
-
-  // If set then some operations will fail, if those would require
-  // allocating large objects. Actual memory usage might be two orders of
-  // magnitude bigger.
-  // TODO(eustas): remove once there is working API for memory / CPU limit.
-  size_t memory_limit_base = 0;
-  size_t cpu_limit_base = 0;
-  size_t used_cpu_base = 0;
 };
 
 namespace {
 
 bool CheckSizeLimit(JxlDecoder* dec, size_t xsize, size_t ysize) {
-  if (!dec->memory_limit_base) return true;
   if (xsize == 0 || ysize == 0) return true;
-  if (xsize >= dec->memory_limit_base || ysize >= dec->memory_limit_base) {
-    return false;
-  }
-  // Rough estimate of real row length.
-  xsize = jxl::DivCeil(xsize, 32) * 32;
-  size_t num_pixels = xsize * ysize;
-  if (num_pixels / xsize != ysize) return false;  // overflow
-  if (num_pixels > dec->memory_limit_base) return false;
+  size_t padded_xsize = jxl::DivCeil(xsize, 32) * 32;
+  if (padded_xsize < xsize) return false;  // overflow
+  size_t num_pixels = padded_xsize * ysize;
+  if (num_pixels / padded_xsize != ysize) return false;  // overflow
   return true;
 }
 
@@ -793,16 +780,6 @@ JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager) {
   // Placement new constructor on allocated memory
   JxlDecoder* dec = new (alloc) JxlDecoder();
   dec->memory_manager = local_memory_manager;
-
-#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-  if (!memory_manager) {
-    dec->memory_limit_base = 53 << 16;
-    // Allow 5 x max_image_size processing units; every frame is accounted
-    // as W x H CPU processing units, so there could be numerous small frames
-    // or few larger ones.
-    dec->cpu_limit_base = 5 * dec->memory_limit_base;
-  }
-#endif
 
   JxlDecoderReset(dec);
 
@@ -1050,8 +1027,7 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
   reader->SkipBits(dec->codestream_bits_ahead);
 
   if (dec->metadata.m.color_encoding.WantICC()) {
-    jxl::Status status =
-        dec->icc_reader->Init(reader.get(), dec->memory_limit_base);
+    jxl::Status status = dec->icc_reader->Init(reader.get());
     // Always check AllReadsWithinBounds, not all the C++ decoder implementation
     // handles reader out of bounds correctly  yet (e.g. context map). Not
     // checking AllReadsWithinBounds can cause reader->Close() to trigger an
@@ -1279,17 +1255,6 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       bool output_needed = ((dec->events_wanted & output_type) != 0);
       if (output_needed) {
         JXL_API_RETURN_IF_ERROR(dec->frame_dec->InitFrameOutput());
-      }
-      if (dec->cpu_limit_base != 0) {
-        // No overflow, checked in CheckSizeLimit.
-        size_t num_pixels = frame_dim.xsize * frame_dim.ysize;
-        if (dec->used_cpu_base + num_pixels < dec->used_cpu_base) {
-          return JXL_INPUT_ERROR("image too large");
-        }
-        dec->used_cpu_base += num_pixels;
-        if (dec->used_cpu_base > dec->cpu_limit_base) {
-          return JXL_INPUT_ERROR("image too large");
-        }
       }
       dec->remaining_frame_size = dec->frame_dec->SumSectionSizes();
 

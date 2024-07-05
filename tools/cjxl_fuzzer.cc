@@ -6,6 +6,7 @@
 #include <jxl/color_encoding.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
+#include <jxl/memory_manager.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
@@ -21,8 +22,18 @@
 #include "jxl/codestream_header.h"
 #include "lib/jxl/fuzztest.h"
 #include "lib/jxl/test_image.h"
+#include "tools/tracking_memory_manager.h"
 
 namespace {
+
+using ::jpegxl::tools::kGiB;
+using ::jpegxl::tools::TrackingMemoryManager;
+
+void Check(bool ok) {
+  if (!ok) {
+    JXL_CRASH();
+  }
+}
 
 #define TRY(expr)                                \
   do {                                           \
@@ -53,13 +64,13 @@ struct FuzzSpec {
   size_t output_buffer_size = 1;
 };
 
-bool EncodeJpegXl(const FuzzSpec& spec) {
+bool EncodeJpegXl(const FuzzSpec& spec, JxlMemoryManager* memory_manager) {
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
   // itself is already multithreaded.
   size_t num_threads =
       std::min<size_t>(2, JxlThreadParallelRunnerDefaultNumWorkerThreads());
-  auto runner = JxlThreadParallelRunnerMake(nullptr, num_threads);
-  JxlEncoderPtr enc_ptr = JxlEncoderMake(/*memory_manager=*/nullptr);
+  auto runner = JxlThreadParallelRunnerMake(memory_manager, num_threads);
+  JxlEncoderPtr enc_ptr = JxlEncoderMake(memory_manager);
   JxlEncoder* enc = enc_ptr.get();
   for (size_t num_rep = 0; num_rep < 2; ++num_rep) {
     JxlEncoderReset(enc);
@@ -220,10 +231,13 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   spec.color_encoding.rendering_intent = Select(rendering_intents, get_flag);
   spec.output_buffer_size = get_flag(4095) + 1;
 
+  TrackingMemoryManager memory_manager{/* cap */ 1 * kGiB,
+                                       /* total_cap */ 5 * kGiB};
   const auto targets = hwy::SupportedAndGeneratedTargets();
   hwy::SetSupportedTargetsForTest(Select(targets, get_flag));
-  EncodeJpegXl(spec);
+  EncodeJpegXl(spec, memory_manager.get());
   hwy::SetSupportedTargetsForTest(0);
+  Check(memory_manager.Reset());
 
   return 0;
 }
