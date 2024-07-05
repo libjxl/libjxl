@@ -216,7 +216,7 @@ class ThreadPoolForTests {
 // If `output_limit` is not 0, then returns error if resulting profile would be
 // longer than `output_limit`
 Status ReadICC(BitReader* JXL_RESTRICT reader,
-               std::vector<uint8_t>* JXL_RESTRICT icc, size_t output_limit = 0);
+               std::vector<uint8_t>* JXL_RESTRICT icc);
 
 // Compresses pixels from `io` (given in any ColorEncoding).
 // `io->metadata.m.original` must be set.

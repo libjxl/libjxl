@@ -6,6 +6,7 @@
 #include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
+#include <jxl/memory_manager.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
@@ -21,6 +22,7 @@
 #include <vector>
 
 #include "lib/jxl/fuzztest.h"
+#include "tools/tracking_memory_manager.h"
 
 namespace {
 
@@ -28,6 +30,15 @@ namespace {
 int external_code = 0;
 
 constexpr const size_t kStreamingTargetNumberOfChunks = 128;
+
+using ::jpegxl::tools::kGiB;
+using ::jpegxl::tools::TrackingMemoryManager;
+
+void Check(bool ok) {
+  if (!ok) {
+    JXL_CRASH();
+  }
+}
 
 // Options for the fuzzing
 struct FuzzSpec {
@@ -66,7 +77,8 @@ void Consume(const T& entry) {
 
 // use_streaming: if true, decodes the data in small chunks, if false, decodes
 // it in one shot.
-bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
+bool DecodeJpegXl(const uint8_t* jxl, size_t size,
+                  JxlMemoryManager* memory_manager, size_t max_pixels,
                   const FuzzSpec& spec, std::vector<uint8_t>* pixels,
                   std::vector<uint8_t>* jpeg, size_t* xsize, size_t* ysize,
                   std::vector<uint8_t>* icc_profile) {
@@ -74,12 +86,12 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   // itself is already multithreaded.
   size_t num_threads =
       std::min<size_t>(2, JxlThreadParallelRunnerDefaultNumWorkerThreads());
-  auto runner = JxlThreadParallelRunnerMake(nullptr, num_threads);
+  auto runner = JxlThreadParallelRunnerMake(memory_manager, num_threads);
 
   std::mt19937 mt(spec.random_seed);
   std::exponential_distribution<> dis_streaming(kStreamingTargetNumberOfChunks);
 
-  auto dec = JxlDecoderMake(nullptr);
+  auto dec = JxlDecoderMake(memory_manager);
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSubscribeEvents(
           dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
@@ -557,11 +569,14 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   size_t ysize;
   size_t max_pixels = 1 << 21;
 
+  TrackingMemoryManager memory_manager{/* cap */ 1 * kGiB,
+                                       /* total_cap */ 5 * kGiB};
   const auto targets = hwy::SupportedAndGeneratedTargets();
   hwy::SetSupportedTargetsForTest(targets[getFlag(targets.size() - 1)]);
-  DecodeJpegXl(data, size, max_pixels, spec, &pixels, &jpeg, &xsize, &ysize,
-               &icc);
+  DecodeJpegXl(data, size, memory_manager.get(), max_pixels, spec, &pixels,
+               &jpeg, &xsize, &ysize, &icc);
   hwy::SetSupportedTargetsForTest(0);
+  Check(memory_manager.Reset());
 
   return 0;
 }

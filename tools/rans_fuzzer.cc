@@ -15,10 +15,12 @@
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/fuzztest.h"
-#include "lib/jxl/test_memory_manager.h"
+#include "tools/tracking_memory_manager.h"
 
 namespace {
 
+using ::jpegxl::tools::kGiB;
+using ::jpegxl::tools::TrackingMemoryManager;
 using ::jxl::ANSCode;
 using ::jxl::ANSSymbolReader;
 using ::jxl::BitReader;
@@ -26,26 +28,24 @@ using ::jxl::BitReaderScopedCloser;
 using ::jxl::Bytes;
 using ::jxl::Status;
 
-#define QUIT(M) JXL_CRASH()
+void Check(bool ok) {
+  if (!ok) {
+    JXL_CRASH();
+  }
+}
 
-int DoTestOneInput(const uint8_t* data, size_t size) {
-  if (size < 2) return 0;
-  size_t numContexts = data[0] * 256 * data[1] + 1;
-  data += 2;
-  size -= 2;
-
+Status Run(const uint8_t* data, size_t size, JxlMemoryManager* memory_manager,
+           size_t num_contexts) {
   std::vector<uint8_t> context_map;
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   Status ret = true;
   {
     BitReader br(Bytes(data, size));
     BitReaderScopedCloser br_closer(br, ret);
     ANSCode code;
-    JXL_RETURN_IF_ERROR(DecodeHistograms(memory_manager, &br, numContexts,
+    JXL_RETURN_IF_ERROR(DecodeHistograms(memory_manager, &br, num_contexts,
                                          &code, &context_map));
-    JXL_ASSIGN_OR_QUIT(ANSSymbolReader ansreader,
-                       ANSSymbolReader::Create(&code, &br),
-                       "Failed to create ANSSymbolReader.");
+    JXL_ASSIGN_OR_RETURN(ANSSymbolReader ansreader,
+                         ANSSymbolReader::Create(&code, &br));
 
     // Limit the maximum amount of reads to avoid (valid) infinite loops.
     const size_t maxreads = size * 8;
@@ -54,10 +54,24 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     while (jxl::DivCeil(br.TotalBitsConsumed(), jxl::kBitsPerByte) < size &&
            numreads <= maxreads) {
       int code = ansreader.ReadHybridUint(context, &br, context_map);
-      context = code % numContexts;
+      context = code % num_contexts;
       numreads++;
     }
   }
+  return true;
+}
+
+int DoTestOneInput(const uint8_t* data, size_t size) {
+  if (size < 2) return 0;
+  size_t numContexts = data[0] * 256 * data[1] + 1;
+  data += 2;
+  size -= 2;
+
+  TrackingMemoryManager memory_manager{/* cap */ 1 * kGiB,
+                                       /* total_cap */ 5 * kGiB};
+  // It is OK to fail.
+  (void)Run(data, size, memory_manager.get(), numContexts);
+  Check(memory_manager.Reset());
 
   return 0;
 }
