@@ -194,8 +194,8 @@ V GammaModulation(const D d, const size_t x, const size_t y,
   overall_ratio = Mul(SumOfLanes(d, overall_ratio), Set(d, 0.5f / 64));
   // ideally -1.0, but likely optimal correction adds some entropy, so slightly
   // less than that.
-  const auto kGam = Set(d, 0.1005613337192697f);
-  return MulAdd(kGam, FastLog2f(d, overall_ratio), out_val);
+  const auto kGamma = Set(d, 0.1005613337192697f);
+  return MulAdd(kGamma, FastLog2f(d, overall_ratio), out_val);
 }
 
 // Change precision in 8x8 blocks that have high frequency content.
