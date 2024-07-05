@@ -25,16 +25,16 @@
 namespace jpegxl {
 namespace tools {
 
-using jxl::CodecInOut;
-using jxl::ColorEncoding;
-using jxl::Image3F;
-using jxl::ImageBundle;
-using jxl::ImageF;
-using jxl::Rect;
-using jxl::Span;
-using jxl::Status;
-using jxl::ThreadPool;
-using jxl::extras::ColorHints;
+using ::jxl::CodecInOut;
+using ::jxl::ColorEncoding;
+using ::jxl::Image3F;
+using ::jxl::ImageBundle;
+using ::jxl::ImageF;
+using ::jxl::Rect;
+using ::jxl::Span;
+using ::jxl::Status;
+using ::jxl::ThreadPool;
+using ::jxl::extras::ColorHints;
 
 using IccBytes = std::vector<uint8_t>;
 

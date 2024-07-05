@@ -17,7 +17,7 @@
 namespace jxl {
 namespace {
 
-using jxl::cms::ColorEncoding;
+using ::jxl::cms::ColorEncoding;
 
 TEST(ColorEncodingTest, RoundTripAll) {
   for (const test::ColorEncodingDescriptor& cdesc : test::AllEncodings()) {

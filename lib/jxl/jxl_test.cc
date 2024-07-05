@@ -52,15 +52,15 @@ namespace jxl {
 struct AuxOut;
 
 namespace {
-using extras::JXLCompressParams;
-using extras::JXLDecompressParams;
-using extras::PackedPixelFile;
-using test::ButteraugliDistance;
-using test::ComputeDistance2;
-using test::ReadTestData;
-using test::Roundtrip;
-using test::TestImage;
-using test::ThreadPoolForTests;
+using ::jxl::extras::JXLCompressParams;
+using ::jxl::extras::JXLDecompressParams;
+using ::jxl::extras::PackedPixelFile;
+using ::jxl::test::ButteraugliDistance;
+using ::jxl::test::ComputeDistance2;
+using ::jxl::test::ReadTestData;
+using ::jxl::test::Roundtrip;
+using ::jxl::test::TestImage;
+using ::jxl::test::ThreadPoolForTests;
 
 #define JXL_TEST_NL 0  // Disabled in code
 

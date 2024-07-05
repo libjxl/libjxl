@@ -44,11 +44,11 @@ Design:
 
 namespace {
 
-using jxl::Image3F;
-using jxl::ImageBundle;
-using jxl::ImageF;
-using jxl::Status;
-using jxl::StatusOr;
+using ::jxl::Image3F;
+using ::jxl::ImageBundle;
+using ::jxl::ImageF;
+using ::jxl::Status;
+using ::jxl::StatusOr;
 
 const float kC2 = 0.0009f;
 const int kNumScales = 6;

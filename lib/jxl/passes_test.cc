@@ -32,10 +32,10 @@
 
 namespace jxl {
 
-using test::ButteraugliDistance;
-using test::ReadTestData;
-using test::Roundtrip;
-using test::ThreadPoolForTests;
+using ::jxl::test::ButteraugliDistance;
+using ::jxl::test::ReadTestData;
+using ::jxl::test::Roundtrip;
+using ::jxl::test::ThreadPoolForTests;
 
 namespace {
 

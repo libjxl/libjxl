@@ -37,8 +37,8 @@
 
 namespace {
 
-using jxl::ImageF;
-using jxl::test::ButteraugliDistance;
+using ::jxl::ImageF;
+using ::jxl::test::ButteraugliDistance;
 
 // Converts a test image to a CodecInOut.
 // icc_profile can be empty to automatically deduce profile from the pixel

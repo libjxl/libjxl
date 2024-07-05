@@ -37,7 +37,7 @@
 
 namespace jxl {
 
-using test::ThreadPoolForTests;
+using ::jxl::test::ThreadPoolForTests;
 
 namespace extras {
 

@@ -59,10 +59,10 @@
 namespace jxl {
 namespace {
 
-using test::ButteraugliDistance;
-using test::ReadTestData;
-using test::Roundtrip;
-using test::TestImage;
+using ::jxl::test::ButteraugliDistance;
+using ::jxl::test::ReadTestData;
+using ::jxl::test::Roundtrip;
+using ::jxl::test::TestImage;
 
 void TestLosslessGroups(size_t group_size_shift) {
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");

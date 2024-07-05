@@ -24,9 +24,9 @@
 
 namespace jxl {
 namespace {
-using test::ButteraugliDistance;
-using test::ReadTestData;
-using test::Roundtrip;
+using ::jxl::test::ButteraugliDistance;
+using ::jxl::test::ReadTestData;
+using ::jxl::test::Roundtrip;
 
 TEST(PreviewTest, RoundtripGivenPreview) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();

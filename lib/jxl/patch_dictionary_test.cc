@@ -22,9 +22,9 @@
 namespace jxl {
 namespace {
 
-using test::ButteraugliDistance;
-using test::ReadTestData;
-using test::Roundtrip;
+using ::jxl::test::ButteraugliDistance;
+using ::jxl::test::ReadTestData;
+using ::jxl::test::Roundtrip;
 
 TEST(PatchDictionaryTest, GrayscaleModular) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
