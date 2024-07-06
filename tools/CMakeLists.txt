@@ -408,7 +408,7 @@ endif()  # SANITIZER != "none"
 set_target_properties(libjxl_test PROPERTIES PREFIX "tests/")
 target_link_libraries(libjxl_test jxl)
 if (NOT MSVC)
-target_compile_options(libjxl_test PRIVATE -Wall -Wextra -Werror)
+target_compile_options(libjxl_test PRIVATE -Wall -Wextra)
 if(NOT WIN32)
   target_compile_options(libjxl_test PRIVATE -pedantic)
 endif()  # NOT WIN32
