@@ -24,7 +24,7 @@ TEST(BlendingTest, Crops) {
   const std::vector<uint8_t> compressed =
       jxl::test::ReadTestData("jxl/blending/cropped_traffic_light.jxl");
   extras::JXLDecompressParams dparams;
-  dparams.accepted_formats = {{3, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0}};
+  dparams.accepted_formats = {{3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0}};
   extras::PackedPixelFile decoded;
   ASSERT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,
                              /*decoded_bytes=*/nullptr, &decoded));
