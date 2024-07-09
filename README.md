@@ -130,6 +130,7 @@ format: Cloudinary and Google.
 *   [Test coverage on Codecov.io](https://app.codecov.io/gh/libjxl/libjxl) - for
     developers
 *   [libjxl documentation on readthedocs.io](https://libjxl.readthedocs.io/)
+*   The development of jpegli, the improved JPEG encoder and decoder, will continue at https://github.com/google/jpegli
 
 ### Contact
 
