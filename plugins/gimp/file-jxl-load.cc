@@ -61,8 +61,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   JxlPixelFormat format = {};
   JxlAnimationHeader animation = {};
   JxlBlendMode blend_mode = JXL_BLEND_BLEND;
-  char *frame_name = nullptr;  // will be realloced
-  size_t frame_name_len = 0;
+  std::vector<char> frame_name;
 
   format.num_channels = 4;
   format.data_type = JXL_TYPE_FLOAT;
@@ -369,11 +368,11 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         }
         char *temp_frame_name = nullptr;
         bool must_free_frame_name = false;
-        if (frame_name_len == 0) {
+        if (frame_name.size() == 0) {
           temp_frame_name = g_strdup_printf("Frame %lu", layer_idx + 1);
           must_free_frame_name = true;
         } else {
-          temp_frame_name = frame_name;
+          temp_frame_name = frame_name.data();
         }
         double fduration = frame_duration * 1000.f * tps_denom / tps_numerator;
         layer_name = g_strdup_printf("%s (%.15gms)%s", temp_frame_name,
@@ -436,15 +435,16 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
             " Warning: JxlDecoderGetFrameHeader: Unhandled blend mode: %d\n",
             blend_mode);
       }
-      frame_name_len = frame_header.name_length;
-      if (frame_name_len > 0) {
-        frame_name =
-            reinterpret_cast<char *>(realloc(frame_name, frame_name_len));
+      if (frame_header.name_length > 0) {
+        frame_name.resize(frame_header.name_length + 1);
         if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetFrameName(dec.get(), frame_name, frame_name_len)) {
+            JxlDecoderGetFrameName(dec.get(), frame_name.data(),
+                                   frame_name.size())) {
           g_printerr(LOAD_PROC "Error: JxlDecoderGetFrameName failed");
           return false;
-        };
+        }
+      } else {
+        frame_name.resize(0);
       }
     } else if (status == JXL_DEC_SUCCESS) {
       // All decoding successfully finished.
