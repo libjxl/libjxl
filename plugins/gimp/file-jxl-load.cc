@@ -429,9 +429,9 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       }
       if (frame_header.name_length > 0) {
         frame_name.resize(frame_header.name_length + 1);
-        if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetFrameName(dec.get(), frame_name.data(),
-                                   frame_name.size())) {
+        if (JXL_DEC_SUCCESS != JxlDecoderGetFrameName(dec.get(),
+                                                      frame_name.data(),
+                                                      frame_name.size())) {
           g_printerr(LOAD_PROC "Error: JxlDecoderGetFrameName failed");
           return false;
         }
