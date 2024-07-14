@@ -355,17 +355,9 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       if (layer_idx == 0 && !info.have_animation) {
         layer_name = g_strdup_printf("Background");
       } else {
-        const GString *blend_null_flag = g_string_new("");
-        const GString *blend_replace_flag = g_string_new(" (replace)");
-        const GString *blend_combine_flag = g_string_new(" (combine)");
-        const GString *blend;
-        if (blend_mode == JXL_BLEND_REPLACE) {
-          blend = blend_replace_flag;
-        } else if (blend_mode == JXL_BLEND_BLEND) {
-          blend = blend_combine_flag;
-        } else {
-          blend = blend_null_flag;
-        }
+        const char *blend = (blend_mode == JXL_BLEND_REPLACE) ? " (replace)"
+                            : (blend_mode == JXL_BLEND_BLEND) ? " (combine)"
+                                                              : "";
         char *temp_frame_name = nullptr;
         bool must_free_frame_name = false;
         if (frame_name.size() == 0) {
@@ -376,7 +368,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         }
         double fduration = frame_duration * 1000.f * tps_denom / tps_numerator;
         layer_name = g_strdup_printf("%s (%.15gms)%s", temp_frame_name,
-                                     fduration, blend->str);
+                                     fduration, blend);
         if (must_free_frame_name) free(temp_frame_name);
       }
       layer = gimp_layer_new(*image_id, layer_name, xsize, ysize, layer_type,
