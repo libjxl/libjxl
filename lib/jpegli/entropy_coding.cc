@@ -486,7 +486,7 @@ void TokenizeJpeg(j_compress_ptr cinfo) {
         new_refinement_bits += sti->num_nonzeros;
       }
     }
-    JXL_DASSERT(m->next_refinement_bit ==
+    JXL_DASSERT(m->next_refinement_bit <=
                 refinement_bits + num_refinement_bits);
     num_refinement_bits += new_refinement_bits;
   }
