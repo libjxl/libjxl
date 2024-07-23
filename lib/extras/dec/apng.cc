@@ -257,6 +257,17 @@ Status DecodeChrmChunk(Bytes payload, JxlColorEncoding* color_encoding) {
   return true;
 }
 
+/** Extracts information from 'cLLi' chunk. */
+Status DecodeClliChunk(Bytes payload, float* max_content_light_level) {
+  if (payload.size() != 8) return JXL_FAILURE("Wrong cLLi size");
+  const uint8_t* data = payload.data();
+  const uint32_t maxcll_png =
+      Clamp1(png_get_uint_32(data), uint32_t{0}, uint32_t{10000 * 10000});
+  // Ignore MaxFALL value.
+  *max_content_light_level = static_cast<float>(maxcll_png) / 10000.f;
+  return true;
+}
+
 /** Returns false if invalid. */
 JXL_INLINE Status DecodeHexNibble(const char c, uint32_t* JXL_RESTRICT nibble) {
   if ('a' <= c && c <= 'f') {
@@ -1121,6 +1132,11 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         color_info_type = ColorInfoType::GAMA_OR_CHRM;
         continue;
 
+      case MakeTag('c', 'L', 'L', 'i'):
+        JXL_RETURN_IF_ERROR(
+            DecodeClliChunk(payload, &ppf->info.intensity_target));
+        continue;
+
       case MakeTag('e', 'X', 'I', 'f'):
         // TODO(eustas): next eXIF chunk overwrites current; is it ok?
         ppf->metadata.exif.resize(payload.size());
@@ -1145,6 +1161,11 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   bool is_gray = (ppf->info.num_color_channels == 1);
   JXL_RETURN_IF_ERROR(
       ApplyColorHints(color_hints, color_is_already_set, is_gray, ppf));
+
+  if (ppf->color_encoding.transfer_function != JXL_TRANSFER_FUNCTION_PQ) {
+    // Reset intensity target, in case we set it from cLLi but TF is not PQ.
+    ppf->info.intensity_target = 0.f;
+  }
 
   bool has_nontrivial_background = false;
   bool previous_frame_should_be_cleared = false;
