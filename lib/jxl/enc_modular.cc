@@ -1345,6 +1345,12 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
                                                 const ModularStreamId& stream,
                                                 bool do_color, bool groupwise) {
   size_t stream_id = stream.ID(frame_dim_);
+  if (stream_id == 0 && frame_dim_.num_groups != 1) {
+    // If we have multiple groups, then the stream with ID 0 holds the full
+    // image and we do not want to apply transforms or in general change the
+    // pixel values.
+    return true;
+  }
   Image& full_image = stream_images_[0];
   JxlMemoryManager* memory_manager = full_image.memory_manager();
   const size_t xsize = rect.xsize();
