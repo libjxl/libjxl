@@ -441,18 +441,19 @@ void TokenizeJpeg(j_compress_ptr cinfo) {
   std::vector<int> processed(cinfo->num_scans);
   size_t max_refinement_tokens = 0;
   size_t num_refinement_bits = 0;
-  int num_refinement_scans[DCTSIZE2] = {};
+  int num_refinement_scans[kMaxComponents][DCTSIZE2] = {};
   int max_num_refinement_scans = 0;
   for (int i = 0; i < cinfo->num_scans; ++i) {
     const jpeg_scan_info* si = &cinfo->scan_info[i];
     ScanTokenInfo* sti = &m->scan_token_info[i];
     if (si->Ss > 0 && si->Ah == 0 && si->Al > 0) {
       int offset = m->ac_ctx_offset[i];
+      int comp_idx = si->component_index[0];
       TokenizeScan(cinfo, i, offset, sti);
       processed[i] = 1;
       max_refinement_tokens += sti->num_future_nonzeros;
       for (int k = si->Ss; k <= si->Se; ++k) {
-        num_refinement_scans[k] = si->Al;
+        num_refinement_scans[comp_idx][k] = si->Al;
       }
       max_num_refinement_scans = std::max(max_num_refinement_scans, si->Al);
       num_refinement_bits += sti->num_nonzeros;
@@ -475,16 +476,17 @@ void TokenizeJpeg(j_compress_ptr cinfo) {
     size_t new_refinement_bits = 0;
     for (int i = 0; i < cinfo->num_scans; ++i) {
       const jpeg_scan_info* si = &cinfo->scan_info[i];
+      int comp_idx = si->component_index[0];
       ScanTokenInfo* sti = &m->scan_token_info[i];
       if (si->Ss > 0 && si->Ah > 0 &&
-          si->Ah == num_refinement_scans[si->Ss] - j) {
+          si->Ah == num_refinement_scans[comp_idx][si->Ss] - j) {
         int offset = m->ac_ctx_offset[i];
         TokenizeScan(cinfo, i, offset, sti);
         processed[i] = 1;
         new_refinement_bits += sti->num_nonzeros;
       }
     }
-    JXL_DASSERT(m->next_refinement_bit ==
+    JXL_DASSERT(m->next_refinement_bit <=
                 refinement_bits + num_refinement_bits);
     num_refinement_bits += new_refinement_bits;
   }
