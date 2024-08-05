@@ -81,8 +81,8 @@ bool ParseChromaSubsampling(const char* arg, avifPixelFormat* subsampling) {
   return false;
 }
 
-void SetUpAvifColor(const ColorEncoding& color, bool rgb,
-                    avifImage* const image) {
+Status SetUpAvifColor(const ColorEncoding& color, bool rgb,
+                      avifImage* const image) {
   bool need_icc = (color.GetWhitePointType() != WhitePoint::kD65);
 
   image->matrixCoefficients =
@@ -125,8 +125,10 @@ void SetUpAvifColor(const ColorEncoding& color, bool rgb,
   }
 
   if (need_icc) {
-    avifImageSetProfileICC(image, color.ICC().data(), color.ICC().size());
+    JXL_RETURN_IF_AVIF_ERROR(
+        avifImageSetProfileICC(image, color.ICC().data(), color.ICC().size()));
   }
+  return true;
 }
 
 Status ReadAvifColor(const avifImage* const image, ColorEncoding* const color) {
@@ -301,14 +303,14 @@ class AvifCodec : public ImageCodec {
         image->width = ib.xsize();
         image->height = ib.ysize();
         image->depth = depth;
-        SetUpAvifColor(ib.c_current(), rgb_, image.get());
+        JXL_RETURN_IF_ERROR(SetUpAvifColor(ib.c_current(), rgb_, image.get()));
         std::unique_ptr<avifRWData, void (*)(avifRWData*)> icc_freer(
             &image->icc, &avifRWDataFree);
         avifRGBImage rgb_image;
         avifRGBImageSetDefaults(&rgb_image, image.get());
         rgb_image.format =
             ib.HasAlpha() ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
-        avifRGBImageAllocatePixels(&rgb_image);
+        JXL_RETURN_IF_AVIF_ERROR(avifRGBImageAllocatePixels(&rgb_image));
         std::unique_ptr<avifRGBImage, void (*)(avifRGBImage*)> pixels_freer(
             &rgb_image, &avifRGBImageFreePixels);
         const double start_convert_image = jxl::Now();
@@ -377,7 +379,7 @@ class AvifCodec : public ImageCodec {
         avifRGBImageSetDefaults(&rgb_image, decoder->image);
         rgb_image.format =
             has_alpha ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
-        avifRGBImageAllocatePixels(&rgb_image);
+        JXL_RETURN_IF_AVIF_ERROR(avifRGBImageAllocatePixels(&rgb_image));
         std::unique_ptr<avifRGBImage, void (*)(avifRGBImage*)> pixels_freer(
             &rgb_image, &avifRGBImageFreePixels);
         JXL_RETURN_IF_AVIF_ERROR(avifImageYUVToRGB(decoder->image, &rgb_image));
