@@ -62,7 +62,10 @@ namespace {
 using hwy::HWY_NAMESPACE::AbsDiff;
 using hwy::HWY_NAMESPACE::Add;
 using hwy::HWY_NAMESPACE::And;
+using hwy::HWY_NAMESPACE::Gt;
+using hwy::HWY_NAMESPACE::IfThenElseZero;
 using hwy::HWY_NAMESPACE::Max;
+using hwy::HWY_NAMESPACE::Min;
 using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::Sqrt;
 using hwy::HWY_NAMESPACE::ZeroIfNegative;
@@ -198,6 +201,51 @@ V GammaModulation(const D d, const size_t x, const size_t y,
   return MulAdd(kGamma, FastLog2f(d, overall_ratio), out_val);
 }
 
+// Change precision in 8x8 blocks that have significant amounts of blue
+// content (but are not close to solid blue).
+// This is based on the idea that M and L cone activations saturate the
+// S (blue) receptors, and the S reception becomes more important when
+// both M and L levels are low. In that case M and L receptors may be
+// observing S-spectra instead and viewing them with higher spatial
+// accuracy, justifying spending more bits here.
+template <class D, class V>
+V BlueModulation(const D d, const size_t x, const size_t y,
+                 const ImageF& planex, const ImageF& planey,
+                 const ImageF& planeb, const Rect& rect, const V out_val) {
+  auto sum = Zero(d);
+  static const float kLimit = 0.027121074570634722;
+  static const float kOffset = 0.084381641171960495;
+  for (size_t dy = 0; dy < 8; ++dy) {
+    const float* JXL_RESTRICT row_in_x = rect.ConstRow(planex, y + dy) + x;
+    const float* JXL_RESTRICT row_in_y = rect.ConstRow(planey, y + dy) + x;
+    const float* JXL_RESTRICT row_in_b = rect.ConstRow(planeb, y + dy) + x;
+    for (size_t dx = 0; dx < 8; dx += Lanes(d)) {
+      const auto p_x = Load(d, row_in_x + dx);
+      const auto p_b = Load(d, row_in_b + dx);
+      const auto p_y_raw = Add(Load(d, row_in_y + dx), Set(d, kOffset));
+      const auto p_y_effective = Add(p_y_raw, Abs(p_x));
+      sum = Add(sum,
+                IfThenElseZero(Gt(p_b, p_y_effective),
+                               Min(Sub(p_b, p_y_effective), Set(d, kLimit))));
+    }
+  }
+  static const float kMul = 0.14207000358439159;
+  sum = SumOfLanes(d, sum);
+  float scalar_sum = GetLane(sum);
+  // If it is all blue, don't boost the quantization.
+  // All blue likely means low frequency blue. Let's not make the most
+  // perfect sky ever.
+  if (scalar_sum >= 32 * kLimit) {
+    scalar_sum = 64 * kLimit - scalar_sum;
+  }
+  static const float kMaxLimit = 15.398788439047934f;
+  if (scalar_sum >= kMaxLimit * kLimit) {
+    scalar_sum = kMaxLimit * kLimit;
+  }
+  scalar_sum *= kMul;
+  return Add(Set(d, scalar_sum), out_val);
+}
+
 // Change precision in 8x8 blocks that have high frequency content.
 template <class D, class V>
 V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
@@ -277,6 +325,7 @@ void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
       out_val = ComputeMask(df, out_val);
       out_val = HfModulation(df, x, y, xyb_y, rect_in, out_val);
       out_val = GammaModulation(df, x, y, xyb_x, xyb_y, rect_in, out_val);
+      out_val = BlueModulation(df, x, y, xyb_x, xyb_y, xyb_b, rect_in, out_val);
       // We want multiplicative quantization field, so everything
       // until this point has been modulating the exponent.
       row_out[ix] = FastPow2f(GetLane(out_val) * 1.442695041f) * mul + add;
