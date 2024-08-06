@@ -26,6 +26,8 @@ jobs:
             tag: 'origin/master'
           - branch: 'test_highway_1.0.7'
             tag: '1.0.7'
+          - branch: 'test_highway_1.1.0'
+            tag: '1.1.0'
 
     steps:
       - name: Harden Runner
