@@ -1,4 +1,4 @@
-RCT 1          /* YCoCg */
+RCT 6          /* YCoCg */
 GroupShift 3   /* Group size is 128 << 3 == 1024 */
 Width 1024
 Height 1024

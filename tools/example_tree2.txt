@@ -1,0 +1,87 @@
+/* Tropical Island Sunset in HDR */
+/* by Jon Sneyers, license: CC0 */
+
+Rec2100 PQ
+Bitdepth 10
+Width 2048
+Height 1024
+RCT 6
+Orientation 8
+
+
+/* FramePos -548 0 */
+FramePos -548 -256
+
+/* Sun */
+Spline
+    -0.2 0.2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.1
+    0.7 -0.3 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+    0.5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+    30.0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+    700 512
+    1088 512
+EndSpline
+
+
+/* JS signature */
+Spline
+    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+    -0.2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+    -1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+    1.0 0.3 -0.3 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+    675 915
+    665 940
+    675 955
+    570 955
+    590 900
+    590 980
+    600 1000
+    620 930
+    640 1010
+EndSpline
+
+if c > 0
+  /* Chroma */
+  if c > 1
+    if g > 21
+      if x > 0
+        if W > 0
+          - W -1
+          - W 1
+        - Set -250
+      if x > 0
+        if W-WW > -1
+          - W -1
+          - W 0
+        - Set 500
+    if g > 21
+      if x > 0
+        - W - 1
+        - Set 550
+    - Set -300
+  /* Luma */
+  if y > 8
+    /* Sky and mountains */
+    if g > 21
+      if x > 0
+        if WGH > 3
+          - AvgN+NW + 3
+          if NW-N > -500
+            - AvgN+NE - 3
+            - NW + 1  /* extend mountain */
+        /* init mountains */
+        if N > -4000
+          - N - 20
+          - Set -950
+      /* Ocean */
+      if x > 1000
+        - AvgAll -70
+        if WGH > 0
+          - AvgN+NW +2
+          - AvgN+NE -2
+    /* Randomness */
+      if W > 0
+        - Weighted -3
+        if g > 21
+        - Set 1042
+        - Set 620
