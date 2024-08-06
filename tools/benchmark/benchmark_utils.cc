@@ -28,10 +28,10 @@
 #include <utility>
 
 #ifdef __APPLE__
-  #include <crt_externs.h>
-  #define environ (*_NSGetEnviron())
+#include <crt_externs.h>
+#define environ (*_NSGetEnviron())
 #else
-  extern char **environ;  // NOLINT
+extern char** environ;  // NOLINT
 #endif
 
 namespace jpegxl {
