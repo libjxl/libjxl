@@ -3555,7 +3555,9 @@ void FillRowPalette(const unsigned char* inrow, size_t xs,
                     const int16_t* lookup, int16_t* out) {
   for (size_t x = 0; x < xs; x++) {
     uint32_t p = 0;
-    memcpy(&p, inrow + x * nb_chans, nb_chans);
+    for (size_t i = 0; i < nb_chans; ++i) {
+      p |= inrow[x * nb_chans + i] << (8 * i);
+    }
     out[x] = lookup[pixel_hash(p)];
   }
 }
@@ -3704,15 +3706,13 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   encoder.code = &code[0];
   encoder.PrepareForSimd();
   int16_t p[4][32 + 1024] = {};
-  uint8_t prgba[4];
   size_t i = 0;
   size_t have_zero = 1;
   for (; i < pcolors; i++) {
-    memcpy(prgba, &palette[i], 4);
-    p[0][16 + i + have_zero] = prgba[0];
-    p[1][16 + i + have_zero] = prgba[1];
-    p[2][16 + i + have_zero] = prgba[2];
-    p[3][16 + i + have_zero] = prgba[3];
+    p[0][16 + i + have_zero] = palette[i] & 0xFF;
+    p[1][16 + i + have_zero] = (palette[i] >> 8) & 0xFF;
+    p[2][16 + i + have_zero] = (palette[i] >> 16) & 0xFF;
+    p[3][16 + i + have_zero] = (palette[i] >> 24) & 0xFF;
   }
   p[0][15] = 0;
   row_encoder.ProcessRow(p[0] + 16, p[0] + 15, p[0] + 15, p[0] + 15, pcolors);
