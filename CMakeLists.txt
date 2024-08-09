@@ -86,7 +86,8 @@ else()
 endif()
 
 
-if(EXISTS "${PROJECT_SOURCE_DIR}/third_party/libjpeg-turbo/jconfig.h.in")
+find_package(JPEG)
+if(JPEG_FOUND OR EXISTS "${PROJECT_SOURCE_DIR}/third_party/libjpeg-turbo/jconfig.h.in")
   set(ENABLE_JPEGLI_DEFAULT YES)
 else()
   set(ENABLE_JPEGLI_DEFAULT NO)
