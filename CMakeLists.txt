@@ -11,7 +11,7 @@ project(LIBJXL LANGUAGES C CXX)
 
 # TODO(sboukortt): remove once oss-fuzz passes -DBUILD_SHARED_LIBS=OFF
 if(JPEGXL_ENABLE_FUZZERS)
-  message(INFO "Fuzzer build detected, building static libs")
+  message(STATUS "Fuzzer build detected, building static libs")
   set(BUILD_SHARED_LIBS OFF)
 endif()
 
@@ -90,6 +90,16 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/third_party/libjpeg-turbo/jconfig.h.in")
   set(ENABLE_JPEGLI_DEFAULT YES)
 else()
   set(ENABLE_JPEGLI_DEFAULT NO)
+  message(STATUS "libjpeg-turbo submodule is absent; not enabling jpegli")
+endif()
+
+include(TestBigEndian)
+test_big_endian(ARCH_IS_BIG_ENDIAN)
+if(ARCH_IS_BIG_ENDIAN)
+  set(ENABLE_SKCMS_DEFAULT NO)
+  message(STATUS "Big-endian architecture detected; defaulting to lcms2 instead of skcms")
+else()
+  set(ENABLE_SKCMS_DEFAULT YES)
 endif()
 
 # Standard cmake naming for building shared libraries.
@@ -128,7 +138,7 @@ set(JPEGXL_ENABLE_SJPEG true CACHE BOOL
     "Build JPEGXL with support for encoding with sjpeg.")
 set(JPEGXL_ENABLE_OPENEXR true CACHE BOOL
     "Build JPEGXL with support for OpenEXR if available.")
-set(JPEGXL_ENABLE_SKCMS true CACHE BOOL
+set(JPEGXL_ENABLE_SKCMS ${ENABLE_SKCMS_DEFAULT} CACHE BOOL
     "Build with skcms instead of lcms2.")
 set(JPEGXL_ENABLE_VIEWERS false CACHE BOOL
     "Build JPEGXL viewer tools for evaluation.")
