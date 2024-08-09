@@ -3747,7 +3747,11 @@ bool detect_palette(const unsigned char* r, size_t width,
   size_t look_ahead = 7 + ((nb_chans == 1) ? 3 : ((nb_chans < 4) ? 1 : 0));
   for (; x + look_ahead < width; x += 8) {
     uint32_t p[8] = {}, index[8];
-    for (int i = 0; i < 8; i++) memcpy(&p[i], r + (x + i) * nb_chans, 4);
+    for (int i = 0; i < 8; i++) {
+      for (int j = 0; j < 4; ++j) {
+        p[i] |= r[(x + i) * nb_chans + j] << (8 * j);
+      }
+    }
     for (int i = 0; i < 8; i++) p[i] &= ((1llu << (8 * nb_chans)) - 1);
     for (int i = 0; i < 8; i++) index[i] = pixel_hash(p[i]);
     for (int i = 0; i < 8; i++) {
@@ -3757,7 +3761,9 @@ bool detect_palette(const unsigned char* r, size_t width,
   }
   for (; x < width; x++) {
     uint32_t p = 0;
-    memcpy(&p, r + x * nb_chans, nb_chans);
+    for (size_t i = 0; i < nb_chans; ++i) {
+      p |= r[x * nb_chans + i] << (8 * i);
+    }
     uint32_t index = pixel_hash(p);
     collided |= (palette[index] != 0 && p != palette[index]);
     palette[index] = p;
@@ -3806,7 +3812,9 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
     for (uint32_t k = 0; k < kHashSize; k++) {
       if (palette[k] == 0) continue;
       uint8_t p[4];
-      memcpy(p, &palette[k], 4);
+      for (int i = 0; i < 4; ++i) {
+        p[i] = (palette[k] >> (8 * i)) & 0xFF;
+      }
       // move entries to front so sort has less work
       palette[nb_entries] = palette[k];
       if (p[0] != p[1] || p[0] != p[2]) have_color = true;
@@ -3831,8 +3839,10 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
           if (ap == 0) return false;
           if (bp == 0) return true;
           uint8_t a[4], b[4];
-          memcpy(a, &ap, 4);
-          memcpy(b, &bp, 4);
+          for (int i = 0; i < 4; ++i) {
+            a[i] = (ap >> (8 * i)) & 0xFF;
+            b[i] = (bp >> (8 * i)) & 0xFF;
+          }
           float ay, by;
           if (nb_chans == 4) {
             ay = (0.299f * a[0] + 0.587f * a[1] + 0.114f * a[2] + 0.01f) * a[3];
