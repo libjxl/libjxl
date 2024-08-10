@@ -61,7 +61,8 @@ class APNGEncoder : public Encoder {
   std::vector<JxlPixelFormat> AcceptedFormats() const override {
     std::vector<JxlPixelFormat> formats;
     for (const uint32_t num_channels : {1, 2, 3, 4}) {
-      for (const JxlDataType data_type : {JXL_TYPE_UINT8, JXL_TYPE_UINT16}) {
+      for (const JxlDataType data_type :
+           {JXL_TYPE_UINT8, JXL_TYPE_UINT16, JXL_TYPE_FLOAT}) {
         for (JxlEndianness endianness : {JXL_BIG_ENDIAN, JXL_LITTLE_ENDIAN}) {
           formats.push_back(
               JxlPixelFormat{num_channels, data_type, endianness, /*align=*/0});
@@ -353,6 +354,20 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
         }
       } else {
         memcpy(out.data(), in, out_size);
+      }
+    } else if (format.data_type == JXL_TYPE_FLOAT) {
+      constexpr float kMul = 65535.0;
+      const uint8_t* p_in = in;
+      uint8_t* p_out = out.data();
+      for (size_t i = 0; i < num_samples;
+           ++i, p_in += sizeof(float), p_out += 2) {
+        float val =
+            Clamp1(format.endianness == JXL_BIG_ENDIAN ? LoadBEFloat(p_in)
+                   : format.endianness == JXL_LITTLE_ENDIAN
+                       ? LoadLEFloat(p_in)
+                       : *reinterpret_cast<const float*>(p_in),
+                   0.f, 1.f);
+        StoreBE16(static_cast<uint32_t>(std::lroundf(val * kMul)), p_out);
       }
     }
     png_structp png_ptr;

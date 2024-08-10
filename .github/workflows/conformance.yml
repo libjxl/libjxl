@@ -20,8 +20,8 @@ permissions:
 
 env:
   CONFORMANCE_REPO_HASH: a3ee00672dd1b58c2b5a7d5e8b9e4a7b9e53ec1e
-  LIBJXL_VERSION: "0.10.2"
-  LIBJXL_ABI_VERSION: "0.10"
+  LIBJXL_VERSION: "0.11.0"
+  LIBJXL_ABI_VERSION: "0.11"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}

@@ -2227,8 +2227,7 @@ static bool CanDoFastLossless(const JxlEncoderFrameSettings* frame_settings,
   // TODO(veluca): implement support for LSB-padded input in fast_lossless.
   if (frame_settings->values.image_bit_depth.type ==
           JxlBitDepthType::JXL_BIT_DEPTH_FROM_PIXEL_FORMAT &&
-      frame_settings->values.image_bit_depth.bits_per_sample !=
-          frame_settings->enc->metadata.m.bit_depth.bits_per_sample) {
+      frame_settings->enc->metadata.m.bit_depth.bits_per_sample % 8 != 0) {
     return false;
   }
   if (!frame_settings->values.frame_name.empty()) {
