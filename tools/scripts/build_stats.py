@@ -182,7 +182,7 @@ def LoadStackSizes(filename, binutils=''):
   elf_format = re.search('file format (.*)$', output, re.MULTILINE).group(1)
   if elf_format.startswith('elf64-little') or elf_format.endswith('-x86-64') or elf_format.endswith('-arm64'):
     pointer_fmt = '<Q'
-  elif elf_format.startswith('elf32-little') or elf_format == 'elf32-i386':
+  elif elf_format.startswith('elf32-little') or elf_format == 'elf32-i386' or elf_format == 'elf32-powerpc':
     pointer_fmt = '<I'
   else:
     raise Exception('Unknown ELF format: %s' % elf_format)
