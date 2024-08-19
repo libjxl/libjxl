@@ -99,7 +99,7 @@ jobs:
           ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@89ef406dd8d7e03cfd12d9e0a4a378f454709029 # v4.3.5
+      uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
       with:
         name: jxl-linux-x86_64-static
         path: ${{ runner.workspace }}/release_file.tar.gz
@@ -215,7 +215,7 @@ jobs:
         ./ci.sh debian_stats
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@89ef406dd8d7e03cfd12d9e0a4a378f454709029 # v4.3.5
+      uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
       with:
         name: ${{ steps.env.outputs.artifact_name }}
         path: |
@@ -364,7 +364,7 @@ jobs:
         BUILD_CONFIG=Release/ BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@89ef406dd8d7e03cfd12d9e0a4a378f454709029 # v4.3.5
+      uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
       with:
         name: jxl-${{matrix.triplet}}
         path: |
