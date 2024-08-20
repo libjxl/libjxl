@@ -34,12 +34,18 @@ class PaddedBytes {
 
   PaddedBytes(JxlMemoryManager* memory_manager, size_t size)
       : memory_manager_(memory_manager), size_(size), capacity_(0) {
-    reserve(size);
+    Status status = reserve(size);
+    if (!status) {
+      JXL_DASSERT(status);
+    }
   }
 
   PaddedBytes(JxlMemoryManager* memory_manager, size_t size, uint8_t value)
       : memory_manager_(memory_manager), size_(size), capacity_(0) {
-    reserve(size);
+    Status status = reserve(size);
+    if (!status) {
+      JXL_DASSERT(status);
+    }
     if (size_ != 0) {
       memset(data(), value, size);
     }
@@ -83,8 +89,8 @@ class PaddedBytes {
   // data() == nullptr and size_ = capacity_ = 0.
   // The new capacity will be at least 1.5 times the old capacity. This ensures
   // that we avoid quadratic behaviour.
-  void reserve(size_t capacity) {
-    if (capacity <= capacity_) return;
+  Status reserve(size_t capacity) {
+    if (capacity <= capacity_) return true;
 
     size_t new_capacity = std::max(capacity, 3 * capacity_ / 2);
     new_capacity = std::max<size_t>(64, new_capacity);
@@ -99,7 +105,7 @@ class PaddedBytes {
     // On allocation failure - discard all data to ensure this is noticed.
     if (!ok) {
       size_ = capacity_ = 0;
-      return;
+      return false;
     }
 
     if (data_.address<void>() == nullptr) {
@@ -115,34 +121,41 @@ class PaddedBytes {
 
     capacity_ = new_capacity;
     data_ = std::move(new_data);
+    return true;
   }
 
   // NOTE: unlike vector, this does not initialize the new data!
   // However, we guarantee that write_bits can safely append after
   // the resize, as we zero-initialize the first new byte of data.
   // If size < capacity(), does not invalidate the memory.
-  void resize(size_t size) {
-    reserve(size);
+  Status resize(size_t size) {
+    Status status = reserve(size);
     size_ = (data() == nullptr) ? 0 : size;
+    return status;
   }
 
   // resize(size) plus explicit initialization of the new data with `value`.
-  void resize(size_t size, uint8_t value) {
+  Status resize(size_t size, uint8_t value) {
     size_t old_size = size_;
-    resize(size);
+    Status status = resize(size);
     if (size_ > old_size) {
       memset(data() + old_size, value, size_ - old_size);
     }
+    return status;
   }
 
   // Amortized constant complexity due to exponential growth.
-  void push_back(uint8_t x) {
+  Status push_back(uint8_t x) {
     if (size_ == capacity_) {
-      reserve(capacity_ + 1);
-      if (data() == nullptr) return;
+      Status status = reserve(capacity_ + 1);
+      if (!status) {
+        return status;
+      }
+      if (data() == nullptr) return true;
     }
 
     data_.address<uint8_t>()[size_++] = x;
+    return true;
   }
 
   size_t size() const { return size_; }
@@ -153,12 +166,15 @@ class PaddedBytes {
 
   // std::vector operations implemented in terms of the public interface above.
 
-  void clear() { resize(0); }
+  Status clear() { return resize(0); }
   bool empty() const { return size() == 0; }
 
-  void assign(std::initializer_list<uint8_t> il) {
-    resize(il.size());
-    memcpy(data(), il.begin(), il.size());
+  Status assign(std::initializer_list<uint8_t> il) {
+    Status status = resize(il.size());
+    if (status) {
+      memcpy(data(), il.begin(), il.size());
+    }
+    return status;
   }
 
   uint8_t* begin() { return data(); }
@@ -181,11 +197,14 @@ class PaddedBytes {
            reinterpret_cast<const uint8_t*>(other.data()) + other.size());
   }
 
-  void append(const uint8_t* begin, const uint8_t* end) {
+  Status append(const uint8_t* begin, const uint8_t* end) {
     if (end - begin > 0) {
       size_t old_size = size();
-      resize(size() + (end - begin));
-      memcpy(data() + old_size, begin, end - begin);
+      Status status = resize(size() + (end - begin));
+      if (status) {
+        memcpy(data() + old_size, begin, end - begin);
+      }
+      return status;
     }
   }
 
