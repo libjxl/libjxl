@@ -45,19 +45,9 @@ class PaddedBytes {
     }
   }
 
-  PaddedBytes(const PaddedBytes& other)
-      : memory_manager_(other.memory_manager_),
-        size_(other.size_),
-        capacity_(0) {
-    reserve(size_);
-    if (data() != nullptr) memcpy(data(), other.data(), size_);
-  }
-  PaddedBytes& operator=(const PaddedBytes& other) {
-    if (this == &other) return *this;
-    resize(other.size());
-    if (data() != nullptr) memmove(data(), other.data(), size_);
-    return *this;
-  }
+  // Deleting copy constructor and copy assignment operator to prevent copying
+  PaddedBytes(const PaddedBytes&) = delete;
+  PaddedBytes& operator=(const PaddedBytes&) = delete;
 
   // default is not OK - need to set other.size_ to 0!
   PaddedBytes(PaddedBytes&& other) noexcept
