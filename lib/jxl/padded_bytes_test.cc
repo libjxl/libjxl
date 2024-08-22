@@ -25,7 +25,7 @@ TEST(PaddedBytesTest, TestNonEmptyFirstByteZero) {
   pb.resize(20);
   EXPECT_EQ(0, pb[0]);
   // And reserving.
-  pb.reserve(200);
+  EXPECT_TRUE(pb.reserve(200));
   EXPECT_EQ(0, pb[0]);
 }
 
@@ -51,7 +51,7 @@ TEST(PaddedBytesTest, TestFillWithoutReserve) {
 TEST(PaddedBytesTest, TestFillWithExactReserve) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   PaddedBytes pb{memory_manager};
-  pb.reserve(170);
+  EXPECT_TRUE(pb.reserve(170));
   for (size_t i = 0; i < 170u; ++i) {
     pb.push_back(i);
   }
@@ -62,7 +62,7 @@ TEST(PaddedBytesTest, TestFillWithExactReserve) {
 TEST(PaddedBytesTest, TestFillWithMoreReserve) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   PaddedBytes pb{memory_manager};
-  pb.reserve(171);
+  EXPECT_TRUE(pb.reserve(171));
   for (size_t i = 0; i < 170u; ++i) {
     pb.push_back(i);
   }

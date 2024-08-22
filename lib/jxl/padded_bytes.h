@@ -35,8 +35,7 @@ class PaddedBytes {
   static StatusOr<PaddedBytes> WithInitialSpace(
       JxlMemoryManager* memory_manager, size_t size) {
     PaddedBytes result(memory_manager);
-    // TODO(firsching): after changing Init to return a Status, use it here.
-    result.Init(size);
+    JXL_RETURN_IF_ERROR(result.Init(size));
     return result;
   }
 
@@ -78,8 +77,8 @@ class PaddedBytes {
   // data() == nullptr and size_ = capacity_ = 0.
   // The new capacity will be at least 1.5 times the old capacity. This ensures
   // that we avoid quadratic behaviour.
-  void reserve(size_t capacity) {
-    if (capacity <= capacity_) return;
+  Status reserve(size_t capacity) {
+    if (capacity <= capacity_) return true;
 
     size_t new_capacity = std::max(capacity, 3 * capacity_ / 2);
     new_capacity = std::max<size_t>(64, new_capacity);
@@ -94,7 +93,7 @@ class PaddedBytes {
     // On allocation failure - discard all data to ensure this is noticed.
     if (!ok) {
       size_ = capacity_ = 0;
-      return;
+      return false;
     }
 
     if (data_.address<void>() == nullptr) {
@@ -110,6 +109,7 @@ class PaddedBytes {
 
     capacity_ = new_capacity;
     data_ = std::move(new_data);
+    return true;
   }
 
   // NOTE: unlike vector, this does not initialize the new data!
@@ -117,7 +117,9 @@ class PaddedBytes {
   // the resize, as we zero-initialize the first new byte of data.
   // If size < capacity(), does not invalidate the memory.
   void resize(size_t size) {
-    reserve(size);
+    auto status = reserve(size);
+    // TODO(firsching): use status
+    (void) status;
     size_ = (data() == nullptr) ? 0 : size;
   }
 
@@ -133,7 +135,9 @@ class PaddedBytes {
   // Amortized constant complexity due to exponential growth.
   void push_back(uint8_t x) {
     if (size_ == capacity_) {
-      reserve(capacity_ + 1);
+      auto status = reserve(capacity_ + 1);
+      // TODO(firsching): use status
+      (void) status;
       if (data() == nullptr) return;
     }
 
@@ -185,9 +189,9 @@ class PaddedBytes {
   }
 
  private:
-  void Init(size_t size) {
+  Status Init(size_t size) {
     size_ = size;
-    reserve(size);
+    return reserve(size);
   }
 
   void BoundsCheck(size_t i) const {
