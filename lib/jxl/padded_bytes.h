@@ -156,11 +156,10 @@ class PaddedBytes {
     }
   bool empty() const { return size() == 0; }
 
-  void assign(std::initializer_list<uint8_t> il) {
-    auto status = resize(il.size());
-    // TODO(firsching): hand status here
-    (void)status;
+  Status assign(std::initializer_list<uint8_t> il) {
+    JXL_RETURN_IF_ERROR(resize(il.size()));
     memcpy(data(), il.begin(), il.size());
+    return true;
   }
 
   uint8_t* begin() { return data(); }
