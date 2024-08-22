@@ -137,7 +137,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
   if (numtags != 0) {
     numtags--;
     JXL_RETURN_IF_ERROR(CheckIs32Bit(numtags));
-    AppendUint32(numtags, result);
+    JXL_RETURN_IF_ERROR(AppendUint32(numtags, result));
     uint64_t prevtagstart = kICCHeaderSize + numtags * 12;
     uint64_t prevtagsize = 0;
     for (;;) {
@@ -181,33 +181,33 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
         tagstart = prevtagstart + prevtagsize;
       }
       JXL_RETURN_IF_ERROR(CheckIs32Bit(tagstart));
-      AppendUint32(tagstart, result);
+      JXL_RETURN_IF_ERROR(AppendUint32(tagstart, result));
       if (command & kFlagBitSize) {
         if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
         tagsize = DecodeVarInt(enc, size, &cpos);
       }
       JXL_RETURN_IF_ERROR(CheckIs32Bit(tagsize));
-      AppendUint32(tagsize, result);
+      JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
       prevtagstart = tagstart;
       prevtagsize = tagsize;
 
       if (tagcode == kCommandTagTRC) {
         AppendKeyword(kGtrcTag, result);
-        AppendUint32(tagstart, result);
-        AppendUint32(tagsize, result);
+        JXL_RETURN_IF_ERROR(AppendUint32(tagstart, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
         AppendKeyword(kBtrcTag, result);
-        AppendUint32(tagstart, result);
-        AppendUint32(tagsize, result);
+        JXL_RETURN_IF_ERROR(AppendUint32(tagstart, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
       }
 
       if (tagcode == kCommandTagXYZ) {
         JXL_RETURN_IF_ERROR(CheckIs32Bit(tagstart + tagsize * 2));
         AppendKeyword(kGxyzTag, result);
-        AppendUint32(tagstart + tagsize, result);
-        AppendUint32(tagsize, result);
+        JXL_RETURN_IF_ERROR(AppendUint32(tagstart + tagsize, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
         AppendKeyword(kBxyzTag, result);
-        AppendUint32(tagstart + tagsize * 2, result);
-        AppendUint32(tagsize, result);
+        JXL_RETURN_IF_ERROR(AppendUint32(tagstart + tagsize * 2, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
       }
     }
   }

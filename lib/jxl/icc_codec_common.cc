@@ -9,6 +9,7 @@
 #include <tuple>
 
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
@@ -49,12 +50,11 @@ uint32_t DecodeUint32(const uint8_t* data, size_t size, size_t pos) {
   return pos + 4 > size ? 0 : LoadBE32(data + pos);
 }
 
-void AppendUint32(uint32_t value, PaddedBytes* data) {
+Status AppendUint32(uint32_t value, PaddedBytes* data) {
   size_t pos = data->size();
-  auto status = data->resize(pos + 4);
-  // TODO(firsching): handle status
-  (void) status;
+  JXL_RETURN_IF_ERROR(data->resize(pos + 4));
   StoreBE32(value, data->data() + pos);
+  return true;
 }
 
 typedef std::array<uint8_t, 4> Tag;
