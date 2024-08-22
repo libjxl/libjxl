@@ -91,9 +91,7 @@ Status BitWriter::Allotment::PrivateReclaim(BitWriter* JXL_RESTRICT writer,
   // Reclaim unused bytes whole bytes from writer's allotment.
   const size_t unused_bytes = *unused_bits / kBitsPerByte;  // truncate
   JXL_ENSURE(writer->storage_.size() >= unused_bytes);
-  auto status = writer->storage_.resize(writer->storage_.size() - unused_bytes);
-  // TODO(firsching): handle  status
-  (void) status;
+  JXL_RETURN_IF_ERROR(writer->storage_.resize(writer->storage_.size() - unused_bytes));
   writer->current_allotment_ = parent_;
   // Ensure we don't also charge the parent for these bits.
   auto* parent = parent_;
@@ -106,9 +104,7 @@ Status BitWriter::Allotment::PrivateReclaim(BitWriter* JXL_RESTRICT writer,
 
 Status BitWriter::AppendByteAligned(const Span<const uint8_t>& span) {
   if (span.empty()) return true;
-  auto status = storage_.resize(storage_.size() + span.size() + 1);  // extra zero padding
-  // TODO(firsching): handle  status
-  (void) status;
+  JXL_RETURN_IF_ERROR(storage_.resize(storage_.size() + span.size() + 1));  // extra zero padding
 
   // Concatenate by copying bytes because both source and destination are bytes.
   JXL_ENSURE(BitsWritten() % kBitsPerByte == 0);
@@ -151,9 +147,7 @@ Status BitWriter::AppendByteAligned(
     // images with no alpha. Do nothing.
     return true;
   }
-  auto status = storage_.resize(storage_.size() + other_bytes + 1);  // extra zero padding
-  // TODO(firsching): handle  status
-  (void) status;
+  JXL_RETURN_IF_ERROR(storage_.resize(storage_.size() + other_bytes + 1));  // extra zero padding
 
   // Concatenate by copying bytes because both source and destination are bytes.
   JXL_ENSURE(BitsWritten() % kBitsPerByte == 0);
