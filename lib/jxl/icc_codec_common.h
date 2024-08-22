@@ -87,7 +87,7 @@ uint32_t DecodeUint32(const uint8_t* data, size_t size, size_t pos);
 Status AppendUint32(uint32_t value, PaddedBytes* data);
 Tag DecodeKeyword(const uint8_t* data, size_t size, size_t pos);
 void EncodeKeyword(const Tag& keyword, uint8_t* data, size_t size, size_t pos);
-void AppendKeyword(const Tag& keyword, PaddedBytes* data);
+Status AppendKeyword(const Tag& keyword, PaddedBytes* data);
 
 // Checks if a + b > size, taking possible integer overflow into account.
 Status CheckOutOfBounds(uint64_t a, uint64_t b, uint64_t size);

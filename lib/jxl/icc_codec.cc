@@ -117,7 +117,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
 
   // Header
   PaddedBytes header{memory_manager};
-  header.append(ICCInitialHeaderPrediction(osize));
+  JXL_RETURN_IF_ERROR(header.append(ICCInitialHeaderPrediction(osize)));
   for (size_t i = 0; i <= kICCHeaderSize; i++) {
     if (result->size() == osize) {
       if (cpos != commands_end) return JXL_FAILURE("Not all commands used");
@@ -163,7 +163,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
         }
         tag = *kTagStrings[tagcode - kCommandTagStringFirst];
       }
-      AppendKeyword(tag, result);
+      JXL_RETURN_IF_ERROR(AppendKeyword(tag, result));
 
       uint64_t tagstart;
       uint64_t tagsize = prevtagsize;
@@ -192,20 +192,20 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       prevtagsize = tagsize;
 
       if (tagcode == kCommandTagTRC) {
-        AppendKeyword(kGtrcTag, result);
+        JXL_RETURN_IF_ERROR(AppendKeyword(kGtrcTag, result));
         JXL_RETURN_IF_ERROR(AppendUint32(tagstart, result));
         JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
-        AppendKeyword(kBtrcTag, result);
+        JXL_RETURN_IF_ERROR(AppendKeyword(kBtrcTag, result));
         JXL_RETURN_IF_ERROR(AppendUint32(tagstart, result));
         JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
       }
 
       if (tagcode == kCommandTagXYZ) {
         JXL_RETURN_IF_ERROR(CheckIs32Bit(tagstart + tagsize * 2));
-        AppendKeyword(kGxyzTag, result);
+        JXL_QUIET_RETURN_IF_ERROR(AppendKeyword(kGxyzTag, result));
         JXL_RETURN_IF_ERROR(AppendUint32(tagstart + tagsize, result));
         JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
-        AppendKeyword(kBxyzTag, result);
+        JXL_RETURN_IF_ERROR(AppendKeyword(kBxyzTag, result));
         JXL_RETURN_IF_ERROR(AppendUint32(tagstart + tagsize * 2, result));
         JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
       }
@@ -295,7 +295,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       }
       pos += num;
     } else if (command == kCommandXYZ) {
-      AppendKeyword(kXyz_Tag, result);
+      JXL_RETURN_IF_ERROR(AppendKeyword(kXyz_Tag, result));
       for (int i = 0; i < 4; i++) {
         JXL_RETURN_IF_ERROR(result->push_back(0));
       }
@@ -305,7 +305,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       }
     } else if (command >= kCommandTypeStartFirst &&
                command < kCommandTypeStartFirst + kNumTypeStrings) {
-      AppendKeyword(*kTypeStrings[command - kCommandTypeStartFirst], result);
+      JXL_RETURN_IF_ERROR(AppendKeyword(*kTypeStrings[command - kCommandTypeStartFirst], result));
       for (size_t i = 0; i < 4; i++) {
         JXL_RETURN_IF_ERROR(result->push_back(0));
       }

@@ -69,9 +69,9 @@ void EncodeKeyword(const Tag& keyword, uint8_t* data, size_t size, size_t pos) {
   for (size_t i = 0; i < 4; ++i) data[pos + i] = keyword[i];
 }
 
-void AppendKeyword(const Tag& keyword, PaddedBytes* data) {
+Status AppendKeyword(const Tag& keyword, PaddedBytes* data) {
   static_assert(std::tuple_size<Tag>{} == 4);
-  data->append(keyword);
+  return data->append(keyword);
 }
 
 // Checks if a + b > size, taking possible integer overflow into account.

@@ -129,7 +129,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
 
   // Header
   PaddedBytes header{memory_manager};
-  header.append(ICCInitialHeaderPrediction(size));
+  JXL_RETURN_IF_ERROR(header.append(ICCInitialHeaderPrediction(size)));
   for (size_t i = 0; i < kICCHeaderSize && i < size; i++) {
     ICCPredictHeader(icc, size, header.data(), i);
     JXL_RETURN_IF_ERROR(data.push_back(icc[i] - header[i]));
@@ -227,7 +227,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
       if (predicted_tagsize != tagsize) command |= kFlagBitSize;
       JXL_RETURN_IF_ERROR(commands.push_back(command));
       if (tagcode == 1) {
-        AppendKeyword(tag, &data);
+        JXL_RETURN_IF_ERROR(AppendKeyword(tag, &data));
       }
       if (command & kFlagBitOffset)
         JXL_RETURN_IF_ERROR(EncodeVarInt(tagstart, &commands));

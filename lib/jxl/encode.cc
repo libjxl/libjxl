@@ -1068,7 +1068,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     if (box->compress_box) {
       jxl::PaddedBytes compressed(&memory_manager);
       // Prepend the original box type in the brob box contents
-      compressed.append(box->type);
+      JXL_RETURN_IF_ERROR(compressed.append(box->type));
       if (JXL_ENC_SUCCESS !=
           BrotliCompress((brotli_effort >= 0 ? brotli_effort : 4),
                          box->contents.data(), box->contents.size(),

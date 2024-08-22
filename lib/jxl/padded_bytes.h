@@ -177,19 +177,18 @@ class PaddedBytes {
   }
 
   template <typename T>
-  void append(const T& other) {
-    append(reinterpret_cast<const uint8_t*>(other.data()),
+  Status append(const T& other) {
+    return append(reinterpret_cast<const uint8_t*>(other.data()),
            reinterpret_cast<const uint8_t*>(other.data()) + other.size());
   }
 
-  void append(const uint8_t* begin, const uint8_t* end) {
+  Status append(const uint8_t* begin, const uint8_t* end) {
     if (end - begin > 0) {
       size_t old_size = size();
-      auto status = resize(size() + (end - begin));
-    // TODO(firsching): hand status here
-    (void)status;
+      JXL_RETURN_IF_ERROR(resize(size() + (end - begin)));
       memcpy(data() + old_size, begin, end - begin);
     }
+    return true;
   }
 
  private:
