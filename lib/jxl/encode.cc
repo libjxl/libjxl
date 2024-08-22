@@ -486,7 +486,13 @@ JxlEncoderStatus BrotliCompress(int quality, const uint8_t* in, size_t in_size,
   BrotliEncoderSetParameter(enc.get(), BROTLI_PARAM_SIZE_HINT, in_size);
 
   constexpr size_t kBufferSize = 128 * 1024;
-  jxl::PaddedBytes temp_buffer(memory_manager, kBufferSize);
+  jxl::PaddedBytes temp_buffer(memory_manager);
+  auto statusor =
+      jxl::PaddedBytes::WithInitialSpace(memory_manager, kBufferSize);
+  if (!statusor.ok()) {
+    return JXL_API_ERROR_NOSET("Initialization of PaddedBytes failed");
+  }
+  temp_buffer = std::move(statusor).value_();
 
   size_t avail_in = in_size;
   const uint8_t* next_in = in;

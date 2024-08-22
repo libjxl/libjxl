@@ -32,17 +32,21 @@ class PaddedBytes {
   explicit PaddedBytes(JxlMemoryManager* memory_manager)
       : memory_manager_(memory_manager), size_(0), capacity_(0) {}
 
-  PaddedBytes(JxlMemoryManager* memory_manager, size_t size)
-      : memory_manager_(memory_manager), size_(size), capacity_(0) {
-    reserve(size);
+  static StatusOr<PaddedBytes> WithInitialSpace(
+      JxlMemoryManager* memory_manager, size_t size) {
+    PaddedBytes result(memory_manager);
+    result.Init(size);
+    return result;
   }
 
-  PaddedBytes(JxlMemoryManager* memory_manager, size_t size, uint8_t value)
-      : memory_manager_(memory_manager), size_(size), capacity_(0) {
-    reserve(size);
-    if (size_ != 0) {
-      memset(data(), value, size);
+  static StatusOr<PaddedBytes> WithInitialSpace(
+      JxlMemoryManager* memory_manager, size_t size, uint8_t value) {
+    PaddedBytes result(memory_manager);
+    result.Init(size);
+    if (result.size_ != 0) {
+      memset(result.data(), value, result.size_);
     }
+    return result;
   }
 
   // Deleting copy constructor and copy assignment operator to prevent copying
@@ -190,6 +194,11 @@ class PaddedBytes {
   }
 
  private:
+  void Init(size_t size) {
+    size_ = size;
+    reserve(size);
+  }
+
   void BoundsCheck(size_t i) const {
     // <= is safe due to padding and required by BitWriter.
     JXL_DASSERT(i <= size());
