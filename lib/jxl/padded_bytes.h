@@ -151,10 +151,8 @@ class PaddedBytes {
 
   // std::vector operations implemented in terms of the public interface above.
 
-  void clear() {
-    auto status = resize(0);
-    // TODO(firsching): hand status here
-    (void)status;
+  Status clear() {
+    return resize(0);
     }
   bool empty() const { return size() == 0; }
 

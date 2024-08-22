@@ -677,7 +677,11 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->got_transform_data = false;
   dec->got_all_headers = false;
   dec->post_headers = false;
-  if (dec->icc_reader) dec->icc_reader->Reset();
+  if (dec->icc_reader) {
+    auto status = dec->icc_reader->Reset();
+    // TODO(firsching): handle status here?
+    (void) status;
+  }
   dec->got_preview_image = false;
   dec->preview_frame = false;
   dec->file_pos = 0;

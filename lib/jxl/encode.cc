@@ -260,7 +260,7 @@ jxl::Status JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
           return true;
         }
       }
-      it->second.owned_data.clear();
+      JXL_RETURN_IF_ERROR(it->second.owned_data.clear());
     }
   }
   return true;
@@ -838,7 +838,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
         JXL_RETURN_IF_ERROR(AppendBox(jxl::MakeBoxType("jxlp"),
                                       /*unbounded=*/false,
                                       header_bytes.size() + 4, write_box));
-        header_bytes.clear();
+        JXL_RETURN_IF_ERROR(header_bytes.clear());
       }
 
       if (store_jpeg_metadata && !jpeg_metadata.empty()) {
