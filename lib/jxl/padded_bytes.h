@@ -116,17 +116,18 @@ class PaddedBytes {
   // However, we guarantee that write_bits can safely append after
   // the resize, as we zero-initialize the first new byte of data.
   // If size < capacity(), does not invalidate the memory.
-  void resize(size_t size) {
-    auto status = reserve(size);
-    // TODO(firsching): use status
-    (void) status;
+  Status resize(size_t size) {
+    JXL_RETURN_IF_ERROR(reserve(size));
     size_ = (data() == nullptr) ? 0 : size;
+    return true;
   }
 
   // resize(size) plus explicit initialization of the new data with `value`.
   void resize(size_t size, uint8_t value) {
     size_t old_size = size_;
-    resize(size);
+    auto status = resize(size);
+    // TODO(firsching): handle status
+    (void) status;
     if (size_ > old_size) {
       memset(data() + old_size, value, size_ - old_size);
     }
@@ -151,11 +152,17 @@ class PaddedBytes {
 
   // std::vector operations implemented in terms of the public interface above.
 
-  void clear() { resize(0); }
+  void clear() {
+    auto status = resize(0);
+    // TODO(firsching): hand status here
+    (void)status;
+    }
   bool empty() const { return size() == 0; }
 
   void assign(std::initializer_list<uint8_t> il) {
-    resize(il.size());
+    auto status = resize(il.size());
+    // TODO(firsching): hand status here
+    (void)status;
     memcpy(data(), il.begin(), il.size());
   }
 
@@ -182,7 +189,9 @@ class PaddedBytes {
   void append(const uint8_t* begin, const uint8_t* end) {
     if (end - begin > 0) {
       size_t old_size = size();
-      resize(size() + (end - begin));
+      auto status = resize(size() + (end - begin));
+    // TODO(firsching): hand status here
+    (void)status;
       memcpy(data() + old_size, begin, end - begin);
     }
   }

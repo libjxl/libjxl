@@ -51,7 +51,9 @@ uint32_t DecodeUint32(const uint8_t* data, size_t size, size_t pos) {
 
 void AppendUint32(uint32_t value, PaddedBytes* data) {
   size_t pos = data->size();
-  data->resize(pos + 4);
+  auto status = data->resize(pos + 4);
+  // TODO(firsching): handle status
+  (void) status;
   StoreBE32(value, data->data() + pos);
 }
 

@@ -22,7 +22,7 @@ TEST(PaddedBytesTest, TestNonEmptyFirstByteZero) {
                          PaddedBytes::WithInitialSpace(memory_manager, 1));
   EXPECT_EQ(0, pb[0]);
   // Even after resizing..
-  pb.resize(20);
+  EXPECT_TRUE(pb.resize(20));
   EXPECT_EQ(0, pb[0]);
   // And reserving.
   EXPECT_TRUE(pb.reserve(200));

@@ -83,7 +83,7 @@ Status PredictAndShuffle(size_t stride, size_t width, int order, size_t num,
 
 inline Status EncodeVarInt(uint64_t value, PaddedBytes* data) {
   size_t pos = data->size();
-  data->resize(data->size() + 9);
+  JXL_RETURN_IF_ERROR(data->resize(data->size() + 9));
   size_t output_size = data->size();
   uint8_t* output = data->data();
 
@@ -101,7 +101,7 @@ inline Status EncodeVarInt(uint64_t value, PaddedBytes* data) {
   JXL_ENSURE(pos <= output_size);
   output[pos++] = static_cast<uint8_t>(value & 127);
 
-  data->resize(pos);
+  JXL_RETURN_IF_ERROR(data->resize(pos));
   return true;
 }
 
