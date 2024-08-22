@@ -27,10 +27,12 @@ namespace {
 // scanline order but with missing elements skipped (which may occur in multiple
 // locations), the output is the result matrix in scanline order (with
 // no need to skip missing elements as they are past the end of the data).
-void Shuffle(JxlMemoryManager* memory_manager, uint8_t* data, size_t size,
-             size_t width) {
+Status Shuffle(JxlMemoryManager* memory_manager, uint8_t* data, size_t size,
+               size_t width) {
   size_t height = (size + width - 1) / width;  // amount of rows of output
-  PaddedBytes result(memory_manager, size);
+  PaddedBytes result(memory_manager);
+  JXL_ASSIGN_OR_RETURN(result,
+                       PaddedBytes::WithInitialSpace(memory_manager, size));
   // i = output index, j input index
   size_t s = 0;
   size_t j = 0;
@@ -43,6 +45,7 @@ void Shuffle(JxlMemoryManager* memory_manager, uint8_t* data, size_t size,
   for (size_t i = 0; i < size; i++) {
     data[i] = result[i];
   }
+  return true;
 }
 
 // TODO(eustas): should be 20, or even 18, once DecodeVarInt is improved;
@@ -226,14 +229,16 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
       uint64_t num = DecodeVarInt(enc, size, &cpos);
       JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, num, size));
-      PaddedBytes shuffled(memory_manager, num);
+      PaddedBytes shuffled(memory_manager);
+      JXL_ASSIGN_OR_RETURN(shuffled,
+                           PaddedBytes::WithInitialSpace(memory_manager, num));
       for (size_t i = 0; i < num; i++) {
         shuffled[i] = enc[pos + i];
       }
       if (command == kCommandShuffle2) {
-        Shuffle(memory_manager, shuffled.data(), num, 2);
+        JXL_RETURN_IF_ERROR(Shuffle(memory_manager, shuffled.data(), num, 2));
       } else if (command == kCommandShuffle4) {
-        Shuffle(memory_manager, shuffled.data(), num, 4);
+        JXL_RETURN_IF_ERROR(Shuffle(memory_manager, shuffled.data(), num, 4));
       }
       for (size_t i = 0; i < num; i++) {
         result->push_back(shuffled[i]);
@@ -270,11 +275,17 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       uint64_t num = DecodeVarInt(enc, size, &cpos);  // in bytes
       JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, num, size));
 
-      PaddedBytes shuffled(memory_manager, num);
+      PaddedBytes shuffled(memory_manager);
+      JXL_ASSIGN_OR_RETURN(shuffled,
+                           PaddedBytes::WithInitialSpace(memory_manager, num));
+
       for (size_t i = 0; i < num; i++) {
         shuffled[i] = enc[pos + i];
       }
-      if (width > 1) Shuffle(memory_manager, shuffled.data(), num, width);
+      if (width > 1) {
+        JXL_RETURN_IF_ERROR(
+            Shuffle(memory_manager, shuffled.data(), num, width));
+      }
 
       size_t start = result->size();
       for (size_t i = 0; i < num; i++) {
