@@ -35,17 +35,8 @@ class PaddedBytes {
   static StatusOr<PaddedBytes> WithInitialSpace(
       JxlMemoryManager* memory_manager, size_t size) {
     PaddedBytes result(memory_manager);
+    // TODO(firsching): after changing Init to return a Status, use it here.
     result.Init(size);
-    return result;
-  }
-
-  static StatusOr<PaddedBytes> WithInitialSpace(
-      JxlMemoryManager* memory_manager, size_t size, uint8_t value) {
-    PaddedBytes result(memory_manager);
-    result.Init(size);
-    if (result.size_ != 0) {
-      memset(result.data(), value, result.size_);
-    }
     return result;
   }
 
