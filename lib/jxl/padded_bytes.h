@@ -133,15 +133,14 @@ class PaddedBytes {
   }
 
   // Amortized constant complexity due to exponential growth.
-  void push_back(uint8_t x) {
+  Status push_back(uint8_t x) {
     if (size_ == capacity_) {
-      auto status = reserve(capacity_ + 1);
-      // TODO(firsching): use status
-      (void) status;
-      if (data() == nullptr) return;
+      JXL_RETURN_IF_ERROR(reserve(capacity_ + 1));
+      if (data() == nullptr) return false;
     }
 
     data_.address<uint8_t>()[size_++] = x;
+    return true;
   }
 
   size_t size() const { return size_; }

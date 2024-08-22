@@ -42,7 +42,7 @@ TEST(PaddedBytesTest, TestFillWithoutReserve) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   PaddedBytes pb{memory_manager};
   for (size_t i = 0; i < 170u; ++i) {
-    pb.push_back(i);
+    EXPECT_TRUE(pb.push_back(i));
   }
   EXPECT_EQ(170u, pb.size());
   EXPECT_GE(pb.capacity(), 170u);
@@ -53,7 +53,7 @@ TEST(PaddedBytesTest, TestFillWithExactReserve) {
   PaddedBytes pb{memory_manager};
   EXPECT_TRUE(pb.reserve(170));
   for (size_t i = 0; i < 170u; ++i) {
-    pb.push_back(i);
+    EXPECT_TRUE(pb.push_back(i));
   }
   EXPECT_EQ(170u, pb.size());
   EXPECT_EQ(pb.capacity(), 170u);
@@ -64,7 +64,7 @@ TEST(PaddedBytesTest, TestFillWithMoreReserve) {
   PaddedBytes pb{memory_manager};
   EXPECT_TRUE(pb.reserve(171));
   for (size_t i = 0; i < 170u; ++i) {
-    pb.push_back(i);
+    EXPECT_TRUE(pb.push_back(i));
   }
   EXPECT_EQ(170u, pb.size());
   EXPECT_GT(pb.capacity(), 170u);

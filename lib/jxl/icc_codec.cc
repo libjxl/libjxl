@@ -127,7 +127,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
     if (i == kICCHeaderSize) break;  // Done
     ICCPredictHeader(result->data(), result->size(), header.data(), i);
     if (pos >= size) return JXL_FAILURE("Out of bounds");
-    result->push_back(enc[pos++] + header[i]);
+    JXL_RETURN_IF_ERROR(result->push_back(enc[pos++] + header[i]));
   }
   if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
 
@@ -223,7 +223,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       uint64_t num = DecodeVarInt(enc, size, &cpos);
       JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, num, size));
       for (size_t i = 0; i < num; i++) {
-        result->push_back(enc[pos++]);
+        JXL_RETURN_IF_ERROR(result->push_back(enc[pos++]));
       }
     } else if (command == kCommandShuffle2 || command == kCommandShuffle4) {
       if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
@@ -241,7 +241,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
         JXL_RETURN_IF_ERROR(Shuffle(memory_manager, shuffled.data(), num, 4));
       }
       for (size_t i = 0; i < num; i++) {
-        result->push_back(shuffled[i]);
+        JXL_RETURN_IF_ERROR(result->push_back(shuffled[i]));
         pos++;
       }
     } else if (command == kCommandPredict) {
@@ -291,21 +291,23 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       for (size_t i = 0; i < num; i++) {
         uint8_t predicted = LinearPredictICCValue(result->data(), start, i,
                                                   stride, width, order);
-        result->push_back(predicted + shuffled[i]);
+        JXL_RETURN_IF_ERROR(result->push_back(predicted + shuffled[i]));
       }
       pos += num;
     } else if (command == kCommandXYZ) {
       AppendKeyword(kXyz_Tag, result);
-      for (int i = 0; i < 4; i++) result->push_back(0);
+      for (int i = 0; i < 4; i++) {
+        JXL_RETURN_IF_ERROR(result->push_back(0));
+      }
       JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, 12, size));
       for (size_t i = 0; i < 12; i++) {
-        result->push_back(enc[pos++]);
+        JXL_RETURN_IF_ERROR(result->push_back(enc[pos++]));
       }
     } else if (command >= kCommandTypeStartFirst &&
                command < kCommandTypeStartFirst + kNumTypeStrings) {
       AppendKeyword(*kTypeStrings[command - kCommandTypeStartFirst], result);
       for (size_t i = 0; i < 4; i++) {
-        result->push_back(0);
+        JXL_RETURN_IF_ERROR(result->push_back(0));
       }
     } else {
       return JXL_FAILURE("Unknown command");

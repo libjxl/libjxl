@@ -71,7 +71,7 @@ Status PredictAndShuffle(size_t stride, size_t width, int order, size_t num,
   for (size_t i = 0; i < num; i++) {
     uint8_t predicted =
         LinearPredictICCValue(data, *pos, i, stride, width, order);
-    result->push_back(data[*pos + i] - predicted);
+    JXL_RETURN_IF_ERROR(result->push_back(data[*pos + i] - predicted));
   }
   *pos += num;
   if (width > 1) {
@@ -132,12 +132,12 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
   header.append(ICCInitialHeaderPrediction(size));
   for (size_t i = 0; i < kICCHeaderSize && i < size; i++) {
     ICCPredictHeader(icc, size, header.data(), i);
-    data.push_back(icc[i] - header[i]);
+    JXL_RETURN_IF_ERROR(data.push_back(icc[i] - header[i]));
   }
   if (size <= kICCHeaderSize) {
     JXL_RETURN_IF_ERROR(EncodeVarInt(0, result));  // 0 commands
     for (uint8_t b : data) {
-      result->push_back(b);
+      JXL_RETURN_IF_ERROR(result->push_back(b));
     }
     return true;
   }
@@ -225,7 +225,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
         predicted_tagsize = 20;
       }
       if (predicted_tagsize != tagsize) command |= kFlagBitSize;
-      commands.push_back(command);
+      JXL_RETURN_IF_ERROR(commands.push_back(command));
       if (tagcode == 1) {
         AppendKeyword(tag, &data);
       }
@@ -239,7 +239,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     }
   }
   // Indicate end of tag list or varint indicating there's none
-  commands.push_back(0);
+  JXL_RETURN_IF_ERROR(commands.push_back(0));
 
   // Main content
   // The main content in a valid ICC profile contains tagged elements, with the
@@ -287,13 +287,13 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           icc[pos + 4] == 0 && icc[pos + 5] == 0 && icc[pos + 6] == 0 &&
           icc[pos + 7] == 0) {
         size_t num = tagsize - 8;
-        commands_add.push_back(kCommandTypeStartFirst + 3);
+        JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandTypeStartFirst + 3));
         pos += 8;
-        commands_add.push_back(kCommandShuffle2);
+        JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandShuffle2));
         JXL_RETURN_IF_ERROR(EncodeVarInt(num, &commands_add));
         size_t start = data_add.size();
         for (size_t i = 0; i < num; i++) {
-          data_add.push_back(icc[pos]);
+          JXL_RETURN_IF_ERROR(data_add.push_back(icc[pos]));
           pos++;
         }
         JXL_RETURN_IF_ERROR(
@@ -305,13 +305,13 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           icc[pos + 7] == 0) {
         size_t num = tagsize - 8;
         if (num > 16 && num < (1 << 28) && pos + num <= size && pos > 0) {
-          commands_add.push_back(kCommandTypeStartFirst + 5);
+          JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandTypeStartFirst + 5));
           pos += 8;
-          commands_add.push_back(kCommandPredict);
+          JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandPredict));
           int order = 1;
           int width = 2;
           int stride = width;
-          commands_add.push_back((order << 2) | (width - 1));
+          JXL_RETURN_IF_ERROR(commands_add.push_back((order << 2) | (width - 1)));
           JXL_RETURN_IF_ERROR(EncodeVarInt(num, &commands_add));
           JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
                                                 size, &pos, &data_add));
@@ -327,11 +327,11 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
         if (num > 16 && num < (1 << 28) && pos + 12 + num <= size) {
           pos += 12;
           last1 = pos;
-          commands_add.push_back(kCommandPredict);
+          JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandPredict));
           int order = 1;
           int width = 2;
           int stride = width;
-          commands_add.push_back((order << 2) | (width - 1));
+          JXL_RETURN_IF_ERROR(commands_add.push_back((order << 2) | (width - 1)));
           JXL_RETURN_IF_ERROR(EncodeVarInt(num, &commands_add));
           JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
                                                 size, &pos, &data_add));
@@ -356,11 +356,11 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
         }
         if ((width == 1 || width == 2) && num > 64 && num < (1 << 28) &&
             pos + num <= size && pos > stride * 4) {
-          commands_add.push_back(kCommandPredict);
+          JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandPredict));
           int order = 1;
           uint8_t flags =
               (order << 2) | (width - 1) | (stride == width ? 0 : 16);
-          commands_add.push_back(flags);
+          JXL_RETURN_IF_ERROR(commands_add.push_back(flags));
           if (flags & 16) {
             JXL_RETURN_IF_ERROR(EncodeVarInt(stride, &commands_add));
           }
@@ -379,8 +379,8 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
       size_t stride = width;
       size_t num = tagsize - 8;
       uint8_t flags = (order << 2) | (width - 1) | (stride == width ? 0 : 16);
-      commands_add.push_back(kCommandPredict);
-      commands_add.push_back(flags);
+      JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandPredict));
+      JXL_RETURN_IF_ERROR(commands_add.push_back(flags));
       if (flags & 16) {
         JXL_RETURN_IF_ERROR(EncodeVarInt(stride, &commands_add));
       }
@@ -392,9 +392,11 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     if (commands_add.empty() && data_add.empty() && pos + 20 <= size) {
       Tag subTag = DecodeKeyword(icc, size, pos);
       if (subTag == kXyz_Tag && DecodeUint32(icc, size, pos + 4) == 0) {
-        commands_add.push_back(kCommandXYZ);
+        JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandXYZ));
         pos += 8;
-        for (size_t j = 0; j < 12; j++) data_add.push_back(icc[pos++]);
+        for (size_t j = 0; j < 12; j++) {
+          JXL_RETURN_IF_ERROR(data_add.push_back(icc[pos++]));
+        }
       }
     }
 
@@ -403,7 +405,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
         Tag subTag = DecodeKeyword(icc, size, pos);
         for (size_t i = 0; i < kNumTypeStrings; i++) {
           if (subTag == *kTypeStrings[i]) {
-            commands_add.push_back(kCommandTypeStartFirst + i);
+            JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandTypeStartFirst + i));
             pos += 8;
             break;
           }
@@ -413,17 +415,17 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
 
     if (!(commands_add.empty() && data_add.empty()) || pos == size) {
       if (last0 < last1) {
-        commands.push_back(kCommandInsert);
+        JXL_RETURN_IF_ERROR(commands.push_back(kCommandInsert));
         JXL_RETURN_IF_ERROR(EncodeVarInt(last1 - last0, &commands));
         while (last0 < last1) {
-          data.push_back(icc[last0++]);
+          JXL_RETURN_IF_ERROR(data.push_back(icc[last0++]));
         }
       }
       for (uint8_t b : commands_add) {
-        commands.push_back(b);
+        JXL_RETURN_IF_ERROR(commands.push_back(b));
       }
       for (uint8_t b : data_add) {
-        data.push_back(b);
+        JXL_RETURN_IF_ERROR(data.push_back(b));
       }
       last0 = pos;
     }
@@ -434,10 +436,10 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
 
   JXL_RETURN_IF_ERROR(EncodeVarInt(commands.size(), result));
   for (uint8_t b : commands) {
-    result->push_back(b);
+    JXL_RETURN_IF_ERROR(result->push_back(b));
   }
   for (uint8_t b : data) {
-    result->push_back(b);
+    JXL_RETURN_IF_ERROR(result->push_back(b));
   }
 
   return true;
