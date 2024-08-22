@@ -123,14 +123,13 @@ class PaddedBytes {
   }
 
   // resize(size) plus explicit initialization of the new data with `value`.
-  void resize(size_t size, uint8_t value) {
+  Status resize(size_t size, uint8_t value) {
     size_t old_size = size_;
-    auto status = resize(size);
-    // TODO(firsching): handle status
-    (void) status;
+    JXL_RETURN_IF_ERROR(resize(size));
     if (size_ > old_size) {
       memset(data() + old_size, value, size_ - old_size);
     }
+    return true;
   }
 
   // Amortized constant complexity due to exponential growth.
