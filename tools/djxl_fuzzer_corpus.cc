@@ -299,7 +299,8 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     }
   } else {
     for (size_t i = 0; i < 4; ++i) {
-      JXL_RETURN_IF_ERROR(compressed.push_back(spec.override_decoder_spec >> (8 * i)));
+      JXL_RETURN_IF_ERROR(
+          compressed.push_back(spec.override_decoder_spec >> (8 * i)));
     }
   }
 

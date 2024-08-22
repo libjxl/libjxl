@@ -305,7 +305,8 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       }
     } else if (command >= kCommandTypeStartFirst &&
                command < kCommandTypeStartFirst + kNumTypeStrings) {
-      JXL_RETURN_IF_ERROR(AppendKeyword(*kTypeStrings[command - kCommandTypeStartFirst], result));
+      JXL_RETURN_IF_ERROR(AppendKeyword(
+          *kTypeStrings[command - kCommandTypeStartFirst], result));
       for (size_t i = 0; i < 4; i++) {
         JXL_RETURN_IF_ERROR(result->push_back(0));
       }
@@ -334,7 +335,8 @@ Status ICCReader::Init(BitReader* reader) {
         memory_manager, reader, kNumICCContexts, &code_, &context_map_));
     JXL_ASSIGN_OR_RETURN(ans_reader_, ANSSymbolReader::Create(&code_, reader));
     i_ = 0;
-    JXL_RETURN_IF_ERROR(decompressed_.resize(std::min<size_t>(i_ + 0x400, enc_size_)));
+    JXL_RETURN_IF_ERROR(
+        decompressed_.resize(std::min<size_t>(i_ + 0x400, enc_size_)));
     for (; i_ < std::min<size_t>(2, enc_size_); i_++) {
       decompressed_[i_] = ans_reader_.ReadHybridUint(
           ICCANSContext(i_, i_ > 0 ? decompressed_[i_ - 1] : 0,
@@ -385,7 +387,8 @@ Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
             (reader->TotalBitsConsumed() - used_bits_base_) / 8.0f;
         if (i_ > used_bytes * 256) return JXL_FAILURE("Corrupted stream");
       }
-      JXL_RETURN_IF_ERROR(decompressed_.resize(std::min<size_t>(i_ + 0x400, enc_size_)));
+      JXL_RETURN_IF_ERROR(
+          decompressed_.resize(std::min<size_t>(i_ + 0x400, enc_size_)));
     }
     JXL_ENSURE(i_ >= 2);
     decompressed_[i_] = ans_reader_.ReadHybridUint(

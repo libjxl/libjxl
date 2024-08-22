@@ -34,7 +34,7 @@ TEST(PaddedBytesTest, TestEmptyFirstByteZero) {
   JXL_TEST_ASSIGN_OR_DIE(PaddedBytes pb,
                          PaddedBytes::WithInitialSpace(memory_manager, 0));
   // After resizing - new zero is written despite there being nothing to copy.
-  pb.resize(20);
+  ASSERT_TRUE(pb.resize(20));
   EXPECT_EQ(0, pb[0]);
 }
 

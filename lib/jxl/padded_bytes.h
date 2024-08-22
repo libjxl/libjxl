@@ -151,9 +151,7 @@ class PaddedBytes {
 
   // std::vector operations implemented in terms of the public interface above.
 
-  Status clear() {
-    return resize(0);
-    }
+  Status clear() { return resize(0); }
   bool empty() const { return size() == 0; }
 
   Status assign(std::initializer_list<uint8_t> il) {
@@ -178,8 +176,9 @@ class PaddedBytes {
 
   template <typename T>
   Status append(const T& other) {
-    return append(reinterpret_cast<const uint8_t*>(other.data()),
-           reinterpret_cast<const uint8_t*>(other.data()) + other.size());
+    return append(
+        reinterpret_cast<const uint8_t*>(other.data()),
+        reinterpret_cast<const uint8_t*>(other.data()) + other.size());
   }
 
   Status append(const uint8_t* begin, const uint8_t* end) {

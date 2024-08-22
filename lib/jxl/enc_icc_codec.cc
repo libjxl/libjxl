@@ -305,13 +305,15 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           icc[pos + 7] == 0) {
         size_t num = tagsize - 8;
         if (num > 16 && num < (1 << 28) && pos + num <= size && pos > 0) {
-          JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandTypeStartFirst + 5));
+          JXL_RETURN_IF_ERROR(
+              commands_add.push_back(kCommandTypeStartFirst + 5));
           pos += 8;
           JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandPredict));
           int order = 1;
           int width = 2;
           int stride = width;
-          JXL_RETURN_IF_ERROR(commands_add.push_back((order << 2) | (width - 1)));
+          JXL_RETURN_IF_ERROR(
+              commands_add.push_back((order << 2) | (width - 1)));
           JXL_RETURN_IF_ERROR(EncodeVarInt(num, &commands_add));
           JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
                                                 size, &pos, &data_add));
@@ -331,7 +333,8 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           int order = 1;
           int width = 2;
           int stride = width;
-          JXL_RETURN_IF_ERROR(commands_add.push_back((order << 2) | (width - 1)));
+          JXL_RETURN_IF_ERROR(
+              commands_add.push_back((order << 2) | (width - 1)));
           JXL_RETURN_IF_ERROR(EncodeVarInt(num, &commands_add));
           JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
                                                 size, &pos, &data_add));
@@ -405,7 +408,8 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
         Tag subTag = DecodeKeyword(icc, size, pos);
         for (size_t i = 0; i < kNumTypeStrings; i++) {
           if (subTag == *kTypeStrings[i]) {
-            JXL_RETURN_IF_ERROR(commands_add.push_back(kCommandTypeStartFirst + i));
+            JXL_RETURN_IF_ERROR(
+                commands_add.push_back(kCommandTypeStartFirst + i));
             pos += 8;
             break;
           }

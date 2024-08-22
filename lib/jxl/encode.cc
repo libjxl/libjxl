@@ -509,7 +509,7 @@ JxlEncoderStatus BrotliCompress(int quality, const uint8_t* in, size_t in_size,
     }
     size_t out_size = next_out - temp_buffer.data();
     jxl::msan::UnpoisonMemory(next_out - out_size, out_size);
-    if (!out->resize(out->size() + out_size)){
+    if (!out->resize(out->size() + out_size)) {
       return JXL_API_ERROR_NOSET("resizing of PaddedBytes failed");
     }
 
