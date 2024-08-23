@@ -62,8 +62,8 @@ struct BitWriter {
     // Callers must ensure byte alignment to avoid uninitialized bits.
     JXL_DASSERT(bits_written_ % kBitsPerByte == 0);
     Status status = storage_.resize(DivCeil(bits_written_, kBitsPerByte));
-    // TODO: use status here!
     JXL_DASSERT(status);
+    // Can never fail, because we are resizing to a lower size.
     (void)status;
     return std::move(storage_);
   }
