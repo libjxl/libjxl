@@ -19,7 +19,6 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
 #include "lib/jxl/luminance.h"
-#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
 namespace jpeg {
@@ -339,11 +338,7 @@ Status EncodeJPEGData(JxlMemoryManager* memory_manager, JPEGData& jpeg_data,
       Bundle::Write(jpeg_data, &writer, LayerType::Header, nullptr));
   writer.ZeroPadToByte();
   {
-    StatusOr<PaddedBytes> statusor = std::move(writer).TakeBytes();
-    if (!statusor.ok()) {
-      return false;
-    }
-    PaddedBytes serialized_jpeg_data = std::move(statusor).value_();
+    PaddedBytes serialized_jpeg_data = std::move(writer).TakeBytes();
     bytes->reserve(serialized_jpeg_data.size() + brotli_capacity);
     Bytes(serialized_jpeg_data).AppendTo(*bytes);
   }

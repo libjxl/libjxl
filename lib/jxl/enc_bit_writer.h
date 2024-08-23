@@ -58,13 +58,13 @@ struct BitWriter {
   // Example usage: bytes = std::move(writer).TakeBytes(); Useful for the
   // top-level encoder which returns PaddedBytes, not a BitWriter.
   // *this must be an rvalue reference and is invalid afterwards.
-  StatusOr<PaddedBytes> TakeBytes() && {
+  PaddedBytes&& TakeBytes() && {
     // Callers must ensure byte alignment to avoid uninitialized bits.
     JXL_DASSERT(bits_written_ % kBitsPerByte == 0);
-    JXL_RETURN_IF_ERROR(storage_.resize(DivCeil(bits_written_, kBitsPerByte)));
+    Status status = storage_.resize(DivCeil(bits_written_, kBitsPerByte));
     // TODO: use status here!
-    //JXL_DASSERT(status);
-    //(void)status;
+    JXL_DASSERT(status);
+    (void)status;
     return std::move(storage_);
   }
 
