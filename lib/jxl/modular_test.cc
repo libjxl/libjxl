@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <gtest/gtest.h>
 #include <jxl/cms.h>
 #include <jxl/encode.h>
 #include <jxl/memory_manager.h>
@@ -495,7 +496,9 @@ TEST(ModularTest, PredictorIntegerOverflow) {
   EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
   ASSERT_TRUE(writer.AppendByteAligned(group_codes));
 
-  PaddedBytes compressed = std::move(writer).TakeBytes();
+  StatusOr<PaddedBytes> statusor = std::move(writer).TakeBytes();
+  EXPECT_TRUE(statusor.ok());
+  PaddedBytes compressed = std::move(statusor).value_();
   extras::PackedPixelFile ppf;
   extras::JXLDecompressParams params;
   params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
@@ -545,8 +548,9 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
   }
   EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
   ASSERT_TRUE(writer.AppendByteAligned(group_codes));
-
-  PaddedBytes compressed = std::move(writer).TakeBytes();
+  StatusOr<PaddedBytes> statusor = std::move(writer).TakeBytes();
+  EXPECT_TRUE(statusor.ok());
+  PaddedBytes compressed = std::move(statusor).value_();
   extras::PackedPixelFile ppf;
   extras::JXLDecompressParams params;
   params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});

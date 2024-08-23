@@ -860,7 +860,8 @@ Status EncodeFile(const CompressParams& params, CodecInOut* io,
                                     /* aux_out */ nullptr));
   }
 
-  PaddedBytes output = std::move(writer).TakeBytes();
+  PaddedBytes output(memory_manager);
+  JXL_ASSIGN_OR_RETURN(output, std::move(writer).TakeBytes());
   Bytes(output).AppendTo(*compressed);
   return true;
 }

@@ -66,6 +66,7 @@
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/padded_bytes.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/splines.h"
@@ -1886,12 +1887,21 @@ Status OutputGroups(std::vector<std::unique_ptr<BitWriter>>&& group_codes,
                     JxlEncoderOutputProcessorWrapper* output_processor) {
   JXL_ENSURE(group_codes.size() >= 4);
   {
-    PaddedBytes dc_group = std::move(*group_codes[1]).TakeBytes();
+    //PaddedBytes dc_group =
+    StatusOr<PaddedBytes> statusor = std::move(*group_codes[1]).TakeBytes();
+    if (!statusor.ok()){
+      return false;
+    }
+    PaddedBytes dc_group = std::move(statusor).value_();
     group_sizes->push_back(dc_group.size());
     JXL_RETURN_IF_ERROR(AppendData(*output_processor, dc_group));
   }
   for (size_t i = 3; i < group_codes.size(); ++i) {
-    PaddedBytes ac_group = std::move(*group_codes[i]).TakeBytes();
+    StatusOr<PaddedBytes> statusor = std::move(*group_codes[i]).TakeBytes();
+    if (!statusor.ok()){
+      return false;
+    }
+    PaddedBytes ac_group = std::move(statusor).value_();
     group_sizes->push_back(ac_group.size());
     JXL_RETURN_IF_ERROR(AppendData(*output_processor, ac_group));
   }
@@ -1966,7 +1976,8 @@ Status OutputAcGlobal(PassesEncoderState& enc_state,
     writer.ZeroPadToByte();  // end of group.
     return true;
   }));
-  PaddedBytes ac_global = std::move(writer).TakeBytes();
+  PaddedBytes ac_global(memory_manager);
+  JXL_ASSIGN_OR_RETURN(ac_global, std::move(writer).TakeBytes());
   group_sizes->push_back(ac_global.size());
   JXL_RETURN_IF_ERROR(AppendData(*output_processor, ac_global));
   return true;
@@ -2048,8 +2059,8 @@ Status EncodeFrameStreaming(JxlMemoryManager* memory_manager,
             writer.ZeroPadToByte();
             return true;
           }));
-      frame_header_bytes = std::move(writer).TakeBytes();
-      dc_global_bytes = std::move(*group_codes[0]).TakeBytes();
+      JXL_ASSIGN_OR_RETURN(frame_header_bytes, std::move(writer).TakeBytes());
+      JXL_ASSIGN_OR_RETURN(dc_global_bytes, std::move(*group_codes[0]).TakeBytes());
       JXL_RETURN_IF_ERROR(ComputeGroupDataOffset(
           frame_header_bytes.size(), dc_global_bytes.size(), permutation.size(),
           min_dc_global_size, group_data_offset));
@@ -2136,7 +2147,8 @@ Status EncodeFrameOneShot(JxlMemoryManager* memory_manager,
       WriteGroupOffsets(group_codes, permutation, &writer, aux_out));
 
   JXL_RETURN_IF_ERROR(writer.AppendByteAligned(group_codes));
-  PaddedBytes frame_bytes = std::move(writer).TakeBytes();
+  PaddedBytes frame_bytes(memory_manager);
+  JXL_ASSIGN_OR_RETURN(frame_bytes, std::move(writer).TakeBytes());
   JXL_RETURN_IF_ERROR(AppendData(*output_processor, frame_bytes));
 
   return true;

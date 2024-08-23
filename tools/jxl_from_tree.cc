@@ -572,8 +572,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
         io.SetFromImage(std::move(image), ColorEncoding::SRGB()));
     io.frames[0].blend = true;
   }
-
-  compressed = std::move(writer).TakeBytes();
+  JXL_ASSIGN_OR_RETURN(compressed, std::move(writer).TakeBytes());
 
   if (!WriteFile(out, compressed)) {
     fprintf(stderr, "Failed to write to \"%s\"\n", out);

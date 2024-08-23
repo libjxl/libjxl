@@ -793,7 +793,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
           return true;
         }));
 
-    header_bytes = std::move(writer).TakeBytes();
+    JXL_ASSIGN_OR_RETURN(header_bytes, std::move(writer).TakeBytes());
 
     // Not actually the end of frame, but the end of metadata/ICC, but helps
     // the next frame to start here for indexing purposes.

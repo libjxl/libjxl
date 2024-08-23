@@ -5,6 +5,7 @@
 
 #include "lib/extras/dec/decode.h"
 
+#include <gtest/gtest.h>
 #include <jxl/cms.h>
 #include <jxl/codestream_header.h>
 #include <jxl/color_encoding.h>
@@ -40,6 +41,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -5009,7 +5011,9 @@ JXL_TRANSCODE_JPEG_TEST(DecodeTest, JPEGReconstructionTest) {
                        &container);
   jxl::Bytes(jpeg_data).AppendTo(container);
   jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, &container);
-  jxl::PaddedBytes codestream = std::move(writer).TakeBytes();
+  jxl::StatusOr<jxl::PaddedBytes> statusor = std::move(writer).TakeBytes();
+  EXPECT_TRUE(statusor.ok());
+  jxl::PaddedBytes codestream = std::move(statusor).value_();
   jxl::Bytes(codestream).AppendTo(container);
   VerifyJPEGReconstruction(jxl::Bytes(container), jxl::Bytes(orig));
 }
