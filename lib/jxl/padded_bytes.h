@@ -151,7 +151,10 @@ class PaddedBytes {
 
   // std::vector operations implemented in terms of the public interface above.
 
-  Status clear() { return resize(0); }
+  void clear() {
+    // Not passing on the Status, because resizing to 0 cannot fail.
+    static_cast<void>(resize(0));
+  }
   bool empty() const { return size() == 0; }
 
   Status assign(std::initializer_list<uint8_t> il) {

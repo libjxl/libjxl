@@ -401,7 +401,7 @@ Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
     return JXL_FAILURE("Corrupted ICC profile");
   }
 
-  JXL_RETURN_IF_ERROR(icc->clear());
+  icc->clear();
   return UnpredictICC(decompressed_.data(), decompressed_.size(), icc);
 }
 

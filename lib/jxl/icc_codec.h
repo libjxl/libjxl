@@ -27,9 +27,9 @@ struct ICCReader {
 
   Status Init(BitReader* reader);
   Status Process(BitReader* reader, PaddedBytes* icc);
-  Status Reset() {
+  void Reset() {
     bits_to_skip_ = 0;
-    return decompressed_.clear();
+    decompressed_.clear();
   }
 
  private:
