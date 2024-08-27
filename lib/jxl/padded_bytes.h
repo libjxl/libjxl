@@ -109,7 +109,7 @@ class PaddedBytes {
   // If size < capacity(), does not invalidate the memory.
   Status resize(size_t size) {
     JXL_RETURN_IF_ERROR(reserve(size));
-    size_ = (data() == nullptr) ? 0 : size;
+    size_ = size;
     return true;
   }
 
@@ -127,7 +127,6 @@ class PaddedBytes {
   Status push_back(uint8_t x) {
     if (size_ == capacity_) {
       JXL_RETURN_IF_ERROR(reserve(capacity_ + 1));
-      if (data() == nullptr) return false;
     }
 
     data_.address<uint8_t>()[size_++] = x;
