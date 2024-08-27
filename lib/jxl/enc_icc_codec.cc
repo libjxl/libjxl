@@ -101,8 +101,7 @@ inline Status EncodeVarInt(uint64_t value, PaddedBytes* data) {
   JXL_ENSURE(pos <= output_size);
   output[pos++] = static_cast<uint8_t>(value & 127);
 
-  JXL_RETURN_IF_ERROR(data->resize(pos));
-  return true;
+  return data->resize(pos);
 }
 
 constexpr size_t kSizeLimit = std::numeric_limits<uint32_t>::max() >> 2;
