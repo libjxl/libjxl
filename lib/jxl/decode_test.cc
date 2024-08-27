@@ -684,81 +684,83 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
                                    const jxl::IccBytes& icc_profile) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   jxl::BitWriter writer{memory_manager};
-  jxl::BitWriter::Allotment allotment(&writer, 65536);  // Large enough
+  EXPECT_TRUE(writer.WithMaxBits(
+      65536,  // Large enough
+      jxl::LayerType::Header, nullptr, [&] {
+        if (have_container) {
+          const std::vector<uint8_t> signature_box = {
+              0, 0, 0, 0xc, 'J', 'X', 'L', ' ', 0xd, 0xa, 0x87, 0xa};
+          const std::vector<uint8_t> filetype_box = {
+              0,   0,   0, 0x14, 'f', 't', 'y', 'p', 'j', 'x',
+              'l', ' ', 0, 0,    0,   0,   'j', 'x', 'l', ' '};
+          const std::vector<uint8_t> extra_box_header = {0,   0,   0,   0xff,
+                                                         't', 'e', 's', 't'};
+          // Beginning of codestream box, with an arbitrary size certainly large
+          // enough to contain the header
+          const std::vector<uint8_t> codestream_box_header = {
+              0, 0, 0, 0xff, 'j', 'x', 'l', 'c'};
 
-  if (have_container) {
-    const std::vector<uint8_t> signature_box = {0,   0,   0,   0xc, 'J',  'X',
-                                                'L', ' ', 0xd, 0xa, 0x87, 0xa};
-    const std::vector<uint8_t> filetype_box = {
-        0,   0,   0, 0x14, 'f', 't', 'y', 'p', 'j', 'x',
-        'l', ' ', 0, 0,    0,   0,   'j', 'x', 'l', ' '};
-    const std::vector<uint8_t> extra_box_header = {0,   0,   0,   0xff,
-                                                   't', 'e', 's', 't'};
-    // Beginning of codestream box, with an arbitrary size certainly large
-    // enough to contain the header
-    const std::vector<uint8_t> codestream_box_header = {0,   0,   0,   0xff,
-                                                        'j', 'x', 'l', 'c'};
+          for (uint8_t c : signature_box) {
+            writer.Write(8, c);
+          }
+          for (uint8_t c : filetype_box) {
+            writer.Write(8, c);
+          }
+          if (insert_extra_box) {
+            for (uint8_t c : extra_box_header) {
+              writer.Write(8, c);
+            }
+            for (size_t i = 0; i < 255 - 8; i++) {
+              writer.Write(8, 0);
+            }
+          }
+          for (uint8_t c : codestream_box_header) {
+            writer.Write(8, c);
+          }
+        }
 
-    for (uint8_t c : signature_box) {
-      writer.Write(8, c);
-    }
-    for (uint8_t c : filetype_box) {
-      writer.Write(8, c);
-    }
-    if (insert_extra_box) {
-      for (uint8_t c : extra_box_header) {
-        writer.Write(8, c);
-      }
-      for (size_t i = 0; i < 255 - 8; i++) {
-        writer.Write(8, 0);
-      }
-    }
-    for (uint8_t c : codestream_box_header) {
-      writer.Write(8, c);
-    }
-  }
+        // JXL signature
+        writer.Write(8, 0xff);
+        writer.Write(8, 0x0a);
 
-  // JXL signature
-  writer.Write(8, 0xff);
-  writer.Write(8, 0x0a);
+        // SizeHeader
+        jxl::CodecMetadata metadata;
+        EXPECT_TRUE(metadata.size.Set(xsize, ysize));
+        EXPECT_TRUE(WriteSizeHeader(metadata.size, &writer,
+                                    jxl::LayerType::Header, nullptr));
 
-  // SizeHeader
-  jxl::CodecMetadata metadata;
-  EXPECT_TRUE(metadata.size.Set(xsize, ysize));
-  EXPECT_TRUE(
-      WriteSizeHeader(metadata.size, &writer, jxl::LayerType::Header, nullptr));
+        if (!metadata_default) {
+          metadata.m.SetUintSamples(bits_per_sample);
+          metadata.m.orientation = orientation;
+          metadata.m.SetAlphaBits(alpha_bits);
+          metadata.m.xyb_encoded = xyb_encoded;
+          if (alpha_bits != 0) {
+            metadata.m.extra_channel_info[0].name = "alpha_test";
+          }
+        }
 
-  if (!metadata_default) {
-    metadata.m.SetUintSamples(bits_per_sample);
-    metadata.m.orientation = orientation;
-    metadata.m.SetAlphaBits(alpha_bits);
-    metadata.m.xyb_encoded = xyb_encoded;
-    if (alpha_bits != 0) {
-      metadata.m.extra_channel_info[0].name = "alpha_test";
-    }
-  }
+        if (!icc_profile.empty()) {
+          jxl::IccBytes copy = icc_profile;
+          EXPECT_TRUE(metadata.m.color_encoding.SetICC(std::move(copy),
+                                                       JxlGetDefaultCms()));
+        }
 
-  if (!icc_profile.empty()) {
-    jxl::IccBytes copy = icc_profile;
-    EXPECT_TRUE(
-        metadata.m.color_encoding.SetICC(std::move(copy), JxlGetDefaultCms()));
-  }
+        EXPECT_TRUE(jxl::Bundle::Write(metadata.m, &writer,
+                                       jxl::LayerType::Header, nullptr));
+        metadata.transform_data.nonserialized_xyb_encoded =
+            metadata.m.xyb_encoded;
+        EXPECT_TRUE(jxl::Bundle::Write(metadata.transform_data, &writer,
+                                       jxl::LayerType::Header, nullptr));
 
-  EXPECT_TRUE(
-      jxl::Bundle::Write(metadata.m, &writer, jxl::LayerType::Header, nullptr));
-  metadata.transform_data.nonserialized_xyb_encoded = metadata.m.xyb_encoded;
-  EXPECT_TRUE(jxl::Bundle::Write(metadata.transform_data, &writer,
-                                 jxl::LayerType::Header, nullptr));
+        if (!icc_profile.empty()) {
+          EXPECT_TRUE(metadata.m.color_encoding.WantICC());
+          EXPECT_TRUE(jxl::WriteICC(jxl::Span<const uint8_t>(icc_profile),
+                                    &writer, jxl::LayerType::Header, nullptr));
+        }
 
-  if (!icc_profile.empty()) {
-    EXPECT_TRUE(metadata.m.color_encoding.WantICC());
-    EXPECT_TRUE(jxl::WriteICC(jxl::Span<const uint8_t>(icc_profile), &writer,
-                              jxl::LayerType::Header, nullptr));
-  }
-
-  writer.ZeroPadToByte();
-  EXPECT_TRUE(
-      allotment.ReclaimAndCharge(&writer, jxl::LayerType::Header, nullptr));
+        writer.ZeroPadToByte();
+        return true;
+      }));
   jxl::Bytes bytes = writer.GetSpan();
   return std::vector<uint8_t>(bytes.data(), bytes.data() + bytes.size());
 }

@@ -53,19 +53,20 @@ void Roundtrip(size_t num_entries, bool permute, Rng* rng) {
   }
   for (std::unique_ptr<BitWriter>& writer : group_codes) {
     const size_t max_bits = (*rng)() & 0xFFF;
-    BitWriter::Allotment allotment(writer.get(), max_bits + kBitsPerByte);
-    size_t i = 0;
-    for (; i + BitWriter::kMaxBitsPerCall < max_bits;
-         i += BitWriter::kMaxBitsPerCall) {
-      writer->Write(BitWriter::kMaxBitsPerCall, 0);
-    }
-    for (; i < max_bits; i += 1) {
-      writer->Write(/*n_bits=*/1, 0);
-    }
-    writer->ZeroPadToByte();
     AuxOut aux_out;
-    ASSERT_TRUE(
-        allotment.ReclaimAndCharge(writer.get(), LayerType::Header, &aux_out));
+    ASSERT_TRUE(writer->WithMaxBits(
+        max_bits + kBitsPerByte, LayerType::Header, &aux_out, [&] {
+          size_t i = 0;
+          for (; i + BitWriter::kMaxBitsPerCall < max_bits;
+               i += BitWriter::kMaxBitsPerCall) {
+            writer->Write(BitWriter::kMaxBitsPerCall, 0);
+          }
+          for (; i < max_bits; i += 1) {
+            writer->Write(/*n_bits=*/1, 0);
+          }
+          writer->ZeroPadToByte();
+          return true;
+        }));
   }
 
   BitWriter writer{memory_manager};

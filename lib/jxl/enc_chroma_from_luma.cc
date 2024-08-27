@@ -385,22 +385,25 @@ Status ColorCorrelationEncodeDC(const ColorCorrelation& color_correlation,
   int32_t ytox_dc = color_correlation.GetYToXDC();
   int32_t ytob_dc = color_correlation.GetYToBDC();
 
-  BitWriter::Allotment allotment(writer, 1 + 2 * kBitsPerByte + 12 + 32);
-  if (ytox_dc == 0 && ytob_dc == 0 && color_factor == kDefaultColorFactor &&
-      base_correlation_x == 0.0f &&
-      base_correlation_b == jxl::cms::kYToBRatio) {
-    writer->Write(1, 1);
-    JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
-    return true;
-  }
-  writer->Write(1, 0);
-  JXL_RETURN_IF_ERROR(U32Coder::Write(kColorFactorDist, color_factor, writer));
-  JXL_RETURN_IF_ERROR(F16Coder::Write(base_correlation_x, writer));
-  JXL_RETURN_IF_ERROR(F16Coder::Write(base_correlation_b, writer));
-  writer->Write(kBitsPerByte, ytox_dc - std::numeric_limits<int8_t>::min());
-  writer->Write(kBitsPerByte, ytob_dc - std::numeric_limits<int8_t>::min());
-  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
-  return true;
+  return writer->WithMaxBits(
+      1 + 2 * kBitsPerByte + 12 + 32, layer, aux_out, [&]() -> Status {
+        if (ytox_dc == 0 && ytob_dc == 0 &&
+            color_factor == kDefaultColorFactor && base_correlation_x == 0.0f &&
+            base_correlation_b == jxl::cms::kYToBRatio) {
+          writer->Write(1, 1);
+          return true;
+        }
+        writer->Write(1, 0);
+        JXL_RETURN_IF_ERROR(
+            U32Coder::Write(kColorFactorDist, color_factor, writer));
+        JXL_RETURN_IF_ERROR(F16Coder::Write(base_correlation_x, writer));
+        JXL_RETURN_IF_ERROR(F16Coder::Write(base_correlation_b, writer));
+        writer->Write(kBitsPerByte,
+                      ytox_dc - std::numeric_limits<int8_t>::min());
+        writer->Write(kBitsPerByte,
+                      ytob_dc - std::numeric_limits<int8_t>::min());
+        return true;
+      });
 }
 
 }  // namespace jxl

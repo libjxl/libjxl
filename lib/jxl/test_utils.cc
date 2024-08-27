@@ -842,10 +842,11 @@ Status EncodeFile(const CompressParams& params, CodecInOut* io,
   }
 
   // Each frame should start on byte boundaries.
-  BitWriter::Allotment allotment(&writer, 8);
-  writer.ZeroPadToByte();
-  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(&writer, LayerType::Header,
-                                                 /* aux_out */ nullptr));
+  JXL_RETURN_IF_ERROR(
+      writer.WithMaxBits(8, LayerType::Header, /*aux_out=*/nullptr, [&] {
+        writer.ZeroPadToByte();
+        return true;
+      }));
 
   for (size_t i = 0; i < io->frames.size(); i++) {
     FrameInfo info;

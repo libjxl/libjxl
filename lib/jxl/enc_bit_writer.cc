@@ -16,15 +16,28 @@
 
 namespace jxl {
 
-BitWriter::Allotment::Allotment(BitWriter* JXL_RESTRICT writer, size_t max_bits)
-    : max_bits_(max_bits) {
-  if (writer == nullptr) return;
+Status BitWriter::WithMaxBits(size_t max_bits, LayerType layer, AuxOut* aux_out,
+                              const std::function<Status()>& function,
+                              bool finished_histogram) {
+  BitWriter::Allotment allotment(max_bits);
+  JXL_RETURN_IF_ERROR(allotment.Init(this));
+  const Status result = function();
+  if (result && finished_histogram) {
+    JXL_RETURN_IF_ERROR(allotment.FinishedHistogram(this));
+  }
+  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(this, layer, aux_out));
+  return result;
+}
+BitWriter::Allotment::Allotment(size_t max_bits) : max_bits_(max_bits) {}
+
+Status BitWriter::Allotment::Init(BitWriter* JXL_RESTRICT writer) {
   prev_bits_written_ = writer->BitsWritten();
   const size_t prev_bytes = writer->storage_.size();
-  const size_t next_bytes = DivCeil(max_bits, kBitsPerByte);
+  const size_t next_bytes = DivCeil(max_bits_, kBitsPerByte);
   writer->storage_.resize(prev_bytes + next_bytes);
   parent_ = writer->current_allotment_;
   writer->current_allotment_ = this;
+  return true;
 }
 
 BitWriter::Allotment::~Allotment() {
@@ -103,19 +116,18 @@ Status BitWriter::AppendByteAligned(const Span<const uint8_t>& span) {
 }
 
 Status BitWriter::AppendUnaligned(const BitWriter& other) {
-  Allotment allotment(this, other.BitsWritten());
-  size_t full_bytes = other.BitsWritten() / kBitsPerByte;
-  size_t remaining_bits = other.BitsWritten() % kBitsPerByte;
-  for (size_t i = 0; i < full_bytes; ++i) {
-    Write(8, other.storage_[i]);
-  }
-  if (remaining_bits > 0) {
-    Write(remaining_bits,
-          other.storage_[full_bytes] & ((1u << remaining_bits) - 1));
-  }
-  JXL_RETURN_IF_ERROR(
-      allotment.ReclaimAndCharge(this, LayerType::Header, nullptr));
-  return true;
+  return WithMaxBits(other.BitsWritten(), LayerType::Header, nullptr, [&] {
+    size_t full_bytes = other.BitsWritten() / kBitsPerByte;
+    size_t remaining_bits = other.BitsWritten() % kBitsPerByte;
+    for (size_t i = 0; i < full_bytes; ++i) {
+      Write(8, other.storage_[i]);
+    }
+    if (remaining_bits > 0) {
+      Write(remaining_bits,
+            other.storage_[full_bytes] & ((1u << remaining_bits) - 1));
+    }
+    return true;
+  });
 }
 
 // TODO(lode): avoid code duplication

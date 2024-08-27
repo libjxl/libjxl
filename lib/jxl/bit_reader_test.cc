@@ -59,24 +59,23 @@ TEST(BitReaderTest, TestRoundTrip) {
                                          size_t /* thread */) -> Status {
     constexpr size_t kMaxBits = 8000;
     BitWriter writer{memory_manager};
-    BitWriter::Allotment allotment(&writer, kMaxBits);
-
     std::vector<Symbol> symbols;
     symbols.reserve(1000);
-
-    Rng rng(55537 + 129 * task);
-
-    for (;;) {
-      const uint32_t num_bits = rng.UniformU(1, 33);
-      if (writer.BitsWritten() + num_bits > kMaxBits) break;
-      const uint32_t value = rng.UniformU(0, 1ULL << num_bits);
-      symbols.push_back({num_bits, value});
-      writer.Write(num_bits, value);
-    }
-
-    writer.ZeroPadToByte();
     JXL_RETURN_IF_ERROR(
-        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
+        writer.WithMaxBits(kMaxBits, LayerType::Header, nullptr, [&] {
+          Rng rng(55537 + 129 * task);
+
+          for (;;) {
+            const uint32_t num_bits = rng.UniformU(1, 33);
+            if (writer.BitsWritten() + num_bits > kMaxBits) break;
+            const uint32_t value = rng.UniformU(0, 1ULL << num_bits);
+            symbols.push_back({num_bits, value});
+            writer.Write(num_bits, value);
+          }
+
+          writer.ZeroPadToByte();
+          return true;
+        }));
     BitReader reader(writer.GetSpan());
     for (const Symbol& s : symbols) {
       EXPECT_EQ(s.value, reader.ReadBits(s.num_bits));
@@ -98,24 +97,25 @@ TEST(BitReaderTest, TestSkip) {
 
     for (size_t skip = 0; skip < 128; ++skip) {
       BitWriter writer{memory_manager};
-      BitWriter::Allotment allotment(&writer, kSize * kBitsPerByte);
-      // Start with "task" 1-bits.
-      for (size_t i = 0; i < task; ++i) {
-        writer.Write(1, 1);
-      }
-
-      // Write 0-bits that we will skip over
-      for (size_t i = 0; i < skip; ++i) {
-        writer.Write(1, 0);
-      }
-
-      // Write terminator bits '101'
-      writer.Write(3, 5);
-      EXPECT_EQ(task + skip + 3, writer.BitsWritten());
-      writer.ZeroPadToByte();
       AuxOut aux_out;
-      JXL_RETURN_IF_ERROR(
-          allotment.ReclaimAndCharge(&writer, LayerType::Header, &aux_out));
+      JXL_RETURN_IF_ERROR(writer.WithMaxBits(
+          kSize * kBitsPerByte, LayerType::Header, &aux_out, [&] {
+            // Start with "task" 1-bits.
+            for (size_t i = 0; i < task; ++i) {
+              writer.Write(1, 1);
+            }
+
+            // Write 0-bits that we will skip over
+            for (size_t i = 0; i < skip; ++i) {
+              writer.Write(1, 0);
+            }
+
+            // Write terminator bits '101'
+            writer.Write(3, 5);
+            EXPECT_EQ(task + skip + 3, writer.BitsWritten());
+            writer.ZeroPadToByte();
+            return true;
+          }));
       EXPECT_LT(aux_out.layer(LayerType::Header).total_bits, kSize * 8);
 
       Bytes bytes = writer.GetSpan();
@@ -155,20 +155,20 @@ TEST(BitReaderTest, TestOrder) {
   // u(1) - bits written into LSBs of first byte
   {
     BitWriter writer{memory_manager};
-    BitWriter::Allotment allotment(&writer, kMaxBits);
-    for (size_t i = 0; i < 5; ++i) {
-      writer.Write(1, 1);
-    }
-    for (size_t i = 0; i < 5; ++i) {
-      writer.Write(1, 0);
-    }
-    for (size_t i = 0; i < 6; ++i) {
-      writer.Write(1, 1);
-    }
+    ASSERT_TRUE(writer.WithMaxBits(kMaxBits, LayerType::Header, nullptr, [&] {
+      for (size_t i = 0; i < 5; ++i) {
+        writer.Write(1, 1);
+      }
+      for (size_t i = 0; i < 5; ++i) {
+        writer.Write(1, 0);
+      }
+      for (size_t i = 0; i < 6; ++i) {
+        writer.Write(1, 1);
+      }
 
-    writer.ZeroPadToByte();
-    ASSERT_TRUE(
-        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
+      writer.ZeroPadToByte();
+      return true;
+    }));
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0x1Fu, reader.ReadFixedBits<8>());
     EXPECT_EQ(0xFCu, reader.ReadFixedBits<8>());
@@ -178,13 +178,13 @@ TEST(BitReaderTest, TestOrder) {
   // u(8) - get bytes in the same order
   {
     BitWriter writer{memory_manager};
-    BitWriter::Allotment allotment(&writer, kMaxBits);
-    writer.Write(8, 0xF8);
-    writer.Write(8, 0x3F);
+    ASSERT_TRUE(writer.WithMaxBits(kMaxBits, LayerType::Header, nullptr, [&] {
+      writer.Write(8, 0xF8);
+      writer.Write(8, 0x3F);
 
-    writer.ZeroPadToByte();
-    ASSERT_TRUE(
-        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
+      writer.ZeroPadToByte();
+      return true;
+    }));
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0xF8u, reader.ReadFixedBits<8>());
     EXPECT_EQ(0x3Fu, reader.ReadFixedBits<8>());
@@ -194,12 +194,12 @@ TEST(BitReaderTest, TestOrder) {
   // u(16) - little-endian bytes
   {
     BitWriter writer{memory_manager};
-    BitWriter::Allotment allotment(&writer, kMaxBits);
-    writer.Write(16, 0xF83F);
+    ASSERT_TRUE(writer.WithMaxBits(kMaxBits, LayerType::Header, nullptr, [&] {
+      writer.Write(16, 0xF83F);
 
-    writer.ZeroPadToByte();
-    ASSERT_TRUE(
-        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
+      writer.ZeroPadToByte();
+      return true;
+    }));
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0x3Fu, reader.ReadFixedBits<8>());
     EXPECT_EQ(0xF8u, reader.ReadFixedBits<8>());
@@ -209,15 +209,15 @@ TEST(BitReaderTest, TestOrder) {
   // Non-byte-aligned, mixed sizes
   {
     BitWriter writer{memory_manager};
-    BitWriter::Allotment allotment(&writer, kMaxBits);
-    writer.Write(1, 1);
-    writer.Write(3, 6);
-    writer.Write(8, 0xDB);
-    writer.Write(4, 8);
+    ASSERT_TRUE(writer.WithMaxBits(kMaxBits, LayerType::Header, nullptr, [&] {
+      writer.Write(1, 1);
+      writer.Write(3, 6);
+      writer.Write(8, 0xDB);
+      writer.Write(4, 8);
 
-    writer.ZeroPadToByte();
-    ASSERT_TRUE(
-        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
+      writer.ZeroPadToByte();
+      return true;
+    }));
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0xBDu, reader.ReadFixedBits<8>());
     EXPECT_EQ(0x8Du, reader.ReadFixedBits<8>());

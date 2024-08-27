@@ -32,10 +32,10 @@ void RoundtripTestcase(int n_histograms, int alphabet_size,
 
   BitWriter writer{memory_manager};
   // Space for magic bytes.
-  BitWriter::Allotment allotment_magic1(&writer, 16);
-  writer.Write(16, kMagic1);
-  ASSERT_TRUE(
-      allotment_magic1.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
+  ASSERT_TRUE(writer.WithMaxBits(16, LayerType::Header, nullptr, [&] {
+    writer.Write(16, kMagic1);
+    return true;
+  }));
 
   std::vector<uint8_t> context_map;
   EntropyEncodingData codes;
@@ -52,11 +52,11 @@ void RoundtripTestcase(int n_histograms, int alphabet_size,
                           LayerType::Header, nullptr));
 
   // Magic bytes + padding
-  BitWriter::Allotment allotment_magic2(&writer, 24);
-  writer.Write(16, kMagic2);
-  writer.ZeroPadToByte();
-  ASSERT_TRUE(
-      allotment_magic2.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
+  ASSERT_TRUE(writer.WithMaxBits(24, LayerType::Header, nullptr, [&] {
+    writer.Write(16, kMagic2);
+    writer.ZeroPadToByte();
+    return true;
+  }));
 
   // We do not truncate the output. Reading past the end reads out zeroes
   // anyway.
@@ -183,10 +183,11 @@ TEST(ANSTest, UintConfigRoundtrip) {
     uint_config.emplace_back(log_alpha_size, 0, 0);
     uint_config_dec.resize(uint_config.size());
     BitWriter writer{memory_manager};
-    BitWriter::Allotment allotment(&writer, 10 * uint_config.size());
-    EncodeUintConfigs(uint_config, &writer, log_alpha_size);
-    ASSERT_TRUE(
-        allotment.ReclaimAndCharge(&writer, LayerType::Header, nullptr));
+    ASSERT_TRUE(writer.WithMaxBits(
+        10 * uint_config.size(), LayerType::Header, nullptr, [&] {
+          EncodeUintConfigs(uint_config, &writer, log_alpha_size);
+          return true;
+        }));
     writer.ZeroPadToByte();
     BitReader br(writer.GetSpan());
     EXPECT_TRUE(DecodeUintConfigs(log_alpha_size, &uint_config_dec, &br));

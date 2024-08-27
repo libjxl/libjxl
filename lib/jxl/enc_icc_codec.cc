@@ -450,9 +450,9 @@ Status WriteICC(const Span<const uint8_t> icc, BitWriter* JXL_RESTRICT writer,
   PaddedBytes enc{memory_manager};
   JXL_RETURN_IF_ERROR(PredictICC(icc.data(), icc.size(), &enc));
   std::vector<std::vector<Token>> tokens(1);
-  BitWriter::Allotment allotment(writer, 128);
-  JXL_RETURN_IF_ERROR(U64Coder::Write(enc.size(), writer));
-  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
+  JXL_RETURN_IF_ERROR(writer->WithMaxBits(128, layer, aux_out, [&] {
+    return U64Coder::Write(enc.size(), writer);
+  }));
 
   for (size_t i = 0; i < enc.size(); i++) {
     tokens[0].emplace_back(
