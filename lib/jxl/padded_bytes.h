@@ -73,8 +73,7 @@ class PaddedBytes {
   }
 
   // If current capacity is greater than requested, then no-op. Otherwise
-  // copies existing data to newly allocated "data_". If allocation fails,
-  // data() == nullptr and size_ = capacity_ = 0.
+  // copies existing data to newly allocated "data_".
   // The new capacity will be at least 1.5 times the old capacity. This ensures
   // that we avoid quadratic behaviour.
   Status reserve(size_t capacity) {
@@ -83,18 +82,10 @@ class PaddedBytes {
     size_t new_capacity = std::max(capacity, 3 * capacity_ / 2);
     new_capacity = std::max<size_t>(64, new_capacity);
 
-    AlignedMemory new_data;
-    bool ok = [&]() -> Status {
-      // BitWriter writes up to 7 bytes past the end.
-      JXL_ASSIGN_OR_RETURN(
-          new_data, AlignedMemory::Create(memory_manager_, new_capacity + 8));
-      return true;
-    }();
-    // On allocation failure - discard all data to ensure this is noticed.
-    if (!ok) {
-      size_ = capacity_ = 0;
-      return false;
-    }
+    // BitWriter writes up to 7 bytes past the end.
+    JXL_ASSIGN_OR_RETURN(
+        AlignedMemory new_data,
+        AlignedMemory::Create(memory_manager_, new_capacity + 8));
 
     if (data_.address<void>() == nullptr) {
       // First allocation: ensure first byte is initialized (won't be copied).
