@@ -436,6 +436,17 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
         return false;
       }
     }
+  } else if (t == "PQ") {
+    io.metadata.m.color_encoding.Tf().transfer_function =
+        jxl::TransferFunction::kPQ;
+    io.metadata.m.tone_mapping.intensity_target = 10000;
+  } else if (t == "HLG") {
+    io.metadata.m.color_encoding.Tf().transfer_function =
+        jxl::TransferFunction::kHLG;
+    io.metadata.m.tone_mapping.intensity_target = 1000;
+  } else if (t == "Rec2100") {
+    JXL_RETURN_IF_ERROR(
+        io.metadata.m.color_encoding.SetPrimariesType(jxl::Primaries::k2100));
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;
@@ -489,9 +500,11 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   JXL_ASSIGN_OR_RETURN(
       Image3F image, Image3F::Create(memory_manager, width * cparams.resampling,
                                      height * cparams.resampling));
-  JXL_RETURN_IF_ERROR(io.SetFromImage(std::move(image), ColorEncoding::SRGB()));
+  JXL_RETURN_IF_ERROR(
+      io.SetFromImage(std::move(image), io.metadata.m.color_encoding));
   JXL_RETURN_IF_ERROR(io.SetSize((width + x0) * cparams.resampling,
                                  (height + y0) * cparams.resampling));
+
   io.metadata.m.color_encoding.DecideIfWantICC(*JxlGetDefaultCms());
   cparams.options.zero_tokens = true;
   cparams.palette_colors = 0;
