@@ -1253,17 +1253,19 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
                                              BitWriter* writer,
                                              AuxOut* aux_out) {
   JxlMemoryManager* memory_manager = writer->memory_manager();
-  BitWriter::Allotment allotment(writer, 1);
-  // If we are using brotli, or not using modular mode.
-  if (tree_tokens_.empty() || tree_tokens_[0].empty()) {
-    writer->Write(1, 0);
-    JXL_RETURN_IF_ERROR(
-        allotment.ReclaimAndCharge(writer, LayerType::ModularTree, aux_out));
-    return true;
-  }
-  writer->Write(1, 1);
+  bool skip_rest = false;
   JXL_RETURN_IF_ERROR(
-      allotment.ReclaimAndCharge(writer, LayerType::ModularTree, aux_out));
+      writer->WithMaxBits(1, LayerType::ModularTree, aux_out, [&] {
+        // If we are using brotli, or not using modular mode.
+        if (tree_tokens_.empty() || tree_tokens_[0].empty()) {
+          writer->Write(1, 0);
+          skip_rest = true;
+        } else {
+          writer->Write(1, 1);
+        }
+        return true;
+      }));
+  if (skip_rest) return true;
 
   // Write tree
   HistogramParams params =

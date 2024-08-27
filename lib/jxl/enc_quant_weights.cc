@@ -125,17 +125,18 @@ Status DequantMatricesEncode(JxlMemoryManager* memory_manager,
     }
   }
   // TODO(janwas): better bound
-  BitWriter::Allotment allotment(writer, 512 * 1024);
-  writer->Write(1, TO_JXL_BOOL(all_default));
-  if (!all_default) {
-    for (size_t i = 0; i < encodings.size(); i++) {
-      JXL_RETURN_IF_ERROR(EncodeQuant(
-          memory_manager, encodings[i], i, DequantMatrices::required_size_x[i],
-          DequantMatrices::required_size_y[i], writer, modular_frame_encoder));
+  return writer->WithMaxBits(512 * 1024, layer, aux_out, [&]() -> Status {
+    writer->Write(1, TO_JXL_BOOL(all_default));
+    if (!all_default) {
+      for (size_t i = 0; i < encodings.size(); i++) {
+        JXL_RETURN_IF_ERROR(EncodeQuant(memory_manager, encodings[i], i,
+                                        DequantMatrices::required_size_x[i],
+                                        DequantMatrices::required_size_y[i],
+                                        writer, modular_frame_encoder));
+      }
     }
-  }
-  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
-  return true;
+    return true;
+  });
 }
 
 Status DequantMatricesEncodeDC(const DequantMatrices& matrices,
@@ -148,15 +149,16 @@ Status DequantMatricesEncodeDC(const DequantMatrices& matrices,
       all_default = false;
     }
   }
-  BitWriter::Allotment allotment(writer, 1 + sizeof(float) * kBitsPerByte * 3);
-  writer->Write(1, TO_JXL_BOOL(all_default));
-  if (!all_default) {
-    for (size_t c = 0; c < 3; c++) {
-      JXL_RETURN_IF_ERROR(F16Coder::Write(dc_quant[c] * 128.0f, writer));
-    }
-  }
-  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
-  return true;
+  return writer->WithMaxBits(
+      1 + sizeof(float) * kBitsPerByte * 3, layer, aux_out, [&]() -> Status {
+        writer->Write(1, TO_JXL_BOOL(all_default));
+        if (!all_default) {
+          for (size_t c = 0; c < 3; c++) {
+            JXL_RETURN_IF_ERROR(F16Coder::Write(dc_quant[c] * 128.0f, writer));
+          }
+        }
+        return true;
+      });
 }
 
 Status DequantMatricesSetCustomDC(JxlMemoryManager* memory_manager,

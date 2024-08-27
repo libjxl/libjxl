@@ -111,26 +111,30 @@ Status EncodeContextMap(const std::vector<uint8_t>& context_map,
   size_t entry_bits = CeilLog2Nonzero(num_histograms);
   size_t simple_cost = entry_bits * context_map.size();
   if (entry_bits < 4 && simple_cost < ans_cost && simple_cost < mtf_cost) {
-    BitWriter::Allotment allotment(writer, 3 + entry_bits * context_map.size());
-    writer->Write(1, 1);
-    writer->Write(2, entry_bits);
-    for (uint8_t entry : context_map) {
-      writer->Write(entry_bits, entry);
-    }
-    JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
+    JXL_RETURN_IF_ERROR(writer->WithMaxBits(
+        3 + entry_bits * context_map.size(), layer, aux_out, [&] {
+          writer->Write(1, 1);
+          writer->Write(2, entry_bits);
+          for (uint8_t entry : context_map) {
+            writer->Write(entry_bits, entry);
+          }
+          return true;
+        }));
   } else {
-    BitWriter::Allotment allotment(writer, 2 + tokens[0].size() * 24);
-    writer->Write(1, 0);
-    writer->Write(1, TO_JXL_BOOL(use_mtf));  // Use/don't use MTF.
-    EntropyEncodingData codes;
-    std::vector<uint8_t> sink_context_map;
-    JXL_ASSIGN_OR_RETURN(
-        size_t cost,
-        BuildAndEncodeHistograms(memory_manager, params, 1, tokens, &codes,
-                                 &sink_context_map, writer, layer, aux_out));
-    (void)cost;
-    WriteTokens(tokens[0], codes, sink_context_map, 0, writer);
-    JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
+    JXL_RETURN_IF_ERROR(writer->WithMaxBits(
+        2 + tokens[0].size() * 24, layer, aux_out, [&]() -> Status {
+          writer->Write(1, 0);
+          writer->Write(1, TO_JXL_BOOL(use_mtf));  // Use/don't use MTF.
+          EntropyEncodingData codes;
+          std::vector<uint8_t> sink_context_map;
+          JXL_ASSIGN_OR_RETURN(size_t cost,
+                               BuildAndEncodeHistograms(
+                                   memory_manager, params, 1, tokens, &codes,
+                                   &sink_context_map, writer, layer, aux_out));
+          (void)cost;
+          WriteTokens(tokens[0], codes, sink_context_map, 0, writer);
+          return true;
+        }));
   }
   return true;
 }
@@ -140,35 +144,33 @@ Status EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
   const auto& dct = block_ctx_map.dc_thresholds;
   const auto& qft = block_ctx_map.qf_thresholds;
   const auto& ctx_map = block_ctx_map.ctx_map;
-  BitWriter::Allotment allotment(
-      writer,
+  return writer->WithMaxBits(
       (dct[0].size() + dct[1].size() + dct[2].size() + qft.size()) * 34 + 1 +
-          4 + 4 + ctx_map.size() * 10 + 1024);
-  if (dct[0].empty() && dct[1].empty() && dct[2].empty() && qft.empty() &&
-      ctx_map.size() == 21 &&
-      std::equal(ctx_map.begin(), ctx_map.end(), BlockCtxMap::kDefaultCtxMap)) {
-    writer->Write(1, 1);  // default
-    JXL_RETURN_IF_ERROR(
-        allotment.ReclaimAndCharge(writer, LayerType::Ac, aux_out));
-    return true;
-  }
-  writer->Write(1, 0);
-  for (int j : {0, 1, 2}) {
-    writer->Write(4, dct[j].size());
-    for (int i : dct[j]) {
-      JXL_RETURN_IF_ERROR(
-          U32Coder::Write(kDCThresholdDist, PackSigned(i), writer));
-    }
-  }
-  writer->Write(4, qft.size());
-  for (uint32_t i : qft) {
-    JXL_RETURN_IF_ERROR(U32Coder::Write(kQFThresholdDist, i - 1, writer));
-  }
-  JXL_RETURN_IF_ERROR(EncodeContextMap(ctx_map, block_ctx_map.num_ctxs, writer,
-                                       LayerType::Ac, aux_out));
-  JXL_RETURN_IF_ERROR(
-      allotment.ReclaimAndCharge(writer, LayerType::Ac, aux_out));
-  return true;
+          4 + 4 + ctx_map.size() * 10 + 1024,
+      LayerType::Ac, aux_out, [&]() -> Status {
+        if (dct[0].empty() && dct[1].empty() && dct[2].empty() && qft.empty() &&
+            ctx_map.size() == 21 &&
+            std::equal(ctx_map.begin(), ctx_map.end(),
+                       BlockCtxMap::kDefaultCtxMap)) {
+          writer->Write(1, 1);  // default
+          return true;
+        }
+        writer->Write(1, 0);
+        for (int j : {0, 1, 2}) {
+          writer->Write(4, dct[j].size());
+          for (int i : dct[j]) {
+            JXL_RETURN_IF_ERROR(
+                U32Coder::Write(kDCThresholdDist, PackSigned(i), writer));
+          }
+        }
+        writer->Write(4, qft.size());
+        for (uint32_t i : qft) {
+          JXL_RETURN_IF_ERROR(U32Coder::Write(kQFThresholdDist, i - 1, writer));
+        }
+        JXL_RETURN_IF_ERROR(EncodeContextMap(ctx_map, block_ctx_map.num_ctxs,
+                                             writer, LayerType::Ac, aux_out));
+        return true;
+      });
 }
 
 }  // namespace jxl

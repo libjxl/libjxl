@@ -785,10 +785,11 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     }
     // TODO(lode): preview should be added here if a preview image is added
 
-    jxl::BitWriter::Allotment allotment(&writer, 8);
-    writer.ZeroPadToByte();
     JXL_RETURN_IF_ERROR(
-        allotment.ReclaimAndCharge(&writer, jxl::LayerType::Header, aux_out));
+        writer.WithMaxBits(8, jxl::LayerType::Header, aux_out, [&] {
+          writer.ZeroPadToByte();
+          return true;
+        }));
 
     header_bytes = std::move(writer).TakeBytes();
 

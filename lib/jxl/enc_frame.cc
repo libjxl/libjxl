@@ -1184,10 +1184,11 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
                                             enc_modular));
   size_t num_histo_bits = CeilLog2Nonzero(shared.frame_dim.num_groups);
   if (!enc_state->streaming_mode && num_histo_bits != 0) {
-    BitWriter::Allotment allotment(writer, num_histo_bits);
-    writer->Write(num_histo_bits, shared.num_histograms - 1);
     JXL_RETURN_IF_ERROR(
-        allotment.ReclaimAndCharge(writer, LayerType::Ac, aux_out));
+        writer->WithMaxBits(num_histo_bits, LayerType::Ac, aux_out, [&] {
+          writer->Write(num_histo_bits, shared.num_histograms - 1);
+          return true;
+        }));
   }
 
   for (size_t i = 0; i < enc_state->progressive_splitter.GetNumPasses(); i++) {
@@ -1196,11 +1197,11 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
       size_t order_bits = 0;
       JXL_RETURN_IF_ERROR(U32Coder::CanEncode(
           kOrderEnc, enc_state->used_orders[i], &order_bits));
-      BitWriter::Allotment allotment(writer, order_bits);
       JXL_RETURN_IF_ERROR(
-          U32Coder::Write(kOrderEnc, enc_state->used_orders[i], writer));
-      JXL_RETURN_IF_ERROR(
-          allotment.ReclaimAndCharge(writer, LayerType::Order, aux_out));
+          writer->WithMaxBits(order_bits, LayerType::Order, aux_out, [&] {
+            return U32Coder::Write(kOrderEnc, enc_state->used_orders[i],
+                                   writer);
+          }));
       JXL_RETURN_IF_ERROR(
           EncodeCoeffOrders(enc_state->used_orders[i],
                             &shared.coeff_orders[i * shared.coeff_order_size],
@@ -1334,10 +1335,11 @@ Status EncodeGroups(const FrameHeader& frame_header,
     BitWriter* output = get_output(input_index + 1);
     if (frame_header.encoding == FrameEncoding::kVarDCT &&
         !(frame_header.flags & FrameHeader::kUseDcFrame)) {
-      BitWriter::Allotment allotment(output, 2);
-      output->Write(2, enc_modular->extra_dc_precision[group_index]);
       JXL_RETURN_IF_ERROR(
-          allotment.ReclaimAndCharge(output, LayerType::Dc, my_aux_out));
+          output->WithMaxBits(2, LayerType::Dc, my_aux_out, [&] {
+            output->Write(2, enc_modular->extra_dc_precision[group_index]);
+            return true;
+          }));
       JXL_RETURN_IF_ERROR(
           enc_modular->EncodeStream(output, my_aux_out, LayerType::Dc,
                                     ModularStreamId::VarDCTDC(group_index)));
@@ -1349,10 +1351,12 @@ Status EncodeGroups(const FrameHeader& frame_header,
       const Rect& rect = enc_state->shared.frame_dim.DCGroupRect(input_index);
       size_t nb_bits = CeilLog2Nonzero(rect.xsize() * rect.ysize());
       if (nb_bits != 0) {
-        BitWriter::Allotment allotment(output, nb_bits);
-        output->Write(nb_bits, enc_modular->ac_metadata_size[group_index] - 1);
-        JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(
-            output, LayerType::ControlFields, my_aux_out));
+        JXL_RETURN_IF_ERROR(output->WithMaxBits(
+            nb_bits, LayerType::ControlFields, my_aux_out, [&] {
+              output->Write(nb_bits,
+                            enc_modular->ac_metadata_size[group_index] - 1);
+              return true;
+            }));
       }
       JXL_RETURN_IF_ERROR(enc_modular->EncodeStream(
           output, my_aux_out, LayerType::ControlFields,
@@ -1411,10 +1415,10 @@ Status EncodeGroups(const FrameHeader& frame_header,
   static_cast<void>(resize_aux_outs(0));
 
   for (std::unique_ptr<BitWriter>& bw : *group_codes) {
-    BitWriter::Allotment allotment(bw.get(), 8);
-    bw->ZeroPadToByte();  // end of group.
-    JXL_RETURN_IF_ERROR(
-        allotment.ReclaimAndCharge(bw.get(), LayerType::Ac, aux_out));
+    JXL_RETURN_IF_ERROR(bw->WithMaxBits(8, LayerType::Ac, aux_out, [&] {
+      bw->ZeroPadToByte();  // end of group.
+      return true;
+    }));
   }
   return true;
 }
@@ -1835,13 +1839,14 @@ StatusOr<PaddedBytes> EncodeTOC(JxlMemoryManager* memory_manager,
                                 const std::vector<size_t>& group_sizes,
                                 AuxOut* aux_out) {
   BitWriter writer{memory_manager};
-  BitWriter::Allotment allotment(&writer, 32 * group_sizes.size());
-  for (size_t group_size : group_sizes) {
-    JXL_RETURN_IF_ERROR(U32Coder::Write(kTocDist, group_size, &writer));
-  }
-  writer.ZeroPadToByte();  // before first group
-  JXL_RETURN_IF_ERROR(
-      allotment.ReclaimAndCharge(&writer, LayerType::Toc, aux_out));
+  JXL_RETURN_IF_ERROR(writer.WithMaxBits(
+      32 * group_sizes.size(), LayerType::Toc, aux_out, [&]() -> Status {
+        for (size_t group_size : group_sizes) {
+          JXL_RETURN_IF_ERROR(U32Coder::Write(kTocDist, group_size, &writer));
+        }
+        writer.ZeroPadToByte();  // before first group
+        return true;
+      }));
   return std::move(writer).TakeBytes();
 }
 
@@ -1928,11 +1933,12 @@ Status OutputAcGlobal(PassesEncoderState& enc_state,
   BitWriter writer{memory_manager};
   {
     size_t num_histo_bits = CeilLog2Nonzero(frame_dim.num_groups);
-    BitWriter::Allotment allotment(&writer, num_histo_bits + 1);
-    writer.Write(1, 1);  // default dequant matrices
-    writer.Write(num_histo_bits, frame_dim.num_dc_groups - 1);
     JXL_RETURN_IF_ERROR(
-        allotment.ReclaimAndCharge(&writer, LayerType::Ac, aux_out));
+        writer.WithMaxBits(num_histo_bits + 1, LayerType::Ac, aux_out, [&] {
+          writer.Write(1, 1);  // default dequant matrices
+          writer.Write(num_histo_bits, frame_dim.num_dc_groups - 1);
+          return true;
+        }));
   }
   const PassesSharedState& shared = enc_state.shared;
   for (size_t i = 0; i < enc_state.progressive_splitter.GetNumPasses(); i++) {
@@ -1940,11 +1946,10 @@ Status OutputAcGlobal(PassesEncoderState& enc_state,
     size_t order_bits = 0;
     JXL_RETURN_IF_ERROR(
         U32Coder::CanEncode(kOrderEnc, enc_state.used_orders[i], &order_bits));
-    BitWriter::Allotment allotment(&writer, order_bits);
     JXL_RETURN_IF_ERROR(
-        U32Coder::Write(kOrderEnc, enc_state.used_orders[i], &writer));
-    JXL_RETURN_IF_ERROR(
-        allotment.ReclaimAndCharge(&writer, LayerType::Order, aux_out));
+        writer.WithMaxBits(order_bits, LayerType::Order, aux_out, [&] {
+          return U32Coder::Write(kOrderEnc, enc_state.used_orders[i], &writer);
+        }));
     JXL_RETURN_IF_ERROR(
         EncodeCoeffOrders(enc_state.used_orders[i],
                           &shared.coeff_orders[i * shared.coeff_order_size],
@@ -1957,12 +1962,10 @@ Status OutputAcGlobal(PassesEncoderState& enc_state,
                                          enc_state.passes[i].codes, &writer,
                                          LayerType::Ac, aux_out));
   }
-  {
-    BitWriter::Allotment allotment(&writer, 8);
+  JXL_RETURN_IF_ERROR(writer.WithMaxBits(8, LayerType::Ac, aux_out, [&] {
     writer.ZeroPadToByte();  // end of group.
-    JXL_RETURN_IF_ERROR(
-        allotment.ReclaimAndCharge(&writer, LayerType::Ac, aux_out));
-  }
+    return true;
+  }));
   PaddedBytes ac_global = std::move(writer).TakeBytes();
   group_sizes->push_back(ac_global.size());
   JXL_RETURN_IF_ERROR(AppendData(*output_processor, ac_global));
@@ -2036,14 +2039,15 @@ Status EncodeFrameStreaming(JxlMemoryManager* memory_manager,
     if (i == 0) {
       BitWriter writer{memory_manager};
       JXL_RETURN_IF_ERROR(WriteFrameHeader(frame_header, &writer, aux_out));
-      BitWriter::Allotment allotment(&writer, 8);
-      writer.Write(1, 1);  // write permutation
-      JXL_RETURN_IF_ERROR(EncodePermutation(permutation.data(), /*skip=*/0,
-                                            permutation.size(), &writer,
-                                            LayerType::Header, aux_out));
-      writer.ZeroPadToByte();
       JXL_RETURN_IF_ERROR(
-          allotment.ReclaimAndCharge(&writer, LayerType::Header, aux_out));
+          writer.WithMaxBits(8, LayerType::Header, aux_out, [&]() -> Status {
+            writer.Write(1, 1);  // write permutation
+            JXL_RETURN_IF_ERROR(EncodePermutation(
+                permutation.data(), /*skip=*/0, permutation.size(), &writer,
+                LayerType::Header, aux_out));
+            writer.ZeroPadToByte();
+            return true;
+          }));
       frame_header_bytes = std::move(writer).TakeBytes();
       dc_global_bytes = std::move(*group_codes[0]).TakeBytes();
       JXL_RETURN_IF_ERROR(ComputeGroupDataOffset(

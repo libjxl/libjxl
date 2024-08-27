@@ -419,10 +419,11 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
 }
 
 void WriteHeaders(BitWriter* writer, size_t xsize, size_t ysize) {
-  BitWriter::Allotment allotment(writer, 16);
-  writer->Write(8, 0xFF);
-  writer->Write(8, kCodestreamMarker);
-  ASSERT_TRUE(allotment.ReclaimAndCharge(writer, LayerType::Header, nullptr));
+  ASSERT_TRUE(writer->WithMaxBits(16, LayerType::Header, nullptr, [&] {
+    writer->Write(8, 0xFF);
+    writer->Write(8, kCodestreamMarker);
+    return true;
+  }));
   CodecMetadata metadata;
   EXPECT_TRUE(metadata.size.Set(xsize, ysize));
   EXPECT_TRUE(
@@ -478,18 +479,18 @@ TEST(ModularTest, PredictorIntegerOverflow) {
   group_codes.emplace_back(jxl::make_unique<BitWriter>(memory_manager));
   {
     std::unique_ptr<BitWriter>& bw = group_codes[0];
-    BitWriter::Allotment allotment(bw.get(), 1 << 20);
-    WriteHistograms(bw.get());
-    GroupHeader header;
-    header.use_global_tree = true;
-    EXPECT_TRUE(Bundle::Write(header, bw.get(), LayerType::Header, nullptr));
-    // After UnpackSigned this becomes (1 << 31) - 1, the largest pixel_type,
-    // and after adding the offset we get -(1 << 31).
-    bw->Write(8, 119);
-    bw->Write(28, 0xfffffff);
-    bw->ZeroPadToByte();
-    ASSERT_TRUE(
-        allotment.ReclaimAndCharge(bw.get(), LayerType::Header, nullptr));
+    ASSERT_TRUE(bw->WithMaxBits(1 << 20, LayerType::Header, nullptr, [&] {
+      WriteHistograms(bw.get());
+      GroupHeader header;
+      header.use_global_tree = true;
+      EXPECT_TRUE(Bundle::Write(header, bw.get(), LayerType::Header, nullptr));
+      // After UnpackSigned this becomes (1 << 31) - 1, the largest pixel_type,
+      // and after adding the offset we get -(1 << 31).
+      bw->Write(8, 119);
+      bw->Write(28, 0xfffffff);
+      bw->ZeroPadToByte();
+      return true;
+    }));
   }
   EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
   ASSERT_TRUE(writer.AppendByteAligned(group_codes));
@@ -517,30 +518,30 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
   group_codes.emplace_back(jxl::make_unique<BitWriter>(memory_manager));
   {
     std::unique_ptr<BitWriter>& bw = group_codes[0];
-    BitWriter::Allotment allotment(bw.get(), 1 << 20);
-    WriteHistograms(bw.get());
-    GroupHeader header;
-    header.use_global_tree = true;
-    header.transforms.emplace_back();
-    header.transforms[0].id = TransformId::kSqueeze;
-    SqueezeParams params;
-    params.horizontal = false;
-    params.in_place = true;
-    params.begin_c = 0;
-    params.num_c = 1;
-    header.transforms[0].squeezes.emplace_back(params);
-    EXPECT_TRUE(Bundle::Write(header, bw.get(), LayerType::Header, nullptr));
-    for (size_t i = 0; i < xsize * ysize; ++i) {
-      // After UnpackSigned and adding offset, this becomes (1 << 31) - 1, both
-      // in the image and in the residual channels, and unsqueeze makes them
-      // ~(3 << 30) and (1 << 30) (in pixel_type_w) and the first wraps around
-      // to about -(1 << 30).
-      bw->Write(8, 119);
-      bw->Write(28, 0xffffffe);
-    }
-    bw->ZeroPadToByte();
-    ASSERT_TRUE(
-        allotment.ReclaimAndCharge(bw.get(), LayerType::Header, nullptr));
+    ASSERT_TRUE(bw->WithMaxBits(1 << 20, LayerType::Header, nullptr, [&] {
+      WriteHistograms(bw.get());
+      GroupHeader header;
+      header.use_global_tree = true;
+      header.transforms.emplace_back();
+      header.transforms[0].id = TransformId::kSqueeze;
+      SqueezeParams params;
+      params.horizontal = false;
+      params.in_place = true;
+      params.begin_c = 0;
+      params.num_c = 1;
+      header.transforms[0].squeezes.emplace_back(params);
+      EXPECT_TRUE(Bundle::Write(header, bw.get(), LayerType::Header, nullptr));
+      for (size_t i = 0; i < xsize * ysize; ++i) {
+        // After UnpackSigned and adding offset, this becomes (1 << 31) - 1,
+        // both in the image and in the residual channels, and unsqueeze makes
+        // them ~(3 << 30) and (1 << 30) (in pixel_type_w) and the first wraps
+        // around to about -(1 << 30).
+        bw->Write(8, 119);
+        bw->Write(28, 0xffffffe);
+      }
+      bw->ZeroPadToByte();
+      return true;
+    }));
   }
   EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
   ASSERT_TRUE(writer.AppendByteAligned(group_codes));

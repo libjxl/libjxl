@@ -359,12 +359,13 @@ Status EncodeNoise(const NoiseParams& noise_params, BitWriter* writer,
                    LayerType layer, AuxOut* aux_out) {
   JXL_ENSURE(noise_params.HasAny());
 
-  BitWriter::Allotment allotment(writer, NoiseParams::kNumNoisePoints * 16);
-  for (float i : noise_params.lut) {
-    JXL_RETURN_IF_ERROR(EncodeFloatParam(i, kNoisePrecision, writer));
-  }
-  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
-  return true;
+  return writer->WithMaxBits(
+      NoiseParams::kNumNoisePoints * 16, layer, aux_out, [&]() -> Status {
+        for (float i : noise_params.lut) {
+          JXL_RETURN_IF_ERROR(EncodeFloatParam(i, kNoisePrecision, writer));
+        }
+        return true;
+      });
 }
 
 }  // namespace jxl

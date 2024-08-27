@@ -22,17 +22,18 @@ TEST(ImageBundleTest, ExtraChannelName) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   AuxOut aux_out;
   BitWriter writer{memory_manager};
-  BitWriter::Allotment allotment(&writer, 99);
-
-  ImageMetadata metadata;
-  ExtraChannelInfo eci;
-  eci.type = ExtraChannel::kBlack;
-  eci.name = "testK";
-  metadata.extra_channel_info.push_back(std::move(eci));
   ASSERT_TRUE(
-      WriteImageMetadata(metadata, &writer, LayerType::Header, &aux_out));
-  writer.ZeroPadToByte();
-  ASSERT_TRUE(allotment.ReclaimAndCharge(&writer, LayerType::Header, &aux_out));
+      writer.WithMaxBits(99, LayerType::Header, &aux_out, [&]() -> Status {
+        ImageMetadata metadata;
+        ExtraChannelInfo eci;
+        eci.type = ExtraChannel::kBlack;
+        eci.name = "testK";
+        metadata.extra_channel_info.push_back(std::move(eci));
+        JXL_RETURN_IF_ERROR(
+            WriteImageMetadata(metadata, &writer, LayerType::Header, &aux_out));
+        writer.ZeroPadToByte();
+        return true;
+      }));
 
   BitReader reader(writer.GetSpan());
   ImageMetadata metadata_out;

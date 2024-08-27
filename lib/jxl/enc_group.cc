@@ -541,10 +541,11 @@ Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
   size_t histo_selector_bits = CeilLog2Nonzero(num_histograms);
 
   if (histo_selector_bits != 0) {
-    BitWriter::Allotment allotment(writer, histo_selector_bits);
-    writer->Write(histo_selector_bits, histogram_idx);
     JXL_RETURN_IF_ERROR(
-        allotment.ReclaimAndCharge(writer, LayerType::Ac, aux_out));
+        writer->WithMaxBits(histo_selector_bits, LayerType::Ac, aux_out, [&] {
+          writer->Write(histo_selector_bits, histogram_idx);
+          return true;
+        }));
   }
   size_t context_offset =
       histogram_idx * enc_state.shared.block_ctx_map.NumACContexts();

@@ -78,12 +78,11 @@ Status Bundle::Write(const Fields& fields, BitWriter* writer, LayerType layer,
   size_t total_bits;
   JXL_RETURN_IF_ERROR(Bundle::CanEncode(fields, &extension_bits, &total_bits));
 
-  BitWriter::Allotment allotment(writer, total_bits);
-  WriteVisitor visitor(extension_bits, writer);
-  JXL_RETURN_IF_ERROR(visitor.VisitConst(fields));
-  JXL_RETURN_IF_ERROR(visitor.OK());
-  JXL_RETURN_IF_ERROR(allotment.ReclaimAndCharge(writer, layer, aux_out));
-  return true;
+  return writer->WithMaxBits(total_bits, layer, aux_out, [&] {
+    WriteVisitor visitor(extension_bits, writer);
+    JXL_RETURN_IF_ERROR(visitor.VisitConst(fields));
+    return visitor.OK();
+  });
 }
 
 // Returns false if the value is too large to encode.
@@ -200,11 +199,11 @@ Status F16Coder::Write(float value, BitWriter* JXL_RESTRICT writer) {
 Status WriteCodestreamHeaders(CodecMetadata* metadata, BitWriter* writer,
                               AuxOut* aux_out) {
   // Marker/signature
-  BitWriter::Allotment allotment(writer, 16);
-  writer->Write(8, 0xFF);
-  writer->Write(8, kCodestreamMarker);
-  JXL_RETURN_IF_ERROR(
-      allotment.ReclaimAndCharge(writer, LayerType::Header, aux_out));
+  JXL_RETURN_IF_ERROR(writer->WithMaxBits(16, LayerType::Header, aux_out, [&] {
+    writer->Write(8, 0xFF);
+    writer->Write(8, kCodestreamMarker);
+    return true;
+  }));
 
   JXL_RETURN_IF_ERROR(
       WriteSizeHeader(metadata->size, writer, LayerType::Header, aux_out));
