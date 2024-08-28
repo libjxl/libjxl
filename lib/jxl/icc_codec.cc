@@ -202,7 +202,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
 
       if (tagcode == kCommandTagXYZ) {
         JXL_RETURN_IF_ERROR(CheckIs32Bit(tagstart + tagsize * 2));
-        JXL_QUIET_RETURN_IF_ERROR(AppendKeyword(kGxyzTag, result));
+        JXL_RETURN_IF_ERROR(AppendKeyword(kGxyzTag, result));
         JXL_RETURN_IF_ERROR(AppendUint32(tagstart + tagsize, result));
         JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
         JXL_RETURN_IF_ERROR(AppendKeyword(kBxyzTag, result));
