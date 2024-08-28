@@ -117,7 +117,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
 
   // Header
   PaddedBytes header{memory_manager};
-  header.append(ICCInitialHeaderPrediction(osize));
+  JXL_RETURN_IF_ERROR(header.append(ICCInitialHeaderPrediction(osize)));
   for (size_t i = 0; i <= kICCHeaderSize; i++) {
     if (result->size() == osize) {
       if (cpos != commands_end) return JXL_FAILURE("Not all commands used");
@@ -127,7 +127,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
     if (i == kICCHeaderSize) break;  // Done
     ICCPredictHeader(result->data(), result->size(), header.data(), i);
     if (pos >= size) return JXL_FAILURE("Out of bounds");
-    result->push_back(enc[pos++] + header[i]);
+    JXL_RETURN_IF_ERROR(result->push_back(enc[pos++] + header[i]));
   }
   if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
 
@@ -137,7 +137,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
   if (numtags != 0) {
     numtags--;
     JXL_RETURN_IF_ERROR(CheckIs32Bit(numtags));
-    AppendUint32(numtags, result);
+    JXL_RETURN_IF_ERROR(AppendUint32(numtags, result));
     uint64_t prevtagstart = kICCHeaderSize + numtags * 12;
     uint64_t prevtagsize = 0;
     for (;;) {
@@ -163,7 +163,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
         }
         tag = *kTagStrings[tagcode - kCommandTagStringFirst];
       }
-      AppendKeyword(tag, result);
+      JXL_RETURN_IF_ERROR(AppendKeyword(tag, result));
 
       uint64_t tagstart;
       uint64_t tagsize = prevtagsize;
@@ -181,33 +181,33 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
         tagstart = prevtagstart + prevtagsize;
       }
       JXL_RETURN_IF_ERROR(CheckIs32Bit(tagstart));
-      AppendUint32(tagstart, result);
+      JXL_RETURN_IF_ERROR(AppendUint32(tagstart, result));
       if (command & kFlagBitSize) {
         if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
         tagsize = DecodeVarInt(enc, size, &cpos);
       }
       JXL_RETURN_IF_ERROR(CheckIs32Bit(tagsize));
-      AppendUint32(tagsize, result);
+      JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
       prevtagstart = tagstart;
       prevtagsize = tagsize;
 
       if (tagcode == kCommandTagTRC) {
-        AppendKeyword(kGtrcTag, result);
-        AppendUint32(tagstart, result);
-        AppendUint32(tagsize, result);
-        AppendKeyword(kBtrcTag, result);
-        AppendUint32(tagstart, result);
-        AppendUint32(tagsize, result);
+        JXL_RETURN_IF_ERROR(AppendKeyword(kGtrcTag, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagstart, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
+        JXL_RETURN_IF_ERROR(AppendKeyword(kBtrcTag, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagstart, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
       }
 
       if (tagcode == kCommandTagXYZ) {
         JXL_RETURN_IF_ERROR(CheckIs32Bit(tagstart + tagsize * 2));
-        AppendKeyword(kGxyzTag, result);
-        AppendUint32(tagstart + tagsize, result);
-        AppendUint32(tagsize, result);
-        AppendKeyword(kBxyzTag, result);
-        AppendUint32(tagstart + tagsize * 2, result);
-        AppendUint32(tagsize, result);
+        JXL_RETURN_IF_ERROR(AppendKeyword(kGxyzTag, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagstart + tagsize, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
+        JXL_RETURN_IF_ERROR(AppendKeyword(kBxyzTag, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagstart + tagsize * 2, result));
+        JXL_RETURN_IF_ERROR(AppendUint32(tagsize, result));
       }
     }
   }
@@ -223,7 +223,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       uint64_t num = DecodeVarInt(enc, size, &cpos);
       JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, num, size));
       for (size_t i = 0; i < num; i++) {
-        result->push_back(enc[pos++]);
+        JXL_RETURN_IF_ERROR(result->push_back(enc[pos++]));
       }
     } else if (command == kCommandShuffle2 || command == kCommandShuffle4) {
       if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
@@ -241,7 +241,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
         JXL_RETURN_IF_ERROR(Shuffle(memory_manager, shuffled.data(), num, 4));
       }
       for (size_t i = 0; i < num; i++) {
-        result->push_back(shuffled[i]);
+        JXL_RETURN_IF_ERROR(result->push_back(shuffled[i]));
         pos++;
       }
     } else if (command == kCommandPredict) {
@@ -291,21 +291,24 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       for (size_t i = 0; i < num; i++) {
         uint8_t predicted = LinearPredictICCValue(result->data(), start, i,
                                                   stride, width, order);
-        result->push_back(predicted + shuffled[i]);
+        JXL_RETURN_IF_ERROR(result->push_back(predicted + shuffled[i]));
       }
       pos += num;
     } else if (command == kCommandXYZ) {
-      AppendKeyword(kXyz_Tag, result);
-      for (int i = 0; i < 4; i++) result->push_back(0);
+      JXL_RETURN_IF_ERROR(AppendKeyword(kXyz_Tag, result));
+      for (int i = 0; i < 4; i++) {
+        JXL_RETURN_IF_ERROR(result->push_back(0));
+      }
       JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, 12, size));
       for (size_t i = 0; i < 12; i++) {
-        result->push_back(enc[pos++]);
+        JXL_RETURN_IF_ERROR(result->push_back(enc[pos++]));
       }
     } else if (command >= kCommandTypeStartFirst &&
                command < kCommandTypeStartFirst + kNumTypeStrings) {
-      AppendKeyword(*kTypeStrings[command - kCommandTypeStartFirst], result);
+      JXL_RETURN_IF_ERROR(AppendKeyword(
+          *kTypeStrings[command - kCommandTypeStartFirst], result));
       for (size_t i = 0; i < 4; i++) {
-        result->push_back(0);
+        JXL_RETURN_IF_ERROR(result->push_back(0));
       }
     } else {
       return JXL_FAILURE("Unknown command");
@@ -332,7 +335,8 @@ Status ICCReader::Init(BitReader* reader) {
         memory_manager, reader, kNumICCContexts, &code_, &context_map_));
     JXL_ASSIGN_OR_RETURN(ans_reader_, ANSSymbolReader::Create(&code_, reader));
     i_ = 0;
-    decompressed_.resize(std::min<size_t>(i_ + 0x400, enc_size_));
+    JXL_RETURN_IF_ERROR(
+        decompressed_.resize(std::min<size_t>(i_ + 0x400, enc_size_)));
     for (; i_ < std::min<size_t>(2, enc_size_); i_++) {
       decompressed_[i_] = ans_reader_.ReadHybridUint(
           ICCANSContext(i_, i_ > 0 ? decompressed_[i_ - 1] : 0,
@@ -383,7 +387,8 @@ Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
             (reader->TotalBitsConsumed() - used_bits_base_) / 8.0f;
         if (i_ > used_bytes * 256) return JXL_FAILURE("Corrupted stream");
       }
-      decompressed_.resize(std::min<size_t>(i_ + 0x400, enc_size_));
+      JXL_RETURN_IF_ERROR(
+          decompressed_.resize(std::min<size_t>(i_ + 0x400, enc_size_)));
     }
     JXL_ENSURE(i_ >= 2);
     decompressed_[i_] = ans_reader_.ReadHybridUint(

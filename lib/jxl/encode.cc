@@ -152,7 +152,7 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
     alloc_size = std::min(alloc_size, it->first - position_);
     JXL_ENSURE(alloc_size >= min_size);
   }
-  buffer.owned_data.resize(alloc_size);
+  JXL_ENSURE(buffer.owned_data.resize(alloc_size));
   has_buffer_ = true;
   return JxlOutputProcessorBuffer(buffer.owned_data.data(), alloc_size, 0,
                                   this);
@@ -509,7 +509,10 @@ JxlEncoderStatus BrotliCompress(int quality, const uint8_t* in, size_t in_size,
     }
     size_t out_size = next_out - temp_buffer.data();
     jxl::msan::UnpoisonMemory(next_out - out_size, out_size);
-    out->resize(out->size() + out_size);
+    if (!out->resize(out->size() + out_size)) {
+      return JXL_API_ERROR_NOSET("resizing of PaddedBytes failed");
+    }
+
     memcpy(out->data() + out->size() - out_size, temp_buffer.data(), out_size);
     if (BrotliEncoderIsFinished(enc.get())) break;
   }
@@ -1065,7 +1068,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     if (box->compress_box) {
       jxl::PaddedBytes compressed(&memory_manager);
       // Prepend the original box type in the brob box contents
-      compressed.append(box->type);
+      JXL_RETURN_IF_ERROR(compressed.append(box->type));
       if (JXL_ENC_SUCCESS !=
           BrotliCompress((brotli_effort >= 0 ? brotli_effort : 4),
                          box->contents.data(), box->contents.size(),

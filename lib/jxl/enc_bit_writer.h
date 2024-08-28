@@ -61,7 +61,10 @@ struct BitWriter {
   PaddedBytes&& TakeBytes() && {
     // Callers must ensure byte alignment to avoid uninitialized bits.
     JXL_DASSERT(bits_written_ % kBitsPerByte == 0);
-    storage_.resize(DivCeil(bits_written_, kBitsPerByte));
+    Status status = storage_.resize(DivCeil(bits_written_, kBitsPerByte));
+    JXL_DASSERT(status);
+    // Can never fail, because we are resizing to a lower size.
+    (void)status;
     return std::move(storage_);
   }
 

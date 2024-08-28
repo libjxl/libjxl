@@ -9,6 +9,7 @@
 #include <tuple>
 
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
@@ -49,10 +50,11 @@ uint32_t DecodeUint32(const uint8_t* data, size_t size, size_t pos) {
   return pos + 4 > size ? 0 : LoadBE32(data + pos);
 }
 
-void AppendUint32(uint32_t value, PaddedBytes* data) {
+Status AppendUint32(uint32_t value, PaddedBytes* data) {
   size_t pos = data->size();
-  data->resize(pos + 4);
+  JXL_RETURN_IF_ERROR(data->resize(pos + 4));
   StoreBE32(value, data->data() + pos);
+  return true;
 }
 
 typedef std::array<uint8_t, 4> Tag;
@@ -67,9 +69,9 @@ void EncodeKeyword(const Tag& keyword, uint8_t* data, size_t size, size_t pos) {
   for (size_t i = 0; i < 4; ++i) data[pos + i] = keyword[i];
 }
 
-void AppendKeyword(const Tag& keyword, PaddedBytes* data) {
+Status AppendKeyword(const Tag& keyword, PaddedBytes* data) {
   static_assert(std::tuple_size<Tag>{} == 4);
-  data->append(keyword);
+  return data->append(keyword);
 }
 
 // Checks if a + b > size, taking possible integer overflow into account.

@@ -273,7 +273,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
                          &header);
     jxl::Bytes(jpeg_data).AppendTo(header);
     jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, &header);
-    compressed.append(header);
+    JXL_RETURN_IF_ERROR(compressed.append(header));
   }
 
   params.modular_mode = spec.params.modular_mode;
@@ -288,16 +288,19 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   std::vector<uint8_t> compressed_image;
   bool ok = jxl::test::EncodeFile(params, &io, &compressed_image);
   if (!ok) return false;
-  compressed.append(compressed_image);
+  JXL_RETURN_IF_ERROR(compressed.append(compressed_image));
 
   // Append 4 bytes with the flags used by djxl_fuzzer to select the decoding
   // output.
   std::uniform_int_distribution<> dis256(0, 255);
   if (spec.override_decoder_spec == 0xFFFFFFFF) {
-    for (size_t i = 0; i < 4; ++i) compressed.push_back(dis256(mt));
+    for (size_t i = 0; i < 4; ++i) {
+      JXL_RETURN_IF_ERROR(compressed.push_back(dis256(mt)));
+    }
   } else {
     for (size_t i = 0; i < 4; ++i) {
-      compressed.push_back(spec.override_decoder_spec >> (8 * i));
+      JXL_RETURN_IF_ERROR(
+          compressed.push_back(spec.override_decoder_spec >> (8 * i)));
     }
   }
 
