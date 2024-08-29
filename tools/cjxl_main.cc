@@ -1054,8 +1054,9 @@ int main(int argc, char** argv) {
                    "non-streaming mode.\n"
                 << std::flush;
     } else {  // ok
-      JXL_RETURN_IF_ERROR(
-          pnm_dec.InitializePPF(args.color_hints_proxy.target, &ppf));
+      if (!pnm_dec.InitializePPF(args.color_hints_proxy.target, &ppf)) {
+        exit(EXIT_FAILURE);
+      }
       codec = jxl::extras::Codec::kPNM;
       args.lossless_jpeg = JXL_FALSE;
       pixels = ppf.info.xsize * ppf.info.ysize;
