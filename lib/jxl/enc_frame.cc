@@ -2151,7 +2151,7 @@ std::vector<CompressParams> TectonicPlateSettingsLessPalette(
   cparams_attempt.speed_tier = SpeedTier::kGlacier;
 
   cparams_attempt.options.max_properties = 4;
-  cparams_attempt.options.nb_repeats = 100;
+  cparams_attempt.options.nb_repeats = 1.0f;
   cparams_attempt.modular_group_size_shift = 0;
   cparams_attempt.channel_colors_percent = 0;
   cparams_attempt.options.predictor = Predictor::Variable;
@@ -2182,7 +2182,7 @@ std::vector<CompressParams> TectonicPlateSettingsLessPalette(
   cparams_attempt.channel_colors_pre_transform_percent = 0;
   all_params.push_back(cparams_attempt);
   cparams_attempt.channel_colors_pre_transform_percent = 95.f;
-  cparams_attempt.options.nb_repeats = 90;
+  cparams_attempt.options.nb_repeats = 0.9f;
   cparams_attempt.modular_group_size_shift = 2;
   all_params.push_back(cparams_attempt);
   cparams_attempt.modular_group_size_shift = 3;
@@ -2193,7 +2193,7 @@ std::vector<CompressParams> TectonicPlateSettingsLessPalette(
   cparams_attempt.channel_colors_pre_transform_percent = 0;
   all_params.push_back(cparams_attempt);
   cparams_attempt.palette_colors = 1024;
-  cparams_attempt.options.nb_repeats = 95;
+  cparams_attempt.options.nb_repeats = 0.95f;
   cparams_attempt.modular_group_size_shift = 1;
   cparams_attempt.channel_colors_percent = 0;
   all_params.push_back(cparams_attempt);
@@ -2217,7 +2217,7 @@ std::vector<CompressParams> TectonicPlateSettingsLessPalette(
   cparams_attempt.palette_colors = 1024;
   cparams_attempt.patches = Override::kOff;
   all_params.push_back(cparams_attempt);
-  cparams_attempt.options.nb_repeats = .5f;
+  cparams_attempt.options.nb_repeats = 0.5f;
   cparams_attempt.patches = Override::kDefault;
   cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
   all_params.push_back(cparams_attempt);
@@ -2229,21 +2229,21 @@ std::vector<CompressParams> TectonicPlateSettingsLessPalette(
   all_params.push_back(cparams_attempt);
   cparams_attempt.channel_colors_percent = 80.f;
   cparams_attempt.channel_colors_pre_transform_percent = 95.f;
-  cparams_attempt.options.nb_repeats = 100;
+  cparams_attempt.options.nb_repeats = 1.0f;
   cparams_attempt.palette_colors = 0;
   all_params.push_back(cparams_attempt);
   cparams_attempt.patches = Override::kDefault;
   cparams_attempt.options.predictor = Predictor::Best;
   all_params.push_back(cparams_attempt);
-  cparams_attempt.options.nb_repeats = 90;
+  cparams_attempt.options.nb_repeats = 0.9f;
   cparams_attempt.patches = Override::kOff;
   all_params.push_back(cparams_attempt);
   cparams_attempt.palette_colors = 1024;
   cparams_attempt.patches = Override::kDefault;
   cparams_attempt.options.predictor = Predictor::Weighted;
-  cparams_attempt.options.nb_repeats = 100;
+  cparams_attempt.options.nb_repeats = 1.0f;
   all_params.push_back(cparams_attempt);
-  cparams_attempt.options.nb_repeats = 95;
+  cparams_attempt.options.nb_repeats = 0.95f;
   cparams_attempt.modular_group_size_shift = 2;
   cparams_attempt.palette_colors = 0;
   cparams_attempt.channel_colors_pre_transform_percent = 0;
@@ -2258,7 +2258,7 @@ std::vector<CompressParams> TectonicPlateSettingsMorePalette(
   cparams_attempt.speed_tier = SpeedTier::kGlacier;
 
   cparams_attempt.options.max_properties = 4;
-  cparams_attempt.options.nb_repeats = 100;
+  cparams_attempt.options.nb_repeats = 1.0f;
   cparams_attempt.modular_group_size_shift = 0;
   cparams_attempt.palette_colors = 70000;
   cparams_attempt.options.predictor = Predictor::Variable;
@@ -2276,10 +2276,10 @@ std::vector<CompressParams> TectonicPlateSettingsMorePalette(
   cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
   cparams_attempt.modular_group_size_shift = 3;
   all_params.push_back(cparams_attempt);
-  cparams_attempt.options.nb_repeats = 90;
+  cparams_attempt.options.nb_repeats = 0.9f;
   all_params.push_back(cparams_attempt);
   cparams_attempt.patches = Override::kDefault;
-  cparams_attempt.options.nb_repeats = 95;
+  cparams_attempt.options.nb_repeats = 0.95f;
   cparams_attempt.modular_group_size_shift = 0;
   all_params.push_back(cparams_attempt);
   cparams_attempt.modular_group_size_shift = 3;
@@ -2287,7 +2287,7 @@ std::vector<CompressParams> TectonicPlateSettingsMorePalette(
   cparams_attempt.patches = Override::kOff;
   cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
   all_params.push_back(cparams_attempt);
-  cparams_attempt.options.nb_repeats = .5f;
+  cparams_attempt.options.nb_repeats = 0.5f;
   all_params.push_back(cparams_attempt);
   cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
   cparams_attempt.options.predictor = Predictor::Zero;
@@ -2296,7 +2296,7 @@ std::vector<CompressParams> TectonicPlateSettingsMorePalette(
   cparams_attempt.patches = Override::kDefault;
   cparams_attempt.channel_colors_pre_transform_percent = 0;
   all_params.push_back(cparams_attempt);
-  cparams_attempt.options.nb_repeats = 1;
+  cparams_attempt.options.nb_repeats = 0.01f;
   cparams_attempt.palette_colors = 0;
   cparams_attempt.patches = Override::kOff;
   cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
@@ -2305,7 +2305,7 @@ std::vector<CompressParams> TectonicPlateSettingsMorePalette(
   cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
   cparams_attempt.palette_colors = 70000;
   all_params.push_back(cparams_attempt);
-  cparams_attempt.options.nb_repeats = 100;
+  cparams_attempt.options.nb_repeats = 1.0f;
   cparams_attempt.modular_group_size_shift = 0;
   cparams_attempt.channel_colors_percent = 0;
   cparams_attempt.channel_colors_pre_transform_percent = 0;
@@ -2320,7 +2320,7 @@ std::vector<CompressParams> TectonicPlateSettingsMorePalette(
   cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
   cparams_attempt.modular_group_size_shift = 3;
   all_params.push_back(cparams_attempt);
-  cparams_attempt.options.nb_repeats = .5f;
+  cparams_attempt.options.nb_repeats = 0.5f;
   cparams_attempt.modular_group_size_shift = 1;
   cparams_attempt.channel_colors_percent = 0;
   cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
@@ -2334,7 +2334,7 @@ std::vector<CompressParams> TectonicPlateSettingsMorePalette(
   all_params.push_back(cparams_attempt);
   cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
   cparams_attempt.options.predictor = Predictor::Select;
-  cparams_attempt.options.nb_repeats = 100;
+  cparams_attempt.options.nb_repeats = 1.0f;
   all_params.push_back(cparams_attempt);
   return all_params;
 }
@@ -2363,7 +2363,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     cparams_attempt.speed_tier = SpeedTier::kGlacier;
 
     cparams_attempt.options.max_properties = 4;
-    cparams_attempt.options.nb_repeats = 100;
+    cparams_attempt.options.nb_repeats = 1.0f;
     cparams_attempt.modular_group_size_shift = 3;
     cparams_attempt.palette_colors = 0;
     cparams_attempt.options.predictor = Predictor::Variable;
@@ -2373,7 +2373,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     cparams_attempt.patches = Override::kDefault;
     all_params.push_back(cparams_attempt);
     cparams_attempt.options.predictor = Predictor::Zero;
-    cparams_attempt.options.nb_repeats = 1;
+    cparams_attempt.options.nb_repeats = 0.01f;
     cparams_attempt.palette_colors = 70000;
     cparams_attempt.patches = Override::kOff;
     cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
