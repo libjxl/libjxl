@@ -453,13 +453,17 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
                                       (iy * kBlockDim + dy) *
                                           (acs.covered_blocks_x() * kBlockDim) +
                                       ix * kBlockDim + dx);
-              auto masku = Abs(Load(
-                  df8, config.MaskingPtr1x1(x + ix * 8 + dx, y + iy * 8 + dy)));
-              in = Mul(masku, in);
-              in = Mul(in, in);
-              in = Mul(in, in);
-              in = Mul(in, in);
-              lossc = Add(lossc, in);
+              if (x + ix * 8 + dx + Lanes(df8) <
+                  config.masking1x1_field_stride) {
+                auto masku =
+                    Abs(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
+                                                       y + iy * 8 + dy)));
+                in = Mul(masku, in);
+                in = Mul(in, in);
+                in = Mul(in, in);
+                in = Mul(in, in);
+                lossc = Add(lossc, in);
+              }
             }
           }
         }
