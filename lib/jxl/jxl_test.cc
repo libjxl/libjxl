@@ -1261,8 +1261,7 @@ TEST(JxlTest, RoundtripDisablePerceptual) {
 
   PackedPixelFile ppf_out;
 
-  // TODO(eustas): fix or explain why
-  size_t expected_size = JXL_MEMORY_SANITIZER ? 501875 : 477778;
+  size_t expected_size = 477778;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), expected_size,
               4000);
   // TODO(veluca): figure out why we can't get below this value.
