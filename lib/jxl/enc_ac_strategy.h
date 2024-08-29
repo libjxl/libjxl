@@ -39,6 +39,7 @@ struct ACSConfig {
   size_t masking_field_stride;
   const float* JXL_RESTRICT masking1x1_field_row;
   size_t masking1x1_field_stride;
+  size_t mask1x1_xsize;
   const float* JXL_RESTRICT src_rows[3];
   size_t src_stride;
   float info_loss_multiplier;

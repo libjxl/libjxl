@@ -453,8 +453,7 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
                                       (iy * kBlockDim + dy) *
                                           (acs.covered_blocks_x() * kBlockDim) +
                                       ix * kBlockDim + dx);
-              if (x + ix * 8 + dx + Lanes(df8) <
-                  config.masking1x1_field_stride) {
+              if (x + ix * 8 + dx + Lanes(df8) <= config.mask1x1_xsize) {
                 auto masku =
                     Abs(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
                                                        y + iy * 8 + dy)));
@@ -1077,6 +1076,7 @@ Status AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
     config.masking_field_row = mask.Row(0);
     config.masking_field_stride = mask.PixelsPerRow();
   }
+  config.mask1x1_xsize = mask1x1.xsize();
   if (mask1x1.xsize() > 0 && mask1x1.ysize() > 0) {
     config.masking1x1_field_row = mask1x1.Row(0);
     config.masking1x1_field_stride = mask1x1.PixelsPerRow();
