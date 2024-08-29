@@ -253,11 +253,10 @@ TEST(SplinesTest, TooManySplinesTest) {
   EXPECT_TRUE(reader.Close());
 }
 
-#ifdef JXL_CRASH_ON_ERROR
-TEST(SplinesTest, DISABLED_DuplicatePoints) {
-#else
 TEST(SplinesTest, DuplicatePoints) {
-#endif
+  if (JXL_CRASH_ON_ERROR) {
+    GTEST_SKIP() << "Skipping due to JXL_CRASH_ON_ERROR";
+  }
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   std::vector<Spline::Point> control_points{
       {9, 54}, {118, 159}, {97, 3},  // Repeated.
