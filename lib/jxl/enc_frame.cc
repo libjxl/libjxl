@@ -2144,6 +2144,201 @@ Status EncodeFrameOneShot(JxlMemoryManager* memory_manager,
 
 }  // namespace
 
+std::vector<CompressParams> TectonicPlateSettingsLessPalette(
+    const CompressParams& cparams_orig) {
+  std::vector<CompressParams> all_params;
+  CompressParams cparams_attempt = cparams_orig;
+  cparams_attempt.speed_tier = SpeedTier::kGlacier;
+
+  cparams_attempt.options.max_properties = 4;
+  cparams_attempt.options.nb_repeats = 100;
+  cparams_attempt.modular_group_size_shift = 0;
+  cparams_attempt.channel_colors_percent = 0;
+  cparams_attempt.options.predictor = Predictor::Variable;
+  cparams_attempt.channel_colors_pre_transform_percent = 95.f;
+  cparams_attempt.palette_colors = 1024;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.patches = Override::kDefault;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.channel_colors_percent = 80.f;
+  cparams_attempt.modular_group_size_shift = 1;
+  cparams_attempt.palette_colors = 0;
+  cparams_attempt.channel_colors_pre_transform_percent = 0;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.channel_colors_pre_transform_percent = 95.f;
+  cparams_attempt.modular_group_size_shift = 2;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.modular_group_size_shift = 3;
+  cparams_attempt.patches = Override::kOff;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.palette_colors = 1024;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.patches = Override::kDefault;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.channel_colors_pre_transform_percent = 0;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.channel_colors_pre_transform_percent = 95.f;
+  cparams_attempt.options.nb_repeats = 90;
+  cparams_attempt.modular_group_size_shift = 2;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.modular_group_size_shift = 3;
+  cparams_attempt.palette_colors = 0;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.channel_colors_pre_transform_percent = 0;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.palette_colors = 1024;
+  cparams_attempt.options.nb_repeats = 95;
+  cparams_attempt.modular_group_size_shift = 1;
+  cparams_attempt.channel_colors_percent = 0;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.modular_group_size_shift = 2;
+  cparams_attempt.palette_colors = 0;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.channel_colors_percent = 80.f;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.palette_colors = 1024;
+  cparams_attempt.channel_colors_pre_transform_percent = 95.f;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.modular_group_size_shift = 3;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.palette_colors = 0;
+  cparams_attempt.patches = Override::kOff;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.patches = Override::kDefault;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.palette_colors = 1024;
+  cparams_attempt.patches = Override::kOff;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.nb_repeats = .5f;
+  cparams_attempt.patches = Override::kDefault;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.predictor = Predictor::Zero;
+  cparams_attempt.options.nb_repeats = 0;
+  cparams_attempt.channel_colors_percent = 0;
+  cparams_attempt.channel_colors_pre_transform_percent = 0;
+  cparams_attempt.patches = Override::kOff;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.channel_colors_percent = 80.f;
+  cparams_attempt.channel_colors_pre_transform_percent = 95.f;
+  cparams_attempt.options.nb_repeats = 100;
+  cparams_attempt.palette_colors = 0;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.patches = Override::kDefault;
+  cparams_attempt.options.predictor = Predictor::Best;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.nb_repeats = 90;
+  cparams_attempt.patches = Override::kOff;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.palette_colors = 1024;
+  cparams_attempt.patches = Override::kDefault;
+  cparams_attempt.options.predictor = Predictor::Weighted;
+  cparams_attempt.options.nb_repeats = 100;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.nb_repeats = 95;
+  cparams_attempt.modular_group_size_shift = 2;
+  cparams_attempt.palette_colors = 0;
+  cparams_attempt.channel_colors_pre_transform_percent = 0;
+  all_params.push_back(cparams_attempt);
+  return all_params;
+}
+
+std::vector<CompressParams> TectonicPlateSettingsMorePalette(
+    const CompressParams& cparams_orig) {
+  std::vector<CompressParams> all_params;
+  CompressParams cparams_attempt = cparams_orig;
+  cparams_attempt.speed_tier = SpeedTier::kGlacier;
+
+  cparams_attempt.options.max_properties = 4;
+  cparams_attempt.options.nb_repeats = 100;
+  cparams_attempt.modular_group_size_shift = 0;
+  cparams_attempt.palette_colors = 70000;
+  cparams_attempt.options.predictor = Predictor::Variable;
+  cparams_attempt.channel_colors_percent = 80.f;
+  cparams_attempt.channel_colors_pre_transform_percent = 95.f;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.patches = Override::kDefault;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.modular_group_size_shift = 2;
+  cparams_attempt.channel_colors_percent = 0;
+  cparams_attempt.patches = Override::kOff;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.channel_colors_percent = 80.f;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.modular_group_size_shift = 3;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.nb_repeats = 90;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.patches = Override::kDefault;
+  cparams_attempt.options.nb_repeats = 95;
+  cparams_attempt.modular_group_size_shift = 0;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.modular_group_size_shift = 3;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.patches = Override::kOff;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.nb_repeats = .5f;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.options.predictor = Predictor::Zero;
+  cparams_attempt.options.nb_repeats = 0;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.patches = Override::kDefault;
+  cparams_attempt.channel_colors_pre_transform_percent = 0;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.nb_repeats = 1;
+  cparams_attempt.palette_colors = 0;
+  cparams_attempt.patches = Override::kOff;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.channel_colors_pre_transform_percent = 95.f;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.palette_colors = 70000;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.nb_repeats = 100;
+  cparams_attempt.modular_group_size_shift = 0;
+  cparams_attempt.channel_colors_percent = 0;
+  cparams_attempt.channel_colors_pre_transform_percent = 0;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.channel_colors_pre_transform_percent = 95.f;
+  cparams_attempt.modular_group_size_shift = 1;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.modular_group_size_shift = 2;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.channel_colors_percent = 80.f;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.modular_group_size_shift = 3;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.nb_repeats = .5f;
+  cparams_attempt.modular_group_size_shift = 1;
+  cparams_attempt.channel_colors_percent = 0;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.modular_group_size_shift = 2;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.channel_colors_percent = 80.f;
+  cparams_attempt.modular_group_size_shift = 3;
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  all_params.push_back(cparams_attempt);
+  cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+  cparams_attempt.options.predictor = Predictor::Select;
+  cparams_attempt.options.nb_repeats = 100;
+  all_params.push_back(cparams_attempt);
+  return all_params;
+}
+
 Status EncodeFrame(JxlMemoryManager* memory_manager,
                    const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
@@ -2162,48 +2357,31 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     cparams.speed_tier = SpeedTier::kThunder;
   }
   if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
+    // Test palette performance to inform later trials.
     std::vector<CompressParams> all_params;
-    std::vector<size_t> size;
-
     CompressParams cparams_attempt = cparams_orig;
     cparams_attempt.speed_tier = SpeedTier::kGlacier;
+
     cparams_attempt.options.max_properties = 4;
+    cparams_attempt.options.nb_repeats = 100;
+    cparams_attempt.modular_group_size_shift = 3;
+    cparams_attempt.palette_colors = 0;
+    cparams_attempt.options.predictor = Predictor::Variable;
+    cparams_attempt.channel_colors_percent = 80.f;
+    cparams_attempt.channel_colors_pre_transform_percent = 95.f;
+    cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kDefault;
+    cparams_attempt.patches = Override::kDefault;
+    all_params.push_back(cparams_attempt);
+    cparams_attempt.options.predictor = Predictor::Zero;
+    cparams_attempt.options.nb_repeats = 1;
+    cparams_attempt.palette_colors = 70000;
+    cparams_attempt.patches = Override::kOff;
+    cparams_attempt.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+    all_params.push_back(cparams_attempt);
 
-    for (float x : {0.0f, 80.f}) {
-      cparams_attempt.channel_colors_percent = x;
-      for (float y : {0.0f, 95.0f}) {
-        cparams_attempt.channel_colors_pre_transform_percent = y;
-        // 70000 ensures that the number of palette colors is representable in
-        // modular headers.
-        for (int K : {0, 1 << 10, 70000}) {
-          cparams_attempt.palette_colors = K;
-          for (int tree_mode :
-               {-1, static_cast<int>(ModularOptions::TreeMode::kNoWP),
-                static_cast<int>(ModularOptions::TreeMode::kDefault)}) {
-            if (tree_mode == -1) {
-              // LZ77 only
-              cparams_attempt.options.nb_repeats = 0;
-            } else {
-              cparams_attempt.options.nb_repeats = 1;
-              cparams_attempt.options.wp_tree_mode =
-                  static_cast<ModularOptions::TreeMode>(tree_mode);
-            }
-            for (Predictor pred : {Predictor::Zero, Predictor::Variable}) {
-              cparams_attempt.options.predictor = pred;
-              for (int g : {0, -1, 3}) {
-                cparams_attempt.modular_group_size_shift = g;
-                for (Override patches : {Override::kDefault, Override::kOff}) {
-                  cparams_attempt.patches = patches;
-                  all_params.push_back(cparams_attempt);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
+    std::vector<size_t> size;
     size.resize(all_params.size());
+
     const auto process_variant = [&](size_t task, size_t) -> Status {
       std::vector<uint8_t> output(64);
       uint8_t* next_out = output.data();
@@ -2220,13 +2398,35 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
                                   ThreadPool::NoInit, process_variant,
                                   "Compress kTectonicPlate"));
 
+    std::vector<CompressParams> all_params_test = all_params;
+    std::vector<size_t> size_test = size;
+    size_t best_idx_test = 0;
+
+    if (size_test[0] <= size_test[1]) {
+      all_params = TectonicPlateSettingsLessPalette(cparams_orig);
+    } else {
+      best_idx_test = 1;
+      all_params = TectonicPlateSettingsMorePalette(cparams_orig);
+    }
+
+    size.clear();
+    size.resize(all_params.size());
+
+    JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, all_params.size(),
+                                  ThreadPool::NoInit, process_variant,
+                                  "Compress kTectonicPlate"));
+
     size_t best_idx = 0;
     for (size_t i = 1; i < all_params.size(); i++) {
       if (size[best_idx] > size[i]) {
         best_idx = i;
       }
     }
-    cparams = all_params[best_idx];
+    if (size[best_idx] < size_test[best_idx_test]) {
+      cparams = all_params[best_idx];
+    } else {
+      cparams = all_params_test[best_idx_test];
+    }
   }
 
   JXL_RETURN_IF_ERROR(ParamsPostInit(&cparams));
