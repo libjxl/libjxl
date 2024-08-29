@@ -270,7 +270,7 @@ class CommandLineParser {
             return (*parser_.parser_with_arg_)(arg, storage_);
           } else {
             fprintf(stderr, "--%s didn't expect any argument passed to it.\n",
-                    argv[*i]);
+                    long_name_);
             return false;
           }
         }
@@ -279,7 +279,7 @@ class CommandLineParser {
       (*i)++;
       if (metavar_) {
         if (argc <= *i) {
-          fprintf(stderr, "--%s expected an argument but none passed.\n",
+          fprintf(stderr, "%s expected an argument but none passed.\n",
                   argv[*i - 1]);
           return false;
         }
