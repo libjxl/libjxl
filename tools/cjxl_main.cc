@@ -1045,6 +1045,8 @@ int main(int argc, char** argv) {
                    "non-streaming mode.\n";
     } else {  // ok
       if (!pnm_dec.InitializePPF(args.color_hints_proxy.target, &ppf)) {
+        std::cerr
+            << "Failed to initialize decoding with the given color hints\n";
         exit(EXIT_FAILURE);
       }
       codec = jxl::extras::Codec::kPNM;
