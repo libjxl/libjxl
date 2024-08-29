@@ -173,8 +173,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
 
   if (!quiet) {
     std::unique_lock<std::mutex> lock(stderr_mutex);
-    std::cerr << "Generating " << spec << " as " << hash_str << "\n"
-              << std::flush;
+    std::cerr << "Generating " << spec << " as " << hash_str << "\n";
   }
 
   jxl::CodecInOut io{memory_manager};
@@ -308,8 +307,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   if (!quiet) {
     std::unique_lock<std::mutex> lock(stderr_mutex);
     std::cerr << "Stored " << output_fn << " size: " << compressed.size()
-              << "\n"
-              << std::flush;
+              << "\n";
   }
 
   return true;
@@ -450,7 +448,7 @@ int main(int argc, const char** argv) {
                     spec.orientation = 1 + (mt() % 8);
                     if (!spec.Validate()) {
                       if (!quiet) {
-                        std::cerr << "Skipping " << spec << "\n" << std::flush;
+                        std::cerr << "Skipping " << spec << "\n";
                       }
                     } else {
                       specs.push_back(spec);
@@ -482,10 +480,10 @@ int main(int argc, const char** argv) {
     };
     if (!RunOnPool(pool.get(), 0, specs.size(), jxl::ThreadPool::NoInit,
                    generate, "FuzzerCorpus")) {
-      std::cerr << "Error generating fuzzer corpus\n" << std::flush;
+      std::cerr << "Error generating fuzzer corpus\n";
       return 1;
     }
   }
-  std::cerr << "Finished generating fuzzer corpus\n" << std::flush;
+  std::cerr << "Finished generating fuzzer corpus\n";
   return 0;
 }

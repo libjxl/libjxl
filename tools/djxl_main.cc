@@ -450,8 +450,7 @@ int main(int argc, const char* argv[]) {
 
   if (!args.file_out && !args.disable_output) {
     std::cerr
-        << "No output file specified and --disable_output flag not passed.\n"
-        << std::flush;
+        << "No output file specified and --disable_output flag not passed.\n";
     return EXIT_FAILURE;
   }
 
