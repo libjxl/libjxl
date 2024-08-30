@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "lib/jxl/fuzztest.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "tools/tracking_memory_manager.h"
 
 namespace {

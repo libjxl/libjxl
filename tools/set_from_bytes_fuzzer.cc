@@ -10,6 +10,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/size_constraints.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
