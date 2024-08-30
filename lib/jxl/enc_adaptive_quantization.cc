@@ -248,21 +248,22 @@ V BlueModulation(const D d, const size_t x, const size_t y,
 
 // Change precision in 8x8 blocks that have high frequency content.
 template <class D, class V>
-V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
+V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb_y,
                const Rect& rect, const V out_val) {
   // Zero out the invalid differences for the rightmost value per row.
   const Rebind<uint32_t, D> du;
   HWY_ALIGN constexpr uint32_t kMaskRight[kBlockDim] = {~0u, ~0u, ~0u, ~0u,
                                                         ~0u, ~0u, ~0u, 0};
 
-  auto sum = Zero(d);  // sum of absolute differences with right and below
-
-  static const float valmin = 0.020602694503245016f;
-  auto valminv = Set(d, valmin);
+  // Sums of deltas of y and x components between (approximate)
+  // 4-connected pixels.
+  auto sum_y = Zero(d);
+  static const float valmin_y = 0.0206;
+  auto valminv_y = Set(d, valmin_y);
   for (size_t dy = 0; dy < 8; ++dy) {
-    const float* JXL_RESTRICT row_in = rect.ConstRow(xyb, y + dy) + x;
-    const float* JXL_RESTRICT row_in_next =
-        dy == 7 ? row_in : rect.ConstRow(xyb, y + dy + 1) + x;
+    const float* JXL_RESTRICT row_in_y = rect.ConstRow(xyb_y, y + dy) + x;
+    const float* JXL_RESTRICT row_in_y_next =
+        dy == 7 ? row_in_y : rect.ConstRow(xyb_y, y + dy + 1) + x;
 
     // In SCALAR, there is no guarantee of having extra row padding.
     // Hence, we need to ensure we don't access pixels outside the row itself.
@@ -274,28 +275,32 @@ V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
 #else
     for (size_t dx = 0; dx < 7; dx += Lanes(d)) {
 #endif
-      const auto p = Load(d, row_in + dx);
-      const auto pr = LoadU(d, row_in + dx + 1);
       const auto mask = BitCast(d, Load(du, kMaskRight + dx));
-      sum = Add(sum, And(mask, Min(valminv, AbsDiff(p, pr))));
-
-      const auto pd = Load(d, row_in_next + dx);
-      sum = Add(sum, Min(valminv, AbsDiff(p, pd)));
+      {
+        const auto p_y = Load(d, row_in_y + dx);
+        const auto pr_y = LoadU(d, row_in_y + dx + 1);
+        sum_y = Add(sum_y, And(mask, Min(valminv_y, AbsDiff(p_y, pr_y))));
+        const auto pd_y = Load(d, row_in_y_next + dx);
+        sum_y = Add(sum_y, Min(valminv_y, AbsDiff(p_y, pd_y)));
+      }
     }
 #if HWY_TARGET == HWY_SCALAR
-    const auto p = Load(d, row_in + 7);
-    const auto pd = Load(d, row_in_next + 7);
-    sum = Add(sum, Min(valminv, AbsDiff(p, pd)));
+    const auto p_y = Load(d, row_in_y + 7);
+    const auto pd_y = Load(d, row_in_y_next + 7);
+    sum_y = Add(sum_y, Min(valminv_y, AbsDiff(p_y, pd_y)));
 #endif
   }
-  // more negative value gives more bpp
-  static const float kOffset = -1.110929106987477;
-  static const float kMul = -0.38078920620238305;
-  sum = SumOfLanes(d, sum);
-  float scalar_sum = GetLane(sum);
-  scalar_sum += kOffset;
-  scalar_sum *= kMul;
-  return Add(Set(d, scalar_sum), out_val);
+  static const float kMul_y = -0.38;
+  sum_y = SumOfLanes(d, sum_y);
+
+  float scalar_sum_y = GetLane(sum_y);
+  scalar_sum_y *= kMul_y;
+
+  // higher value -> more bpp
+  float kOffset = 0.42;
+  scalar_sum_y += kOffset;
+
+  return Add(Set(d, scalar_sum_y), out_val);
 }
 
 void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
@@ -335,8 +340,8 @@ void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
 
 template <typename D, typename V>
 V MaskingSqrt(const D d, V v) {
-  static const float kLogOffset = 27.97044946785558f;
-  static const float kMul = 211.53333281566171f;
+  static const float kLogOffset = 27.505837037000106f;
+  static const float kMul = 211.66567973503678f;
   const auto mul_v = Set(d, kMul * 1e8);
   const auto offset_v = Set(d, kLogOffset);
   return Mul(Set(d, 0.25f), Sqrt(MulAdd(v, Sqrt(mul_v), offset_v)));
