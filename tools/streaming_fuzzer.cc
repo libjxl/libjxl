@@ -9,7 +9,6 @@
 #include <jxl/decode_cxx.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
-#include <jxl/memory_manager.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
