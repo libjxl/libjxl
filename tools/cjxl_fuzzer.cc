@@ -20,8 +20,8 @@
 #include <vector>
 
 #include "jxl/codestream_header.h"
-#include "lib/jxl/fuzztest.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/fuzztest.h"
 #include "lib/jxl/test_image.h"
 #include "tools/tracking_memory_manager.h"
 
