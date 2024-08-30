@@ -852,31 +852,35 @@ float ComputeBlockL2Distance(const Image3F& a, const Image3F& b,
                              const ImageF& mask1x1, size_t by, size_t bx) {
   Rect rect(bx * kBlockDim, by * kBlockDim, kBlockDim, kBlockDim, a.xsize(),
             a.ysize());
-  float err2 = 0.0f;
-  static const float kXYBWeights[] = {36.0f, 1.0f, 0.2f};
+  float err2[3] = {0.0f};
   for (size_t y = 0; y < rect.ysize(); ++y) {
-    const float* row_a_x = rect.ConstPlaneRow(a, 0, y);
-    const float* row_a_y = rect.ConstPlaneRow(a, 1, y);
-    const float* row_a_b = rect.ConstPlaneRow(a, 2, y);
-    const float* row_b_x = rect.ConstPlaneRow(b, 0, y);
-    const float* row_b_y = rect.ConstPlaneRow(b, 1, y);
-    const float* row_b_b = rect.ConstPlaneRow(b, 2, y);
+    const float* row_a[3] = {
+        rect.ConstPlaneRow(a, 0, y),
+        rect.ConstPlaneRow(a, 1, y),
+        rect.ConstPlaneRow(a, 2, y),
+    };
+    const float* row_b[3] = {
+        rect.ConstPlaneRow(b, 0, y),
+        rect.ConstPlaneRow(b, 1, y),
+        rect.ConstPlaneRow(b, 2, y),
+    };
     const float* row_mask = rect.ConstRow(mask1x1, y);
-
     for (size_t x = 0; x < rect.xsize(); ++x) {
       float mask = row_mask[x];
-      for (size_t c = 0; c < 3; ++c) {
-        float diff_x = row_a_x[x] - row_b_x[x];
-        float diff_y = row_a_y[x] - row_b_y[x];
-        float diff_b = row_a_b[x] - row_b_b[x];
-        err2 += (kXYBWeights[0] * diff_x * diff_x +
-                 kXYBWeights[1] * diff_y * diff_y +
-                 kXYBWeights[2] * diff_b * diff_b) *
-                mask * mask;
+      float mask2 = mask * mask;
+      for (int i = 0; i < 3; ++i) {
+        float diff = row_a[i][x] - row_b[i][x];
+        err2[i] += mask2 * diff * diff;
       }
     }
   }
-  return err2;
+  static const double kW[] = {
+      12.339445295782363,
+      1.0,
+      0.2,
+  };
+  float retval = kW[0] * err2[0] + kW[1] * err2[1] + kW[2] * err2[2];
+  return retval;
 }
 
 Status ComputeARHeuristics(const FrameHeader& frame_header,
@@ -890,6 +894,7 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
   ImageB& epf_sharpness = shared.epf_sharpness;
   JxlMemoryManager* memory_manager = enc_state->memory_manager();
 
+  float clamped_butteraugli = std::min(5.0f, cparams.butteraugli_distance);
   if (cparams.butteraugli_distance < kMinButteraugliForDynamicAR ||
       cparams.speed_tier > SpeedTier::kWombat ||
       frame_header.loop_filter.epf_iters == 0) {
@@ -903,10 +908,16 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
     epf_steps.push_back(4);
   } else {
     epf_steps.push_back(0);
-    epf_steps.push_back(3);
+    epf_steps.push_back(2);
     epf_steps.push_back(7);
   }
   static const int kNumEPFVals = 8;
+  size_t epf_steps_lut[kNumEPFVals] = {0};
+  {
+    for (size_t i = 0; i < epf_steps.size(); ++i) {
+      epf_steps_lut[epf_steps[i]] = i;
+    }
+  }
   std::array<ImageF, kNumEPFVals> error_images;
   for (uint8_t val : epf_steps) {
     FillPlane(val, &epf_sharpness, Rect(epf_sharpness));
@@ -924,8 +935,11 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       }
     }
   }
-  std::vector<std::vector<size_t>> histo(4, std::vector<size_t>(kNumEPFVals));
-  std::vector<size_t> totals(4, 1);
+  std::vector<std::vector<size_t>> histo(9, std::vector<size_t>(kNumEPFVals));
+  std::vector<size_t> totals(9, 1);
+  const float c5 = 0.007620386618483585f;
+  const float c6 = 0.0083224805679680686f;
+  const float c7 = 0.99663939685686753;
   for (size_t by = 0; by < frame_dim.ysize_blocks; by++) {
     uint8_t* JXL_RESTRICT out_row = epf_sharpness.Row(by);
     uint8_t* JXL_RESTRICT prev_row = epf_sharpness.Row(by > 0 ? by - 1 : 0);
@@ -939,27 +953,32 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       for (uint8_t val : epf_steps) {
         float error = error_images[val].Row(by)[bx];
         if (val == 0) {
-          error *= 0.97f;
+          error *= c7 - c5 * clamped_butteraugli;
         }
         if (error < best_error) {
           best_val = val;
           best_error = error;
         }
       }
-      if (best_error < 0.995 * std::min(top_error, left_error)) {
+      if (best_error <
+          (1.0 - c6 * clamped_butteraugli) * std::min(top_error, left_error)) {
         out_row[bx] = best_val;
       } else if (top_error < left_error) {
         out_row[bx] = top_val;
       } else {
         out_row[bx] = left_val;
       }
-      int context = ((top_val > 3) ? 2 : 0) + ((left_val > 3) ? 1 : 0);
+      int context = epf_steps_lut[top_val] * 3 + epf_steps_lut[left_val];
       ++histo[context][out_row[bx]];
       ++totals[context];
     }
   }
-  const float context_weight =
-      0.14f + 0.007f * std::min(10.0f, cparams.butteraugli_distance);
+  const float c1 = 0.059588212153340203f;
+  const float c2 = 0.10599497107315753f;
+  const float c3base = 0.97;
+  const float c3 = pow(c3base, clamped_butteraugli);
+  const float c4 = 1.247544678665836f;
+  const float context_weight = c1 + c2 * clamped_butteraugli;
   for (size_t by = 0; by < frame_dim.ysize_blocks; by++) {
     uint8_t* JXL_RESTRICT out_row = epf_sharpness.Row(by);
     uint8_t* JXL_RESTRICT prev_row = epf_sharpness.Row(by > 0 ? by - 1 : 0);
@@ -968,13 +987,15 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       float best_error = std::numeric_limits<float>::max();
       uint8_t top_val = by > 0 ? prev_row[bx] : 0;
       uint8_t left_val = bx > 0 ? out_row[bx - 1] : 0;
-      int context = ((top_val > 3) ? 2 : 0) + ((left_val > 3) ? 1 : 0);
+      int context = epf_steps_lut[top_val] * 3 + epf_steps_lut[left_val];
       const auto& ctx_histo = histo[context];
       for (uint8_t val : epf_steps) {
-        float error =
-            error_images[val].Row(by)[bx] /
-            (1 + std::log1p(ctx_histo[val] * context_weight / totals[context]));
-        if (val == 0) error *= 0.93f;
+        float error = error_images[val].Row(by)[bx] /
+                      (c4 + std::log1p(ctx_histo[val] * context_weight /
+                                       totals[context]));
+        if (val == 0) {
+          error *= c3;
+        }
         if (error < best_error) {
           best_val = val;
           best_error = error;

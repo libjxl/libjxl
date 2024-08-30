@@ -2074,7 +2074,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
         ButteraugliDistance(io0.frames, io1.frames, butteraugli_params,
                             *JxlGetDefaultCms(),
                             /*distmap=*/nullptr, nullptr),
-        0.65f);
+        0.6f);
 
     JxlDecoderDestroy(dec);
   }
