@@ -389,6 +389,9 @@ static int PrintBasicInfo(FILE* file, int verbose) {
       void* temp = realloc(box_data, box_size);
       if (temp == NULL) {
         free(box_data);
+        box_data = NULL;
+        box_size = 0;
+        box_index = 0;
         fprintf(stderr, "Memory reallocation failed\n");
         break;
       } else {
