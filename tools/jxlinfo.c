@@ -386,7 +386,14 @@ static int PrintBasicInfo(FILE* file, int verbose) {
       const size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
       box_size += chunk_size;
       box_index += chunk_size - remaining;
-      box_data = realloc(box_data, box_size);
+      void* temp = realloc(box_data, box_size);
+      if (temp == NULL) {
+          free(box_data);
+          fprintf(stderr, "Memory reallocation failed\n");
+          break;
+      } else {
+          box_data = temp;
+      }
       JxlDecoderSetBoxBuffer(dec, box_data + box_index, box_size - box_index);
     } else if (status == JXL_DEC_BOX_COMPLETE) {
       if (!strncmp(box_type, "jhgm", 4)) {
