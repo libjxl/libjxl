@@ -222,6 +222,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(JPEGXL_STATIC)
   set(BUILD_SHARED_LIBS 0)
+
+  # https://learn.microsoft.com/en-us/cpp/build/reference/md-mt-ld-use-run-time-library?view=msvc-170
+  # https://cmake.org/cmake/help/latest/variable/CMAKE_MSVC_RUNTIME_LIBRARY.html
+  set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded)
+
   # Clang developers say that in case to use "static" we have to build stdlib
   # ourselves; for real use case we don't care about stdlib, as it is "granted",
   # so just linking all other libraries is fine.
