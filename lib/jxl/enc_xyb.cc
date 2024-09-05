@@ -221,65 +221,6 @@ void ComputePremulAbsorb(float intensity_target, float* premul_absorb) {
   }
 }
 
-StatusOr<Image3F> TransformToLinearRGB(const Image3F& in,
-                                       const ColorEncoding& color_encoding,
-                                       float intensity_target,
-                                       const JxlCmsInterface& cms,
-                                       ThreadPool* pool) {
-  ColorSpaceTransform c_transform(cms);
-  bool is_gray = color_encoding.IsGray();
-  const ColorEncoding& c_desired = ColorEncoding::LinearSRGB(is_gray);
-  JxlMemoryManager* memory_manager = in.memory_manager();
-  JXL_ASSIGN_OR_RETURN(Image3F out,
-                       Image3F::Create(memory_manager, in.xsize(), in.ysize()));
-  const auto init = [&](const size_t num_threads) -> Status {
-    JXL_RETURN_IF_ERROR(c_transform.Init(
-        color_encoding, c_desired, intensity_target, in.xsize(), num_threads));
-    return true;
-  };
-  const auto process_row = [&](const uint32_t y,
-                               const size_t thread) -> Status {
-    float* mutable_src_buf = c_transform.BufSrc(thread);
-    const float* src_buf = mutable_src_buf;
-    // Interleave input.
-    if (is_gray) {
-      src_buf = in.ConstPlaneRow(0, y);
-    } else {
-      const float* JXL_RESTRICT row_in0 = in.ConstPlaneRow(0, y);
-      const float* JXL_RESTRICT row_in1 = in.ConstPlaneRow(1, y);
-      const float* JXL_RESTRICT row_in2 = in.ConstPlaneRow(2, y);
-      for (size_t x = 0; x < in.xsize(); x++) {
-        mutable_src_buf[3 * x + 0] = row_in0[x];
-        mutable_src_buf[3 * x + 1] = row_in1[x];
-        mutable_src_buf[3 * x + 2] = row_in2[x];
-      }
-    }
-    float* JXL_RESTRICT dst_buf = c_transform.BufDst(thread);
-    JXL_RETURN_IF_ERROR(c_transform.Run(thread, src_buf, dst_buf, in.xsize()));
-    float* JXL_RESTRICT row_out0 = out.PlaneRow(0, y);
-    float* JXL_RESTRICT row_out1 = out.PlaneRow(1, y);
-    float* JXL_RESTRICT row_out2 = out.PlaneRow(2, y);
-    // De-interleave output and convert type.
-    if (is_gray) {
-      for (size_t x = 0; x < in.xsize(); x++) {
-        row_out0[x] = dst_buf[x];
-        row_out1[x] = dst_buf[x];
-        row_out2[x] = dst_buf[x];
-      }
-    } else {
-      for (size_t x = 0; x < in.xsize(); x++) {
-        row_out0[x] = dst_buf[3 * x + 0];
-        row_out1[x] = dst_buf[3 * x + 1];
-        row_out2[x] = dst_buf[3 * x + 2];
-      }
-    }
-    return true;
-  };
-  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, in.ysize(), init, process_row,
-                                "Colorspace transform"));
-  return out;
-}
-
 // This is different from Butteraugli's OpsinDynamicsImage() in the sense that
 // it does not contain a sensitivity multiplier based on the blurred image.
 Status ToXYB(const ColorEncoding& c_current, float intensity_target,
