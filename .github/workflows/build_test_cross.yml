@@ -304,7 +304,7 @@ jobs:
         chmod +x `cat executable.lst`
         ./ci.sh test \
           -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
-          -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper)'
+          -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper|test_jpegli_jni_wrapper)'
 
     - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
       name: Upload test cost
