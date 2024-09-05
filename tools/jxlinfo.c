@@ -394,9 +394,8 @@ static int PrintBasicInfo(FILE* file, int verbose) {
         box_index = 0;
         fprintf(stderr, "Memory reallocation failed\n");
         break;
-      } else {
-        box_data = temp;
       }
+      box_data = temp;
       JxlDecoderSetBoxBuffer(dec, box_data + box_index, box_size - box_index);
     } else if (status == JXL_DEC_BOX_COMPLETE) {
       if (!strncmp(box_type, "jhgm", 4)) {
