@@ -166,7 +166,7 @@ struct CompressArgs {
     cmdline->AddOptionValue(
         '\0', "brotli_effort", "B_EFFORT",
         "Brotli effort, range: 0 .. 11, default = 9.\n"
-        "    Higher values allow more computation targetting higher density.",
+        "    Higher values allow more computation targeting higher density.",
         &brotli_effort, &ParseUnsigned, 1);
 
     cmdline->AddOptionValue('m', "modular", "0|1",
