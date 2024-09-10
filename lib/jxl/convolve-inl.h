@@ -242,8 +242,8 @@ class ConvolveT {
                                          const Weights& weights,
                                          ThreadPool* pool, ImageF* out) {
     const int64_t stride = in.PixelsPerRow();
-    const auto process_row = [&](const uint32_t y,
-                                 size_t /*thread*/) -> Status {
+    const auto process_row = [&](const uint32_t y, size_t /*thread*/)
+                                 HWY_ATTR -> Status {
       RunRow<kSizeModN>(rect.ConstRow(in, y), rect.xsize(), stride,
                         WrapRowUnchanged(), weights, out->Row(y));
       return true;
@@ -262,8 +262,8 @@ class ConvolveT {
                                          const Weights& weights,
                                          ThreadPool* pool, Image3F* out) {
     const int64_t stride = in.PixelsPerRow();
-    const auto process_row = [&](const uint32_t y,
-                                 size_t /*thread*/) -> Status {
+    const auto process_row = [&](const uint32_t y, size_t /*thread*/)
+                                 HWY_ATTR -> Status {
       for (size_t c = 0; c < 3; ++c) {
         RunRow<kSizeModN>(rect.ConstPlaneRow(in, c, y), rect.xsize(), stride,
                           WrapRowUnchanged(), weights, out->PlaneRow(c, y));
