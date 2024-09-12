@@ -148,8 +148,8 @@ struct CompressArgs {
     cmdline->AddOptionValue(
         '\0', "group_order", "0|1",
         "Order in which groups are stored in the codestream for progressive "
-        "rendering.\n"
-        "    0 = scanline order. 1 = center-first order. Default = 0.",
+        "rendering, default = 0.\n"
+        "    0 = scanline order. 1 = center-first order.",
         &group_order, &ParseOverride, 1);
 
     cmdline->AddOptionValue(
@@ -170,7 +170,7 @@ struct CompressArgs {
         &brotli_effort, &ParseUnsigned, 1);
 
     cmdline->AddOptionValue('m', "modular", "0|1",
-                            "0 = enforce VarDCT. 1 = enforce modular mode. "
+                            "0 = use VarDCT mode. 1 = use modular mode. "
                             "Default = encoder chooses.",
                             &modular, &ParseOverride, 1);
 
@@ -238,7 +238,7 @@ struct CompressArgs {
                             "The codestream level.", &codestream_level,
                             &ParseInt64, 2);
 
-    cmdline->AddOptionValue('\0', "faster_decoding", "0|1|2|3|4",
+    cmdline->AddOptionValue('\0', "faster_decoding", "0..4",
                             "Higher values improve decode speed "
                             "at the expense of quality or density, "
                             "default = 0.",
@@ -279,9 +279,12 @@ struct CompressArgs {
         "Use the progressive mode for AC with shift quantization.",
         &qprogressive_ac, &SetBooleanTrue, 2);
 
-    cmdline->AddOptionValue('\0', "progressive_dc", "-1|0|1|2",
-                            "Number of progressive-DC frames.", &progressive_dc,
-                            &ParseInt64, 2);
+    cmdline->AddOptionValue(
+        '\0', "progressive_dc", "-1..2",
+        "Number of progressive-DC frames, default = -1. -1 = encoder chooses.\n"
+        "    0 = disable. 1 = extra 64x64 low-resolution pass. 2 = extra "
+        "512x512 and 64x64 passes.",
+        &progressive_dc, &ParseInt64, 2);
 
     cmdline->AddOptionValue(
         '\0', "resampling", "-1|1|2|4|8",
@@ -310,7 +313,7 @@ struct CompressArgs {
         &upsampling_mode, &ParseInt64, 2);
 
     cmdline->AddOptionValue(
-        '\0', "epf", "-1|0|1|2|3",
+        '\0', "epf", "-1..3",
         "Edge preserving filter strength, default = -1. -1 = encoder chooses.",
         &epf, &ParseInt64, 2);
 
@@ -326,10 +329,12 @@ struct CompressArgs {
 
     cmdline->AddHelpText("\nOptions for experimentation / benchmarking:", 3);
 
-    cmdline->AddOptionValue('\0', "noise", "0|1",
-                            "Force disable/enable adaptive noise generation "
-                            "(experimental). Default = encoder chooses.",
-                            &noise, &ParseOverride, 3);
+    cmdline->AddOptionValue(
+        '\0', "noise", "0|1",
+        "Disable/enable adaptive noise generation, default = encoder chooses. "
+        "0 = disable. 1 = enable.\n"
+        "    It is recommended to use --photon_noise_iso instead.",
+        &noise, &ParseOverride, 3);
 
     cmdline->AddOptionValue(
         '\0', "jpeg_reconstruction_cfl", "0|1",
@@ -404,7 +409,7 @@ struct CompressArgs {
                             &modular_colorspace, &ParseInt64, 4);
 
     opt_modular_group_size_id = cmdline->AddOptionValue(
-        'g', "modular_group_size", "-1|0|1|2|3",
+        'g', "modular_group_size", "-1..3",
         "Group size, default = -1.\n"
         "    -1 = encoder chooses. 0 = 128x128. 1 = 256x256. 2 = 512x512. "
         "3 = 1024x1024.",
@@ -428,7 +433,7 @@ struct CompressArgs {
         &modular_nb_prev_channels, &ParseInt64, 4);
 
     cmdline->AddOptionValue(
-        '\0', "modular_palette_colors", "N",
+        '\0', "modular_palette_colors", "COLORS",
         "Use palette if number of colors is smaller than or equal to this.",
         &modular_palette_colors, &ParseInt64, 4);
 
