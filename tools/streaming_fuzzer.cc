@@ -51,7 +51,7 @@ struct FuzzSpec {
   };
 
   std::vector<IntOptionSpec> int_options = {
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_EFFORT, 1, 9, 0},
+      IntOptionSpec{JXL_ENC_FRAME_SETTING_EFFORT, 1, 7, 0},
       IntOptionSpec{JXL_ENC_FRAME_SETTING_DECODING_SPEED, 0, 4, 0},
       IntOptionSpec{JXL_ENC_FRAME_SETTING_NOISE, -1, 1, 0},
       IntOptionSpec{JXL_ENC_FRAME_SETTING_DOTS, -1, 1, 0},
