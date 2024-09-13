@@ -273,7 +273,7 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
   cinfo.err = jpeg_std_error(&jerr);
   jpeg_create_compress(&cinfo);
   unsigned char* buffer = nullptr;
-  unsigned long size = 0;  // NOLINT
+  size_t size = 0;  // NOLINT
   jpeg_mem_dest(&cinfo, &buffer, &size);
   cinfo.image_width = image.xsize;
   cinfo.image_height = image.ysize;
