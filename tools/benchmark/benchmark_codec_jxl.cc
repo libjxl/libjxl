@@ -116,7 +116,7 @@ inline bool ParseEffort(const std::string& s, int* out) {
   } else if (s == "glacier") {
     *out = 10;
     return true;
-  } else if (s == "tectonicplate") {
+  } else if (s == "tectonic_plate") {
     *out = 11;
     return true;
   }
@@ -257,6 +257,8 @@ class JxlCodec : public ImageCodec {
     } else if (param == "noperc") {
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS,
                          1);
+    } else if (param == "expert") {
+      cparams_.allow_expert_options = true;
     } else {
       return JXL_FAILURE("Unrecognized param");
     }
