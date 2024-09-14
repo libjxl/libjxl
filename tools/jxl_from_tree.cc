@@ -447,7 +447,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Rec2100") {
     JXL_RETURN_IF_ERROR(
         io.metadata.m.color_encoding.SetPrimariesType(jxl::Primaries::k2100));
-  } else if (t == "16_bit_buffer_sufficient") {
+  } else if (t == "16BitBuffers") {
     io.metadata.m.modular_16_bit_buffer_sufficient = true;
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
