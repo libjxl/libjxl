@@ -2097,8 +2097,12 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
   }
 
   if (!frame_settings->enc->color_encoding_set) {
-    SetColorEncodingFromJpegData(
-        *io.Main().jpeg_data, &frame_settings->enc->metadata.m.color_encoding);
+    if (!SetColorEncodingFromJpegData(
+            *io.Main().jpeg_data,
+            &frame_settings->enc->metadata.m.color_encoding)) {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
+                           "Error decoing the ICC profile");
+    }
     frame_settings->enc->color_encoding_set = true;
   }
 
