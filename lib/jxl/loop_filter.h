@@ -8,8 +8,9 @@
 
 // Parameters for loop filter(s), stored in each frame.
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
