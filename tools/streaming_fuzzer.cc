@@ -310,7 +310,7 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   std::vector<uint8_t> enc_streaming;
 
   const auto encode = [&]() -> Status {
-    // It is not clear, which approach eatc more memory.
+    // It is not clear, which approach eats more memory.
     JXL_ASSIGN_OR_RETURN(enc_default, Encode(spec, memory_manager, false));
     Check(memory_manager.Reset());
     JXL_ASSIGN_OR_RETURN(enc_streaming, Encode(spec, memory_manager, true));
@@ -320,7 +320,7 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   // It is fine, if encoder OOMs.
   if (!encode()) return true;
 
-  // It is NOT OK, it decoder OOMs - it should not consume more than encoder.
+  // It is NOT OK, if decoder OOMs - it should not consume more than encoder.
   JXL_ASSIGN_OR_RETURN(auto dec_default, Decode(enc_default, memory_manager));
   Check(memory_manager.Reset());
   JXL_ASSIGN_OR_RETURN(auto dec_streaming,
