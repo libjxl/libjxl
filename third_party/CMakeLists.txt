@@ -97,7 +97,7 @@ endif()
 # *cms
 if (JPEGXL_ENABLE_SKCMS)
   if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/skcms/skcms.h" )
-    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+    message(FATAL_ERROR "Please install skcms or run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
             "build dependencies.")
   endif()
   include(skcms.cmake)
@@ -120,7 +120,7 @@ endif()
 # libpng
 if (JPEGXL_BUNDLE_LIBPNG AND EMSCRIPTEN)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
-  message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+  message(FATAL_ERROR "Please install libpng or run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
           "build dependencies.")
   endif()
   file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/libpng/scripts/pnglibconf.h.prebuilt" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/libpng")
@@ -132,7 +132,7 @@ if (JPEGXL_BUNDLE_LIBPNG AND EMSCRIPTEN)
   set(PNG_LIBRARIES "" PARENT_SCOPE)
 elseif (JPEGXL_BUNDLE_LIBPNG)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
-    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+    message(FATAL_ERROR "Please install libpng or run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
             "build dependencies.")
   endif()
   add_subdirectory(zlib)
@@ -166,7 +166,7 @@ endif()
 # sjpeg
 if (JPEGXL_ENABLE_SJPEG)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/CMakeLists.txt")
-    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+    message(FATAL_ERROR "Please install sjpeg or run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
             "build dependencies.")
   endif()
   include(sjpeg.cmake)
