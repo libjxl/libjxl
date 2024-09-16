@@ -276,7 +276,7 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
 #ifdef LIBJPEG_TURBO_VERSION
   unsigned long size = 0;  // NOLINT
 #else
-  size_t size = 0;         // NOLINT
+  size_t size = 0;  // NOLINT
 #endif
   jpeg_mem_dest(&cinfo, &buffer, &size);
   cinfo.image_width = image.xsize;
