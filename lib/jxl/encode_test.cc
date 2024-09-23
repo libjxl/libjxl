@@ -26,6 +26,8 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+#include <fstream>
+
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
@@ -1257,6 +1259,210 @@ TEST(EncodeTest, AnimationHeaderTest) {
 
   EXPECT_EQ(true, seen_frame);
 }
+
+TEST(EncodeTest, AnimationLosslessTest) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_NE(nullptr, enc.get());
+  size_t num_threads =
+      std::min<size_t>(2, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+  bool use_parallel_runner = true;
+  auto runner = JxlThreadParallelRunnerMake(nullptr, num_threads);
+  if (use_parallel_runner) {
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetParallelRunner(enc.get(), JxlThreadParallelRunner,
+                                          runner.get()));
+  } else {
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetParallelRunner(enc.get(), nullptr, nullptr));
+  }
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  size_t xsize = 2407;
+  size_t ysize = 3384;
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+  basic_info.num_extra_channels = 1;
+  basic_info.uses_original_profile = JXL_TRUE;
+  basic_info.have_animation = JXL_TRUE;
+
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+
+  JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+  JxlEncoderFrameSettingsSetOption(frame_settings, JXL_ENC_FRAME_SETTING_EFFORT,
+                                   5);
+  JxlEncoderFrameSettingsSetOption(frame_settings,
+                                   JXL_ENC_FRAME_SETTING_PATCHES, 0);
+
+
+  std::vector<JxlFrameHeader> frame_headers(3);
+
+  // Frame 1: full image size, duration 500 ms
+  JxlEncoderInitFrameHeader(&frame_headers[0]);
+  frame_headers[0].duration = 500;
+  frame_headers[0].layer_info.xsize = 2407;
+  frame_headers[0].layer_info.ysize = 3384;
+  frame_headers[0].layer_info.have_crop = JXL_FALSE;  // Full image, no crop
+  frame_headers[0].layer_info.save_as_reference = 1;
+  frame_headers[0].layer_info.blend_info.source = 1;
+  frame_headers[0].layer_info.blend_info.blendmode = JXL_BLEND_BLEND;
+
+  // Frame 2: 2223x3072 at position (184, 312), duration 500 ms
+  JxlEncoderInitFrameHeader(&frame_headers[1]);
+  frame_headers[1].duration = 500;
+  frame_headers[1].layer_info.have_crop = JXL_TRUE;
+  frame_headers[1].layer_info.crop_x0 = 184;
+  frame_headers[1].layer_info.crop_y0 = 312;
+  frame_headers[1].layer_info.xsize = 2223;
+  frame_headers[1].layer_info.ysize = 3072;
+
+  // Frame 3: 2223x2152 at position (184, 1232), duration 500 ms
+  JxlEncoderInitFrameHeader(&frame_headers[2]);
+  frame_headers[2].duration = 500;
+  frame_headers[2].layer_info.have_crop = JXL_TRUE;
+  frame_headers[2].layer_info.crop_x0 = 184;
+  frame_headers[2].layer_info.crop_y0 = 1232;
+  frame_headers[2].layer_info.xsize = 2223;
+  frame_headers[2].layer_info.ysize = 2152;
+
+  std::vector<std::vector<uint8_t>> input_pixel_frames;
+
+  // Frame 0: solid black (#000000) with alpha
+  std::vector<uint8_t> pixels_black(
+      frame_headers[0].layer_info.xsize * frame_headers[0].layer_info.ysize * 4, 0);
+  for (size_t i = 3; i < pixels_black.size(); i += 4) {
+    pixels_black[i] = 255;  // Set alpha channel to 255 (fully opaque)
+  }
+  input_pixel_frames.push_back(pixels_black);
+
+  // Frame 1: solid brown (#371f1f) with alpha
+  std::vector<uint8_t> pixels_brown(
+      frame_headers[1].layer_info.xsize * frame_headers[1].layer_info.ysize * 4, 0);
+  for (size_t i = 0; i < pixels_brown.size(); i += 4) {
+    pixels_brown[i] = 0x37;      // R
+    pixels_brown[i + 1] = 0x1f;  // G
+    pixels_brown[i + 2] = 0x1f;  // B
+    pixels_brown[i + 3] = 255;   // A (fully opaque)
+  }
+  input_pixel_frames.push_back(pixels_brown);
+
+  // Frame 2: solid green (#2b5a00) with alpha
+  std::vector<uint8_t> pixels_green(
+      frame_headers[2].layer_info.xsize * frame_headers[2].layer_info.ysize * 4, 0);
+  for (size_t i = 0; i < pixels_green.size(); i += 4) {
+    pixels_green[i] = 0x2b;      // R
+    pixels_green[i + 1] = 0x5a;  // G
+    pixels_green[i + 2] = 0x00;  // B
+    pixels_green[i + 3] = 255;   // A (fully opaque)
+  }
+  input_pixel_frames.push_back(pixels_green);
+
+  for (size_t i = 0; i < frame_headers.size(); ++i) {
+    std::vector<uint8_t> pixels = input_pixel_frames[i];
+    // Set frame header from vector
+    JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+    JxlEncoderSetFrameHeader(frame_settings, &frame_headers[i]);
+
+    // Add image frame using the pixel data
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddImageFrame(frame_settings, &pixel_format,
+                                      static_cast<const void*>(pixels.data()),
+                                      pixels.size()));
+  }
+
+  JxlEncoderCloseFrames(enc.get());
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size() - (next_out - compressed.data());
+  ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+
+  // Dump compressed data to a .jxl file
+  std::ofstream output_file("/tmp/dump.jxl", std::ios::binary);
+  if (output_file.is_open()) {
+      output_file.write(reinterpret_cast<const char*>(compressed.data()), compressed.size());
+      output_file.close();
+  } else {
+      std::cerr << "Failed to open /tmp/dump.jxl for writing." << std::endl;
+  }
+
+  // Decode to verify
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_NE(nullptr, dec.get());
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetCoalescing(dec.get(), JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
+                                 dec.get(), JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE |
+                                                JXL_DEC_BASIC_INFO));
+  JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+  JxlDecoderCloseInput(dec.get());
+  std::vector<uint8_t> pixels2;
+  JxlFrameHeader header2;
+  bool seen_frame = false;
+  size_t num_frame = 0;
+  JxlBasicInfo info;
+  for (;;) {
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
+    if (status == JXL_DEC_ERROR) {
+      FAIL();
+    } else if (status == JXL_DEC_BASIC_INFO) {
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec.get(), &info));
+    } else if (status == JXL_DEC_SUCCESS) {
+      break;
+    } else if (status == JXL_DEC_FRAME) {
+      seen_frame = true;
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetFrameHeader(dec.get(), &header2));
+      EXPECT_EQ(frame_headers[num_frame].duration, header2.duration);
+      EXPECT_EQ(frame_headers[num_frame].layer_info.blend_info.blendmode,
+                header2.layer_info.blend_info.blendmode);
+      EXPECT_EQ(frame_headers[num_frame].layer_info.blend_info.source,
+                header2.layer_info.blend_info.source);
+      EXPECT_EQ(frame_headers[num_frame].layer_info.have_crop,
+                header2.layer_info.have_crop);
+      EXPECT_EQ(frame_headers[num_frame].layer_info.crop_x0,
+                header2.layer_info.crop_x0);
+      EXPECT_EQ(frame_headers[num_frame].layer_info.crop_y0,
+                header2.layer_info.crop_y0);
+      if (header2.layer_info.have_crop) {
+        EXPECT_EQ(frame_headers[num_frame].layer_info.xsize,
+                  header2.layer_info.xsize);
+        EXPECT_EQ(frame_headers[num_frame].layer_info.ysize,
+                  header2.layer_info.ysize);
+      } else {
+        EXPECT_EQ(info.xsize, header2.layer_info.xsize);
+        EXPECT_EQ(info.ysize, header2.layer_info.ysize);
+      }
+    } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+      size_t buffer_size;
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderImageOutBufferSize(
+                                     dec.get(), &pixel_format, &buffer_size));
+      pixels2.resize(buffer_size);
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetImageOutBuffer(dec.get(), &pixel_format,
+                                            pixels2.data(), pixels2.size()));
+    } else if (status == JXL_DEC_FULL_IMAGE) {
+      EXPECT_EQ(pixels2.size(), input_pixel_frames[num_frame].size());
+      EXPECT_EQ(pixels2, input_pixel_frames[num_frame]);
+      num_frame++;
+    } else {
+      // unexpected status
+      FAIL();
+    }
+  }
+  (void)seen_frame;
+  EXPECT_EQ(num_frame, 3);
+  EXPECT_EQ(true, seen_frame);
+}
+
 TEST(EncodeTest, CroppedFrameTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_NE(nullptr, enc.get());
