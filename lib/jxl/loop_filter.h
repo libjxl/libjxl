@@ -8,7 +8,6 @@
 
 // Parameters for loop filter(s), stored in each frame.
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
