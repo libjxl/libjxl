@@ -15,6 +15,7 @@
 
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_external_image.h"
@@ -28,6 +29,7 @@
 namespace jxl {
 namespace {
 
+using ::jxl::extras::GetColorImage;
 using ::jxl::extras::PackedImage;
 using ::jxl::extras::PackedPixelFile;
 using ::jxl::test::TestImage;
@@ -39,23 +41,6 @@ Image3F SinglePixelImage(float red, float green, float blue) {
   img.PlaneRow(1, 0)[0] = green;
   img.PlaneRow(2, 0)[0] = blue;
   return img;
-}
-
-StatusOr<Image3F> GetColorImage(const PackedPixelFile& ppf) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  Image3F color;
-  JXL_ENSURE(!ppf.frames.empty());
-  const PackedImage& image = ppf.frames[0].color;
-  const JxlPixelFormat& format = image.format;
-  const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
-  JXL_TEST_ASSIGN_OR_DIE(
-      color, Image3F::Create(memory_manager, image.xsize, image.ysize));
-  for (size_t c = 0; c < format.num_channels; ++c) {
-    JXL_RETURN_IF_ERROR(ConvertFromExternal(
-        pixels, image.pixels_size, image.xsize, image.ysize,
-        ppf.info.bits_per_sample, format, c, nullptr, &color.Plane(c)));
-  }
-  return color;
 }
 
 void AddUniformNoise(Image3F* img, float d, uint64_t seed) {

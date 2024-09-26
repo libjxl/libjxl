@@ -865,6 +865,15 @@ Status EncodeFile(const CompressParams& params, CodecInOut* io,
   return true;
 }
 
+extras::JXLCompressParams CompressParamsForLossless() {
+  extras::JXLCompressParams cparams;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR, 1);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM, 1);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, 6);  // Weighted
+  cparams.distance = 0.0;
+  return cparams;
+}
+
 }  // namespace test
 
 bool operator==(const jxl::Bytes& a, const jxl::Bytes& b) {
