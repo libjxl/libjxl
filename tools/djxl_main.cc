@@ -110,7 +110,7 @@ struct DecompressArgs {
         &color_space, &ParseString, 1);
 
     cmdline->AddOptionValue('s', "downsampling", "1|2|4|8",
-                            "If the input JXL stream is contains hints for "
+                            "If the input JXL stream contains hints for "
                             "target downsampling ratios,\n"
                             "    only decode what is needed to produce an "
                             "image intended for this downsampling ratio.",
