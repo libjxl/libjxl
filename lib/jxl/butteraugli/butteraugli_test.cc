@@ -31,8 +31,8 @@ namespace {
 
 using ::jxl::extras::PackedImage;
 using ::jxl::extras::PackedPixelFile;
-using ::jxl::test::TestImage;
 using ::jxl::test::GetColorImage;
+using ::jxl::test::TestImage;
 
 Image3F SinglePixelImage(float red, float green, float blue) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
