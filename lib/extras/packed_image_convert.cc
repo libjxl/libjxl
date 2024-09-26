@@ -358,7 +358,6 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   return true;
 }
 
-
 StatusOr<ImageF> GetImage(const PackedPixelFile& ppf) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   ImageF gray;
@@ -368,9 +367,9 @@ StatusOr<ImageF> GetImage(const PackedPixelFile& ppf) {
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
   JXL_TEST_ASSIGN_OR_DIE(
       gray, ImageF::Create(memory_manager, image.xsize, image.ysize));
-  JXL_RETURN_IF_ERROR(ConvertFromExternal(
-        pixels, image.pixels_size, image.xsize, image.ysize,
-        ppf.info.bits_per_sample, format, 0, nullptr, &gray));
+  JXL_RETURN_IF_ERROR(
+      ConvertFromExternal(pixels, image.pixels_size, image.xsize, image.ysize,
+                          ppf.info.bits_per_sample, format, 0, nullptr, &gray));
   return gray;
 }
 
