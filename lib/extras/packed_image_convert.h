@@ -35,9 +35,6 @@ StatusOr<PackedPixelFile> ConvertImage3FToPackedPixelFile(
     const Image3F& image, const ColorEncoding& c_enc, JxlPixelFormat format,
     ThreadPool* pool);
 
-StatusOr<ImageF> GetImage(const PackedPixelFile& ppf);
-StatusOr<Image3F> GetColorImage(const PackedPixelFile& ppf);
-
 }  // namespace extras
 }  // namespace jxl
 

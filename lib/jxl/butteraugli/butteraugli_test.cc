@@ -29,10 +29,10 @@
 namespace jxl {
 namespace {
 
-using ::jxl::extras::GetColorImage;
 using ::jxl::extras::PackedImage;
 using ::jxl::extras::PackedPixelFile;
 using ::jxl::test::TestImage;
+using ::jxl::test::GetColorImage;
 
 Image3F SinglePixelImage(float red, float green, float blue) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();

@@ -196,6 +196,10 @@ bool SamePixels(const extras::PackedPixelFile& a,
 
 extras::JXLCompressParams CompressParamsForLossless();
 
+StatusOr<ImageF> GetImage(const extras::PackedPixelFile& ppf);
+
+StatusOr<Image3F> GetColorImage(const extras::PackedPixelFile& ppf);
+
 class ThreadPoolForTests {
  public:
   explicit ThreadPoolForTests(int num_threads) {

@@ -23,8 +23,8 @@
 namespace jxl {
 namespace {
 
-using ::jxl::extras::GetColorImage;
 using ::jxl::test::ButteraugliDistance;
+using ::jxl::test::GetImage;
 using ::jxl::test::ReadTestData;
 using ::jxl::test::Roundtrip;
 

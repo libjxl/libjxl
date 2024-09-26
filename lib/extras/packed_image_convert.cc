@@ -21,8 +21,6 @@
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/luminance.h"
-#include "lib/jxl/test_memory_manager.h"
-#include "lib/jxl/test_utils.h"
 
 namespace jxl {
 namespace extras {
@@ -356,38 +354,6 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   }
 
   return true;
-}
-
-StatusOr<ImageF> GetImage(const PackedPixelFile& ppf) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  ImageF gray;
-  JXL_ENSURE(!ppf.frames.empty());
-  const PackedImage& image = ppf.frames[0].color;
-  const JxlPixelFormat& format = image.format;
-  const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
-  JXL_TEST_ASSIGN_OR_DIE(
-      gray, ImageF::Create(memory_manager, image.xsize, image.ysize));
-  JXL_RETURN_IF_ERROR(
-      ConvertFromExternal(pixels, image.pixels_size, image.xsize, image.ysize,
-                          ppf.info.bits_per_sample, format, 0, nullptr, &gray));
-  return gray;
-}
-
-StatusOr<Image3F> GetColorImage(const PackedPixelFile& ppf) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  Image3F color;
-  JXL_ENSURE(!ppf.frames.empty());
-  const PackedImage& image = ppf.frames[0].color;
-  const JxlPixelFormat& format = image.format;
-  const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
-  JXL_TEST_ASSIGN_OR_DIE(
-      color, Image3F::Create(memory_manager, image.xsize, image.ysize));
-  for (size_t c = 0; c < format.num_channels; ++c) {
-    JXL_RETURN_IF_ERROR(ConvertFromExternal(
-        pixels, image.pixels_size, image.xsize, image.ysize,
-        ppf.info.bits_per_sample, format, c, nullptr, &color.Plane(c)));
-  }
-  return color;
 }
 
 }  // namespace extras
