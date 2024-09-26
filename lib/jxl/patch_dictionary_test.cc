@@ -38,7 +38,6 @@ TEST(PatchDictionaryTest, GrayscaleModular) {
   extras::PackedPixelFile ppf2;
   // Without patches: ~25k
   size_t compressed_size = Roundtrip(ppf, cparams, {}, nullptr, &ppf2);
-  JXL_EXPECT_OK(compressed_size);
   EXPECT_LE(compressed_size, 8000u);
   JXL_TEST_ASSIGN_OR_DIE(ImageF image, GetImage(ppf));
   JXL_TEST_ASSIGN_OR_DIE(ImageF image2, GetImage(ppf2));
