@@ -1035,10 +1035,6 @@ TEST(JxlTest, RoundtripAlpha16) {
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.6);
 }
 
-namespace {
-
-}  // namespace
-
 JXL_SLOW_TEST(JxlTest, RoundtripLossless8) {
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig =
