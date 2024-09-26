@@ -15,7 +15,6 @@
 
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
-#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_external_image.h"

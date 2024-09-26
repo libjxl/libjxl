@@ -355,6 +355,5 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
 
   return true;
 }
-
 }  // namespace extras
 }  // namespace jxl
