@@ -880,6 +880,7 @@ StatusOr<ImageF> GetImage(const extras::PackedPixelFile& ppf) {
   JXL_ENSURE(!ppf.frames.empty());
   const extras::PackedImage& image = ppf.frames[0].color;
   const JxlPixelFormat& format = image.format;
+  JXL_RETURN_IF_ERROR(format.num_channels == 1);
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
   JXL_TEST_ASSIGN_OR_DIE(
       gray, ImageF::Create(memory_manager, image.xsize, image.ysize));
@@ -895,6 +896,7 @@ StatusOr<Image3F> GetColorImage(const extras::PackedPixelFile& ppf) {
   JXL_ENSURE(!ppf.frames.empty());
   const extras::PackedImage& image = ppf.frames[0].color;
   const JxlPixelFormat& format = image.format;
+  JXL_RETURN_IF_ERROR(format.num_channels == 3);
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
   JXL_TEST_ASSIGN_OR_DIE(
       color, Image3F::Create(memory_manager, image.xsize, image.ysize));
