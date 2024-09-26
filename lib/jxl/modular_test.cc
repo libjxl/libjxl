@@ -334,7 +334,8 @@ TEST_P(ModularTestParam, RoundtripLossless) {
       float* out = noise_added.PlaneRow(c, y);
       for (size_t x = 0; x < xsize; x++) {
         // make the least significant bits random
-        float f = *ppf1.frames[0].color.const_pixels(y, x, c) + generator.UniformF(0.0f, 1.f / 255.f);
+        float f = *ppf1.frames[0].color.const_pixels(y, x, c) +
+                  generator.UniformF(0.0f, 1.f / 255.f);
         if (f > 1.f) f = 1.f;
         // quantize to the bitdepth we're testing
         unsigned int u = static_cast<unsigned int>(std::lround(f * factor));
