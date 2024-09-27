@@ -6,6 +6,7 @@
 #include <jxl/decode.h>
 #include <jxl/types.h>
 #include <jxl/version.h>
+#include <jxl/cms.h>
 
 #include <algorithm>
 #include <array>
@@ -14,7 +15,6 @@
 #include <utility>
 #include <vector>
 
-#include "lib/include/jxl/cms.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
