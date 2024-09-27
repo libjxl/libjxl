@@ -4,7 +4,7 @@
 # license that can be found in the LICENSE file.
 
 set(JPEGXL_MAJOR_VERSION 0)
-set(JPEGXL_MINOR_VERSION 10)
+set(JPEGXL_MINOR_VERSION 12)
 set(JPEGXL_PATCH_VERSION 0)
 set(JPEGXL_LIBRARY_VERSION
     "${JPEGXL_MAJOR_VERSION}.${JPEGXL_MINOR_VERSION}.${JPEGXL_PATCH_VERSION}")
@@ -15,7 +15,7 @@ set(JPEGXL_LIBRARY_VERSION
 # It is important to update this value when making incompatible API/ABI changes
 # so that programs that depend on libjxl can update their dependencies. Semantic
 # versioning allows 0.y.z to have incompatible changes in minor versions.
-set(JPEGXL_SO_MINOR_VERSION 10)
+set(JPEGXL_SO_MINOR_VERSION 12)
 if (JPEGXL_MAJOR_VERSION EQUAL 0)
   set(JPEGXL_LIBRARY_SOVERSION
       "${JPEGXL_MAJOR_VERSION}.${JPEGXL_SO_MINOR_VERSION}")
@@ -149,6 +149,16 @@ else()
     set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
 endif()
 
+include(CheckCXXSymbolExists)
+set(PKGCONFIG_CXX_LIB "")
+check_cxx_symbol_exists(__GLIBCXX__ iostream LIBSTDCXX)
+check_cxx_symbol_exists(_LIBCPP_VERSION iostream LIBCXX)
+if(LIBSTDCXX)
+  set(PKGCONFIG_CXX_LIB "-lstdc++")
+elseif(LIBCXX)
+  set(PKGCONFIG_CXX_LIB "-lc++")
+endif()
+
 # The jxl_cms library definition.
 include(jxl_cms.cmake)
 # The jxl library definition.
@@ -163,11 +173,10 @@ if (JPEGXL_ENABLE_JPEGLI)
   include(jpegli.cmake)
 endif()
 
-# Install all the library headers from the source and the generated ones. There
-# is no distinction on which libraries use which header since it is expected
-# that all developer libraries are available together at build time.
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/jxl
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+# For simplicity all the library headers, both source and generated ones, are
+# gathered in the binary folder. There is no distinction on which libraries use
+# which header since it is expected that all developer libraries are available
+# together at build time.
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/jxl
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 

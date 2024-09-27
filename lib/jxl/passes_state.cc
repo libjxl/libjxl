@@ -5,6 +5,9 @@
 
 #include "lib/jxl/passes_state.h"
 
+#include <jxl/memory_manager.h>
+
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/frame_dimensions.h"
@@ -14,20 +17,27 @@ namespace jxl {
 Status InitializePassesSharedState(const FrameHeader& frame_header,
                                    PassesSharedState* JXL_RESTRICT shared,
                                    bool encoder) {
-  JXL_ASSERT(frame_header.nonserialized_metadata != nullptr);
+  JXL_ENSURE(frame_header.nonserialized_metadata != nullptr);
   shared->metadata = frame_header.nonserialized_metadata;
   shared->frame_dim = frame_header.ToFrameDimensions();
-  shared->image_features.patches.SetPassesSharedState(shared);
+  shared->image_features.patches.SetShared(&shared->reference_frames);
 
   const FrameDimensions& frame_dim = shared->frame_dim;
+  JxlMemoryManager* memory_manager = shared->memory_manager;
 
-  shared->ac_strategy =
-      AcStrategyImage(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
-  shared->raw_quant_field =
-      ImageI(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
-  shared->epf_sharpness =
-      ImageB(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
-  shared->cmap = ColorCorrelationMap(frame_dim.xsize, frame_dim.ysize);
+  JXL_ASSIGN_OR_RETURN(
+      shared->ac_strategy,
+      AcStrategyImage::Create(memory_manager, frame_dim.xsize_blocks,
+                              frame_dim.ysize_blocks));
+  JXL_ASSIGN_OR_RETURN(shared->raw_quant_field,
+                       ImageI::Create(memory_manager, frame_dim.xsize_blocks,
+                                      frame_dim.ysize_blocks));
+  JXL_ASSIGN_OR_RETURN(shared->epf_sharpness,
+                       ImageB::Create(memory_manager, frame_dim.xsize_blocks,
+                                      frame_dim.ysize_blocks));
+  JXL_ASSIGN_OR_RETURN(
+      shared->cmap, ColorCorrelationMap::Create(memory_manager, frame_dim.xsize,
+                                                frame_dim.ysize));
 
   // In the decoder, we allocate coeff orders afterwards, when we know how many
   // we will actually need.
@@ -40,9 +50,11 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
                                 kCoeffOrderMaxSize);
   }
 
-  shared->quant_dc = ImageB(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
+  JXL_ASSIGN_OR_RETURN(shared->quant_dc,
+                       ImageB::Create(memory_manager, frame_dim.xsize_blocks,
+                                      frame_dim.ysize_blocks));
 
-  bool use_dc_frame = !!(frame_header.flags & FrameHeader::kUseDcFrame);
+  bool use_dc_frame = ((frame_header.flags & FrameHeader::kUseDcFrame) != 0u);
   if (!encoder && use_dc_frame) {
     if (frame_header.dc_level == 4) {
       return JXL_FAILURE("Invalid DC level for kUseDcFrame: %u",
@@ -58,8 +70,9 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
     }
     ZeroFillImage(&shared->quant_dc);
   } else {
-    shared->dc_storage =
-        Image3F(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
+    JXL_ASSIGN_OR_RETURN(shared->dc_storage,
+                         Image3F::Create(memory_manager, frame_dim.xsize_blocks,
+                                         frame_dim.ysize_blocks));
     shared->dc = &shared->dc_storage;
   }
 

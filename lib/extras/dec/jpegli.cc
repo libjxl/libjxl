@@ -6,16 +6,17 @@
 #include "lib/extras/dec/jpegli.h"
 
 #include <setjmp.h>
-#include <stdint.h>
 
 #include <algorithm>
-#include <numeric>
+#include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include "lib/jpegli/decode.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/sanitizers.h"
 
 namespace jxl {
 namespace extras {
@@ -27,7 +28,7 @@ constexpr unsigned char kExifSignature[6] = {0x45, 0x78, 0x69,
 constexpr int kExifMarker = JPEG_APP0 + 1;
 constexpr int kICCMarker = JPEG_APP0 + 2;
 
-static inline bool IsJPG(const std::vector<uint8_t>& bytes) {
+inline bool IsJPG(const std::vector<uint8_t>& bytes) {
   if (bytes.size() < 2) return false;
   if (bytes[0] != 0xFF || bytes[1] != 0xD8) return false;
   return true;
@@ -114,25 +115,26 @@ void MyErrorExit(j_common_ptr cinfo) {
 }
 
 void MyOutputMessage(j_common_ptr cinfo) {
-#if JXL_DEBUG_WARNING == 1
-  char buf[JMSG_LENGTH_MAX + 1];
-  (*cinfo->err->format_message)(cinfo, buf);
-  buf[JMSG_LENGTH_MAX] = 0;
-  JXL_WARNING("%s", buf);
-#endif
+  if (JXL_IS_DEBUG_BUILD) {
+    char buf[JMSG_LENGTH_MAX + 1];
+    (*cinfo->err->format_message)(cinfo, buf);
+    buf[JMSG_LENGTH_MAX] = 0;
+    JXL_WARNING("%s", buf);
+  }
 }
 
-void UnmapColors(uint8_t* row, size_t xsize, int components,
-                 JSAMPARRAY colormap, size_t num_colors) {
-  JXL_CHECK(colormap != nullptr);
+Status UnmapColors(uint8_t* row, size_t xsize, int components,
+                   JSAMPARRAY colormap, size_t num_colors) {
+  JXL_ENSURE(colormap != nullptr);
   std::vector<uint8_t> tmp(xsize * components);
   for (size_t x = 0; x < xsize; ++x) {
-    JXL_CHECK(row[x] < num_colors);
+    JXL_ENSURE(row[x] < num_colors);
     for (int c = 0; c < components; ++c) {
       tmp[x * components + c] = colormap[c][row[x]];
     }
   }
   memcpy(row, tmp.data(), tmp.size());
+  return true;
 }
 
 }  // namespace
@@ -181,14 +183,20 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     }
     int nbcomp = cinfo.num_components;
     if (nbcomp != 1 && nbcomp != 3) {
-      return failure("unsupported number of components in JPEG");
+      std::string msg =
+          "unsupported number of components in JPEG: " + std::to_string(nbcomp);
+      return failure(msg.c_str());
     }
     if (dparams.force_rgb) {
       cinfo.out_color_space = JCS_RGB;
     } else if (dparams.force_grayscale) {
       cinfo.out_color_space = JCS_GRAYSCALE;
     }
-    if (!ReadICCProfile(&cinfo, &ppf->icc)) {
+    if (ReadICCProfile(&cinfo, &ppf->icc)) {
+      ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
+    } else {
+      ppf->primary_color_representation =
+          PackedPixelFile::kColorEncodingIsPrimary;
       ppf->icc.clear();
       // Default to SRGB
       ppf->color_encoding.color_space =
@@ -214,7 +222,7 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     } else {
       return failure("unsupported data type");
     }
-    ppf->info.uses_original_profile = true;
+    ppf->info.uses_original_profile = JXL_TRUE;
 
     // No alpha in JPG
     ppf->info.alpha_bits = 0;
@@ -227,8 +235,8 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     if (dparams.num_colors > 0) {
       cinfo.quantize_colors = TRUE;
       cinfo.desired_number_of_colors = dparams.num_colors;
-      cinfo.two_pass_quantize = dparams.two_pass_quant;
-      cinfo.dither_mode = (J_DITHER_MODE)dparams.dither_mode;
+      cinfo.two_pass_quantize = static_cast<boolean>(dparams.two_pass_quant);
+      cinfo.dither_mode = static_cast<J_DITHER_MODE>(dparams.dither_mode);
     }
 
     jpegli_start_decompress(&cinfo);
@@ -242,11 +250,17 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     };
     ppf->frames.clear();
     // Allocates the frame buffer.
-    ppf->frames.emplace_back(cinfo.image_width, cinfo.image_height, format);
+    {
+      JXL_ASSIGN_OR_RETURN(
+          PackedFrame frame,
+          PackedFrame::Create(cinfo.image_width, cinfo.image_height, format));
+      ppf->frames.emplace_back(std::move(frame));
+    }
     const auto& frame = ppf->frames.back();
-    JXL_ASSERT(sizeof(JSAMPLE) * cinfo.out_color_components *
+    JXL_ENSURE(sizeof(JSAMPLE) * cinfo.out_color_components *
                    cinfo.image_width <=
                frame.color.stride);
+    if (dparams.num_colors > 0) JXL_ENSURE(cinfo.colormap != nullptr);
 
     for (size_t y = 0; y < cinfo.image_height; ++y) {
       JSAMPROW rows[] = {reinterpret_cast<JSAMPLE*>(
@@ -254,8 +268,9 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
           frame.color.stride * y)};
       jpegli_read_scanlines(&cinfo, rows, 1);
       if (dparams.num_colors > 0) {
-        UnmapColors(rows[0], cinfo.output_width, cinfo.out_color_components,
-                    cinfo.colormap, cinfo.actual_number_of_colors);
+        JXL_RETURN_IF_ERROR(
+            UnmapColors(rows[0], cinfo.output_width, cinfo.out_color_components,
+                        cinfo.colormap, cinfo.actual_number_of_colors));
       }
     }
 

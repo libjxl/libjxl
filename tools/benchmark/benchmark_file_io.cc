@@ -8,6 +8,11 @@
 #include <sys/stat.h>
 
 #include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include "lib/jxl/base/status.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #include "third_party/dirent.h"
@@ -38,33 +43,14 @@
 #define GLOB_TILDE 0
 #endif
 
+#if defined(__MINGW32__)
+extern "C" int _CRT_glob = 0;
+#endif
+
 namespace jpegxl {
 namespace tools {
 
 const char kPathSeparator = '/';
-
-// RAII, ensures dir is closed even when returning early.
-class DirWrapper {
- public:
-  DirWrapper(const DirWrapper& other) = delete;
-  DirWrapper& operator=(const DirWrapper& other) = delete;
-
-  explicit DirWrapper(const std::string& pathname)
-      : dir_(opendir(pathname.c_str())) {}
-
-  ~DirWrapper() {
-    if (dir_ != nullptr) {
-      const int err = closedir(dir_);
-      JXL_CHECK(err == 0);
-    }
-  }
-
-  // NOLINTNEXTLINE(google-explicit-constructor)
-  operator DIR*() const { return dir_; }
-
- private:
-  DIR* const dir_;
-};
 
 // Checks if the file exists, either as file or as directory
 bool PathExists(const std::string& fname) {
@@ -139,10 +125,17 @@ std::string FileExtension(const std::string& fname) {
 }
 
 std::string JoinPath(const std::string& first, const std::string& second) {
-  JXL_CHECK(second.empty() || second[0] != kPathSeparator);
-  return (!first.empty() && first.back() == kPathSeparator)
-             ? (first + second)
-             : (first + kPathSeparator + second);
+  bool first_has_separator = !first.empty() && (first.back() == kPathSeparator);
+  bool second_has_separator = !second.empty() && (second[0] == kPathSeparator);
+  if (!first_has_separator && !second_has_separator) {
+    return first + kPathSeparator + second;
+  }
+  if (first_has_separator != second_has_separator) {
+    return first + second;
+  }
+  JXL_DEBUG_ABORT("Internal logic error");
+  // Alas, both have separator.
+  return first + second.substr(1);
 }
 
 // Can match a single file, or multiple files in a directory (non-recursive).
@@ -151,10 +144,10 @@ Status MatchFiles(const std::string& pattern, std::vector<std::string>* list) {
 #if HAS_GLOB
   glob_t g;
   memset(&g, 0, sizeof(g));
-  int error = glob(pattern.c_str(), GLOB_TILDE, NULL, &g);
+  int error = glob(pattern.c_str(), GLOB_TILDE, nullptr, &g);
   if (!error) {
     for (size_t i = 0; i < g.gl_pathc; ++i) {
-      list->push_back(g.gl_pathv[i]);
+      list->emplace_back(g.gl_pathv[i]);
     }
   }
   globfree(&g);
@@ -187,7 +180,7 @@ Status MatchFiles(const std::string& pattern, std::vector<std::string>* list) {
   }
 
   if (pos0 != std::string::npos) {
-    DirWrapper dir(dirname);
+    DIR* dir = opendir(dirname.c_str());
     if (!dir) return JXL_FAILURE("directory %s doesn't exist", dirname.c_str());
     for (;;) {
       dirent* ent = readdir(dir);
@@ -220,6 +213,8 @@ Status MatchFiles(const std::string& pattern, std::vector<std::string>* list) {
         }
       }
     }
+    const int err = closedir(dir);
+    JXL_ENSURE(err == 0);
     return true;
   }
   // No *, so a single regular file is intended

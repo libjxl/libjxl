@@ -17,7 +17,7 @@ struct Rational {
 
   // Returns floor(multiplicand * rational).
   constexpr uint32_t MulTruncate(uint32_t multiplicand) const {
-    return uint64_t(multiplicand) * num / den;
+    return static_cast<uint64_t>(multiplicand) * num / den;
   }
 
   uint32_t num;
@@ -25,7 +25,7 @@ struct Rational {
 };
 
 Rational FixedAspectRatios(uint32_t ratio) {
-  JXL_ASSERT(0 != ratio && ratio < 8);
+  JXL_DASSERT(0 != ratio && ratio < 8);
   // Other candidates: 5/4, 7/5, 14/9, 16/10, 5/3, 21/9, 12/5
   constexpr Rational kRatios[7] = {Rational(1, 1),    // square
                                    Rational(12, 10),  //
@@ -79,8 +79,8 @@ Status SizeHeader::Set(size_t xsize64, size_t ysize64) {
       xsize_ = xsize32;
     }
   }
-  JXL_ASSERT(xsize() == xsize64);
-  JXL_ASSERT(ysize() == ysize64);
+  JXL_ENSURE(xsize() == xsize64);
+  JXL_ENSURE(ysize() == ysize64);
   return true;
 }
 
@@ -103,8 +103,8 @@ Status PreviewHeader::Set(size_t xsize64, size_t ysize64) {
       xsize_ = xsize32;
     }
   }
-  JXL_ASSERT(xsize() == xsize64);
-  JXL_ASSERT(ysize() == ysize64);
+  JXL_ENSURE(xsize() == xsize64);
+  JXL_ENSURE(ysize() == ysize64);
   return true;
 }
 

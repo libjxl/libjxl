@@ -5,9 +5,7 @@
 
 #include "lib/jxl/enc_butteraugli_comparator.h"
 
-#include <algorithm>
-#include <vector>
-
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_image_bundle.h"
 
 namespace jxl {
@@ -18,15 +16,15 @@ JxlButteraugliComparator::JxlButteraugliComparator(
 
 Status JxlButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
   const ImageBundle* ref_linear_srgb;
+  JxlMemoryManager* memory_manager = ref.memory_manager();
   ImageMetadata metadata = *ref.metadata();
-  ImageBundle store(&metadata);
+  ImageBundle store(memory_manager, &metadata);
   if (!TransformIfNeeded(ref, ColorEncoding::LinearSRGB(ref.IsGray()), cms_,
                          /*pool=*/nullptr, &store, &ref_linear_srgb)) {
     return false;
   }
-
-  comparator_.reset(
-      new ButteraugliComparator(ref_linear_srgb->color(), params_));
+  JXL_ASSIGN_OR_RETURN(comparator_, ButteraugliComparator::Make(
+                                        ref_linear_srgb->color(), params_));
   xsize_ = ref.xsize();
   ysize_ = ref.ysize();
   return true;
@@ -34,7 +32,8 @@ Status JxlButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
 
 Status JxlButteraugliComparator::SetLinearReferenceImage(
     const Image3F& linear) {
-  comparator_.reset(new ButteraugliComparator(linear, params_));
+  JXL_ASSIGN_OR_RETURN(comparator_,
+                       ButteraugliComparator::Make(linear, params_));
   xsize_ = linear.xsize();
   ysize_ = linear.ysize();
   return true;
@@ -48,18 +47,21 @@ Status JxlButteraugliComparator::CompareWith(const ImageBundle& actual,
   if (xsize_ != actual.xsize() || ysize_ != actual.ysize()) {
     return JXL_FAILURE("Images must have same size");
   }
+  JxlMemoryManager* memory_manager = actual.memory_manager();
 
   const ImageBundle* actual_linear_srgb;
   ImageMetadata metadata = *actual.metadata();
-  ImageBundle store(&metadata);
+  ImageBundle store(memory_manager, &metadata);
   if (!TransformIfNeeded(actual, ColorEncoding::LinearSRGB(actual.IsGray()),
                          cms_,
                          /*pool=*/nullptr, &store, &actual_linear_srgb)) {
     return false;
   }
 
-  ImageF temp_diffmap(xsize_, ysize_);
-  comparator_->Diffmap(actual_linear_srgb->color(), temp_diffmap);
+  JXL_ASSIGN_OR_RETURN(ImageF temp_diffmap,
+                       ImageF::Create(memory_manager, xsize_, ysize_));
+  JXL_RETURN_IF_ERROR(
+      comparator_->Diffmap(actual_linear_srgb->color(), temp_diffmap));
 
   if (score != nullptr) {
     *score = ButteraugliScoreFromDiffmap(temp_diffmap, &params_);
@@ -77,31 +79,6 @@ float JxlButteraugliComparator::GoodQualityScore() const {
 
 float JxlButteraugliComparator::BadQualityScore() const {
   return ButteraugliFuzzyInverse(0.5);
-}
-
-float ButteraugliDistance(const ImageBundle& rgb0, const ImageBundle& rgb1,
-                          const ButteraugliParams& params,
-                          const JxlCmsInterface& cms, ImageF* distmap,
-                          ThreadPool* pool, bool ignore_alpha) {
-  JxlButteraugliComparator comparator(params, cms);
-  return ComputeScore(rgb0, rgb1, &comparator, cms, distmap, pool,
-                      ignore_alpha);
-}
-
-float ButteraugliDistance(const std::vector<ImageBundle>& frames0,
-                          const std::vector<ImageBundle>& frames1,
-                          const ButteraugliParams& params,
-                          const JxlCmsInterface& cms, ImageF* distmap,
-                          ThreadPool* pool) {
-  JxlButteraugliComparator comparator(params, cms);
-  JXL_ASSERT(frames0.size() == frames1.size());
-  float max_dist = 0.0f;
-  for (size_t i = 0; i < frames0.size(); ++i) {
-    max_dist = std::max(
-        max_dist,
-        ComputeScore(frames0[i], frames1[i], &comparator, cms, distmap, pool));
-  }
-  return max_dist;
 }
 
 }  // namespace jxl

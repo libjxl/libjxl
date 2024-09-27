@@ -11,7 +11,7 @@ project(LIBJXL LANGUAGES C CXX)
 
 # TODO(sboukortt): remove once oss-fuzz passes -DBUILD_SHARED_LIBS=OFF
 if(JPEGXL_ENABLE_FUZZERS)
-  message(INFO "Fuzzer build detected, building static libs")
+  message(STATUS "Fuzzer build detected, building static libs")
   set(BUILD_SHARED_LIBS OFF)
 endif()
 
@@ -20,6 +20,10 @@ include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag("-fsanitize=fuzzer-no-link" CXX_FUZZERS_SUPPORTED)
 check_cxx_compiler_flag("-fmacro-prefix-map=OLD=NEW" CXX_MACRO_PREFIX_MAP)
 check_cxx_compiler_flag("-fno-rtti" CXX_NO_RTTI_SUPPORTED)
+
+# Add "DebugOpt" CMake build type. Unlike builtin DEBUG it is optimized.
+string(REGEX REPLACE "-DNDEBUG " "" CMAKE_CXX_FLAGS_DEBUGOPT "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -DDEBUG" )
+string(REGEX REPLACE "-DNDEBUG " "" CMAKE_C_FLAGS_DEBUGOPT "${CMAKE_C_FLAGS_RELWITHDEBINFO} -DDEBUG" )
 
 # Enabled PIE binaries by default if supported.
 include(CheckPIESupported OPTIONAL RESULT_VARIABLE CHECK_PIE_SUPPORTED)
@@ -75,12 +79,27 @@ check_cxx_source_compiles(
   JXL_HWY_DISABLED_TARGETS_FORCED
 )
 
-set(WARNINGS_AS_ERRORS_DEFAULT false)
-
 if((SANITIZER STREQUAL "msan") OR EMSCRIPTEN)
   set(BUNDLE_LIBPNG_DEFAULT YES)
 else()
   set(BUNDLE_LIBPNG_DEFAULT NO)
+endif()
+
+
+if(EXISTS "${PROJECT_SOURCE_DIR}/third_party/libjpeg-turbo/jconfig.h.in")
+  set(ENABLE_JPEGLI_DEFAULT YES)
+else()
+  set(ENABLE_JPEGLI_DEFAULT NO)
+  message(STATUS "libjpeg-turbo submodule is absent; not enabling jpegli")
+endif()
+
+include(TestBigEndian)
+test_big_endian(ARCH_IS_BIG_ENDIAN)
+if(ARCH_IS_BIG_ENDIAN)
+  set(ENABLE_SKCMS_DEFAULT NO)
+  message(STATUS "Big-endian architecture detected; defaulting to lcms2 instead of skcms")
+else()
+  set(ENABLE_SKCMS_DEFAULT YES)
 endif()
 
 # Standard cmake naming for building shared libraries.
@@ -93,7 +112,7 @@ set(JPEGXL_ENABLE_DEVTOOLS false CACHE BOOL
     "Build JPEGXL developer tools.")
 set(JPEGXL_ENABLE_TOOLS true CACHE BOOL
     "Build JPEGXL user tools: cjxl and djxl.")
-set(JPEGXL_ENABLE_JPEGLI true CACHE BOOL
+set(JPEGXL_ENABLE_JPEGLI ${ENABLE_JPEGLI_DEFAULT} CACHE BOOL
     "Build jpegli library.")
 set(JPEGXL_ENABLE_JPEGLI_LIBJPEG true CACHE BOOL
     "Build libjpeg.so shared library based on jpegli.")
@@ -119,7 +138,7 @@ set(JPEGXL_ENABLE_SJPEG true CACHE BOOL
     "Build JPEGXL with support for encoding with sjpeg.")
 set(JPEGXL_ENABLE_OPENEXR true CACHE BOOL
     "Build JPEGXL with support for OpenEXR if available.")
-set(JPEGXL_ENABLE_SKCMS true CACHE BOOL
+set(JPEGXL_ENABLE_SKCMS ${ENABLE_SKCMS_DEFAULT} CACHE BOOL
     "Build with skcms instead of lcms2.")
 set(JPEGXL_ENABLE_VIEWERS false CACHE BOOL
     "Build JPEGXL viewer tools for evaluation.")
@@ -139,7 +158,9 @@ set(JPEGXL_ENABLE_BOXES true CACHE BOOL
     "Builds in support for decoding boxes in JXL files,\
  disabling it makes the decoder reject JXL_DEC_BOX events,\
  (default enabled)")
-set(JPEGXL_WARNINGS_AS_ERRORS ${WARNINGS_AS_ERRORS_DEFAULT} CACHE BOOL
+set(JPEGXL_STATIC false CACHE BOOL
+    "Build tools as static binaries.")
+set(JPEGXL_WARNINGS_AS_ERRORS false CACHE BOOL
     "Treat warnings as errors during compilation.")
 set(JPEGXL_DEP_LICENSE_DIR "" CACHE STRING
     "Directory where to search for system dependencies \"copyright\" files.")
@@ -153,12 +174,14 @@ set(JPEGXL_ENABLE_AVX512_SPR false CACHE BOOL
     "Build with AVX-512FP16 support (faster on CPUs that support it, but larger binary size).")
 set(JPEGXL_ENABLE_AVX512_ZEN4 false CACHE BOOL
 "Build with Zen4-optimized AVX512 support (faster on CPUs that support it, but larger binary size).")
+set(JPEGXL_ENABLE_WASM_THREADS true CACHE BOOL
+    "Builds WASM modules with threads support")
 
 # Force system dependencies.
 set(JPEGXL_FORCE_SYSTEM_BROTLI false CACHE BOOL
     "Force using system installed brotli instead of third_party/brotli source.")
 set(JPEGXL_FORCE_SYSTEM_GTEST false CACHE BOOL
-    "Force using system installed googletest (gtest/gmock) instead of third_party/googletest source.")
+    "Force using system installed googletest (gtest) instead of third_party/googletest source.")
 set(JPEGXL_FORCE_SYSTEM_LCMS2 false CACHE BOOL
     "Force using system installed lcms2 instead of third_party/lcms source.")
 set(JPEGXL_FORCE_SYSTEM_HWY false CACHE BOOL
@@ -197,20 +220,82 @@ endif()
 # used by clang-tidy.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(JPEGXL_STATIC)
+  set(BUILD_SHARED_LIBS 0)
+
+  # https://learn.microsoft.com/en-us/cpp/build/reference/md-mt-ld-use-run-time-library?view=msvc-170
+  # https://cmake.org/cmake/help/latest/variable/CMAKE_MSVC_RUNTIME_LIBRARY.html
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "$<$<NOT:$<CONFIG:Debug>>:MultiThreaded>" CACHE STRING "")
+
+  # Clang developers say that in case to use "static" we have to build stdlib
+  # ourselves; for real use case we don't care about stdlib, as it is "granted",
+  # so just linking all other libraries is fine.
+  if (NOT MSVC)
+    string(APPEND CMAKE_EXE_LINKER_FLAGS " -static")
+  endif()
+  if ((NOT WIN32 AND NOT APPLE) OR CYGWIN OR MINGW)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
+    string(APPEND CMAKE_EXE_LINKER_FLAGS " -static-libgcc -static-libstdc++")
+  endif()
+endif()  # JPEGXL_STATIC
+
 # Threads
 set(THREADS_PREFER_PTHREAD_FLAG YES)
 find_package(Threads REQUIRED)
 
 # These settings are important to drive check_cxx_source_compiles
 # See CMP0067 (min cmake version is 3.10 anyway)
-set(CMAKE_CXX_STANDARD 11)
+
+if ("cxx_std_17" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+  set(CMAKE_CXX_STANDARD 17)
+else()
+  if ("cxx_std_14" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 14)
+  else()
+    set(CMAKE_CXX_STANDARD 11)
+  endif()
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 # Atomics
 find_package(Atomics REQUIRED)
 
-if (EMSCRIPTEN)
+if(JPEGXL_STATIC)
+  if (MINGW)
+    # In MINGW libstdc++ uses pthreads directly. When building statically a
+    # program (regardless of whether the source code uses pthread or not) the
+    # toolchain will add stdc++ and pthread to the linking step but stdc++ will
+    # be linked statically while pthread will be linked dynamically.
+    # To avoid this and have pthread statically linked with need to pass it in
+    # the command line with "-Wl,-Bstatic -lpthread -Wl,-Bdynamic" but the
+    # linker will discard it if not used by anything else up to that point in
+    # the linker command line. If the program or any dependency don't use
+    # pthread directly -lpthread is discarded and libstdc++ (added by the
+    # toolchain later) will then use the dynamic version. For this we also need
+    # to pass -lstdc++ explicitly before -lpthread. For pure C programs -lstdc++
+    # will be discarded anyway.
+    # This adds these flags as dependencies for *all* targets. Adding this to
+    # CMAKE_EXE_LINKER_FLAGS instead would cause them to be included before any
+    # object files and therefore discarded. This should be set in the
+    # INTERFACE_LINK_LIBRARIES of Threads::Threads but some third_part targets
+    # don't depend on it.
+    link_libraries(-Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic)
+  elseif(CMAKE_USE_PTHREADS_INIT)
+    # "whole-archive" is not supported on OSX.
+    if (NOT APPLE)
+      # Set pthreads as a whole-archive, otherwise weak symbols in the static
+      # libraries will discard pthreads symbols leading to segmentation fault at
+      # runtime.
+      message(STATUS "Using -lpthread as --whole-archive")
+      set_target_properties(Threads::Threads PROPERTIES
+        INTERFACE_LINK_LIBRARIES
+            "-Wl,--whole-archive;-lpthread;-Wl,--no-whole-archive")
+    endif()
+  endif()
+endif()  # JPEGXL_STATIC
+
+if (EMSCRIPTEN AND JPEGXL_ENABLE_WASM_THREADS)
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
@@ -288,7 +373,6 @@ else ()
   if(JPEGXL_ENABLE_COVERAGE)
     set(JPEGXL_COVERAGE_FLAGS
         -g -O0 -fprofile-arcs -ftest-coverage
-        -DJXL_ENABLE_ASSERT=0 -DJXL_ENABLE_CHECK=0
     )
     set(JPEGXL_COVERAGE_LINK_FLAGS
         --coverage
@@ -376,7 +460,7 @@ if(JPEGXL_ENABLE_MANPAGES)
   find_program(ASCIIDOC a2x)
   if(ASCIIDOC)
     file(STRINGS "${ASCIIDOC}" ASCIIDOC_SHEBANG LIMIT_COUNT 1)
-    if(ASCIIDOC_SHEBANG MATCHES "/sh|/bash" OR MINGW)
+    if(ASCIIDOC_SHEBANG MATCHES "sh$" OR ASCIIDOC_SHEBANG MATCHES "libexec/bin/python$" OR MINGW)
       set(ASCIIDOC_PY_FOUND ON)
       # Run the program directly and set ASCIIDOC as empty.
       set(ASCIIDOC_PY "${ASCIIDOC}")

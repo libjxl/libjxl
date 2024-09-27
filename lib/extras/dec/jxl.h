@@ -8,10 +8,12 @@
 
 // Decodes JPEG XL images in memory.
 
+#include <jxl/memory_manager.h>
 #include <jxl/parallel_runner.h>
 #include <jxl/types.h>
-#include <stdint.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
@@ -38,12 +40,11 @@ struct JXLDecompressParams {
   JxlParallelRunner runner;
   void* runner_opaque = nullptr;
 
+  // If memory_manager is set, decoder uses it.
+  JxlMemoryManager* memory_manager = nullptr;
+
   // Whether truncated input should be treated as an error.
   bool allow_partial_input = false;
-
-  // Set to true if an ICC profile has to be synthesized for Enum color
-  // encodings
-  bool need_icc = false;
 
   // How many passes to decode at most. By default, decode everything.
   uint32_t max_passes = std::numeric_limits<uint32_t>::max();

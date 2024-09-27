@@ -5,6 +5,8 @@
 
 #include "lib/jxl/simd_util.h"
 
+#include <cstddef>
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/simd_util.cc"
 #include <hwy/foreach_target.h>

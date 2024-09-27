@@ -11,7 +11,7 @@ name: CIFuzz
 on:
   merge_group:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
     paths:
       - '**.c'
       - '**.cc'
@@ -29,15 +29,16 @@ concurrency:
 
 jobs:
   fuzzing:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
       with:
         egress-policy: audit
 
     - name: Checkout source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       id: checkout
       with:
         # The build_fuzzers action checks out the code to the storage/libjxl
@@ -58,7 +59,7 @@ jobs:
         language: c++
         fuzz-seconds: 600
     - name: Upload Crash
-      uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
+      uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
       if: failure() && steps.build.outcome == 'success'
       with:
         name: artifacts

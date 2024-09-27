@@ -5,10 +5,28 @@
 
 include(jxl_lists.cmake)
 
+if(SANITIZER STREQUAL "msan")
+  message(STATUS "NOT building benchmarks under MSAN")
+  return()
+endif()
+
 # This is the Google benchmark project (https://github.com/google/benchmark).
-find_package(benchmark QUIET)
+find_package(benchmark)
 
 if(benchmark_FOUND)
+  message(STATUS "benchmark found")
+  if(JPEGXL_STATIC AND NOT MINGW)
+    # benchmark::benchmark hardcodes the librt.so which obviously doesn't
+    # compile in static mode.
+    set_target_properties(benchmark::benchmark PROPERTIES
+      INTERFACE_LINK_LIBRARIES "Threads::Threads;-lrt")
+  endif()
+
+  list(APPEND JPEGXL_INTERNAL_TESTS
+    # TODO(eustas): Move this to tools/
+    ../tools/gauss_blur_gbench.cc
+  )
+
   # Compiles all the benchmark files into a single binary. Individual benchmarks
   # can be run with --benchmark_filter.
   add_executable(jxl_gbench "${JPEGXL_INTERNAL_GBENCH_SOURCES}" gbench_main.cc)
@@ -18,6 +36,9 @@ if(benchmark_FOUND)
   target_link_libraries(jxl_gbench
     jxl_extras-internal
     jxl-internal
+    jxl_tool
     benchmark::benchmark
   )
+else()
+  message(STATUS "benchmark NOT found")
 endif() # benchmark_FOUND

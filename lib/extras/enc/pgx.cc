@@ -6,7 +6,8 @@
 #include "lib/extras/enc/pgx.h"
 
 #include <jxl/codestream_header.h>
-#include <string.h>
+
+#include <cstring>
 
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
@@ -49,6 +50,7 @@ Status EncodeImagePGX(const PackedFrame& frame, const JxlBasicInfo& info,
   const PackedImage& color = frame.color;
   const JxlPixelFormat format = color.format;
   const uint8_t* in = reinterpret_cast<const uint8_t*>(color.pixels());
+  JXL_RETURN_IF_ERROR(PackedImage::ValidateDataType(format.data_type));
   size_t data_bits_per_sample = PackedImage::BitsPerChannel(format.data_type);
   size_t bytes_per_sample = data_bits_per_sample / kBitsPerByte;
   size_t num_samples = info.xsize * info.ysize;
@@ -60,7 +62,7 @@ Status EncodeImagePGX(const PackedFrame& frame, const JxlBasicInfo& info,
   std::vector<uint8_t> pixels(num_samples * bytes_per_sample);
 
   if (format.data_type == JXL_TYPE_UINT8) {
-    memcpy(&pixels[0], in, num_samples * bytes_per_sample);
+    memcpy(pixels.data(), in, num_samples * bytes_per_sample);
   } else if (format.data_type == JXL_TYPE_UINT16) {
     if (format.endianness != JXL_BIG_ENDIAN) {
       const uint8_t* p_in = in;
@@ -69,7 +71,7 @@ Status EncodeImagePGX(const PackedFrame& frame, const JxlBasicInfo& info,
         StoreBE16(LoadLE16(p_in), p_out);
       }
     } else {
-      memcpy(&pixels[0], in, num_samples * bytes_per_sample);
+      memcpy(pixels.data(), in, num_samples * bytes_per_sample);
     }
   } else {
     return JXL_FAILURE("Unsupported pixel data type");

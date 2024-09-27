@@ -5,7 +5,24 @@
 
 #include "lib/jxl/enc_huffman_tree.h"
 
+// Suppress any -Wdeprecated-declarations warning that might be emitted by
+// GCC or Clang by std::stable_sort in C++17 or later mode
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__)
+#pragma GCC push_options
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 #include <algorithm>
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC pop_options
+#endif
+
 #include <limits>
 #include <vector>
 
@@ -85,7 +102,8 @@ void CreateHuffmanTree(const uint32_t* data, const size_t length,
     size_t i = 0;      // Points to the next leaf node.
     size_t j = n + 1;  // Points to the next non-leaf node.
     for (size_t k = n - 1; k != 0; --k) {
-      size_t left, right;
+      size_t left;
+      size_t right;
       if (tree[i].total_count <= tree[j].total_count) {
         left = i;
         ++i;
@@ -112,7 +130,7 @@ void CreateHuffmanTree(const uint32_t* data, const size_t length,
       tree.push_back(sentinel);
     }
     JXL_DASSERT(tree.size() == 2 * n + 1);
-    SetDepth(tree[2 * n - 1], &tree[0], depth, 0);
+    SetDepth(tree[2 * n - 1], tree.data(), depth, 0);
 
     // We need to pack the Huffman tree in tree_limit bits.
     // If this was not successful, add fake entities to the lowest values

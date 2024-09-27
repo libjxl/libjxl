@@ -3,9 +3,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#define _DEFAULT_SOURCE  // for mkstemps().
+#define _DEFAULT_SOURCE  // NOLINT for mkstemps().
 
 #include "tools/benchmark/benchmark_utils.h"
+
+#include <string>
+#include <vector>
+
+#include "lib/jxl/base/status.h"
 
 // Not supported on Windows due to Linux-specific functions.
 // Not supported in Android NDK before API 28.
@@ -14,24 +19,28 @@
 
 #include <libgen.h>
 #include <spawn.h>
-#include <stdio.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <fstream>
+#include <cstdio>
+#include <cstdlib>
+#include <utility>
 
-#include "lib/jxl/image_bundle.h"
-#include "tools/file_io.h"
-
-extern char** environ;
+#ifdef __APPLE__
+#include <crt_externs.h>
+#define environ (*_NSGetEnviron())
+#else
+extern char** environ;  // NOLINT
+#endif
 
 namespace jpegxl {
 namespace tools {
 TemporaryFile::TemporaryFile(std::string basename, std::string extension) {
   const auto extension_size = 1 + extension.size();
   temp_filename_ = std::move(basename) + "_XXXXXX." + std::move(extension);
-  const int fd = mkstemps(&temp_filename_[0], extension_size);
+  const int fd =
+      mkstemps(const_cast<char*>(temp_filename_.data()), extension_size);
   if (fd == -1) {
     ok_ = false;
     return;
@@ -52,7 +61,7 @@ Status TemporaryFile::GetFileName(std::string* const output) const {
 
 std::string GetBaseName(std::string filename) {
   std::string result = std::move(filename);
-  result = basename(&result[0]);
+  result = basename(const_cast<char*>(result.data()));
   const size_t dot = result.rfind('.');
   if (dot != std::string::npos) {
     result.resize(dot);

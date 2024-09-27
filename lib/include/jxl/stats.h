@@ -16,22 +16,22 @@
 #include <jxl/jxl_export.h>
 #include <stddef.h>
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
  * Opaque structure that holds the encoder statistics.
  *
- * Allocated and initialized with JxlEncoderStatsCreate().
- * Cleaned up and deallocated with JxlEncoderStatsDestroy().
+ * Allocated and initialized with @ref JxlEncoderStatsCreate().
+ * Cleaned up and deallocated with @ref JxlEncoderStatsDestroy().
  */
 typedef struct JxlEncoderStatsStruct JxlEncoderStats;
 
 /**
  * Creates an instance of JxlEncoderStats and initializes it.
  *
- * @return pointer to initialized JxlEncoderStats instance
+ * @return pointer to initialized @ref JxlEncoderStats instance
  */
 JXL_EXPORT JxlEncoderStats* JxlEncoderStatsCreate(void);
 
@@ -43,7 +43,7 @@ JXL_EXPORT JxlEncoderStats* JxlEncoderStatsCreate(void);
  */
 JXL_EXPORT void JxlEncoderStatsDestroy(JxlEncoderStats* stats);
 
-/** Data type for querying JxlEncoderStats object
+/** Data type for querying @ref JxlEncoderStats object
  */
 typedef enum {
   JXL_ENC_STAT_HEADER_BITS,
@@ -94,7 +94,7 @@ JXL_EXPORT size_t JxlEncoderStatsGet(const JxlEncoderStats* stats,
 JXL_EXPORT void JxlEncoderStatsMerge(JxlEncoderStats* stats,
                                      const JxlEncoderStats* other);
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 }
 #endif
 

@@ -5,9 +5,14 @@
 
 #include "lib/jxl/modular/modular_image.h"
 
+#include <jxl/memory_manager.h>
+
+#if JXL_DEBUG_V_LEVEL >= 1
 #include <sstream>
+#endif
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/transform/transform.h"
 
 namespace jxl {
@@ -28,12 +33,32 @@ void Image::undo_transforms(const weighted::Header &wp_header,
   }
 }
 
-Image::Image(size_t iw, size_t ih, int bitdepth, int nb_chans)
-    : w(iw), h(ih), bitdepth(bitdepth), nb_meta_channels(0), error(false) {
-  for (int i = 0; i < nb_chans; i++) channel.emplace_back(Channel(iw, ih));
+Image::Image(JxlMemoryManager *memory_manager, size_t iw, size_t ih,
+             int bitdepth)
+    : w(iw),
+      h(ih),
+      bitdepth(bitdepth),
+      nb_meta_channels(0),
+      error(false),
+      memory_manager_(memory_manager) {}
+
+StatusOr<Image> Image::Create(JxlMemoryManager *memory_manager, size_t iw,
+                              size_t ih, int bitdepth, int nb_chans) {
+  Image result(memory_manager, iw, ih, bitdepth);
+  for (int i = 0; i < nb_chans; i++) {
+    JXL_ASSIGN_OR_RETURN(Channel c, Channel::Create(memory_manager, iw, ih));
+    result.channel.emplace_back(std::move(c));
+  }
+  return result;
 }
 
-Image::Image() : w(0), h(0), bitdepth(8), nb_meta_channels(0), error(true) {}
+Image::Image(JxlMemoryManager *memory_manager)
+    : w(0),
+      h(0),
+      bitdepth(8),
+      nb_meta_channels(0),
+      error(true),
+      memory_manager_(memory_manager) {}
 
 Image &Image::operator=(Image &&other) noexcept {
   w = other.w;
@@ -46,17 +71,19 @@ Image &Image::operator=(Image &&other) noexcept {
   return *this;
 }
 
-Image Image::clone() {
-  Image c(w, h, bitdepth, 0);
-  c.nb_meta_channels = nb_meta_channels;
-  c.error = error;
-  c.transform = transform;
-  for (Channel &ch : channel) {
-    Channel a(ch.w, ch.h, ch.hshift, ch.vshift);
-    CopyImageTo(ch.plane, &a.plane);
-    c.channel.push_back(std::move(a));
+StatusOr<Image> Image::Clone(const Image &that) {
+  JxlMemoryManager *memory_manager = that.memory_manager();
+  Image clone(memory_manager, that.w, that.h, that.bitdepth);
+  clone.nb_meta_channels = that.nb_meta_channels;
+  clone.error = that.error;
+  clone.transform = that.transform;
+  for (const Channel &ch : that.channel) {
+    JXL_ASSIGN_OR_RETURN(Channel a, Channel::Create(memory_manager, ch.w, ch.h,
+                                                    ch.hshift, ch.vshift));
+    JXL_RETURN_IF_ERROR(CopyImageTo(ch.plane, &a.plane));
+    clone.channel.push_back(std::move(a));
   }
-  return c;
+  return clone;
 }
 
 #if JXL_DEBUG_V_LEVEL >= 1

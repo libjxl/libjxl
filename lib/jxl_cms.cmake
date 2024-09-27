@@ -12,7 +12,10 @@ add_library(jxl_cms
   ${JPEGXL_INTERNAL_CMS_SOURCES}
 )
 target_compile_options(jxl_cms PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
-set_target_properties(jxl_cms PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(jxl_cms PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN 1)
 target_link_libraries(jxl_cms PUBLIC jxl_base)
 target_include_directories(jxl_cms PRIVATE
   ${JXL_HWY_INCLUDE_DIRS}
@@ -20,17 +23,17 @@ target_include_directories(jxl_cms PRIVATE
 generate_export_header(jxl_cms
   BASE_NAME JXL_CMS
   EXPORT_FILE_NAME include/jxl/jxl_cms_export.h)
-target_include_directories(jxl_cms PUBLIC
+target_include_directories(jxl_cms BEFORE PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>")
 
-set(JXL_CMS_PK_LIBS "")
+set(JPEGXL_CMS_LIBRARY_REQUIRES "")
 
 if (JPEGXL_ENABLE_SKCMS)
-  target_link_libraries(jxl_cms PRIVATE skcms)
+  target_link_skcms(jxl_cms)
 else()
   target_link_libraries(jxl_cms PRIVATE lcms2)
   if (JPEGXL_FORCE_SYSTEM_LCMS2)
-    set(JXL_CMS_PK_LIBS "-llcms2")
+    set(JPEGXL_CMS_LIBRARY_REQUIRES "lcms2")
   endif()
 endif()
 
@@ -57,7 +60,14 @@ install(TARGETS jxl_cms
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-set(JPEGXL_CMS_LIBRARY_REQUIRES "")
+if (BUILD_SHARED_LIBS)
+  set(JPEGXL_REQUIRES_TYPE "Requires.private")
+  set(JPEGXL_CMS_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+else()
+  set(JPEGXL_REQUIRES_TYPE "Requires")
+  set(JPEGXL_CMS_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+endif()
+
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl_cms.pc.in"
                "libjxl_cms.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl_cms.pc"

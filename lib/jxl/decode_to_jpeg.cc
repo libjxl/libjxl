@@ -5,7 +5,18 @@
 
 #include "lib/jxl/decode_to_jpeg.h"
 
+#include <jxl/decode.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
+#include "lib/jxl/jpeg/dec_jpeg_data.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
 
@@ -14,9 +25,10 @@ namespace jxl {
 JxlDecoderStatus JxlToJpegDecoder::Process(const uint8_t** next_in,
                                            size_t* avail_in) {
   if (!inside_box_) {
-    JXL_UNREACHABLE(
+    JXL_WARNING(
         "processing of JPEG reconstruction data outside JPEG reconstruction "
         "box");
+    return JXL_DEC_ERROR;
   }
   Span<const uint8_t> to_decode;
   if (box_until_eof_) {
@@ -40,7 +52,8 @@ JxlDecoderStatus JxlToJpegDecoder::Process(const uint8_t** next_in,
     to_decode = Bytes(buffer_.data(), buffer_.size());
   }
   if (!box_until_eof_ && to_decode.size() > box_size_) {
-    JXL_UNREACHABLE("JPEG reconstruction data to decode larger than expected");
+    JXL_WARNING("JPEG reconstruction data to decode larger than expected");
+    return JXL_DEC_ERROR;
   }
   if (box_until_eof_ || to_decode.size() == box_size_) {
     // If undefined size, or the right size, try to decode.

@@ -5,14 +5,11 @@
 
 #include "lib/jpegli/render.h"
 
-#include <string.h>
-
 #include <array>
-#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <hwy/aligned_allocator.h>
+#include <cstring>
 #include <vector>
 
 #include "lib/jpegli/color_quantize.h"
@@ -23,7 +20,6 @@
 #include "lib/jpegli/upsample.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/status.h"
 
 #ifdef MEMORY_SANITIZER
 #define JXL_MEMORY_SANITIZER 1
@@ -203,12 +199,13 @@ void WriteToOutput(j_decompress_ptr cinfo, float* JXL_RESTRICT rows[],
   if (cinfo->quantize_colors && m->quant_pass_ == 1) {
     float* error_row[kMaxComponents];
     float* next_error_row[kMaxComponents];
-    if (cinfo->dither_mode == JDITHER_ORDERED) {
+    J_DITHER_MODE dither_mode = cinfo->dither_mode;
+    if (dither_mode == JDITHER_ORDERED) {
       for (size_t c = 0; c < num_channels; ++c) {
         DitherRow(cinfo, &rows[c][xoffset], c, cinfo->output_scanline,
                   cinfo->output_width);
       }
-    } else if (cinfo->dither_mode == JDITHER_FS) {
+    } else if (dither_mode == JDITHER_FS) {
       for (size_t c = 0; c < num_channels; ++c) {
         if (cinfo->output_scanline % 2 == 0) {
           error_row[c] = m->error_row_[c];
@@ -221,12 +218,12 @@ void WriteToOutput(j_decompress_ptr cinfo, float* JXL_RESTRICT rows[],
       }
     }
     const float mul = 255.0f;
-    if (cinfo->dither_mode != JDITHER_FS) {
+    if (dither_mode != JDITHER_FS) {
       StoreUnsignedRow(rows, xoffset, len, num_channels, mul, scratch_space);
     }
     for (size_t i = 0; i < len; ++i) {
       uint8_t* pixel = &scratch_space[num_channels * i];
-      if (cinfo->dither_mode == JDITHER_FS) {
+      if (dither_mode == JDITHER_FS) {
         for (size_t c = 0; c < num_channels; ++c) {
           float val = rows[c][i] * mul + LimitError(error_row[c][i]);
           pixel[c] = std::round(std::min(255.0f, std::max(0.0f, val)));
@@ -234,7 +231,7 @@ void WriteToOutput(j_decompress_ptr cinfo, float* JXL_RESTRICT rows[],
       }
       int index = LookupColorIndex(cinfo, pixel);
       output[i] = index;
-      if (cinfo->dither_mode == JDITHER_FS) {
+      if (dither_mode == JDITHER_FS) {
         size_t prev_i = i > 0 ? i - 1 : 0;
         size_t next_i = i + 1 < len ? i + 1 : len - 1;
         for (size_t c = 0; c < num_channels; ++c) {
@@ -293,19 +290,18 @@ HWY_EXPORT(DecenterRow);
 void GatherBlockStats(const int16_t* JXL_RESTRICT coeffs,
                       const size_t coeffs_size, int32_t* JXL_RESTRICT nonzeros,
                       int32_t* JXL_RESTRICT sumabs) {
-  return HWY_DYNAMIC_DISPATCH(GatherBlockStats)(coeffs, coeffs_size, nonzeros,
-                                                sumabs);
+  HWY_DYNAMIC_DISPATCH(GatherBlockStats)(coeffs, coeffs_size, nonzeros, sumabs);
 }
 
 void WriteToOutput(j_decompress_ptr cinfo, float* JXL_RESTRICT rows[],
                    size_t xoffset, size_t len, size_t num_channels,
                    uint8_t* JXL_RESTRICT output) {
-  return HWY_DYNAMIC_DISPATCH(WriteToOutput)(cinfo, rows, xoffset, len,
-                                             num_channels, output);
+  HWY_DYNAMIC_DISPATCH(WriteToOutput)
+  (cinfo, rows, xoffset, len, num_channels, output);
 }
 
 void DecenterRow(float* row, size_t xsize) {
-  return HWY_DYNAMIC_DISPATCH(DecenterRow)(row, xsize);
+  HWY_DYNAMIC_DISPATCH(DecenterRow)(row, xsize);
 }
 
 bool ShouldApplyDequantBiases(j_decompress_ptr cinfo, int ci) {
@@ -360,8 +356,8 @@ bool do_smoothing(j_decompress_ptr cinfo) {
   if (!cinfo->progressive_mode || cinfo->coef_bits == nullptr) {
     return false;
   }
-  auto coef_bits_latch = m->coef_bits_latch;
-  auto prev_coef_bits_latch = m->prev_coef_bits_latch;
+  auto* coef_bits_latch = m->coef_bits_latch;
+  auto* prev_coef_bits_latch = m->prev_coef_bits_latch;
 
   for (int ci = 0; ci < cinfo->num_components; ci++) {
     jpeg_component_info* compptr = &cinfo->comp_info[ci];
@@ -432,7 +428,7 @@ void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
     }
   }
   // Get the correct coef_bits: In case of an incomplete scan, we use the
-  // prev coeficients.
+  // prev coefficients.
   if (cinfo->output_iMCU_row + 1 > cinfo->input_iMCU_row) {
     coef_bits = cinfo->master->prev_coef_bits_latch[component];
   } else {
@@ -467,6 +463,7 @@ void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
     auto dc = [&](int i, int j) {
       return swap_indices ? dc_values[j][i] : dc_values[i][j];
     };
+    JPEGLI_CHECK(coef_index >= 0 && coef_index < 10);
     Al = coef_bits[coef_index];
     switch (coef_index) {
       case 0:
@@ -520,6 +517,7 @@ void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
         break;
       case 7:
       case 8:
+      default:
         // set Q12 and Q21
         num = (dc(1, 1) - 3 * dc(1, 2) + dc(1, 3) - dc(3, 1) + 3 * dc(3, 2) -
                dc(3, 3));
@@ -551,7 +549,7 @@ void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
 void PrepareForOutput(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   bool smoothing = do_smoothing(cinfo);
-  m->apply_smoothing = smoothing && cinfo->do_block_smoothing;
+  m->apply_smoothing = smoothing && FROM_JXL_BOOL(cinfo->do_block_smoothing);
   size_t coeffs_per_block = cinfo->num_components * DCTSIZE2;
   memset(m->nonzeros_, 0, coeffs_per_block * sizeof(m->nonzeros_[0]));
   memset(m->sumabs_, 0, coeffs_per_block * sizeof(m->sumabs_[0]));
@@ -568,23 +566,23 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
       m->dequant_[c * DCTSIZE2 + k] = table->quantval[k] * kDequantScale;
     }
   }
-  ChooseInverseTransform(cinfo);
+  JPEGLI_CHECK(ChooseInverseTransform(cinfo));
   ChooseColorTransform(cinfo);
 }
 
 void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   const size_t imcu_row = cinfo->output_iMCU_row;
-  JBLOCKARRAY ba[kMaxComponents];
+  JBLOCKARRAY blocks[kMaxComponents];
   for (int c = 0; c < cinfo->num_components; ++c) {
     const jpeg_component_info* comp = &cinfo->comp_info[c];
     int by0 = imcu_row * comp->v_samp_factor;
     int block_rows_left = comp->height_in_blocks - by0;
     int max_block_rows = std::min(comp->v_samp_factor, block_rows_left);
     int offset = m->streaming_mode_ ? 0 : by0;
-    ba[c] = (*cinfo->mem->access_virt_barray)(
+    blocks[c] = (*cinfo->mem->access_virt_barray)(
         reinterpret_cast<j_common_ptr>(cinfo), m->coef_arrays[c], offset,
-        max_block_rows, false);
+        max_block_rows, FALSE);
   }
   for (int c = 0; c < cinfo->num_components; ++c) {
     size_t k0 = c * DCTSIZE2;
@@ -597,7 +595,7 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
         if (by >= compinfo.height_in_blocks) {
           continue;
         }
-        int16_t* JXL_RESTRICT coeffs = &ba[c][iy][0][0];
+        int16_t* JXL_RESTRICT coeffs = &blocks[c][iy][0][0];
         size_t num = compinfo.width_in_blocks * DCTSIZE2;
         GatherBlockStats(coeffs, num, &m->nonzeros_[k0], &m->sumabs_[k0]);
         m->num_processed_blocks_[c] += compinfo.width_in_blocks;
@@ -616,11 +614,11 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
         continue;
       }
       size_t dctsize = m->scaled_dct_size[c];
-      int16_t* JXL_RESTRICT row_in = &ba[c][iy][0][0];
+      int16_t* JXL_RESTRICT row_in = &blocks[c][iy][0][0];
       float* JXL_RESTRICT row_out = raw_out->Row(by * dctsize);
       for (size_t bx = 0; bx < compinfo.width_in_blocks; ++bx) {
         if (m->apply_smoothing) {
-          PredictSmooth(cinfo, ba[c], c, bx, iy);
+          PredictSmooth(cinfo, blocks[c], c, bx, iy);
           (*m->inverse_transform[c])(m->smoothing_scratch_, &m->dequant_[k0],
                                      &m->biases_[k0], m->idct_scratch_,
                                      &row_out[bx * dctsize], raw_out->stride(),
@@ -745,7 +743,7 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
           WriteToOutput(cinfo, rows, m->xoffset_, cinfo->output_width,
                         cinfo->out_color_components, output);
         }
-        JXL_ASSERT(cinfo->output_scanline == y + yix);
+        JPEGLI_CHECK(cinfo->output_scanline == y + yix);
         ++cinfo->output_scanline;
         ++(*num_output_rows);
         if (cinfo->output_scanline == cinfo->output_height) {

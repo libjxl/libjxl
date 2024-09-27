@@ -5,7 +5,10 @@
 
 #include "lib/jxl/frame_header.h"
 
+#if JXL_DEBUG_V_LEVEL >= 1
 #include <sstream>
+#include <string>
+#endif
 
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
@@ -27,7 +30,7 @@ static Status VisitBlendMode(Visitor* JXL_RESTRICT visitor,
       Val(static_cast<uint32_t>(BlendMode::kAdd)),
       Val(static_cast<uint32_t>(BlendMode::kBlend)), BitsOffset(2, 3),
       static_cast<uint32_t>(default_value), &encoded));
-  if (encoded > 4) {
+  if (encoded > static_cast<uint32_t>(BlendMode::kMul)) {
     return JXL_FAILURE("Invalid blend_mode");
   }
   *blend_mode = static_cast<BlendMode>(encoded);
@@ -125,12 +128,12 @@ Passes::Passes() { Bundle::Init(this); }
 Status Passes::VisitFields(Visitor* JXL_RESTRICT visitor) {
   JXL_QUIET_RETURN_IF_ERROR(
       visitor->U32(Val(1), Val(2), Val(3), BitsOffset(3, 4), 1, &num_passes));
-  JXL_ASSERT(num_passes <= kMaxNumPasses);  // Cannot happen when reading
+  JXL_ENSURE(num_passes <= kMaxNumPasses);  // Cannot happen when reading
 
   if (visitor->Conditional(num_passes != 1)) {
     JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
         Val(0), Val(1), Val(2), BitsOffset(1, 3), 0, &num_downsample));
-    JXL_ASSERT(num_downsample <= 4);  // 1,2,4,8
+    JXL_ENSURE(num_downsample <= 4);  // 1,2,4,8
     if (num_downsample > num_passes) {
       return JXL_FAILURE("num_downsample %u > num_passes %u", num_downsample,
                          num_passes);
@@ -368,8 +371,7 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
       JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&animation_frame));
     }
     JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(true, &is_last));
-  }
-  if (frame_type != FrameType::kRegularFrame) {
+  } else {
     is_last = false;
   }
 
@@ -398,16 +400,18 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
     } else if (visitor->Conditional(frame_type == FrameType::kReferenceOnly)) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->Bool(true, &save_before_color_transform));
+      size_t xsize = custom_size_or_origin ? frame_size.xsize
+                                           : nonserialized_metadata->xsize();
+      size_t ysize = custom_size_or_origin ? frame_size.ysize
+                                           : nonserialized_metadata->ysize();
       if (!save_before_color_transform &&
-          (frame_size.xsize < nonserialized_metadata->xsize() ||
-           frame_size.ysize < nonserialized_metadata->ysize() ||
-           frame_origin.x0 != 0 || frame_origin.y0 != 0)) {
+          (xsize < nonserialized_metadata->xsize() ||
+           ysize < nonserialized_metadata->ysize() || frame_origin.x0 != 0 ||
+           frame_origin.y0 != 0)) {
         return JXL_FAILURE(
             "non-patch reference frame with invalid crop: %" PRIuS "x%" PRIuS
             "%+d%+d",
-            static_cast<size_t>(frame_size.xsize),
-            static_cast<size_t>(frame_size.ysize),
-            static_cast<int>(frame_origin.x0),
+            xsize, ysize, static_cast<int>(frame_origin.x0),
             static_cast<int>(frame_origin.y0));
       }
     }

@@ -9,21 +9,24 @@
 // Library to decode the ANS population counts from the bit-stream and build a
 // decoding table from them.
 
-#include <stddef.h>
-#include <stdint.h>
+#include <jxl/memory_manager.h>
+#include <jxl/types.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <vector>
 
 #include "lib/jxl/ans_common.h"
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/bits.h"
-#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/cache_aligned.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_huffman.h"
 #include "lib/jxl/field_encodings.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 namespace jxl {
 
@@ -133,9 +136,14 @@ static constexpr int8_t kSpecialDistances[kNumSpecialDistances][2] = {
     {8, 0},  {4, 7},  {-4, 7}, {7, 4},  {-7, 4}, {8, 1},  {8, 2},  {6, 6},
     {-6, 6}, {8, 3},  {5, 7},  {-5, 7}, {7, 5},  {-7, 5}, {8, 4},  {6, 7},
     {-6, 7}, {7, 6},  {-7, 6}, {8, 5},  {7, 7},  {-7, 7}, {8, 6},  {8, 7}};
+static JXL_INLINE int SpecialDistance(size_t index, int multiplier) {
+  int dist = kSpecialDistances[index][0] +
+             static_cast<int>(multiplier) * kSpecialDistances[index][1];
+  return (dist > 1) ? dist : 1;
+}
 
 struct ANSCode {
-  CacheAlignedUniquePtr alias_tables;
+  AlignedMemory alias_tables;
   std::vector<HuffmanDecodingData> huffman_data;
   std::vector<HybridUintConfig> uint_config;
   std::vector<int> degenerate_symbols;
@@ -145,6 +153,7 @@ struct ANSCode {
   // Maximum number of bits necessary to represent the result of a
   // ReadHybridUint call done with this ANSCode.
   size_t max_num_bits = 0;
+  JxlMemoryManager* memory_manager;
   void UpdateMaxNumBits(size_t ctx, size_t symbol);
 };
 
@@ -152,39 +161,9 @@ class ANSSymbolReader {
  public:
   // Invalid symbol reader, to be overwritten.
   ANSSymbolReader() = default;
-  ANSSymbolReader(const ANSCode* code, BitReader* JXL_RESTRICT br,
-                  size_t distance_multiplier = 0)
-      : alias_tables_(
-            reinterpret_cast<AliasTable::Entry*>(code->alias_tables.get())),
-        huffman_data_(code->huffman_data.data()),
-        use_prefix_code_(code->use_prefix_code),
-        configs(code->uint_config.data()) {
-    if (!use_prefix_code_) {
-      state_ = static_cast<uint32_t>(br->ReadFixedBits<32>());
-      log_alpha_size_ = code->log_alpha_size;
-      log_entry_size_ = ANS_LOG_TAB_SIZE - code->log_alpha_size;
-      entry_size_minus_1_ = (1 << log_entry_size_) - 1;
-    } else {
-      state_ = (ANS_SIGNATURE << 16u);
-    }
-    if (!code->lz77.enabled) return;
-    // a std::vector incurs unacceptable decoding speed loss because of
-    // initialization.
-    lz77_window_storage_ = AllocateArray(kWindowSize * sizeof(uint32_t));
-    lz77_window_ = reinterpret_cast<uint32_t*>(lz77_window_storage_.get());
-    lz77_ctx_ = code->lz77.nonserialized_distance_context;
-    lz77_length_uint_ = code->lz77.length_uint_config;
-    lz77_threshold_ = code->lz77.min_symbol;
-    lz77_min_length_ = code->lz77.min_length;
-    num_special_distances_ =
-        distance_multiplier == 0 ? 0 : kNumSpecialDistances;
-    for (size_t i = 0; i < num_special_distances_; i++) {
-      int dist = kSpecialDistances[i][0];
-      dist += static_cast<int>(distance_multiplier) * kSpecialDistances[i][1];
-      if (dist < 1) dist = 1;
-      special_distances_[i] = dist;
-    }
-  }
+  static StatusOr<ANSSymbolReader> Create(const ANSCode* code,
+                                          BitReader* JXL_RESTRICT br,
+                                          size_t distance_multiplier = 0);
 
   JXL_INLINE size_t ReadSymbolANSWithoutRefill(const size_t histo_idx,
                                                BitReader* JXL_RESTRICT br) {
@@ -196,7 +175,7 @@ class ANSSymbolReader {
         AliasTable::Lookup(table, res, log_entry_size_, entry_size_minus_1_);
     state_ = symbol.freq * (state_ >> ANS_LOG_TAB_SIZE) + symbol.offset;
 
-#if 1
+#if JXL_TRUE
     // Branchless version is about equally fast on SKX.
     const uint32_t new_state =
         (state_ << 16u) | static_cast<uint32_t>(br->PeekFixedBits<16>());
@@ -280,7 +259,7 @@ class ANSSymbolReader {
                                                      BitReader* JXL_RESTRICT br,
                                                      uint32_t* value,
                                                      uint32_t* run) {
-    JXL_DASSERT(HuffRleOnly());
+    JXL_DASSERT(IsHuffRleOnly());
     br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
     size_t token = ReadSymbolHuffWithoutRefill(ctx, br);
     if (JXL_UNLIKELY(token >= lz77_threshold_)) {
@@ -291,7 +270,7 @@ class ANSSymbolReader {
     }
     *value = ReadHybridUintConfig(configs[ctx], token, br);
   }
-  bool HuffRleOnly() {
+  bool IsHuffRleOnly() const {
     if (lz77_window_ == nullptr) return false;
     if (!use_prefix_code_) return false;
     for (size_t i = 0; i < kHuffmanTableBits; i++) {
@@ -467,6 +446,10 @@ class ANSSymbolReader {
   }
 
  private:
+  ANSSymbolReader(const ANSCode* code, BitReader* JXL_RESTRICT br,
+                  size_t distance_multiplier,
+                  AlignedMemory&& lz77_window_storage);
+
   const AliasTable::Entry* JXL_RESTRICT alias_tables_;  // not owned
   const HuffmanDecodingData* huffman_data_;
   bool use_prefix_code_;
@@ -478,7 +461,9 @@ class ANSSymbolReader {
 
   // LZ77 structures and constants.
   static constexpr size_t kWindowMask = kWindowSize - 1;
-  CacheAlignedUniquePtr lz77_window_storage_;
+  // a std::vector incurs unacceptable decoding speed loss because of
+  // initialization.
+  AlignedMemory lz77_window_storage_;
   uint32_t* lz77_window_ = nullptr;
   uint32_t num_decoded_ = 0;
   uint32_t num_to_copy_ = 0;
@@ -491,7 +476,8 @@ class ANSSymbolReader {
   uint32_t num_special_distances_{};
 };
 
-Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
+Status DecodeHistograms(JxlMemoryManager* memory_manager, BitReader* br,
+                        size_t num_contexts, ANSCode* code,
                         std::vector<uint8_t>* context_map,
                         bool disallow_lz77 = false);
 

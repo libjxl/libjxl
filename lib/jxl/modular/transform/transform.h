@@ -6,13 +6,17 @@
 #ifndef LIB_JXL_MODULAR_TRANSFORM_TRANSFORM_H_
 #define LIB_JXL_MODULAR_TRANSFORM_TRANSFORM_H_
 
+#include <cstddef>
 #include <cstdint>
-#include <string>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 
 namespace jxl {
@@ -77,11 +81,13 @@ class Transform : public Fields {
   Transform() : Transform(TransformId::kInvalid) {}
 
   Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
-    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
-        Val((uint32_t)TransformId::kRCT), Val((uint32_t)TransformId::kPalette),
-        Val((uint32_t)TransformId::kSqueeze),
-        Val((uint32_t)TransformId::kInvalid), (uint32_t)TransformId::kRCT,
-        reinterpret_cast<uint32_t *>(&id)));
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->U32(Val(static_cast<uint32_t>(TransformId::kRCT)),
+                     Val(static_cast<uint32_t>(TransformId::kPalette)),
+                     Val(static_cast<uint32_t>(TransformId::kSqueeze)),
+                     Val(static_cast<uint32_t>(TransformId::kInvalid)),
+                     static_cast<uint32_t>(TransformId::kRCT),
+                     reinterpret_cast<uint32_t *>(&id)));
     if (id == TransformId::kInvalid) {
       return JXL_FAILURE("Invalid transform ID");
     }
@@ -109,7 +115,7 @@ class Transform : public Fields {
           visitor->U32(Val(0), BitsOffset(8, 1), BitsOffset(10, 257),
                        BitsOffset(16, 1281), 0, &nb_deltas));
       JXL_QUIET_RETURN_IF_ERROR(
-          visitor->Bits(4, (uint32_t)Predictor::Zero,
+          visitor->Bits(4, static_cast<uint32_t>(Predictor::Zero),
                         reinterpret_cast<uint32_t *>(&predictor)));
       if (predictor >= Predictor::Best) {
         return JXL_FAILURE("Invalid predictor");
@@ -132,7 +138,7 @@ class Transform : public Fields {
   JXL_FIELDS_NAME(Transform)
 
   Status Inverse(Image &input, const weighted::Header &wp_header,
-                 ThreadPool *pool = nullptr);
+                 ThreadPool *pool = nullptr) const;
   Status MetaApply(Image &input);
 };
 

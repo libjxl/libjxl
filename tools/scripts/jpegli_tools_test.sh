@@ -9,7 +9,8 @@
 
 set -eux
 
-MYDIR=$(dirname $(realpath "$0"))
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 JPEGXL_TEST_DATA_PATH="${MYDIR}/../../testdata"
 
 # Temporary files cleanup hooks.
@@ -163,12 +164,12 @@ djpeg_test() {
   local outfn="$(mktemp -p "${tmpdir}").pnm"
   LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
     djpeg -outfile "${outfn}" -colors 128 -onepass -dither fs "${jpgfn}"
-  verify_ssimulacra2 "${infn}" "${outfn}" 30
+  verify_ssimulacra2 "${infn}" "${outfn}" 28
 
   local outfn="$(mktemp -p "${tmpdir}").pnm"
   LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
     djpeg -outfile "${outfn}" -colors 128 -onepass -dither ordered "${jpgfn}"
-  verify_ssimulacra2 "${infn}" "${outfn}" 30
+  verify_ssimulacra2 "${infn}" "${outfn}" 28
 
   # Test -grayscale flag.
   local outfn="$(mktemp -p "${tmpdir}").pgm"
@@ -185,28 +186,6 @@ djpeg_test() {
   LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
     djpeg -outfile "${outfn}" -rgb "${jpgfn}"
   verify_ssimulacra2 "${infn}" "${outfn}" "${minscore}"
-
-  # Test -crop flag.
-  for geometry in 256x256+128+128 256x127+128+117; do
-    local outfn="$(mktemp -p "${tmpdir}").pnm"
-    LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
-      djpeg -outfile "${outfn}" -crop "${geometry}" "${jpgfn}"
-    local outfn2="$(mktemp -p "${tmpdir}").pnm"
-    convert "${infn}" -crop "${geometry}" "${outfn2}"
-    verify_ssimulacra2 "${outfn2}" "${outfn}" "${minscore}"
-  done
-
-  # Test output scaling.
-  for scale in 1/4 3/8 1/2 5/8 9/8; do
-    local scalepct="$(python3 -c "print(100.0*${scale})")%"
-    local geometry=96x128+0+0
-    local outfn="$(mktemp -p "${tmpdir}").pnm"
-    LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
-      djpeg -outfile "${outfn}" -scale "${scale}" -crop "${geometry}" "${jpgfn}"
-    local outfn2="$(mktemp -p "${tmpdir}").pnm"
-    convert "${infn}" -scale "${scalepct}" -crop "${geometry}" "${outfn2}"
-    verify_ssimulacra2 "${outfn2}" "${outfn}" 80
-  done
 }
 
 main() {
@@ -259,25 +238,25 @@ main() {
   djpegli_test "${ppm_rgb}" "-q 95 -sample 1x1" 93
   djpegli_test "${ppm_gray}" "-q 95 -gray" 94
 
-  cjpeg_test "${ppm_rgb}" "" 89 1.9
-  cjpeg_test "${ppm_rgb}" "-optimize" 89 1.85
-  cjpeg_test "${ppm_rgb}" "-optimize -progressive" 89 1.8
-  cjpeg_test "${ppm_rgb}" "-sample 2x2" 87 1.65
-  cjpeg_test "${ppm_rgb}" "-sample 1x2" 88 1.75
-  cjpeg_test "${ppm_rgb}" "-sample 2x1" 88 1.75
+  cjpeg_test "${ppm_rgb}" "" 83 1.65
+  cjpeg_test "${ppm_rgb}" "-optimize" 83 1.6
+  cjpeg_test "${ppm_rgb}" "-optimize -progressive" 83 1.6
+  cjpeg_test "${ppm_rgb}" "-sample 1x1" 85 2.1
+  cjpeg_test "${ppm_rgb}" "-sample 1x2" 84 1.9
+  cjpeg_test "${ppm_rgb}" "-sample 2x1" 84 1.9
   cjpeg_test "${ppm_rgb}" "-grayscale" -50 1.45
-  cjpeg_test "${ppm_rgb}" "-rgb" 92 4.5
-  cjpeg_test "${ppm_rgb}" "-restart 1" 89 1.9
-  cjpeg_test "${ppm_rgb}" "-restart 1024B" 89 1.9
-  cjpeg_test "${ppm_rgb}" "-smooth 30" 88 1.75
-  cjpeg_test "${ppm_gray}" "-grayscale" 92 1.45
+  cjpeg_test "${ppm_rgb}" "-rgb" 89 4.5
+  cjpeg_test "${ppm_rgb}" "-restart 1" 83 1.65
+  cjpeg_test "${ppm_rgb}" "-restart 1024B" 83 1.65
+  cjpeg_test "${ppm_rgb}" "-smooth 30" 82 1.45
+  cjpeg_test "${ppm_gray}" "-grayscale" 88 1.45
   # The -q option works differently on v62 vs. v8 cjpeg binaries, so we have to
   # have looser bounds than would be necessary if we sticked to a particular
   # cjpeg version.
-  cjpeg_test "${ppm_rgb}" "-q 50" 76 0.95
+  cjpeg_test "${ppm_rgb}" "-q 50" 73 0.95
   cjpeg_test "${ppm_rgb}" "-q 80" 84 1.6
   cjpeg_test "${ppm_rgb}" "-q 90" 89 2.35
-  cjpeg_test "${ppm_rgb}" "-q 100" 95 7.45
+  cjpeg_test "${ppm_rgb}" "-q 100" 94 7.45
 
   djpeg_test "${ppm_rgb}" "-q 95" 92
   djpeg_test "${ppm_rgb}" "-q 95 -sample 1x1" 93

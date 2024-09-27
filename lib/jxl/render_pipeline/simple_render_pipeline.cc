@@ -5,29 +5,40 @@
 
 #include "lib/jxl/render_pipeline/simple_render_pipeline.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <hwy/base.h>
+#include <utility>
+#include <vector>
 
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/sanitizers.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
-#include "lib/jxl/sanitizers.h"
 
 namespace jxl {
 
-void SimpleRenderPipeline::PrepareForThreadsInternal(size_t num,
-                                                     bool use_group_ids) {
+Status SimpleRenderPipeline::PrepareForThreadsInternal(size_t num,
+                                                       bool use_group_ids) {
   if (!channel_data_.empty()) {
-    return;
+    return true;
   }
   auto ch_size = [](size_t frame_size, size_t shift) {
     return DivCeil(frame_size, 1 << shift) + kRenderPipelineXOffset * 2;
   };
-  for (size_t c = 0; c < channel_shifts_[0].size(); c++) {
-    channel_data_.push_back(ImageF(
-        ch_size(frame_dimensions_.xsize_upsampled, channel_shifts_[0][c].first),
-        ch_size(frame_dimensions_.ysize_upsampled,
-                channel_shifts_[0][c].second)));
+  for (auto& entry : channel_shifts_[0]) {
+    JXL_ASSIGN_OR_RETURN(
+        ImageF ch,
+        ImageF::Create(
+            memory_manager_,
+            ch_size(frame_dimensions_.xsize_upsampled, entry.first),
+            ch_size(frame_dimensions_.ysize_upsampled, entry.second)));
+    channel_data_.push_back(std::move(ch));
     msan::PoisonImage(channel_data_.back());
   }
+  return true;
 }
 
 Rect SimpleRenderPipeline::MakeChannelRect(size_t group_id, size_t channel) {
@@ -60,14 +71,14 @@ std::vector<std::pair<ImageF*, Rect>> SimpleRenderPipeline::PrepareBuffers(
   return ret;
 }
 
-void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
+Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
   for (size_t c = 0; c < channel_data_.size(); c++) {
     Rect r = MakeChannelRect(group_id, c);
     (void)r;
     JXL_CHECK_PLANE_INITIALIZED(channel_data_[c], r, c);
   }
 
-  if (PassesWithAllInput() <= processed_passes_) return;
+  if (PassesWithAllInput() <= processed_passes_) return true;
   processed_passes_++;
 
   for (size_t stage_id = 0; stage_id < stages_.size(); stage_id++) {
@@ -89,16 +100,19 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       }
       // Ensure that the newly allocated channels are large enough to avoid
       // problems with padding.
-      new_channels[c] =
-          ImageF(frame_dimensions_.xsize_upsampled_padded +
-                     kRenderPipelineXOffset * 2 + hwy::kMaxVectorSize * 8,
-                 frame_dimensions_.ysize_upsampled_padded +
-                     kRenderPipelineXOffset * 2);
-      new_channels[c].ShrinkTo(
+      JXL_ASSIGN_OR_RETURN(
+          new_channels[c],
+          ImageF::Create(memory_manager_,
+                         frame_dimensions_.xsize_upsampled_padded +
+                             kRenderPipelineXOffset * 2 +
+                             hwy::kMaxVectorSize * 8,
+                         frame_dimensions_.ysize_upsampled_padded +
+                             kRenderPipelineXOffset * 2));
+      JXL_RETURN_IF_ERROR(new_channels[c].ShrinkTo(
           (input_sizes[c].first << stage->settings_.shift_x) +
               kRenderPipelineXOffset * 2,
           (input_sizes[c].second << stage->settings_.shift_y) +
-              kRenderPipelineXOffset * 2);
+              kRenderPipelineXOffset * 2));
       output_channels[c] = &new_channels[c];
     }
 
@@ -107,7 +121,7 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
              kRenderPipelineXOffset;
     };
 
-    // Add mirrored pixes to all kInOut channels.
+    // Add mirrored pixels to all kInOut channels.
     for (size_t c = 0; c < channel_data_.size(); c++) {
       if (stage->GetChannelMode(c) != RenderPipelineChannelMode::kInOut) {
         continue;
@@ -116,7 +130,8 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       for (size_t y = 0; y < input_sizes[c].second; y++) {
         float* row = get_row(c, y);
         for (size_t ix = 0; ix < stage->settings_.border_x; ix++) {
-          *(row - ix - 1) = row[Mirror(-ssize_t(ix) - 1, input_sizes[c].first)];
+          *(row - ix - 1) =
+              row[Mirror(-static_cast<ssize_t>(ix) - 1, input_sizes[c].first)];
         }
         for (size_t ix = 0; ix < stage->settings_.border_x; ix++) {
           *(row + ix + input_sizes[c].first) =
@@ -126,7 +141,8 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       // Vertical mirroring.
       for (int y = 0; y < static_cast<int>(stage->settings_.border_y); y++) {
         memcpy(get_row(c, -y - 1) - stage->settings_.border_x,
-               get_row(c, Mirror(-ssize_t(y) - 1, input_sizes[c].second)) -
+               get_row(c, Mirror(-static_cast<ssize_t>(y) - 1,
+                                 input_sizes[c].second)) -
                    stage->settings_.border_x,
                sizeof(float) *
                    (input_sizes[c].first + 2 * stage->settings_.border_x));
@@ -152,15 +168,15 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       xsize = std::max(input_sizes[c].first, xsize);
     }
 
-    JXL_ASSERT(ysize != 0);
-    JXL_ASSERT(xsize != 0);
+    JXL_ENSURE(ysize != 0);
+    JXL_ENSURE(xsize != 0);
 
     RenderPipelineStage::RowInfo input_rows(channel_data_.size());
     RenderPipelineStage::RowInfo output_rows(channel_data_.size());
 
     // Run the pipeline.
     {
-      stage->SetInputSizes(input_sizes);
+      JXL_RETURN_IF_ERROR(stage->SetInputSizes(input_sizes));
       int border_y = stage->settings_.border_y;
       for (size_t y = 0; y < ysize; y++) {
         // Prepare input rows.
@@ -183,8 +199,9 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
                 (y << stage->settings_.shift_y) + iy + kRenderPipelineXOffset);
           }
         }
-        stage->ProcessRow(input_rows, output_rows, /*xextra=*/0, xsize,
-                          /*xpos=*/0, y, thread_id);
+        JXL_RETURN_IF_ERROR(stage->ProcessRow(input_rows, output_rows,
+                                              /*xextra=*/0, xsize,
+                                              /*xpos=*/0, y, thread_id));
       }
     }
 
@@ -201,8 +218,9 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
                              1 << channel_shifts_[next_stage][c].first);
       size_t ysize = DivCeil(frame_dimensions_.ysize_upsampled,
                              1 << channel_shifts_[next_stage][c].second);
-      channel_data_[c].ShrinkTo(xsize + 2 * kRenderPipelineXOffset,
-                                ysize + 2 * kRenderPipelineXOffset);
+      JXL_RETURN_IF_ERROR(
+          channel_data_[c].ShrinkTo(xsize + 2 * kRenderPipelineXOffset,
+                                    ysize + 2 * kRenderPipelineXOffset));
       JXL_CHECK_PLANE_INITIALIZED(
           channel_data_[c],
           Rect(kRenderPipelineXOffset, kRenderPipelineXOffset, xsize, ysize),
@@ -210,7 +228,8 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
     }
 
     if (stage->SwitchToImageDimensions()) {
-      size_t image_xsize, image_ysize;
+      size_t image_xsize;
+      size_t image_ysize;
       FrameOrigin frame_origin;
       stage->GetImageDimensions(&image_xsize, &image_ysize, &frame_origin);
       frame_dimensions_.Set(image_xsize, image_ysize, 0, 0, 0, false, 1);
@@ -218,8 +237,12 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       channel_data_.clear();
       channel_data_.reserve(old_channels.size());
       for (size_t c = 0; c < old_channels.size(); c++) {
-        channel_data_.emplace_back(2 * kRenderPipelineXOffset + image_xsize,
-                                   2 * kRenderPipelineXOffset + image_ysize);
+        JXL_ASSIGN_OR_RETURN(
+            ImageF ch,
+            ImageF::Create(memory_manager_,
+                           2 * kRenderPipelineXOffset + image_xsize,
+                           2 * kRenderPipelineXOffset + image_ysize));
+        channel_data_.emplace_back(std::move(ch));
       }
       for (size_t y = 0; y < image_ysize; ++y) {
         for (size_t c = 0; c < channel_data_.size(); c++) {
@@ -257,10 +280,12 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
           Rect(x0_fg, y0_fg, xsize, ysize)
               .Translate(kRenderPipelineXOffset, kRenderPipelineXOffset);
       for (size_t c = 0; c < channel_data_.size(); c++) {
-        CopyImageTo(rect_fg, old_channels[c], rect_fg_relative_to_image,
-                    &channel_data_[c]);
+        JXL_RETURN_IF_ERROR(CopyImageTo(rect_fg, old_channels[c],
+                                        rect_fg_relative_to_image,
+                                        &channel_data_[c]));
       }
     }
   }
+  return true;
 }
 }  // namespace jxl

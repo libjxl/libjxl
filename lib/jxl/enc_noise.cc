@@ -5,19 +5,15 @@
 
 #include "lib/jxl/enc_noise.h"
 
-#include <stdint.h>
-#include <stdlib.h>
-
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
 #include <numeric>
 #include <utility>
 
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/convolve.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_optimize.h"
-#include "lib/jxl/image_ops.h"
 
 namespace jxl {
 namespace {
@@ -114,7 +110,7 @@ class NoiseHistogram {
  private:
   template <typename T>
   T ClampX(const T x) const {
-    return std::min(std::max(T(0), x), T(kBins - 1));
+    return std::min(std::max(static_cast<T>(0), x), static_cast<T>(kBins - 1));
   }
   size_t Index(const float x) const { return ClampX(static_cast<int>(x)); }
 
@@ -319,11 +315,12 @@ std::vector<NoiseLevel> GetNoiseLevel(
   return noise_level_per_intensity;
 }
 
-void EncodeFloatParam(float val, float precision, BitWriter* writer) {
-  JXL_ASSERT(val >= 0);
-  const int absval_quant = static_cast<int>(val * precision + 0.5f);
-  JXL_ASSERT(absval_quant < (1 << 10));
+Status EncodeFloatParam(float val, float precision, BitWriter* writer) {
+  JXL_ENSURE(val >= 0);
+  const int absval_quant = static_cast<int>(std::lround(val * precision));
+  JXL_ENSURE(absval_quant < (1 << 10));
   writer->Write(10, absval_quant);
+  return true;
 }
 
 }  // namespace
@@ -358,15 +355,17 @@ Status GetNoiseParameter(const Image3F& opsin, NoiseParams* noise_params,
   return noise_params->HasAny();
 }
 
-void EncodeNoise(const NoiseParams& noise_params, BitWriter* writer,
-                 size_t layer, AuxOut* aux_out) {
-  JXL_ASSERT(noise_params.HasAny());
+Status EncodeNoise(const NoiseParams& noise_params, BitWriter* writer,
+                   LayerType layer, AuxOut* aux_out) {
+  JXL_ENSURE(noise_params.HasAny());
 
-  BitWriter::Allotment allotment(writer, NoiseParams::kNumNoisePoints * 16);
-  for (float i : noise_params.lut) {
-    EncodeFloatParam(i, kNoisePrecision, writer);
-  }
-  allotment.ReclaimAndCharge(writer, layer, aux_out);
+  return writer->WithMaxBits(
+      NoiseParams::kNumNoisePoints * 16, layer, aux_out, [&]() -> Status {
+        for (float i : noise_params.lut) {
+          JXL_RETURN_IF_ERROR(EncodeFloatParam(i, kNoisePrecision, writer));
+        }
+        return true;
+      });
 }
 
 }  // namespace jxl

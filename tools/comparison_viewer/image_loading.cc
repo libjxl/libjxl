@@ -14,25 +14,29 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
 #include "tools/file_io.h"
+#include "tools/no_memory_manager.h"
 #include "tools/thread_pool_internal.h"
 #include "tools/viewer/load_jxl.h"
 
 namespace jpegxl {
 namespace tools {
 
-using jxl::CodecInOut;
-using jxl::ColorEncoding;
-using jxl::IccBytes;
-using jxl::Image3F;
-using jxl::ImageBundle;
-using jxl::Rect;
-using jxl::Span;
-using jxl::Status;
-using jxl::ThreadPool;
-using jxl::extras::ColorHints;
+using ::jxl::CodecInOut;
+using ::jxl::ColorEncoding;
+using ::jxl::Image3F;
+using ::jxl::ImageBundle;
+using ::jxl::ImageF;
+using ::jxl::Rect;
+using ::jxl::Span;
+using ::jxl::Status;
+using ::jxl::ThreadPool;
+using ::jxl::extras::ColorHints;
+
+using IccBytes = std::vector<uint8_t>;
 
 namespace {
 
@@ -67,12 +71,12 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   }
   static ThreadPoolInternal pool(QThread::idealThreadCount());
 
-  CodecInOut decoded;
+  CodecInOut decoded{jpegxl::tools::NoMemoryManager()};
   ColorHints color_hints;
   if (!sourceColorSpaceHint.isEmpty()) {
     color_hints.Add("color_space", sourceColorSpaceHint.toStdString());
   }
-  if (!loadFromFile(filename, color_hints, &decoded, &pool)) {
+  if (!loadFromFile(filename, color_hints, &decoded, pool.get())) {
     return QImage();
   }
   decoded.metadata.m.SetIntensityTarget(intensityTarget);
@@ -93,7 +97,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   }
   Image3F converted;
   if (!ib.CopyTo(Rect(ib), targetColorSpace, *JxlGetDefaultCms(), &converted,
-                 &pool)) {
+                 pool.get())) {
     return QImage();
   }
 
@@ -104,9 +108,10 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   };
 
   if (ib.HasAlpha()) {
+    const ImageF* alpha = ib.alpha();
     for (int y = 0; y < image.height(); ++y) {
       QRgb* const row = reinterpret_cast<QRgb*>(image.scanLine(y));
-      const float* const alphaRow = ib.alpha().ConstRow(y);
+      const float* const alphaRow = alpha->ConstRow(y);
       const float* const redRow = converted.ConstPlaneRow(0, y);
       const float* const greenRow = converted.ConstPlaneRow(1, y);
       const float* const blueRow = converted.ConstPlaneRow(2, y);

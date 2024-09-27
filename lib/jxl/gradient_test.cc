@@ -4,25 +4,27 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <jxl/memory_manager.h>
 
 #include <algorithm>
-#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <utility>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/override.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/enc_cache.h"
+#include "lib/jxl/common.h"  // SpeedTier
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -44,10 +46,11 @@ double PointLineDist(double x0, double y0, double x1, double y1, double x,
 // angle in which the change direction happens.
 Image3F GenerateTestGradient(uint32_t color0, uint32_t color1, double angle,
                              size_t xsize, size_t ysize) {
-  Image3F image(xsize, ysize);
+  JXL_TEST_ASSIGN_OR_DIE(
+      Image3F image, Image3F::Create(jxl::test::MemoryManager(), xsize, ysize));
 
-  double x0 = xsize / 2;
-  double y0 = ysize / 2;
+  double x0 = xsize / 2.0;
+  double y0 = ysize / 2.0;
   double x1 = x0 + std::sin(angle / 360.0 * 2.0 * kPi);
   double y1 = y0 + std::cos(angle / 360.0 * 2.0 * kPi);
 
@@ -77,61 +80,60 @@ Image3F GenerateTestGradient(uint32_t color0, uint32_t color1, double angle,
 // delta and right delta (top/bottom for vertical direction).
 // The radius over which the derivative is computed is only 1 pixel and it only
 // checks two angles (hor and ver), but this approximation works well enough.
-static ImageF Gradient2(const ImageF& image) {
+Image3F Gradient2(const Image3F& image) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   size_t xsize = image.xsize();
   size_t ysize = image.ysize();
-  ImageF image2(image.xsize(), image.ysize());
-  for (size_t y = 1; y + 1 < ysize; y++) {
-    const auto* JXL_RESTRICT row0 = image.Row(y - 1);
-    const auto* JXL_RESTRICT row1 = image.Row(y);
-    const auto* JXL_RESTRICT row2 = image.Row(y + 1);
-    auto* row_out = image2.Row(y);
-    for (size_t x = 1; x + 1 < xsize; x++) {
-      float ddx = (row1[x] - row1[x - 1]) - (row1[x + 1] - row1[x]);
-      float ddy = (row1[x] - row0[x]) - (row2[x] - row1[x]);
-      row_out[x] = std::max(fabsf(ddx), fabsf(ddy));
+  JXL_TEST_ASSIGN_OR_DIE(Image3F image2,
+                         Image3F::Create(memory_manager, xsize, ysize));
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t y = 1; y + 1 < ysize; y++) {
+      const auto* JXL_RESTRICT row0 = image.ConstPlaneRow(c, y - 1);
+      const auto* JXL_RESTRICT row1 = image.ConstPlaneRow(c, y);
+      const auto* JXL_RESTRICT row2 = image.ConstPlaneRow(c, y + 1);
+      auto* row_out = image2.PlaneRow(c, y);
+      for (size_t x = 1; x + 1 < xsize; x++) {
+        float ddx = (row1[x] - row1[x - 1]) - (row1[x + 1] - row1[x]);
+        float ddy = (row1[x] - row0[x]) - (row2[x] - row1[x]);
+        row_out[x] = std::max(fabsf(ddx), fabsf(ddy));
+      }
     }
-  }
-  // Copy to the borders
-  if (ysize > 2) {
-    auto* JXL_RESTRICT row0 = image2.Row(0);
-    const auto* JXL_RESTRICT row1 = image2.Row(1);
-    const auto* JXL_RESTRICT row2 = image2.Row(ysize - 2);
-    auto* JXL_RESTRICT row3 = image2.Row(ysize - 1);
-    for (size_t x = 1; x + 1 < xsize; x++) {
-      row0[x] = row1[x];
-      row3[x] = row2[x];
+    // Copy to the borders
+    if (ysize > 2) {
+      auto* JXL_RESTRICT row0 = image2.PlaneRow(c, 0);
+      const auto* JXL_RESTRICT row1 = image2.PlaneRow(c, 1);
+      const auto* JXL_RESTRICT row2 = image2.PlaneRow(c, ysize - 2);
+      auto* JXL_RESTRICT row3 = image2.PlaneRow(c, ysize - 1);
+      for (size_t x = 1; x + 1 < xsize; x++) {
+        row0[x] = row1[x];
+        row3[x] = row2[x];
+      }
+    } else {
+      const auto* row0_in = image.ConstPlaneRow(c, 0);
+      const auto* row1_in = image.ConstPlaneRow(c, ysize - 1);
+      auto* row0_out = image2.PlaneRow(c, 0);
+      auto* row1_out = image2.PlaneRow(c, ysize - 1);
+      for (size_t x = 1; x + 1 < xsize; x++) {
+        // Image too narrow, take first derivative instead
+        row0_out[x] = row1_out[x] = fabsf(row0_in[x] - row1_in[x]);
+      }
     }
-  } else {
-    const auto* row0_in = image.Row(0);
-    const auto* row1_in = image.Row(ysize - 1);
-    auto* row0_out = image2.Row(0);
-    auto* row1_out = image2.Row(ysize - 1);
-    for (size_t x = 1; x + 1 < xsize; x++) {
-      // Image too narrow, take first derivative instead
-      row0_out[x] = row1_out[x] = fabsf(row0_in[x] - row1_in[x]);
-    }
-  }
-  if (xsize > 2) {
-    for (size_t y = 0; y < ysize; y++) {
-      auto* row = image2.Row(y);
-      row[0] = row[1];
-      row[xsize - 1] = row[xsize - 2];
-    }
-  } else {
-    for (size_t y = 0; y < ysize; y++) {
-      const auto* JXL_RESTRICT row_in = image.Row(y);
-      auto* row_out = image2.Row(y);
-      // Image too narrow, take first derivative instead
-      row_out[0] = row_out[xsize - 1] = fabsf(row_in[0] - row_in[xsize - 1]);
+    if (xsize > 2) {
+      for (size_t y = 0; y < ysize; y++) {
+        auto* row = image2.PlaneRow(c, y);
+        row[0] = row[1];
+        row[xsize - 1] = row[xsize - 2];
+      }
+    } else {
+      for (size_t y = 0; y < ysize; y++) {
+        const auto* JXL_RESTRICT row_in = image.ConstPlaneRow(c, y);
+        auto* row_out = image2.PlaneRow(c, y);
+        // Image too narrow, take first derivative instead
+        row_out[0] = row_out[xsize - 1] = fabsf(row_in[0] - row_in[xsize - 1]);
+      }
     }
   }
   return image2;
-}
-
-static Image3F Gradient2(const Image3F& image) {
-  return Image3F(Gradient2(image.Plane(0)), Gradient2(image.Plane(1)),
-                 Gradient2(image.Plane(2)));
 }
 
 /*
@@ -143,6 +145,7 @@ Angle in degrees, colors can be given in hex as 0xRRGGBB.
 void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
                   size_t xsize, size_t ysize, float angle, bool fast_mode,
                   float butteraugli_distance, bool use_gradient = true) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   CompressParams cparams;
   cparams.butteraugli_distance = butteraugli_distance;
   if (fast_mode) {
@@ -150,12 +153,13 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   }
   Image3F gradient = GenerateTestGradient(color0, color1, angle, xsize, ysize);
 
-  CodecInOut io;
+  CodecInOut io{memory_manager};
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
-  io.SetFromImage(std::move(gradient), io.metadata.m.color_encoding);
+  ASSERT_TRUE(
+      io.SetFromImage(std::move(gradient), io.metadata.m.color_encoding));
 
-  CodecInOut io2;
+  CodecInOut io2{memory_manager};
 
   std::vector<uint8_t> compressed;
   EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed, pool));
@@ -172,28 +176,30 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
     // butteraugli_distance).
     Image3F gradient2 = Gradient2(*io2.Main().color());
 
-    std::array<float, 3> image_max;
-    Image3Max(gradient2, &image_max);
-
     // TODO(jyrki): These values used to work with 0.2, 0.2, 0.2.
-    EXPECT_LE(image_max[0], 3.15);
-    EXPECT_LE(image_max[1], 1.72);
-    EXPECT_LE(image_max[2], 5.05);
+    float image_min;
+    float image_max;
+    ImageMinMax(gradient2.Plane(0), &image_min, &image_max);
+    EXPECT_LE(image_max, 3.15);
+    ImageMinMax(gradient2.Plane(1), &image_min, &image_max);
+    EXPECT_LE(image_max, 1.72);
+    ImageMinMax(gradient2.Plane(2), &image_min, &image_max);
+    EXPECT_LE(image_max, 5.05);
   }
 }
 
-static constexpr bool fast_mode = true;
+constexpr bool fast_mode = true;
 
 TEST(GradientTest, SteepGradient) {
   test::ThreadPoolForTests pool(8);
   // Relatively steep gradients, colors from the sky of stp.png
-  TestGradient(&pool, 0xd99d58, 0x889ab1, 512, 512, 90, fast_mode, 3.0);
+  TestGradient(pool.get(), 0xd99d58, 0x889ab1, 512, 512, 90, fast_mode, 3.0);
 }
 
 TEST(GradientTest, SubtleGradient) {
   test::ThreadPoolForTests pool(8);
   // Very subtle gradient
-  TestGradient(&pool, 0xb89b7b, 0xa89b8d, 512, 512, 90, fast_mode, 4.0);
+  TestGradient(pool.get(), 0xb89b7b, 0xa89b8d, 512, 512, 90, fast_mode, 4.0);
 }
 
 }  // namespace

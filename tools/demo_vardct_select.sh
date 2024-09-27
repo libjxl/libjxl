@@ -11,7 +11,8 @@
 
 set -eu
 
-MYDIR=$(dirname $(realpath "$0"))
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 
 CLEANUP_FILES=()
 cleanup() {
@@ -43,7 +44,7 @@ EOF
   fi
 
   if ! command -v benchmark_xl &>/dev/null 2>&1; then
-    PATH=$PATH:$MYDIR/../build/tools
+    PATH="${PATH}:${MYDIR}/../build/tools"
     if ! command -v benchmark_xl &>/dev/null 2>&1; then
       echo "Could not find benchmark_xl, try building first"
       exit

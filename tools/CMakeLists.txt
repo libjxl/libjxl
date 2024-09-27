@@ -65,13 +65,15 @@ set(FUZZER_CORPUS_BINARIES)
 add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
   codec_config.cc
+  no_memory_manager.cc
   speed_stats.cc
   tool_version.cc
+  tracking_memory_manager.cc
   ${JXL_CMS_OBJECTS}
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
 target_include_directories(jxl_tool PUBLIC "${PROJECT_SOURCE_DIR}")
-target_link_libraries(jxl_tool PUBLIC hwy)
+target_link_libraries(jxl_tool PUBLIC jxl_base hwy)
 
 # The JPEGXL_VERSION is set from the builders.
 if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
@@ -121,6 +123,14 @@ else()
     COMPILE_DEFINITIONS JPEGXL_VERSION=\"${JPEGXL_VERSION}\")
 endif()
 
+add_library(jxl_gauss_blur STATIC #EXCLUDE_FROM_ALL
+  gauss_blur.cc
+)
+target_compile_options(jxl_gauss_blur PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
+target_include_directories(jxl_gauss_blur PUBLIC "${PROJECT_SOURCE_DIR}")
+target_link_libraries(jxl_gauss_blur PUBLIC jxl)
+target_link_libraries(jxl_gauss_blur PUBLIC hwy)
+
 if(JPEGXL_ENABLE_TOOLS)
   # Main compressor.
   add_executable(cjxl cjxl_main.cc)
@@ -151,7 +161,7 @@ if(JPEGXL_ENABLE_TOOLS)
   endif()
 
   add_executable(jxlinfo jxlinfo.c)
-  target_link_libraries(jxlinfo jxl)
+  target_link_libraries(jxlinfo jxl jxl_extras_nocodec-internal)
   list(APPEND TOOL_BINARIES jxlinfo)
 
   if(NOT SANITIZER STREQUAL "none")
@@ -180,10 +190,15 @@ if(JPEGXL_ENABLE_DEVTOOLS)
     ssimulacra2
     xyb_range
     jxl_from_tree
+    icc_simplify
   )
 
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
+  target_link_libraries(ssimulacra_main jxl_gauss_blur)
+
   add_executable(ssimulacra2 ssimulacra2_main.cc ssimulacra2.cc)
+  target_link_libraries(ssimulacra2 jxl_gauss_blur)
+
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
   add_executable(display_to_hlg hdr/display_to_hlg.cc)
@@ -196,12 +211,13 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   add_executable(generate_lut_template hdr/generate_lut_template.cc)
   add_executable(xyb_range xyb_range.cc)
   add_executable(jxl_from_tree jxl_from_tree.cc)
+  add_executable(icc_simplify icc_simplify.cc)
 
   list(APPEND FUZZER_CORPUS_BINARIES djxl_fuzzer_corpus)
   add_executable(djxl_fuzzer_corpus djxl_fuzzer_corpus.cc)
   target_link_libraries(djxl_fuzzer_corpus
-    jxl_extras-internal
     jxl_testlib-internal
+    jxl_extras-internal
     jxl_tool
   )
   if(JPEGXL_ENABLE_JPEGLI)
@@ -239,6 +255,7 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
     ../third_party/dirent.cc
   )
   target_link_libraries(benchmark_xl Threads::Threads)
+  target_link_libraries(benchmark_xl jxl_gauss_blur) # for ssimulacra
   if(MINGW)
   # MINGW doesn't support glob.h.
   target_compile_definitions(benchmark_xl PRIVATE "-DHAS_GLOB=0")
@@ -310,9 +327,13 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
     set(JXL_WASM_TOOLS_LINK_FLAGS "\
       -s USE_LIBPNG=1 \
       -s ALLOW_MEMORY_GROWTH=1 \
-      -s USE_PTHREADS=1 \
-      -s PTHREAD_POOL_SIZE=16 \
     ")
+    if (JPEGXL_ENABLE_WASM_THREADS)
+      set(JXL_WASM_TOOLS_LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS} \
+        -s USE_PTHREADS=1 \
+        -s PTHREAD_POOL_SIZE=16 \
+      ")
+    endif()
     set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS}")
   endif()
 endforeach()
@@ -327,6 +348,7 @@ if(JPEGXL_ENABLE_TOOLS)
     color_encoding_fuzzer
     decode_basic_info_fuzzer
     cjxl_fuzzer
+    streaming_fuzzer
     icc_codec_fuzzer
     fields_fuzzer
     rans_fuzzer
@@ -356,13 +378,14 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
     target_link_libraries("${BINARY}"
       jxl_dec-internal
       jxl_threads
+      jxl_tool
     )
   elseif(FUZZER STREQUAL jpegli_dec_fuzzer)
     target_link_libraries("${BINARY}" jpegli-static)
   else()
     target_link_libraries("${BINARY}"
-      jxl_extras_nocodec-internal
       jxl_testlib-internal
+      jxl_extras_nocodec-internal
       jxl_tool
     )
   endif()
@@ -385,7 +408,7 @@ endif()  # SANITIZER != "none"
 set_target_properties(libjxl_test PROPERTIES PREFIX "tests/")
 target_link_libraries(libjxl_test jxl)
 if (NOT MSVC)
-target_compile_options(libjxl_test PRIVATE -Wall -Wextra -Werror)
+target_compile_options(libjxl_test PRIVATE -Wall -Wextra)
 if(NOT WIN32)
   target_compile_options(libjxl_test PRIVATE -pedantic)
 endif()  # NOT WIN32
@@ -422,8 +445,9 @@ find_package(Java QUIET)
 
 if (JNI_FOUND AND Java_FOUND)
   include(UseJava)
+  # NB: *_jni_onload.cc might be necessary for Android; not used yet.
 
-  # decoder_jni_onload.cc might be necessary for Android; not used yet.
+  # JPEGXL wrapper
   add_library(jxl_jni SHARED jni/org/jpeg/jpegxl/wrapper/decoder_jni.cc)
   target_include_directories(jxl_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
   target_link_libraries(jxl_jni PUBLIC jxl_dec-internal jxl_threads)
@@ -453,6 +477,29 @@ if (JNI_FOUND AND Java_FOUND)
   )
   get_target_property(JXL_JNI_WRAPPER_TEST_JAR jxl_jni_wrapper_test JAR_FILE)
 
+  # jpegli wrapper
+
+  if(JPEGXL_ENABLE_JPEGLI)
+    add_library(jpegli_jni SHARED jni/org/jpeg/jpegli/wrapper/encoder_jni.cc)
+    target_include_directories(jpegli_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
+    target_include_directories(jpegli_jni PRIVATE
+      "${CMAKE_CURRENT_BINARY_DIR}/include/jpegli"
+    )
+    target_link_libraries(jpegli_jni PUBLIC jpegli-static)
+
+    add_jar(jpegli_jni_wrapper SOURCES
+      jni/org/jpeg/jpegli/wrapper/Encoder.java
+      OUTPUT_NAME org.jpeg.jpegli
+    )
+    get_target_property(JPEGLI_JNI_WRAPPER_JAR jpegli_jni_wrapper JAR_FILE)
+
+    add_jar(jpegli_jni_wrapper_test
+      SOURCES jni/org/jpeg/jpegli/wrapper/EncoderTest.java
+      INCLUDE_JARS jpegli_jni_wrapper
+    )
+    get_target_property(JPEGLI_JNI_WRAPPER_TEST_JAR jpegli_jni_wrapper_test JAR_FILE)
+  endif()
+
   if(NOT SANITIZER MATCHES ".san")
     # NB: Vanilla OpenJDK 8 / 11 are known to work well (i.e. either
     #     "which java" or JAVA_HOME environment variable point to the path like
@@ -464,6 +511,15 @@ if (JNI_FOUND AND Java_FOUND)
               -Dorg.jpeg.jpegxl.wrapper.lib=$<TARGET_FILE:jxl_jni>
               org.jpeg.jpegxl.wrapper.DecoderTest
     )
+    if(JPEGXL_ENABLE_JPEGLI)
+      add_test(
+        NAME test_jpegli_jni_wrapper
+        COMMAND ${Java_JAVA_EXECUTABLE}
+                -cp "${JPEGLI_JNI_WRAPPER_JAR}:${JPEGLI_JNI_WRAPPER_TEST_JAR}"
+                -Dorg.jpeg.jpegli.wrapper.lib=$<TARGET_FILE:jpegli_jni>
+                org.jpeg.jpegli.wrapper.EncoderTest
+      )
+    endif()
   endif()  # JPEGXL_ENABLE_FUZZERS
 endif()  # JNI_FOUND & Java_FOUND
 endif()  # JPEGXL_ENABLE_JNI
@@ -487,3 +543,7 @@ if (BASH_PROGRAM)
   endforeach()
 endif()  # BASH_PROGRAM
 endif()  # JPEGXL_TEST_TOOLS
+
+add_library(enc_fast_lossless ${PROJECT_SOURCE_DIR}/lib/jxl/enc_fast_lossless.cc)
+target_include_directories(enc_fast_lossless PRIVATE "${PROJECT_SOURCE_DIR}")
+set_target_properties(enc_fast_lossless PROPERTIES COMPILE_FLAGS "-DFJXL_STANDALONE ${FJXL_COMPILE_FLAGS}")

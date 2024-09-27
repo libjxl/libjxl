@@ -16,11 +16,12 @@
 #ifndef JXL_RESIZABLE_PARALLEL_RUNNER_CXX_H_
 #define JXL_RESIZABLE_PARALLEL_RUNNER_CXX_H_
 
+#include <jxl/memory_manager.h>
 #include <jxl/resizable_parallel_runner.h>
 
 #include <memory>
 
-#if !(defined(__cplusplus) || defined(c_plusplus))
+#ifndef __cplusplus
 #error \
     "This a C++ only header. Use jxl/jxl_resizable_parallel_runner.h from C" \
     "sources."

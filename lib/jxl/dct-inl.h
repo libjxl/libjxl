@@ -49,22 +49,22 @@ using FV = typename FVImpl<SZ>::type;
 
 template <size_t N, size_t SZ>
 struct CoeffBundle {
-  static void AddReverse(const float* JXL_RESTRICT ain1,
-                         const float* JXL_RESTRICT ain2,
-                         float* JXL_RESTRICT aout) {
+  static void AddReverse(const float* JXL_RESTRICT a_in1,
+                         const float* JXL_RESTRICT a_in2,
+                         float* JXL_RESTRICT a_out) {
     for (size_t i = 0; i < N; i++) {
-      auto in1 = Load(FV<SZ>(), ain1 + i * SZ);
-      auto in2 = Load(FV<SZ>(), ain2 + (N - i - 1) * SZ);
-      Store(Add(in1, in2), FV<SZ>(), aout + i * SZ);
+      auto in1 = Load(FV<SZ>(), a_in1 + i * SZ);
+      auto in2 = Load(FV<SZ>(), a_in2 + (N - i - 1) * SZ);
+      Store(Add(in1, in2), FV<SZ>(), a_out + i * SZ);
     }
   }
-  static void SubReverse(const float* JXL_RESTRICT ain1,
-                         const float* JXL_RESTRICT ain2,
-                         float* JXL_RESTRICT aout) {
+  static void SubReverse(const float* JXL_RESTRICT a_in1,
+                         const float* JXL_RESTRICT a_in2,
+                         float* JXL_RESTRICT a_out) {
     for (size_t i = 0; i < N; i++) {
-      auto in1 = Load(FV<SZ>(), ain1 + i * SZ);
-      auto in2 = Load(FV<SZ>(), ain2 + (N - i - 1) * SZ);
-      Store(Sub(in1, in2), FV<SZ>(), aout + i * SZ);
+      auto in1 = Load(FV<SZ>(), a_in1 + i * SZ);
+      auto in2 = Load(FV<SZ>(), a_in2 + (N - i - 1) * SZ);
+      Store(Sub(in1, in2), FV<SZ>(), a_out + i * SZ);
     }
   }
   static void B(float* JXL_RESTRICT coeff) {
@@ -89,27 +89,27 @@ struct CoeffBundle {
     Store(Mul(in1, sqrt2), FV<SZ>(), coeff);
   }
   // Ideally optimized away by compiler (except the multiply).
-  static void InverseEvenOdd(const float* JXL_RESTRICT ain,
-                             float* JXL_RESTRICT aout) {
+  static void InverseEvenOdd(const float* JXL_RESTRICT a_in,
+                             float* JXL_RESTRICT a_out) {
     for (size_t i = 0; i < N / 2; i++) {
-      auto in1 = Load(FV<SZ>(), ain + i * SZ);
-      Store(in1, FV<SZ>(), aout + 2 * i * SZ);
+      auto in1 = Load(FV<SZ>(), a_in + i * SZ);
+      Store(in1, FV<SZ>(), a_out + 2 * i * SZ);
     }
     for (size_t i = N / 2; i < N; i++) {
-      auto in1 = Load(FV<SZ>(), ain + i * SZ);
-      Store(in1, FV<SZ>(), aout + (2 * (i - N / 2) + 1) * SZ);
+      auto in1 = Load(FV<SZ>(), a_in + i * SZ);
+      Store(in1, FV<SZ>(), a_out + (2 * (i - N / 2) + 1) * SZ);
     }
   }
   // Ideally optimized away by compiler.
-  static void ForwardEvenOdd(const float* JXL_RESTRICT ain, size_t ain_stride,
-                             float* JXL_RESTRICT aout) {
+  static void ForwardEvenOdd(const float* JXL_RESTRICT a_in, size_t a_in_stride,
+                             float* JXL_RESTRICT a_out) {
     for (size_t i = 0; i < N / 2; i++) {
-      auto in1 = LoadU(FV<SZ>(), ain + 2 * i * ain_stride);
-      Store(in1, FV<SZ>(), aout + i * SZ);
+      auto in1 = LoadU(FV<SZ>(), a_in + 2 * i * a_in_stride);
+      Store(in1, FV<SZ>(), a_out + i * SZ);
     }
     for (size_t i = N / 2; i < N; i++) {
-      auto in1 = LoadU(FV<SZ>(), ain + (2 * (i - N / 2) + 1) * ain_stride);
-      Store(in1, FV<SZ>(), aout + i * SZ);
+      auto in1 = LoadU(FV<SZ>(), a_in + (2 * (i - N / 2) + 1) * a_in_stride);
+      Store(in1, FV<SZ>(), a_out + i * SZ);
     }
   }
   // Invoked on full vector.
@@ -154,12 +154,12 @@ struct DCT1DImpl;
 
 template <size_t SZ>
 struct DCT1DImpl<1, SZ> {
-  JXL_INLINE void operator()(float* JXL_RESTRICT mem, float*) {}
+  JXL_INLINE void operator()(float* JXL_RESTRICT mem, float* /* tmp */) {}
 };
 
 template <size_t SZ>
 struct DCT1DImpl<2, SZ> {
-  JXL_INLINE void operator()(float* JXL_RESTRICT mem, float*) {
+  JXL_INLINE void operator()(float* JXL_RESTRICT mem, float* /* tmp */) {
     auto in1 = Load(FV<SZ>(), mem);
     auto in2 = Load(FV<SZ>(), mem + SZ);
     Store(Add(in1, in2), FV<SZ>(), mem);
@@ -186,7 +186,7 @@ struct IDCT1DImpl;
 template <size_t SZ>
 struct IDCT1DImpl<1, SZ> {
   JXL_INLINE void operator()(const float* from, size_t from_stride, float* to,
-                             size_t to_stride, float* JXL_RESTRICT) {
+                             size_t to_stride, float* JXL_RESTRICT /* tmp */) {
     StoreU(LoadU(FV<SZ>(), from), FV<SZ>(), to);
   }
 };
@@ -194,7 +194,7 @@ struct IDCT1DImpl<1, SZ> {
 template <size_t SZ>
 struct IDCT1DImpl<2, SZ> {
   JXL_INLINE void operator()(const float* from, size_t from_stride, float* to,
-                             size_t to_stride, float* JXL_RESTRICT) {
+                             size_t to_stride, float* JXL_RESTRICT /* tmp */) {
     JXL_DASSERT(from_stride >= SZ);
     JXL_DASSERT(to_stride >= SZ);
     auto in1 = LoadU(FV<SZ>(), from);

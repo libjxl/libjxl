@@ -3,8 +3,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <vector>
+
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
+#include "lib/jpegli/test_params.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
 
@@ -28,7 +38,8 @@ struct SourceManager {
 
   static void init_source(j_decompress_ptr cinfo) {}
   static boolean fill_input_buffer(j_decompress_ptr cinfo) { return FALSE; }
-  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {}
+  static void skip_input_data(j_decompress_ptr cinfo,
+                              long num_bytes /* NOLINT */) {}
   static void term_source(j_decompress_ptr cinfo) {}
 };
 
@@ -36,13 +47,13 @@ struct SourceManager {
 // input buffer. The buffer size is kept short because empty_output_buffer() is
 // called only when the output buffer is full, and we want to update the decoder
 // input frequently to demonstrate that streaming works.
-static constexpr size_t kOutputBufferSize = 1024;
+constexpr size_t kOutputBufferSize = 1024;
 struct DestinationManager {
   jpeg_destination_mgr pub;
   std::vector<uint8_t> buffer;
   SourceManager* dest;
 
-  DestinationManager(SourceManager* src)
+  explicit DestinationManager(SourceManager* src)
       : buffer(kOutputBufferSize), dest(src) {
     pub.next_output_byte = buffer.data();
     pub.free_in_buffer = buffer.size();
@@ -54,7 +65,7 @@ struct DestinationManager {
   static void init_destination(j_compress_ptr cinfo) {}
 
   static boolean empty_output_buffer(j_compress_ptr cinfo) {
-    auto us = reinterpret_cast<DestinationManager*>(cinfo->dest);
+    auto* us = reinterpret_cast<DestinationManager*>(cinfo->dest);
     jpeg_destination_mgr* src = &us->pub;
     jpeg_source_mgr* dst = &us->dest->pub;
     std::vector<uint8_t>& src_buf = us->buffer;
@@ -69,7 +80,7 @@ struct DestinationManager {
     dst->bytes_in_buffer = dst_buf.size();
     src->next_output_byte = src_buf.data();
     src->free_in_buffer = src_buf.size();
-    return true;
+    return TRUE;
   }
 
   static void term_destination(j_compress_ptr cinfo) {
@@ -87,6 +98,7 @@ class StreamingTestParam : public ::testing::TestWithParam<TestConfig> {};
 TEST_P(StreamingTestParam, TestStreaming) {
   jpeg_decompress_struct dinfo = {};
   jpeg_compress_struct cinfo = {};
+  SourceManager src;
   TestConfig config = GetParam();
   TestImage& input = config.input;
   TestImage output;
@@ -99,7 +111,6 @@ TEST_P(StreamingTestParam, TestStreaming) {
     // compressor's output is connected to the decompressor's input.
     jpegli_create_decompress(&dinfo);
     jpegli_create_compress(&cinfo);
-    SourceManager src;
     dinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
     DestinationManager dest(&src);
     cinfo.dest = reinterpret_cast<jpeg_destination_mgr*>(&dest);
@@ -107,7 +118,7 @@ TEST_P(StreamingTestParam, TestStreaming) {
     cinfo.image_width = input.xsize;
     cinfo.image_height = input.ysize;
     cinfo.input_components = input.components;
-    cinfo.in_color_space = (J_COLOR_SPACE)input.color_space;
+    cinfo.in_color_space = static_cast<J_COLOR_SPACE>(input.color_space);
     jpegli_set_defaults(&cinfo);
     cinfo.comp_info[0].v_samp_factor = config.jparams.v_sampling[0];
     jpegli_set_progressive_level(&cinfo, 0);
@@ -117,26 +128,26 @@ TEST_P(StreamingTestParam, TestStreaming) {
     size_t stride = cinfo.image_width * cinfo.input_components;
     size_t iMCU_height = 8 * cinfo.max_v_samp_factor;
     std::vector<uint8_t> row_bytes(iMCU_height * stride);
-    size_t yin = 0;
-    size_t yout = 0;
-    while (yin < cinfo.image_height) {
+    size_t y_in = 0;
+    size_t y_out = 0;
+    while (y_in < cinfo.image_height) {
       // Feed one iMCU row at a time to the compressor.
-      size_t lines_in = std::min(iMCU_height, cinfo.image_height - yin);
-      memcpy(&row_bytes[0], &input.pixels[yin * stride], lines_in * stride);
+      size_t lines_in = std::min(iMCU_height, cinfo.image_height - y_in);
+      memcpy(row_bytes.data(), &input.pixels[y_in * stride], lines_in * stride);
       std::vector<JSAMPROW> rows_in(lines_in);
       for (size_t i = 0; i < lines_in; ++i) {
         rows_in[i] = &row_bytes[i * stride];
       }
       EXPECT_EQ(lines_in,
-                jpegli_write_scanlines(&cinfo, &rows_in[0], lines_in));
-      yin += lines_in;
-      if (yin == cinfo.image_height) {
+                jpegli_write_scanlines(&cinfo, rows_in.data(), lines_in));
+      y_in += lines_in;
+      if (y_in == cinfo.image_height) {
         jpegli_finish_compress(&cinfo);
       }
 
       // Atfer the first iMCU row, we don't yet expect any output because the
       // compressor delays processing to have context rows after the iMCU row.
-      if (yin < std::min<size_t>(2 * iMCU_height, cinfo.image_height)) {
+      if (y_in < std::min<size_t>(2 * iMCU_height, cinfo.image_height)) {
         continue;
       }
 
@@ -144,7 +155,7 @@ TEST_P(StreamingTestParam, TestStreaming) {
       // data. We check here that at least the scan header was output, because
       // we expect that the compressor's output buffer was filled at least once
       // while emitting the first compressed iMCU row.
-      if (yin == std::min<size_t>(2 * iMCU_height, cinfo.image_height)) {
+      if (y_in == std::min<size_t>(2 * iMCU_height, cinfo.image_height)) {
         EXPECT_EQ(JPEG_REACHED_SOS,
                   jpegli_read_header(&dinfo, /*require_image=*/TRUE));
         output.xsize = dinfo.image_width;
@@ -155,7 +166,7 @@ TEST_P(StreamingTestParam, TestStreaming) {
         EXPECT_EQ(output.components, input.components);
         EXPECT_TRUE(jpegli_start_decompress(&dinfo));
         output.pixels.resize(output.ysize * stride);
-        if (yin < cinfo.image_height) {
+        if (y_in < cinfo.image_height) {
           continue;
         }
       }
@@ -165,7 +176,7 @@ TEST_P(StreamingTestParam, TestStreaming) {
       // data to be in the decoder's input buffer, but since the decoder also
       // needs context rows for upsampling and smoothing, we don't expect any
       // output to be ready yet.
-      if (yin < 7 * iMCU_height && yin < cinfo.image_height) {
+      if (y_in < 7 * iMCU_height && y_in < cinfo.image_height) {
         continue;
       }
 
@@ -173,18 +184,19 @@ TEST_P(StreamingTestParam, TestStreaming) {
       // with four iMCU rows of delay.
       // TODO(szabadka) Reduce the processing delay in the decoder if possible.
       size_t lines_out =
-          (yin == cinfo.image_height ? cinfo.image_height - yout : iMCU_height);
+          (y_in == cinfo.image_height ? cinfo.image_height - y_out
+                                      : iMCU_height);
       std::vector<JSAMPROW> rows_out(lines_out);
       for (size_t i = 0; i < lines_out; ++i) {
         rows_out[i] =
-            reinterpret_cast<JSAMPLE*>(&output.pixels[(yout + i) * stride]);
+            reinterpret_cast<JSAMPLE*>(&output.pixels[(y_out + i) * stride]);
       }
       EXPECT_EQ(lines_out,
-                jpegli_read_scanlines(&dinfo, &rows_out[0], lines_out));
-      VerifyOutputImage(input, output, yout, lines_out, 3.8f);
-      yout += lines_out;
+                jpegli_read_scanlines(&dinfo, rows_out.data(), lines_out));
+      VerifyOutputImage(input, output, y_out, lines_out, 3.8f);
+      y_out += lines_out;
 
-      if (yout == cinfo.image_height) {
+      if (y_out == cinfo.image_height) {
         EXPECT_TRUE(jpegli_finish_decompress(&dinfo));
       }
     }

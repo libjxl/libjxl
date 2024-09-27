@@ -5,7 +5,8 @@
 
 #ifndef LIB_JXL_SIMD_UTIL_H_
 #define LIB_JXL_SIMD_UTIL_H_
-#include <stddef.h>
+
+#include <cstddef>
 
 namespace jxl {
 

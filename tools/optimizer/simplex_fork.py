@@ -59,12 +59,16 @@ def EvalCacheForget():
   global eval_hash
   eval_hash = {}
 
+g_first_pnorm = None
+
 def RandomizedJxlCodecs():
+  global g_first_pnorm
+  g_first_pnorm = None
   retval = []
-  minval = 0.2
-  maxval = 9.3
+  minval = 1.0
+  maxval = 8.3
   rangeval = maxval/minval
-  steps = 13
+  steps = 5
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
@@ -88,6 +92,7 @@ def Eval(vec, binary_name, cached=True):
   global eval_hash
   global g_codecs
   global g_best_val
+  global g_first_pnorm
   key = ""
   # os.environ["BUTTERAUGLI_OPTIMIZE"] = "1"
   for i in range(300):
@@ -112,7 +117,7 @@ def Eval(vec, binary_name, cached=True):
 
   # process.wait()
   found_score = False
-  vec[0] = 1.0
+  vec[0] = 1e29
   dct2 = 0.0
   dct4 = 0.0
   dct16 = 0.0
@@ -121,17 +126,14 @@ def Eval(vec, binary_name, cached=True):
   for line in process.communicate(input=None)[0].splitlines():
     print("BE", line)
     sys.stdout.flush()
-    if line[0:3] == b'jxl':
-      bpp = line.split()[3]
-      dist_pnorm = line.split()[9]
-      dist_max = line.split()[6]
-      vec[0] *= float(dist_pnorm) * float(bpp) / 16.0
-      #vec[0] *= (float(dist_max) * float(bpp) / 16.0) ** 0.01
-      n += 1
+    if line[0:4] == b'Aggr':
+      bpppnorm = float(line.split()[10])
+      if g_first_pnorm == None:
+        g_first_pnorm = float(line.split()[9])
+      correctbpp = 1. + 10.0 * (float(line.split()[9]) - g_first_pnorm) ** 2
+
+      vec[0] = 1e-5 * bpppnorm * correctbpp
       found_score = True
-      distance = float(line.split()[0].split(b'd')[-1])
-      faultybpp = 1.0 + 0.43 * ((float(bpp) * distance ** 0.69) - 1.64) ** 2
-      vec[0] *= faultybpp
 
   print("eval: ", vec)
   if (vec[0] <= 0.0):
@@ -256,6 +258,7 @@ for restarts in range(99999):
 
   mulli = 0.1 + 15 * random.random()**2.0
   g_codecs = RandomizedJxlCodecs()
+  g_best_val = None # get a new best val
   print("\n\n\nRestart", restarts, "mulli", mulli)
   g_simplex.sort()
   best = g_simplex[0][:]

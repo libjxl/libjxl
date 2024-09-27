@@ -16,10 +16,11 @@
 #define JXL_ENCODE_CXX_H_
 
 #include <jxl/encode.h>
+#include <jxl/memory_manager.h>
 
 #include <memory>
 
-#if !(defined(__cplusplus) || defined(c_plusplus))
+#ifndef __cplusplus
 #error "This a C++ only header. Use jxl/encode.h from C sources."
 #endif
 

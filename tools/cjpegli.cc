@@ -26,20 +26,11 @@ namespace {
 struct Args {
   void AddCommandLineOptions(CommandLineParser* cmdline) {
     std::string input_help("the input can be ");
-    if (jxl::extras::CanDecode(jxl::extras::Codec::kPNG)) {
-      input_help.append("PNG, APNG, ");
-    }
-    if (jxl::extras::CanDecode(jxl::extras::Codec::kGIF)) {
-      input_help.append("GIF, ");
-    }
-    if (jxl::extras::CanDecode(jxl::extras::Codec::kEXR)) {
-      input_help.append("EXR, ");
-    }
-    input_help.append("PPM, PFM, or PGX");
+    input_help.append(jxl::extras::ListOfDecodeCodecs());
     cmdline->AddPositionalOption("INPUT", /* required = */ true, input_help,
                                  &file_in);
     cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
-                                 "the compressed JPG output file", &file_out);
+                                 "the compressed JPEG output file", &file_out);
 
     cmdline->AddOptionFlag('\0', "disable_output",
                            "No output file will be written (for benchmarking)",

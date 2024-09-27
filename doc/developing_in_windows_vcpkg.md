@@ -59,11 +59,6 @@ vcpkg above.
           "type": "BOOL"
         },
         {
-          "name": "BUILD_GMOCK",
-          "value": "True",
-          "type": "BOOL"
-        },
-        {
           "name": "gtest_force_shared_crt",
           "value": "True",
           "type": "BOOL"

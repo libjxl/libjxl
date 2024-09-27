@@ -7,12 +7,13 @@
 #define TOOLS_BENCHMARK_BENCHMARK_STATS_H_
 
 #include <jxl/stats.h>
-#include <stddef.h>
-#include <stdint.h>
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "lib/jxl/base/status.h"
 
 namespace jpegxl {
 namespace tools {
@@ -43,13 +44,11 @@ struct ColumnValue {
 struct BenchmarkStats {
   void Assimilate(const BenchmarkStats& victim);
 
-  std::vector<ColumnValue> ComputeColumns(const std::string& codec_desc,
-                                          size_t corpus_size) const;
+  std::vector<ColumnValue> ComputeColumns(const std::string& codec_desc) const;
 
-  std::string PrintLine(const std::string& codec_desc,
-                        size_t corpus_size) const;
+  std::string PrintLine(const std::string& codec_desc) const;
 
-  void PrintMoreStats() const;
+  ::jxl::Status PrintMoreStats() const;
 
   size_t total_input_files = 0;
   size_t total_input_pixels = 0;
@@ -63,15 +62,18 @@ struct BenchmarkStats {
   double psnr = 0.0;
   double ssimulacra2 = 0.0;
   std::vector<float> distances;
+  std::vector<float> pnorms;
+  std::vector<float> ssimulacra2s;
   size_t total_errors = 0;
   JxlStats jxl_stats;
   std::vector<float> extra_metrics;
 };
 
-std::string PrintHeader(const std::vector<std::string>& extra_metrics_names);
+::jxl::StatusOr<std::string> PrintHeader(
+    const std::vector<std::string>& extra_metrics_names);
 
 // Given the rows of all printed statistics, print an aggregate row.
-std::string PrintAggregate(
+::jxl::StatusOr<std::string> PrintAggregate(
     size_t num_extra_metrics,
     const std::vector<std::vector<ColumnValue>>& aggregate);
 

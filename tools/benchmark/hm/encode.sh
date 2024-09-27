@@ -7,8 +7,10 @@
 
 set -euo pipefail
 
-encoder="$(dirname "$0")"/TAppEncoderHighBitDepthStatic
-cfg_dir="$(dirname "$0")"/../../../third_party/HEVCSoftware/cfg
+self=$(realpath "$0")
+mydir=$(dirname "${self}")
+encoder=${mydir}/TAppEncoderHighBitDepthStatic
+cfg_dir=${mydir}/../../../third_party/HEVCSoftware/cfg
 
 usage() {
   echo "$0 [-v] [-q <N>] <input.png> <output.bin>" >&2
@@ -70,7 +72,7 @@ width="$(identify -format '%w' "$input")"
 height="$(identify -format '%h' "$input")"
 
 start="$EPOCHREALTIME"
-run "$encoder" -c "$cfg_dir"/encoder_intra_main_scc_10.cfg -f 1 -fr 1 -wdt "$width" -hgt "$height" --InputChromaFormat=444 --InputBitDepth=10 --ConformanceWindowMode=1 -i "$yuv" -b "$bin" -q "$q"
+run "${encoder}" -c "${cfg_dir}"/encoder_intra_main_scc_10.cfg -f 1 -fr 1 -wdt "$width" -hgt "$height" --InputChromaFormat=444 --InputBitDepth=10 --ConformanceWindowMode=1 -i "$yuv" -b "$bin" -q "$q"
 end="$EPOCHREALTIME"
 
 elapsed="$(echo "$end - $start" | bc)"

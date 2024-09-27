@@ -6,8 +6,8 @@ includedir=@PKGCONFIG_TARGET_INCLUDES@
 Name: libjxl
 Description: Loads and saves JPEG XL files
 Version: @JPEGXL_LIBRARY_VERSION@
-Requires.private: @JPEGXL_LIBRARY_REQUIRES@
-Libs: -L${libdir} -ljxl
-Libs.private: -lm
+@JPEGXL_REQUIRES_TYPE@: @JPEGXL_LIBRARY_REQUIRES@
+Libs: -L${libdir} -ljxl @JPEGXL_PUBLIC_LIBS@
+Libs.private: @JPEGXL_PRIVATE_LIBS@
 Cflags: -I${includedir}
 Cflags.private: -DJXL_STATIC_DEFINE

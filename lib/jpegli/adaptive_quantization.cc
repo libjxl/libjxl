@@ -5,6 +5,7 @@
 
 #include "lib/jpegli/adaptive_quantization.h"
 
+#include <jxl/types.h>
 #include <stddef.h>
 #include <stdlib.h>
 
@@ -46,7 +47,7 @@ using hwy::HWY_NAMESPACE::Sqrt;
 using hwy::HWY_NAMESPACE::Sub;
 using hwy::HWY_NAMESPACE::ZeroIfNegative;
 
-static constexpr float kInputScaling = 1.0f / 255.0f;
+constexpr float kInputScaling = 1.0f / 255.0f;
 
 // Primary template: default to actual division.
 template <typename T, class V>
@@ -65,7 +66,7 @@ struct FastDivision<float, V> {
   }
 
   V operator()(const V n, const V d) const {
-#if 1  // Faster on SKX
+#if JXL_TRUE  // Faster on SKX
     return Div(n, d);
 #else
     return n * ReciprocalNR(d);
@@ -191,12 +192,12 @@ V ComputeMask(const D d, const V out_val) {
 }
 
 // mul and mul2 represent a scaling difference between jxl and butteraugli.
-static const float kSGmul = 226.0480446705883f;
-static const float kSGmul2 = 1.0f / 73.377132366608819f;
-static const float kLog2 = 0.693147181f;
+const float kSGmul = 226.0480446705883f;
+const float kSGmul2 = 1.0f / 73.377132366608819f;
+const float kLog2 = 0.693147181f;
 // Includes correction factor for std::log -> log2.
-static const float kSGRetMul = kSGmul2 * 18.6580932135f * kLog2;
-static const float kSGVOffset = 7.14672470003f;
+const float kSGRetMul = kSGmul2 * 18.6580932135f * kLog2;
+const float kSGVOffset = 7.14672470003f;
 
 template <bool invert, typename D, typename V>
 V RatioOfDerivativesOfCubicRootToSimpleGamma(const D d, V v) {
@@ -226,7 +227,7 @@ V RatioOfDerivativesOfCubicRootToSimpleGamma(const D d, V v) {
 }
 
 template <bool invert = false>
-static float RatioOfDerivativesOfCubicRootToSimpleGamma(float v) {
+float RatioOfDerivativesOfCubicRootToSimpleGamma(float v) {
   using DScalar = HWY_CAPPED(float, 1);
   auto vscalar = Load(DScalar(), &v);
   return GetLane(
@@ -278,8 +279,8 @@ V GammaModulation(const D d, const size_t x, const size_t y,
   // ideally -1.0, but likely optimal correction adds some entropy, so slightly
   // less than that.
   // ln(2) constant folded in because we want std::log but have FastLog2f.
-  const auto kGam = Set(d, -0.15526878023684174f * 0.693147180559945f);
-  return MulAdd(kGam, FastLog2f(d, overall_ratio), out_val);
+  const auto kGamma = Set(d, -0.15526878023684174f * 0.693147180559945f);
+  return MulAdd(kGamma, FastLog2f(d, overall_ratio), out_val);
 }
 
 // Change precision in 8x8 blocks that have high frequency content.
@@ -477,11 +478,11 @@ void ComputePreErosion(const RowBuffer<float>& input, const size_t xsize,
     }
     if (iy % 4 == 3) {
       size_t y_out = y0_out + iy / 4;
-      float* row_dout = pre_erosion->Row(y_out);
+      float* row_d_out = pre_erosion->Row(y_out);
       for (size_t x = 0; x < xsize_out; x++) {
-        row_dout[x] = (row_out[x * 4] + row_out[x * 4 + 1] +
-                       row_out[x * 4 + 2] + row_out[x * 4 + 3]) *
-                      0.25f;
+        row_d_out[x] = (row_out[x * 4] + row_out[x * 4 + 1] +
+                        row_out[x * 4 + 2] + row_out[x * 4 + 3]) *
+                       0.25f;
       }
       pre_erosion->PadRow(y_out, xsize_out, border);
     }
@@ -503,7 +504,7 @@ HWY_EXPORT(PerBlockModulations);
 
 namespace {
 
-static constexpr int kPreErosionBorder = 1;
+constexpr int kPreErosionBorder = 1;
 
 }  // namespace
 

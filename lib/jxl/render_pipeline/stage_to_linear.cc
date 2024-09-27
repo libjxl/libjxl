@@ -5,6 +5,8 @@
 
 #include "lib/jxl/render_pipeline/stage_to_linear.h"
 
+#include "lib/jxl/base/sanitizers.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_to_linear.cc"
 #include <hwy/foreach_target.h>
@@ -12,7 +14,6 @@
 
 #include "lib/jxl/cms/tone_mapping-inl.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
-#include "lib/jxl/sanitizers.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -63,7 +64,7 @@ struct OpPq {
 };
 
 struct OpHlg {
-  explicit OpHlg(const float luminances[3], const float intensity_target)
+  explicit OpHlg(const Vector3& luminances, const float intensity_target)
       : hlg_ootf_(HlgOOTF::FromSceneLight(
             /*display_luminance=*/intensity_target, luminances)) {}
 
@@ -113,9 +114,9 @@ class ToLinearStage : public RenderPipelineStage {
   explicit ToLinearStage()
       : RenderPipelineStage(RenderPipelineStage::Settings()), valid_(false) {}
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
     const HWY_FULL(float) d;
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
@@ -127,7 +128,8 @@ class ToLinearStage : public RenderPipelineStage {
     msan::UnpoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
-    for (ssize_t x = -xextra; x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
+    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+         x += Lanes(d)) {
       auto r = LoadU(d, row0 + x);
       auto g = LoadU(d, row1 + x);
       auto b = LoadU(d, row2 + x);
@@ -139,6 +141,7 @@ class ToLinearStage : public RenderPipelineStage {
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {

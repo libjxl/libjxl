@@ -3,15 +3,20 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/icc_codec.h"
+#include <jxl/memory_manager.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/enc_aux_out.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_icc_codec.h"
+#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -19,8 +24,10 @@ namespace jxl {
 namespace {
 
 void TestProfile(const IccBytes& icc) {
-  BitWriter writer;
-  ASSERT_TRUE(WriteICC(icc, &writer, 0, nullptr));
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  BitWriter writer{memory_manager};
+  ASSERT_TRUE(WriteICC(Span<const uint8_t>(icc), &writer,
+                       jxl::LayerType::Header, nullptr));
   writer.ZeroPadToByte();
   std::vector<uint8_t> dec;
   BitReader reader(writer.GetSpan());
@@ -37,12 +44,12 @@ void TestProfile(const IccBytes& icc) {
 
 void TestProfile(const std::string& icc) {
   IccBytes data;
-  Bytes(icc).AppendTo(&data);
+  Bytes(icc).AppendTo(data);
   TestProfile(data);
 }
 
 // Valid profile from one of the images output by the decoder.
-static const unsigned char kTestProfile[] = {
+const unsigned char kTestProfile[] = {
     0x00, 0x00, 0x03, 0x80, 0x6c, 0x63, 0x6d, 0x73, 0x04, 0x30, 0x00, 0x00,
     0x6d, 0x6e, 0x74, 0x72, 0x52, 0x47, 0x42, 0x20, 0x58, 0x59, 0x5a, 0x20,
     0x07, 0xe3, 0x00, 0x04, 0x00, 0x1d, 0x00, 0x0f, 0x00, 0x32, 0x00, 0x2e,
@@ -139,7 +146,7 @@ TEST(IccCodecTest, Icc) {
 
   {
     IccBytes profile;
-    Bytes(kTestProfile, sizeof(kTestProfile)).AppendTo(&profile);
+    Bytes(kTestProfile, sizeof(kTestProfile)).AppendTo(profile);
     TestProfile(profile);
   }
 

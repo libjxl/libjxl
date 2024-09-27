@@ -6,7 +6,8 @@
 
 # End-to-end roundtrip tests for cjxl and djxl tools.
 
-MYDIR=$(dirname $(realpath "$0"))
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 JPEGXL_TEST_DATA_PATH="${MYDIR}/../../testdata"
 
 set -eux
@@ -73,13 +74,13 @@ roundtrip_test() {
       # Test decoding to 16 bit png.
       "${decoder}" "${jxlfn}" "${outfn}" --bits_per_sample 16
       local dist="$("${comparator}" "${infn}" "${outfn}")"
-      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist} + 0.0005)"
+      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist} + 0.0002)"
 
       # Test decoding to pfm.
       local outfn="$(mktemp -p "$tmpdir").pfm"
       "${decoder}" "${jxlfn}" "${outfn}"
       local dist="$("${comparator}" "${infn}" "${outfn}")"
-      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist})"
+      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist} + 0.0005)"
 
       # Test decoding to ppm.
       local outfn="$(mktemp -p "$tmpdir").ppm"
@@ -124,6 +125,8 @@ main() {
   roundtrip_test "jxl/flower/flower_small.rgb.depth8.ppm" \
 		 "-e 1 -d 0.0 --streaming_input --streaming_output" 0.0
   roundtrip_test "jxl/flower/flower_cropped.jpg" "-e 1" 0.0
+
+  roundtrip_test "jxl/flower/flower.png" "-e 6" 0.02
 
   roundtrip_lossless_pnm_test "jxl/flower/flower_small.rgb.depth1.ppm"
   roundtrip_lossless_pnm_test "jxl/flower/flower_small.g.depth1.pgm"

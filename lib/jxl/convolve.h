@@ -8,10 +8,12 @@
 
 // 2D convolution.
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
 
 namespace jxl {
@@ -55,50 +57,33 @@ struct WeightsSeparable5 {
   float vert[3 * 4];
 };
 
-// Weights for separable 7x7 filters (typically but not necessarily the same
-// values for horizontal and vertical directions). The kernel must already be
-// normalized, but note that values for negative offsets are omitted, so the
-// given values do not sum to 1.
-//
-// NOTE: for >= 7x7 Gaussian kernels, it is faster to use FastGaussian instead,
-// at least when images exceed the L1 cache size.
-struct WeightsSeparable7 {
-  // Horizontal 1D, distances 0..3 (each replicated 4x)
-  float horz[4 * 4];
-  float vert[4 * 4];
-};
-
 const WeightsSymmetric3& WeightsSymmetric3Lowpass();
 const WeightsSeparable5& WeightsSeparable5Lowpass();
 const WeightsSymmetric5& WeightsSymmetric5Lowpass();
 
-void SlowSymmetric3(const ImageF& in, const Rect& rect,
-                    const WeightsSymmetric3& weights, ThreadPool* pool,
-                    ImageF* JXL_RESTRICT out);
+Status SlowSymmetric3(const ImageF& in, const Rect& rect,
+                      const WeightsSymmetric3& weights, ThreadPool* pool,
+                      ImageF* JXL_RESTRICT out);
 
-void SlowSeparable5(const ImageF& in, const Rect& rect,
-                    const WeightsSeparable5& weights, ThreadPool* pool,
-                    ImageF* out);
+Status SlowSeparable5(const ImageF& in, const Rect& in_rect,
+                      const WeightsSeparable5& weights, ThreadPool* pool,
+                      ImageF* out, const Rect& out_rect);
 
-void SlowSeparable7(const ImageF& in, const Rect& rect,
-                    const WeightsSeparable7& weights, ThreadPool* pool,
-                    ImageF* out);
+Status Symmetric3(const ImageF& in, const Rect& rect,
+                  const WeightsSymmetric3& weights, ThreadPool* pool,
+                  ImageF* out);
 
-void Symmetric3(const ImageF& in, const Rect& rect,
-                const WeightsSymmetric3& weights, ThreadPool* pool,
-                ImageF* out);
+Status Symmetric5(const ImageF& in, const Rect& in_rect,
+                  const WeightsSymmetric5& weights, ThreadPool* pool,
+                  ImageF* JXL_RESTRICT out, const Rect& out_rect);
 
-void Symmetric5(const ImageF& in, const Rect& rect,
-                const WeightsSymmetric5& weights, ThreadPool* pool,
-                ImageF* JXL_RESTRICT out);
+Status Symmetric5(const ImageF& in, const Rect& rect,
+                  const WeightsSymmetric5& weights, ThreadPool* pool,
+                  ImageF* JXL_RESTRICT out);
 
-void Separable5(const ImageF& in, const Rect& rect,
-                const WeightsSeparable5& weights, ThreadPool* pool,
-                ImageF* out);
-
-void Separable7(const ImageF& in, const Rect& rect,
-                const WeightsSeparable7& weights, ThreadPool* pool,
-                ImageF* out);
+Status Separable5(const ImageF& in, const Rect& rect,
+                  const WeightsSeparable5& weights, ThreadPool* pool,
+                  ImageF* out);
 
 }  // namespace jxl
 

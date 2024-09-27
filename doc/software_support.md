@@ -14,7 +14,7 @@ Please add missing software to this list.
 
 - Chromium: behind a flag from version 91 to 109, [tracking bug](https://bugs.chromium.org/p/chromium/issues/detail?id=1178058)
 - Firefox: behind a flag since version 90, [tracking bug](https://bugzilla.mozilla.org/show_bug.cgi?id=1539075)
-- Safari: supported since version 17 beta [release notes](https://developer.apple.com/documentation/safari-release-notes/safari-17-release-notes), [tracking bug](https://bugs.webkit.org/show_bug.cgi?id=208235)
+- Safari: supported since version 17 [release notes](https://developer.apple.com/documentation/safari-release-notes/safari-17-release-notes), [tracking bug](https://bugs.webkit.org/show_bug.cgi?id=208235)
 - Edge: behind a flag since version 91, start with `.\msedge.exe --enable-features=JXL`
 - Opera: behind a flag since version 77.
 - Basilisk: supported since version v2023.01.07, [release notes](https://www.basilisk-browser.org/releasenotes.shtml)
@@ -32,6 +32,14 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [GDAL](https://gdal.org/drivers/raster/jpegxl.html): supported since 3.4.0 as a TIFF codec, and 3.6.0 as standalone format
 - [GraphicsMagick](http://www.graphicsmagick.org/NEWS.html#march-26-2022): supported since 1.3.38
 - [SAIL](https://sail.software): supported since 0.9.0
+- [JPEG XL Coder](https://github.com/awxkee/jxl-coder): Supports version from Android 5.0 (API Level 21)
+- [SDWebImageJPEGXLCoder](https://github.com/SDWebImage/SDWebImageJPEGXLCoder): supported since 0.1.0
+
+## Metadata manipulation libraries
+
+- [ExifTool by Phil Harvey](https://exiftool.org/): supported since 12.25
+- [Exiv2](https://exiv2.org): supported since 0.27.4
+- [Ashampoo Kim](https://github.com/ashampoo/kim): supported since 0.10
 
 ## OS-level support / UI frameworks / file browser plugins
 
@@ -55,6 +63,10 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Krita](https://invent.kde.org/graphics/krita/-/commit/13e5d2e5b9f0eac5c8064b7767f0b62264a0797b)
 - [Paint.NET](https://www.getpaint.net/index.html); supported since 4.3.12 - requires a [plugin](https://github.com/0xC0000054/pdn-jpegxl) to be downloaded and installed.
 - Photoshop: no plugin available yet, no official support yet
+- [XL Converter](https://github.com/JacobDev1/xl-converter)
+- [Image Toolbox (supported since 2.6.0)](https://github.com/T8RIN/ImageToolbox)
+- [JPEG XL Toolbox by SUIKA LTD](https://apps.apple.com/app/jpeg-xl-toolbox/id6470681357)
+- [RawTherapee (since 5.11)](https://github.com/Beep6581/RawTherapee); Currently only opening of JXL files is supported. [Exporting is expected for the 6.0 release](https://github.com/Beep6581/RawTherapee/pull/7097)
 
 ## Image viewers
 
@@ -81,3 +93,4 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Cloudinary](https://cloudinary.com/blog/cloudinary_supports_jpeg_xl)
 - [MConverter](https://mconverter.eu/)
 - [jpegxl.io](https://jpegxl.io/)
+- [EXIF Viewer](https://stefan-oltmann.de/exif-viewer)

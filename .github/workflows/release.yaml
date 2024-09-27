@@ -19,7 +19,7 @@ on:
       - main
       - v*.*.x
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
     paths-ignore:
       - '**.md'
       - 'AUTHORS'
@@ -28,7 +28,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -37,10 +37,11 @@ concurrency:
 jobs:
   ubuntu_static_x86_64:
     name: Release linux x86_64 static
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
       with:
         egress-policy: audit
 
@@ -70,7 +71,7 @@ jobs:
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
         submodules: true
         fetch-depth: 1
@@ -81,7 +82,7 @@ jobs:
       run: |
         ./ci.sh release \
           -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc \
-          -DBUILD_SHARED_LIBS=OFF \
+          -DJPEGXL_STATIC=ON \
           -DBUILD_TESTING=OFF \
           -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
@@ -98,14 +99,14 @@ jobs:
           ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
+      uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
       with:
         name: jxl-linux-x86_64-static
         path: ${{ runner.workspace }}/release_file.tar.gz
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
+      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
       with:
         files: ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
         repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -114,11 +115,13 @@ jobs:
   # Build .deb packages Ubuntu/Debian
   release_ubuntu_pkg:
     name: .deb packages / ${{ matrix.os }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         os:
+        - ubuntu:24.04
         - ubuntu:22.04
         - ubuntu:20.04
         - debian:bullseye
@@ -131,7 +134,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
       with:
         egress-policy: audit
 
@@ -160,7 +163,7 @@ jobs:
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
         submodules: true
         fetch-depth: 1
@@ -192,13 +195,6 @@ jobs:
           dch -M --distribution unstable --release ''
         fi
 
-    - name: Install gmock-dev (debian:sid)
-      # gtest-dev cmake depends on gmock-dev, but it is not installed by the
-      # package.
-      if: matrix.os == 'debian:sid'
-      run: |
-        apt install -y libgmock-dev
-
     - name: Configure hwy
       if: ${{ github.event_name == 'schedule' || github.event_name == 'release' || contains(github.event.pull_request.labels.*.name, 'CI:full') }}
       run: |
@@ -220,7 +216,7 @@ jobs:
         ./ci.sh debian_stats
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
+      uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
       with:
         name: ${{ steps.env.outputs.artifact_name }}
         path: |
@@ -236,7 +232,7 @@ jobs:
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
+      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
       with:
         files: ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
         repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -244,7 +240,8 @@ jobs:
 
   windows_build:
     name: Windows Build (vcpkg / ${{ matrix.triplet }})
-    runs-on: [windows-2019]
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
+    runs-on: [windows-2022]
     strategy:
       fail-fast: false
       matrix:
@@ -253,25 +250,34 @@ jobs:
             arch: '-A Win32'
           - triplet: x64-windows-static
             arch: '-A x64'
+            run_benchmark: true
+          - triplet: x86-windows
+            arch: '-A Win32'
+            static: 'OFF'
+            tools: 'OFF'
+          - triplet: x64-windows
+            arch: '-A x64'
+            static: 'OFF'
+            tools: 'OFF'
 
     env:
-      VCPKG_VERSION: '2022.06.16.1'
+      VCPKG_VERSION: '2023.12.12'
       VCPKG_ROOT: vcpkg
       VCPKG_DISABLE_METRICS: 1
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+    - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -304,6 +310,7 @@ jobs:
           libjpeg-turbo \
           libpng \
           libwebp \
+          pkgconf \
         #
 
     - name: Configure
@@ -312,7 +319,8 @@ jobs:
         set -x
         mkdir build
         cmake -Bbuild -H. ${{ matrix.arch }} \
-          -DBUILD_SHARED_LIBS=OFF \
+          -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
+          -DJPEGXL_ENABLE_TOOLS=${{ matrix.tools || 'ON'}} \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
@@ -322,7 +330,7 @@ jobs:
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
-          -DJPEGXL_ENABLE_DEVTOOLS=ON \
+          -DJPEGXL_ENABLE_DEVTOOLS=${{ matrix.tools || 'ON'}} \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
         #
     - name: Build
@@ -344,23 +352,36 @@ jobs:
         cp third_party/highway/LICENSE prefix/bin/LICENSE.highway
         cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
         cp LICENSE prefix/bin/LICENSE.libjxl
+
+    - name: Fast benchmark ${{ matrix.triplet }}
+      shell: 'bash'
+      if: matrix.run_benchmark && true
+      run: |
+        systeminfo | grep -A 1 Processor
+        wmic cpu get Name, NumberofCores, NumberOfLogicalProcessors, MaxClockSpeed
+        mkdir tmp
+        export TMPDIR=`pwd`/tmp
+        export PATH=$PATH:`pwd`/build/lib
+        BUILD_CONFIG=Release/ BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
+
     - name: Upload artifacts
-      uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
+      uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
       with:
         name: jxl-${{matrix.triplet}}
         path: |
           prefix/bin/*
+          prefix/lib/*
 
     - name: Package release zip
       if: github.event_name == 'release'
       shell: 'powershell'
       run: |
-        Compress-Archive -Path prefix\bin\* `
+        Compress-Archive -Path prefix\bin\*, prefix\lib\* `
           -DestinationPath jxl-${{matrix.triplet}}.zip
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
+      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
       with:
         files: jxl-${{matrix.triplet}}.zip
         repo-token: ${{ secrets.GITHUB_TOKEN }}

@@ -25,7 +25,9 @@ using T = float;  // required by EvalLog2
 using D = HWY_FULL(T);
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Abs;
 using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::Eq;
 using hwy::HWY_NAMESPACE::GetLane;
 using hwy::HWY_NAMESPACE::ShiftLeft;
 using hwy::HWY_NAMESPACE::ShiftRight;
@@ -52,7 +54,7 @@ struct EvalLog2 {
     const HWY_FULL(int32_t) di;
     const auto x_bits = BitCast(di, vx);
     // Cannot handle negative numbers / NaN.
-    JXL_DASSERT(AllTrue(di, Eq(Abs(x_bits), x_bits)));
+    EXPECT_TRUE(AllTrue(di, Eq(Abs(x_bits), x_bits)));
 
     // Range reduction to [-1/3, 1/3] - 3 integer, 2 float ops
     const auto exp_bits = Sub(x_bits, Set(di, 0x3f2aaaab));  // = 2/3
@@ -158,8 +160,8 @@ void TestExp() {
   const T q[4 * (2 + 1)] = {HWY_REP4(9.6259895571622622E-01),
                             HWY_REP4(-4.7272457588933831E-01),
                             HWY_REP4(7.4802088567547664E-02)};
-  const T err =
-      RunApproximation(-1, 1, p, q, EvalPoly(), [](T x) { return T(exp(x)); });
+  const T err = RunApproximation(-1, 1, p, q, EvalPoly(),
+                                 [](T x) { return static_cast<T>(exp(x)); });
   EXPECT_LT(err, 1E-4);
 }
 
@@ -174,8 +176,8 @@ void TestNegExp() {
       HWY_REP4(5.9579108238812878E-02), HWY_REP4(3.4542074345478582E-02),
       HWY_REP4(8.7263562483501714E-03), HWY_REP4(1.4095109143061216E-03)};
 
-  const T err =
-      RunApproximation(0, 10, p, q, EvalPoly(), [](T x) { return T(exp(-x)); });
+  const T err = RunApproximation(0, 10, p, q, EvalPoly(),
+                                 [](T x) { return static_cast<T>(exp(-x)); });
   EXPECT_LT(err, sizeof(T) == 8 ? 2E-5 : 3E-5);
 }
 
@@ -191,7 +193,7 @@ void TestSin() {
       HWY_REP4(3.1546157932479282E-03), HWY_REP4(-1.6692542019380155E-04)};
 
   const T err = RunApproximation(0, Pi<T>(1) * 2, p, q, EvalPoly(),
-                                 [](T x) { return T(sin(x)); });
+                                 [](T x) { return static_cast<T>(sin(x)); });
   EXPECT_LT(err, sizeof(T) == 8 ? 5E-4 : 7E-4);
 }
 

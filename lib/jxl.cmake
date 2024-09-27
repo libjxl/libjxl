@@ -13,7 +13,9 @@ if (JPEGXL_ENABLE_TRANSCODE_JPEG OR JPEGXL_ENABLE_TOOLS OR JPEGXL_ENABLE_DEVTOOL
 list(APPEND JPEGXL_INTERNAL_DEC_SOURCES ${JPEGXL_INTERNAL_DEC_JPEG_SOURCES})
 endif()
 
-set_source_files_properties(jxl/enc_fast_lossless.cc PROPERTIES COMPILE_FLAGS -O3)
+set(FJXL_COMPILE_FLAGS "-O3")
+
+set_source_files_properties(jxl/enc_fast_lossless.cc PROPERTIES COMPILE_FLAGS "${FJXL_COMPILE_FLAGS}")
 
 set(JPEGXL_DEC_INTERNAL_LIBS
   hwy
@@ -43,9 +45,6 @@ else()
 endif ()
 
 set(OBJ_COMPILE_DEFINITIONS
-  JPEGXL_MAJOR_VERSION=${JPEGXL_MAJOR_VERSION}
-  JPEGXL_MINOR_VERSION=${JPEGXL_MINOR_VERSION}
-  JPEGXL_PATCH_VERSION=${JPEGXL_PATCH_VERSION}
   # Used to determine if we are building the library when defined or just
   # including the library when not defined. This is public so libjxl shared
   # library gets this define too.
@@ -55,12 +54,15 @@ set(OBJ_COMPILE_DEFINITIONS
 # Generate version.h
 configure_file("jxl/version.h.in" "include/jxl/version.h")
 
+list(APPEND JPEGXL_INTERNAL_PUBLIC_HEADERS
+  ${CMAKE_CURRENT_BINARY_DIR}/include/jxl/version.h)
+
 # Headers for exporting/importing public headers
 include(GenerateExportHeader)
 
 # CMake does not allow generate_export_header for INTERFACE library, so we
 # add this stub library just for file generation.
-add_library(jxl_export OBJECT ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
+add_library(jxl_export OBJECT ${JPEGXL_INTERNAL_PUBLIC_HEADERS} nothing.cc)
 set_target_properties(jxl_export PROPERTIES
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN 1
@@ -80,13 +82,23 @@ foreach(path ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
 endforeach()
 
 add_library(jxl_base INTERFACE)
-target_include_directories(jxl_base SYSTEM INTERFACE
+target_include_directories(jxl_base SYSTEM BEFORE INTERFACE
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
 )
-target_include_directories(jxl_base INTERFACE
+target_include_directories(jxl_base BEFORE INTERFACE
   ${PROJECT_SOURCE_DIR}
   ${JXL_HWY_INCLUDE_DIRS}
 )
+
+# On android, link with log to use android-related log functions.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+  find_library(log-lib log)
+  if(log-lib)
+    target_link_libraries(jxl_base INTERFACE ${log-lib})
+    target_compile_definitions(jxl_base INTERFACE USE_ANDROID_LOGGER)
+  endif()
+endif()
+
 add_dependencies(jxl_base jxl_export)
 
 # Decoder-only object library
@@ -94,7 +106,7 @@ add_library(jxl_dec-obj OBJECT ${JPEGXL_INTERNAL_DEC_SOURCES})
 target_compile_options(jxl_dec-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jxl_dec-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jxl_dec-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_include_directories(jxl_dec-obj PUBLIC
+target_include_directories(jxl_dec-obj BEFORE PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
   "${JXL_HWY_INCLUDE_DIRS}"
   "$<BUILD_INTERFACE:$<TARGET_PROPERTY:brotlicommon,INTERFACE_INCLUDE_DIRECTORIES>>"
@@ -109,7 +121,7 @@ add_library(jxl_enc-obj OBJECT ${JPEGXL_INTERNAL_ENC_SOURCES})
 target_compile_options(jxl_enc-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jxl_enc-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jxl_enc-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_include_directories(jxl_enc-obj PUBLIC
+target_include_directories(jxl_enc-obj BEFORE PUBLIC
   ${PROJECT_SOURCE_DIR}
   ${JXL_HWY_INCLUDE_DIRS}
   $<TARGET_PROPERTY:brotlicommon,INTERFACE_INCLUDE_DIRECTORIES>
@@ -162,7 +174,7 @@ target_link_libraries(jxl-internal PUBLIC
   jxl_cms
   jxl_base
 )
-target_include_directories(jxl-internal PUBLIC
+target_include_directories(jxl-internal BEFORE PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>")
 
 target_compile_definitions(jxl-internal INTERFACE -DJXL_STATIC_DEFINE)
@@ -256,6 +268,14 @@ install(TARGETS jxl
 # Add a pkg-config file for libjxl.
 set(JPEGXL_LIBRARY_REQUIRES
     "libhwy libbrotlienc libbrotlidec libjxl_cms")
+
+if (BUILD_SHARED_LIBS)
+  set(JPEGXL_REQUIRES_TYPE "Requires.private")
+  set(JPEGXL_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+else()
+  set(JPEGXL_REQUIRES_TYPE "Requires")
+  set(JPEGXL_PUBLIC_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
                "libjxl.pc" @ONLY)

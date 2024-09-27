@@ -3,23 +3,33 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <cmath>
+#include <jxl/types.h>
+
+#include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
+#include "lib/jpegli/libjpeg_test_util.h"
+#include "lib/jpegli/test_params.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
-#include "lib/jxl/base/byte_order.h"
+#include "lib/jpegli/types.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/sanitizers.h"
 
 namespace jpegli {
 namespace {
 
-static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
-static constexpr size_t kNumSourceBuffers = 4;
+constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
+constexpr size_t kNumSourceBuffers = 4;
 
 // Custom source manager that refills the input buffer in chunks, simulating
 // a file reader with a fixed buffer size.
@@ -61,7 +71,7 @@ class SourceManager {
   static void init_source(j_decompress_ptr cinfo) {}
 
   static boolean fill_input_buffer(j_decompress_ptr cinfo) {
-    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+    auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (src->pos_ < src->len_) {
       size_t chunk_size = std::min(src->len_ - src->pos_, src->max_chunk_size_);
       size_t next_idx = ++src->chunk_idx_ % kNumSourceBuffers;
@@ -78,8 +88,9 @@ class SourceManager {
     return TRUE;
   }
 
-  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {
-    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+  static void skip_input_data(j_decompress_ptr cinfo,
+                              long num_bytes /* NOLINT */) {
+    auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (num_bytes <= 0) {
       return;
     }
@@ -166,9 +177,9 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
           rowdata[c][i] =
               y0 + i < ysize ? &output->raw_data[c][(y0 + i) * xsize] : nullptr;
         }
-        data[c] = &rowdata[c][0];
+        data[c] = rowdata[c].data();
       }
-      num_output_lines = jpegli_read_raw_data(cinfo, &data[0], max_lines);
+      num_output_lines = jpegli_read_raw_data(cinfo, data.data(), max_lines);
     } else {
       size_t max_output_lines = dparams.max_output_lines;
       if (max_output_lines == 0) max_output_lines = cinfo->output_height;
@@ -189,7 +200,7 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
           scanlines[i] = &output->pixels[yidx * stride];
         }
         num_output_lines =
-            jpegli_read_scanlines(cinfo, &scanlines[0], max_lines);
+            jpegli_read_scanlines(cinfo, scanlines.data(), max_lines);
         if (cinfo->quantize_colors) {
           for (size_t i = 0; i < num_output_lines; ++i) {
             UnmapColors(scanlines[i], cinfo->output_width,
@@ -219,13 +230,14 @@ struct TestConfig {
   float max_diff = 35.0f;
 };
 
-std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
+jxl::StatusOr<std::vector<uint8_t>> GetTestJpegData(TestConfig& config) {
   std::vector<uint8_t> compressed;
   if (!config.fn.empty()) {
-    compressed = ReadTestData(config.fn.c_str());
+    JXL_ASSIGN_OR_RETURN(compressed, ReadTestData(config.fn));
   } else {
     GeneratePixels(&config.input);
-    JXL_CHECK(EncodeWithJpegli(config.input, config.jparams, &compressed));
+    JXL_RETURN_IF_ERROR(
+        EncodeWithJpegli(config.input, config.jparams, &compressed));
   }
   if (config.dparams.size_factor < 1.0f) {
     compressed.resize(compressed.size() * config.dparams.size_factor);
@@ -256,8 +268,8 @@ void TestAPINonBuffered(const CompressParams& jparams,
   if (!jparams.icc.empty()) {
     uint8_t* icc_data = nullptr;
     unsigned int icc_len;
-    JXL_CHECK(jpegli_read_icc_profile(cinfo, &icc_data, &icc_len));
-    JXL_CHECK(icc_data);
+    ASSERT_TRUE(jpegli_read_icc_profile(cinfo, &icc_data, &icc_len));
+    ASSERT_TRUE(icc_data);
     EXPECT_EQ(0, memcmp(jparams.icc.data(), icc_data, icc_len));
     free(icc_data);
   }
@@ -278,7 +290,7 @@ void TestAPINonBuffered(const CompressParams& jparams,
   }
   if (dparams.output_mode == COEFFICIENTS) {
     jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(cinfo);
-    JXL_CHECK(coef_arrays != nullptr);
+    ASSERT_TRUE(coef_arrays != nullptr);
     CopyCoefficients(cinfo, coef_arrays, output);
   } else {
     jpegli_start_decompress(cinfo);
@@ -297,10 +309,10 @@ void TestAPIBuffered(const CompressParams& jparams,
   SetDecompressParams(dparams, cinfo);
   jpegli_set_output_format(cinfo, dparams.data_type, dparams.endianness);
   VerifyHeader(jparams, cinfo);
+  bool has_multiple_scans = FROM_JXL_BOOL(jpegli_has_multiple_scans(cinfo));
   EXPECT_TRUE(jpegli_start_decompress(cinfo));
   // start decompress should not read the whole input in buffered image mode
   EXPECT_FALSE(jpegli_input_complete(cinfo));
-  bool has_multiple_scans = jpegli_has_multiple_scans(cinfo);
   EXPECT_EQ(0, cinfo->output_scan_number);
   int sos_marker_cnt = 1;  // read_header reads the first SOS marker
   while (!jpegli_input_complete(cinfo)) {
@@ -330,7 +342,7 @@ void TestAPIBuffered(const CompressParams& jparams,
     ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
     if (dparams.output_mode == COEFFICIENTS) {
       jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(cinfo);
-      JXL_CHECK(coef_arrays != nullptr);
+      ASSERT_TRUE(coef_arrays != nullptr);
       CopyCoefficients(cinfo, coef_arrays, &output_progression->back());
     }
   }
@@ -341,8 +353,11 @@ void TestAPIBuffered(const CompressParams& jparams,
 }
 
 TEST(DecodeAPITest, ReuseCinfo) {
-  TestImage input, output, expected;
-  std::vector<TestImage> output_progression, expected_output_progression;
+  TestImage input;
+  TestImage output;
+  TestImage expected;
+  std::vector<TestImage> output_progression;
+  std::vector<TestImage> expected_output_progression;
   CompressParams jparams;
   DecompressParams dparams;
   std::vector<uint8_t> compressed;
@@ -363,7 +378,8 @@ TEST(DecodeAPITest, ReuseCinfo) {
               "Generating input with %dx%d chroma subsampling "
               "progressive level %d\n",
               h_samp, v_samp, progr);
-          JXL_CHECK(EncodeWithJpegli(input, jparams, &compressed));
+          JPEGLI_TEST_ENSURE_TRUE(
+              EncodeWithJpegli(input, jparams, &compressed));
           for (JpegIOMode output_mode : {PIXELS, RAW_DATA, COEFFICIENTS}) {
             for (bool crop : {true, false}) {
               if (crop && output_mode != PIXELS) continue;
@@ -383,8 +399,8 @@ TEST(DecodeAPITest, ReuseCinfo) {
                 expected.Clear();
                 DecodeWithLibjpeg(jparams, dparams, compressed, &expected);
                 output.Clear();
-                cinfo.buffered_image = false;
-                cinfo.raw_data_out = false;
+                cinfo.buffered_image = JXL_FALSE;
+                cinfo.raw_data_out = JXL_FALSE;
                 cinfo.scale_num = cinfo.scale_denom = 1;
                 SourceManager src(compressed.data(), compressed.size(),
                                   1u << 12);
@@ -405,8 +421,8 @@ TEST(DecodeAPITest, ReuseCinfo) {
                 output_progression.clear();
                 src.Reset();
                 TestAPIBuffered(jparams, dparams, &cinfo, &output_progression);
-                JXL_CHECK(output_progression.size() ==
-                          expected_output_progression.size());
+                JPEGLI_TEST_ENSURE_TRUE(output_progression.size() ==
+                                        expected_output_progression.size());
                 for (size_t i = 0; i < output_progression.size(); ++i) {
                   const TestImage& output = output_progression[i];
                   const TestImage& expected = expected_output_progression[i];
@@ -444,7 +460,7 @@ std::vector<TestConfig> GenerateBasicConfigs() {
 TEST(DecodeAPITest, ReuseCinfoSameMemSource) {
   std::vector<TestConfig> all_configs = GenerateBasicConfigs();
   uint8_t* buffer = nullptr;
-  unsigned long buffer_size = 0;
+  unsigned long buffer_size = 0;  // NOLINT
   {
     jpeg_compress_struct cinfo;
     const auto try_catch_block = [&]() -> bool {
@@ -484,7 +500,7 @@ TEST(DecodeAPITest, ReuseCinfoSameMemSource) {
 TEST(DecodeAPITest, ReuseCinfoSameStdSource) {
   std::vector<TestConfig> all_configs = GenerateBasicConfigs();
   FILE* tmpf = tmpfile();
-  JXL_CHECK(tmpf);
+  ASSERT_TRUE(tmpf);
   {
     jpeg_compress_struct cinfo;
     const auto try_catch_block = [&]() -> bool {
@@ -499,7 +515,7 @@ TEST(DecodeAPITest, ReuseCinfoSameStdSource) {
     EXPECT_TRUE(try_catch_block());
     jpegli_destroy_compress(&cinfo);
   }
-  rewind(tmpf);
+  fseek(tmpf, 0, SEEK_SET);
   std::vector<TestImage> all_outputs(all_configs.size());
   {
     jpeg_decompress_struct cinfo;
@@ -524,9 +540,9 @@ TEST(DecodeAPITest, ReuseCinfoSameStdSource) {
 
 TEST(DecodeAPITest, AbbreviatedStreams) {
   uint8_t* table_stream = nullptr;
-  unsigned long table_stream_size = 0;
+  unsigned long table_stream_size = 0;  // NOLINT
   uint8_t* data_stream = nullptr;
-  unsigned long data_stream_size = 0;
+  unsigned long data_stream_size = 0;  // NOLINT
   {
     jpeg_compress_struct cinfo;
     const auto try_catch_block = [&]() -> bool {
@@ -588,7 +604,8 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
   if (dparams.skip_scans) return;
-  const std::vector<uint8_t> compressed = GetTestJpegData(config);
+  JXL_ASSIGN_OR_QUIT(std::vector<uint8_t> compressed, GetTestJpegData(config),
+                     "Failed to create test data");
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
 
   TestImage output1;
@@ -622,7 +639,8 @@ class DecodeAPITestParamBuffered : public ::testing::TestWithParam<TestConfig> {
 TEST_P(DecodeAPITestParamBuffered, TestAPI) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
-  const std::vector<uint8_t> compressed = GetTestJpegData(config);
+  JXL_ASSIGN_OR_QUIT(std::vector<uint8_t> compressed, GetTestJpegData(config),
+                     "Failed to create test data.");
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
 
   std::vector<TestImage> output_progression1;
@@ -890,7 +908,9 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     all_tests.push_back(config);
   }
   // Tests for color transforms.
-  for (J_COLOR_SPACE out_color_space : {JCS_RGB, JCS_GRAYSCALE}) {
+  for (J_COLOR_SPACE out_color_space :
+       {JCS_RGB, JCS_GRAYSCALE, JCS_EXT_RGB, JCS_EXT_BGR, JCS_EXT_RGBA,
+        JCS_EXT_BGRA, JCS_EXT_ARGB, JCS_EXT_ABGR}) {
     TestConfig config;
     config.input.xsize = config.input.ysize = 256;
     config.input.color_space = JCS_GRAYSCALE;
@@ -899,7 +919,9 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     all_tests.push_back(config);
   }
   for (J_COLOR_SPACE jpeg_color_space : {JCS_RGB, JCS_YCbCr}) {
-    for (J_COLOR_SPACE out_color_space : {JCS_RGB, JCS_YCbCr, JCS_GRAYSCALE}) {
+    for (J_COLOR_SPACE out_color_space :
+         {JCS_RGB, JCS_YCbCr, JCS_GRAYSCALE, JCS_EXT_RGB, JCS_EXT_BGR,
+          JCS_EXT_RGBA, JCS_EXT_BGRA, JCS_EXT_ARGB, JCS_EXT_ABGR}) {
       if (jpeg_color_space == JCS_RGB && out_color_space == JCS_YCbCr) continue;
       TestConfig config;
       config.input.xsize = config.input.ysize = 256;
@@ -1104,6 +1126,8 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       TestConfig config;
       config.input.xsize = xsize;
       config.input.ysize = ysize;
+      config.jparams.h_sampling = {1, 1, 1};
+      config.jparams.v_sampling = {1, 1, 1};
       all_tests.push_back(config);
     }
   }
@@ -1245,7 +1269,8 @@ std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
   }
   os << IOMethodName(dparams.data_type, dparams.endianness);
   if (dparams.set_out_color_space) {
-    os << "OutColor" << ColorSpaceName((J_COLOR_SPACE)dparams.out_color_space);
+    os << "OutColor"
+       << ColorSpaceName(static_cast<J_COLOR_SPACE>(dparams.out_color_space));
   }
   if (dparams.crop_output) {
     os << "Crop";
@@ -1265,7 +1290,8 @@ std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
       if (i > 0) os << "_";
       const auto& sparam = dparams.scan_params[i];
       os << QuantMode(sparam.color_quant_mode);
-      os << DitherMode((J_DITHER_MODE)sparam.dither_mode) << "Dither";
+      os << DitherMode(static_cast<J_DITHER_MODE>(sparam.dither_mode))
+         << "Dither";
     }
   }
   if (dparams.skip_scans) {

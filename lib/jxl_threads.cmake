@@ -59,7 +59,14 @@ target_compile_definitions(jxl_threads
 generate_export_header(jxl_threads
   BASE_NAME JXL_THREADS
   EXPORT_FILE_NAME include/jxl/jxl_threads_export.h)
-
+# Place all public headers in a single directory.
+foreach(path ${JPEGXL_INTERNAL_THREADS_PUBLIC_HEADERS})
+  configure_file(
+    ${path}
+    ${path}
+    COPYONLY
+  )
+endforeach()
 
 ### Add a pkg-config file for libjxl_threads.
 
@@ -74,6 +81,12 @@ if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
     set(PKGCONFIG_TARGET_LIBS "${CMAKE_INSTALL_LIBDIR}")
 else()
     set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
+endif()
+
+if (BUILD_SHARED_LIBS)
+  set(JPEGXL_REQUIRES_TYPE "Requires.private")
+else()
+  set(JPEGXL_REQUIRES_TYPE "Requires")
 endif()
 
 set(JPEGXL_THREADS_LIBRARY_REQUIRES "")

@@ -4,14 +4,18 @@
 // license that can be found in the LICENSE file.
 
 #include <setjmp.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <hwy/targets.h>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
+#include "lib/jpegli/fuzztest.h"
+#include "lib/jpegli/types.h"
 
 namespace {
 
@@ -37,8 +41,8 @@ struct FuzzSpec {
   int crop_output;
 };
 
-static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
-static constexpr size_t kNumSourceBuffers = 4;
+constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
+constexpr size_t kNumSourceBuffers = 4;
 
 class SourceManager {
  public:
@@ -73,7 +77,7 @@ class SourceManager {
   static void init_source(j_decompress_ptr cinfo) {}
 
   static boolean fill_input_buffer(j_decompress_ptr cinfo) {
-    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+    auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (src->pos_ < src->len_) {
       size_t remaining = src->len_ - src->pos_;
       size_t chunk_size = std::min(remaining, src->max_chunk_size_);
@@ -97,8 +101,9 @@ class SourceManager {
     return TRUE;
   }
 
-  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {
-    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+  static void skip_input_data(j_decompress_ptr cinfo,
+                              long num_bytes /* NOLINT */) {
+    auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (num_bytes <= 0) {
       return;
     }
@@ -166,7 +171,7 @@ bool DecodeJpeg(const uint8_t* data, size_t size, size_t max_pixels,
   return success;
 }
 
-int TestOneInput(const uint8_t* data, size_t size) {
+int DoTestOneInput(const uint8_t* data, size_t size) {
   if (size < 4) return 0;
   uint32_t flags = 0;
   size_t used_flag_bits = 0;
@@ -194,7 +199,8 @@ int TestOneInput(const uint8_t* data, size_t size) {
   spec.crop_output = getFlag(1);
 
   std::vector<uint8_t> pixels;
-  size_t xsize, ysize;
+  size_t xsize;
+  size_t ysize;
   size_t max_pixels = 1 << 21;
 
   const auto targets = hwy::SupportedAndGeneratedTargets();
@@ -208,5 +214,11 @@ int TestOneInput(const uint8_t* data, size_t size) {
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return TestOneInput(data, size);
+  return DoTestOneInput(data, size);
 }
+
+void TestOneInput(const std::vector<uint8_t>& data) {
+  DoTestOneInput(data.data(), data.size());
+}
+
+FUZZ_TEST(JpegliDecFuzzTest, TestOneInput);

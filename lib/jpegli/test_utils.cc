@@ -7,20 +7,32 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
+#include <sstream>
 
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/sanitizers.h"
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"
 #endif
 
 namespace jpegli {
+
+namespace {
+void Check(bool ok) {
+  if (!ok) {
+    JXL_CRASH();
+  }
+}
+#define QUIT(M) Check(false);
+}  // namespace
 
 #define JPEG_API_FN(name) jpegli_##name
 #include "lib/jpegli/test_utils-inl.h"
@@ -31,7 +43,7 @@ std::string GetTestDataPath(const std::string& filename) {
   return std::string(TEST_DATA_PATH "/") + filename;
 }
 #else
-using bazel::tools::cpp::runfiles::Runfiles;
+using ::bazel::tools::cpp::runfiles::Runfiles;
 const std::unique_ptr<Runfiles> kRunfiles(Runfiles::Create(""));
 std::string GetTestDataPath(const std::string& filename) {
   std::string root(JPEGXL_ROOT_PACKAGE "/testdata/");
@@ -39,15 +51,16 @@ std::string GetTestDataPath(const std::string& filename) {
 }
 #endif
 
-std::vector<uint8_t> ReadTestData(const std::string& filename) {
+jxl::StatusOr<std::vector<uint8_t>> ReadTestData(const std::string& filename) {
+  std::vector<uint8_t> data;
   std::string full_path = GetTestDataPath(filename);
   fprintf(stderr, "ReadTestData %s\n", full_path.c_str());
   std::ifstream file(full_path, std::ios::binary);
   std::vector<char> str((std::istreambuf_iterator<char>(file)),
                         std::istreambuf_iterator<char>());
-  JXL_CHECK(file.good());
+  JXL_ENSURE(file.good());
   const uint8_t* raw = reinterpret_cast<const uint8_t*>(str.data());
-  std::vector<uint8_t> data(raw, raw + str.size());
+  data = std::vector<uint8_t>(raw, raw + str.size());
   printf("Test data %s is %d bytes long.\n", filename.c_str(),
          static_cast<int>(data.size()));
   return data;
@@ -153,7 +166,7 @@ bool ReadPNM(const std::vector<uint8_t>& data, size_t* xsize, size_t* ysize,
     return false;
   }
   pixels->resize(data.data() + data.size() - pos);
-  memcpy(&(*pixels)[0], pos, pixels->size());
+  memcpy(pixels->data(), pos, pixels->size());
   return true;
 }
 
@@ -171,6 +184,18 @@ std::string ColorSpaceName(J_COLOR_SPACE colorspace) {
       return "CMYK";
     case JCS_YCCK:
       return "YCCK";
+    case JCS_EXT_RGB:
+      return "EXT_RGB";
+    case JCS_EXT_BGR:
+      return "EXT_BGR";
+    case JCS_EXT_RGBA:
+      return "EXT_RGBA";
+    case JCS_EXT_BGRA:
+      return "EXT_BGRA";
+    case JCS_EXT_ARGB:
+      return "EXT_ARGB";
+    case JCS_EXT_ABGR:
+      return "EXT_ABGR";
     default:
       return "";
   }
@@ -196,7 +221,7 @@ std::string IOMethodName(JpegliDataType data_type,
 
 std::string SamplingId(const CompressParams& jparams) {
   std::stringstream os;
-  JXL_CHECK(jparams.h_sampling.size() == jparams.v_sampling.size());
+  Check(jparams.h_sampling.size() == jparams.v_sampling.size());
   if (!jparams.h_sampling.empty()) {
     size_t len = jparams.h_sampling.size();
     while (len > 1 && jparams.h_sampling[len - 1] == 1 &&
@@ -216,7 +241,8 @@ std::ostream& operator<<(std::ostream& os, const TestImage& input) {
   os << input.xsize << "x" << input.ysize;
   os << IOMethodName(input.data_type, input.endianness);
   if (input.color_space != JCS_RGB) {
-    os << "InputColor" << ColorSpaceName((J_COLOR_SPACE)input.color_space);
+    os << "InputColor"
+       << ColorSpaceName(static_cast<J_COLOR_SPACE>(input.color_space));
   }
   if (input.color_space == JCS_UNKNOWN) {
     os << input.components;
@@ -229,18 +255,18 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
   os << SamplingId(jparams);
   if (jparams.set_jpeg_colorspace) {
     os << "JpegColor"
-       << ColorSpaceName((J_COLOR_SPACE)jparams.jpeg_color_space);
+       << ColorSpaceName(static_cast<J_COLOR_SPACE>(jparams.jpeg_color_space));
   }
   if (!jparams.comp_ids.empty()) {
     os << "CID";
-    for (size_t i = 0; i < jparams.comp_ids.size(); ++i) {
-      os << jparams.comp_ids[i];
+    for (int cid : jparams.comp_ids) {
+      os << cid;
     }
   }
   if (!jparams.quant_indexes.empty()) {
     os << "QIDX";
-    for (size_t i = 0; i < jparams.quant_indexes.size(); ++i) {
-      os << jparams.quant_indexes[i];
+    for (int qi : jparams.quant_indexes) {
+      os << qi;
     }
     for (const auto& table : jparams.quant_tables) {
       os << "TABLE" << table.slot_idx << "T" << table.table_type << "F"
@@ -297,18 +323,23 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
   return os;
 }
 
-void SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels) {
+jxl::Status SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels) {
   if (colorspace == JCS_GRAYSCALE) {
     *channels = 1;
-  } else if (colorspace == JCS_RGB || colorspace == JCS_YCbCr) {
+  } else if (colorspace == JCS_RGB || colorspace == JCS_YCbCr ||
+             colorspace == JCS_EXT_RGB || colorspace == JCS_EXT_BGR) {
     *channels = 3;
-  } else if (colorspace == JCS_CMYK || colorspace == JCS_YCCK) {
+  } else if (colorspace == JCS_CMYK || colorspace == JCS_YCCK ||
+             colorspace == JCS_EXT_RGBA || colorspace == JCS_EXT_BGRA ||
+             colorspace == JCS_EXT_ARGB || colorspace == JCS_EXT_ABGR) {
     *channels = 4;
   } else if (colorspace == JCS_UNKNOWN) {
-    JXL_CHECK(*channels <= 4);
+    JXL_ENSURE(*channels <= 4);
   } else {
-    JXL_ABORT();
+    return JXL_FAILURE("Unsupported colorspace: %d",
+                       static_cast<int>(colorspace));
   }
+  return true;
 }
 
 void RGBToYCbCr(float r, float g, float b, float* y, float* cb, float* cr) {
@@ -320,7 +351,7 @@ void RGBToYCbCr(float r, float g, float b, float* y, float* cb, float* cr) {
 void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
                   J_COLOR_SPACE colorspace, size_t num_channels,
                   JpegliDataType data_type = JPEGLI_TYPE_UINT8,
-                  bool swap_endianness = JPEGLI_NATIVE_ENDIAN) {
+                  JXL_BOOL swap_endianness = JPEGLI_NATIVE_ENDIAN) {
   const float kMul = 255.0f;
   float r = input_rgb[0] / kMul;
   float g = input_rgb[1] / kMul;
@@ -329,12 +360,35 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
   if (colorspace == JCS_GRAYSCALE) {
     const float Y = 0.299f * r + 0.587f * g + 0.114f * b;
     out8[0] = static_cast<uint8_t>(std::round(Y * kMul));
-  } else if (colorspace == JCS_RGB || colorspace == JCS_UNKNOWN) {
+  } else if (colorspace == JCS_RGB || colorspace == JCS_EXT_RGB ||
+             colorspace == JCS_EXT_RGBA) {
+    out8[0] = input_rgb[0];
+    out8[1] = input_rgb[1];
+    out8[2] = input_rgb[2];
+    if (colorspace == JCS_EXT_RGBA) out8[3] = 255;
+  } else if (colorspace == JCS_EXT_BGR || colorspace == JCS_EXT_BGRA) {
+    out8[2] = input_rgb[0];
+    out8[1] = input_rgb[1];
+    out8[0] = input_rgb[2];
+    if (colorspace == JCS_EXT_BGRA) out8[3] = 255;
+  } else if (colorspace == JCS_EXT_ABGR) {
+    out8[0] = 255;
+    out8[3] = input_rgb[0];
+    out8[2] = input_rgb[1];
+    out8[1] = input_rgb[2];
+  } else if (colorspace == JCS_EXT_ARGB) {
+    out8[0] = 255;
+    out8[1] = input_rgb[0];
+    out8[2] = input_rgb[1];
+    out8[3] = input_rgb[2];
+  } else if (colorspace == JCS_UNKNOWN) {
     for (size_t c = 0; c < num_channels; ++c) {
       out8[c] = input_rgb[std::min<size_t>(2, c)];
     }
   } else if (colorspace == JCS_YCbCr) {
-    float Y, Cb, Cr;
+    float Y;
+    float Cb;
+    float Cr;
     RGBToYCbCr(r, g, b, &Y, &Cb, &Cr);
     out8[0] = static_cast<uint8_t>(std::round(Y * kMul));
     out8[1] = static_cast<uint8_t>(std::round(Cb * kMul));
@@ -350,7 +404,9 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
       out8[1] = static_cast<uint8_t>(std::round((1.0f - g) * kMul));
       out8[2] = static_cast<uint8_t>(std::round((1.0f - b) * kMul));
     } else if (colorspace == JCS_YCCK) {
-      float Y, Cb, Cr;
+      float Y;
+      float Cb;
+      float Cr;
       RGBToYCbCr(r, g, b, &Y, &Cb, &Cr);
       out8[0] = static_cast<uint8_t>(std::round(Y * kMul));
       out8[1] = static_cast<uint8_t>(std::round(Cb * kMul));
@@ -358,7 +414,7 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
     }
     out8[3] = static_cast<uint8_t>(std::round(K * kMul));
   } else {
-    JXL_ABORT("Colorspace %d not supported", colorspace);
+    Check(false);
   }
   if (data_type == JPEGLI_TYPE_UINT8) {
     memcpy(out, out8, num_channels);
@@ -384,10 +440,24 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
 
 void ConvertToGrayscale(TestImage* img) {
   if (img->color_space == JCS_GRAYSCALE) return;
-  JXL_CHECK(img->data_type == JPEGLI_TYPE_UINT8);
-  for (size_t i = 0; i < img->pixels.size(); i += 3) {
-    if (img->color_space == JCS_RGB) {
-      ConvertPixel(&img->pixels[i], &img->pixels[i / 3], JCS_GRAYSCALE, 1);
+  Check(img->data_type == JPEGLI_TYPE_UINT8);
+  bool rgb_pre_alpha =
+      img->color_space == JCS_EXT_ARGB || img->color_space == JCS_EXT_ABGR;
+  bool rgb_post_alpha =
+      img->color_space == JCS_EXT_RGBA || img->color_space == JCS_EXT_BGRA;
+  bool rgb_alpha = rgb_pre_alpha || rgb_post_alpha;
+  bool is_rgb = img->color_space == JCS_RGB ||
+                img->color_space == JCS_EXT_RGB ||
+                img->color_space == JCS_EXT_BGR || rgb_alpha;
+  bool switch_br = img->color_space == JCS_EXT_BGR ||
+                   img->color_space == JCS_EXT_ABGR ||
+                   img->color_space == JCS_EXT_BGRA;
+  size_t stride = rgb_alpha ? 4 : 3;
+  size_t offset = rgb_pre_alpha ? 1 : 0;
+  for (size_t i = offset; i < img->pixels.size(); i += stride) {
+    if (is_rgb) {
+      if (switch_br) std::swap(img->pixels[i], img->pixels[i + 2]);
+      ConvertPixel(&img->pixels[i], &img->pixels[i / stride], JCS_GRAYSCALE, 1);
     } else if (img->color_space == JCS_YCbCr) {
       img->pixels[i / 3] = img->pixels[i];
     }
@@ -398,21 +468,27 @@ void ConvertToGrayscale(TestImage* img) {
 }
 
 void GeneratePixels(TestImage* img) {
-  const std::vector<uint8_t> imgdata = ReadTestData("jxl/flower/flower.pnm");
-  size_t xsize, ysize, channels, bitdepth;
+  JXL_ASSIGN_OR_QUIT(std::vector<uint8_t> imgdata,
+                     ReadTestData("jxl/flower/flower.pnm"),
+                     "Failed to read test data");
+  size_t xsize;
+  size_t ysize;
+  size_t channels;
+  size_t bitdepth;
   std::vector<uint8_t> pixels;
-  JXL_CHECK(ReadPNM(imgdata, &xsize, &ysize, &channels, &bitdepth, &pixels));
+  Check(ReadPNM(imgdata, &xsize, &ysize, &channels, &bitdepth, &pixels));
   if (img->xsize == 0) img->xsize = xsize;
   if (img->ysize == 0) img->ysize = ysize;
-  JXL_CHECK(img->xsize <= xsize);
-  JXL_CHECK(img->ysize <= ysize);
-  JXL_CHECK(3 == channels);
-  JXL_CHECK(8 == bitdepth);
+  Check(img->xsize <= xsize);
+  Check(img->ysize <= ysize);
+  Check(3 == channels);
+  Check(8 == bitdepth);
   size_t in_bytes_per_pixel = channels;
   size_t in_stride = xsize * in_bytes_per_pixel;
   size_t x0 = (xsize - img->xsize) / 2;
   size_t y0 = (ysize - img->ysize) / 2;
-  SetNumChannels((J_COLOR_SPACE)img->color_space, &img->components);
+  Check(SetNumChannels(static_cast<J_COLOR_SPACE>(img->color_space),
+                       &img->components));
   size_t out_bytes_per_pixel =
       jpegli_bytes_per_sample(img->data_type) * img->components;
   size_t out_stride = img->xsize * out_bytes_per_pixel;
@@ -427,8 +503,9 @@ void GeneratePixels(TestImage* img) {
       size_t idx_in = y * in_stride + x * in_bytes_per_pixel;
       size_t idx_out = iy * out_stride + ix * out_bytes_per_pixel;
       ConvertPixel(&pixels[idx_in], &img->pixels[idx_out],
-                   (J_COLOR_SPACE)img->color_space, img->components,
-                   img->data_type, swap_endianness);
+                   static_cast<J_COLOR_SPACE>(img->color_space),
+                   img->components, img->data_type,
+                   TO_JXL_BOOL(swap_endianness));
     }
   }
 }
@@ -492,7 +569,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     jpegli_set_progressive_level(cinfo, 0);
   }
   jpegli_set_defaults(cinfo);
-  cinfo->in_color_space = (J_COLOR_SPACE)input.color_space;
+  cinfo->in_color_space = static_cast<J_COLOR_SPACE>(input.color_space);
   jpegli_default_colorspace(cinfo);
   if (jparams.override_JFIF >= 0) {
     cinfo->write_JFIF_header = jparams.override_JFIF;
@@ -501,7 +578,8 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     cinfo->write_Adobe_marker = jparams.override_Adobe;
   }
   if (jparams.set_jpeg_colorspace) {
-    jpegli_set_colorspace(cinfo, (J_COLOR_SPACE)jparams.jpeg_color_space);
+    jpegli_set_colorspace(cinfo,
+                          static_cast<J_COLOR_SPACE>(jparams.jpeg_color_space));
   }
   if (!jparams.comp_ids.empty()) {
     for (int c = 0; c < cinfo->num_components; ++c) {
@@ -522,21 +600,22 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     for (const auto& table : jparams.quant_tables) {
       if (table.add_raw) {
         cinfo->quant_tbl_ptrs[table.slot_idx] =
-            jpegli_alloc_quant_table((j_common_ptr)cinfo);
+            jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
         for (int k = 0; k < DCTSIZE2; ++k) {
           cinfo->quant_tbl_ptrs[table.slot_idx]->quantval[k] =
               table.quantval[k];
         }
         cinfo->quant_tbl_ptrs[table.slot_idx]->sent_table = FALSE;
       } else {
-        jpegli_add_quant_table(cinfo, table.slot_idx, &table.basic_table[0],
-                               table.scale_factor, table.force_baseline);
+        jpegli_add_quant_table(cinfo, table.slot_idx, table.basic_table.data(),
+                               table.scale_factor,
+                               TO_JXL_BOOL(table.force_baseline));
       }
     }
   }
   if (jparams.simple_progression) {
     jpegli_simple_progression(cinfo);
-    JXL_CHECK(jparams.progressive_mode == -1);
+    Check(jparams.progressive_mode == -1);
   }
   if (jparams.progressive_mode > 2) {
     const ScanScript& script = kTestScript[jparams.progressive_mode - 3];
@@ -546,7 +625,8 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     jpegli_set_progressive_level(cinfo, jparams.progressive_mode);
   }
   jpegli_set_input_format(cinfo, input.data_type, input.endianness);
-  jpegli_enable_adaptive_quantization(cinfo, jparams.use_adaptive_quantization);
+  jpegli_enable_adaptive_quantization(
+      cinfo, TO_JXL_BOOL(jparams.use_adaptive_quantization));
   cinfo->restart_interval = jparams.restart_interval;
   cinfo->restart_in_rows = jparams.restart_in_rows;
   cinfo->smoothing_factor = jparams.smoothing_factor;
@@ -555,7 +635,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
   } else if (jparams.optimize_coding == 0) {
     cinfo->optimize_coding = FALSE;
   }
-  cinfo->raw_data_in = !input.raw_data.empty();
+  cinfo->raw_data_in = TO_JXL_BOOL(!input.raw_data.empty());
   if (jparams.optimize_coding == 0 && jparams.use_flat_dc_luma_code) {
     JHUFF_TBL* tbl = cinfo->dc_huff_tbl_ptrs[0];
     memset(tbl, 0, sizeof(*tbl));
@@ -572,13 +652,13 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       cinfo->ac_huff_tbl_ptrs[0]->sent_table = TRUE;
       cinfo->ac_huff_tbl_ptrs[1]->sent_table = TRUE;
     }
-    jpegli_start_compress(cinfo, write_all_tables);
+    jpegli_start_compress(cinfo, TO_JXL_BOOL(write_all_tables));
     if (jparams.add_marker) {
       jpegli_write_marker(cinfo, kSpecialMarker0, kMarkerData,
                           sizeof(kMarkerData));
       jpegli_write_m_header(cinfo, kSpecialMarker1, sizeof(kMarkerData));
-      for (size_t p = 0; p < sizeof(kMarkerData); ++p) {
-        jpegli_write_m_byte(cinfo, kMarkerData[p]);
+      for (uint8_t c : kMarkerData) {
+        jpegli_write_m_byte(cinfo, c);
       }
       for (size_t i = 0; i < kMarkerSequenceLen; ++i) {
         jpegli_write_marker(cinfo, kMarkerSequence[i], kMarkerData,
@@ -597,7 +677,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     std::vector<JSAMPARRAY> data(cinfo->num_components);
     for (int c = 0; c < cinfo->num_components; ++c) {
       rowdata[c].resize(jparams.v_samp(c) * DCTSIZE);
-      data[c] = &rowdata[c][0];
+      data[c] = rowdata[c].data();
     }
     while (cinfo->next_scanline < cinfo->image_height) {
       for (int c = 0; c < cinfo->num_components; ++c) {
@@ -610,8 +690,8 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
               (y0 + i < cheight ? &raw_data[c][(y0 + i) * cwidth] : nullptr);
         }
       }
-      size_t num_lines = jpegli_write_raw_data(cinfo, &data[0], max_lines);
-      JXL_CHECK(num_lines == max_lines);
+      size_t num_lines = jpegli_write_raw_data(cinfo, data.data(), max_lines);
+      Check(num_lines == max_lines);
     }
   } else if (!input.coeffs.empty()) {
     j_common_ptr comptr = reinterpret_cast<j_common_ptr>(cinfo);
@@ -630,18 +710,18 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       jpegli_write_marker(cinfo, kSpecialMarker0, kMarkerData,
                           sizeof(kMarkerData));
       jpegli_write_m_header(cinfo, kSpecialMarker1, sizeof(kMarkerData));
-      for (size_t p = 0; p < sizeof(kMarkerData); ++p) {
-        jpegli_write_m_byte(cinfo, kMarkerData[p]);
+      for (uint8_t c : kMarkerData) {
+        jpegli_write_m_byte(cinfo, c);
       }
     }
     for (int c = 0; c < cinfo->num_components; ++c) {
       jpeg_component_info* comp = &cinfo->comp_info[c];
       for (size_t by = 0; by < comp->height_in_blocks; ++by) {
-        JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
-            comptr, coef_arrays[c], by, 1, true);
+        JBLOCKARRAY blocks = (*cinfo->mem->access_virt_barray)(
+            comptr, coef_arrays[c], by, 1, TRUE);
         size_t stride = comp->width_in_blocks * sizeof(JBLOCK);
         size_t offset = by * comp->width_in_blocks * DCTSIZE2;
-        memcpy(ba[0], &input.coeffs[c][offset], stride);
+        memcpy(blocks[0], &input.coeffs[c][offset], stride);
       }
     }
   } else {
@@ -649,7 +729,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
                     jpegli_bytes_per_sample(input.data_type);
     std::vector<uint8_t> row_bytes(stride);
     for (size_t y = 0; y < cinfo->image_height; ++y) {
-      memcpy(&row_bytes[0], &input.pixels[y * stride], stride);
+      memcpy(row_bytes.data(), &input.pixels[y * stride], stride);
       JSAMPROW row[] = {row_bytes.data()};
       jpegli_write_scanlines(cinfo, row, 1);
     }
@@ -660,7 +740,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
 bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
                       std::vector<uint8_t>* compressed) {
   uint8_t* buffer = nullptr;
-  unsigned long buffer_size = 0;
+  unsigned long buffer_size = 0;  // NOLINT
   jpeg_compress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
@@ -681,15 +761,15 @@ bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
 
 int NumTestScanScripts() { return kNumTestScripts; }
 
-void DumpImage(const TestImage& image, const std::string fn) {
-  JXL_CHECK(image.components == 1 || image.components == 3);
+void DumpImage(const TestImage& image, const std::string& fn) {
+  Check(image.components == 1 || image.components == 3);
   size_t bytes_per_sample = jpegli_bytes_per_sample(image.data_type);
   uint32_t maxval = (1u << (8 * bytes_per_sample)) - 1;
   char type = image.components == 1 ? '5' : '6';
   std::ofstream out(fn.c_str(), std::ofstream::binary);
-  out << "P" << type << std::endl
-      << image.xsize << " " << image.ysize << std::endl
-      << maxval << std::endl;
+  out << "P" << type << "\n"
+      << image.xsize << " " << image.ysize << "\n"
+      << maxval << "\n";
   out.write(reinterpret_cast<const char*>(image.pixels.data()),
             image.pixels.size());
   out.close();
@@ -706,7 +786,7 @@ double DistanceRms(const TestImage& input, const TestImage& output,
         (im.endianness == JPEGLI_LITTLE_ENDIAN ||
          (im.endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
     size_t offset = start_offset + idx * bytes_per_sample;
-    JXL_CHECK(offset < data.size());
+    Check(offset < data.size());
     const uint8_t* p = &data[offset];
     if (im.data_type == JPEGLI_TYPE_UINT8) {
       static const double mul8 = 1.0 / 255.0;
@@ -732,10 +812,10 @@ double DistanceRms(const TestImage& input, const TestImage& output,
       diff2 += diff * diff;
     }
   } else {
-    JXL_CHECK(!input.raw_data.empty());
-    JXL_CHECK(!output.raw_data.empty());
+    Check(!input.raw_data.empty());
+    Check(!output.raw_data.empty());
     for (size_t c = 0; c < input.raw_data.size(); ++c) {
-      JXL_CHECK(c < output.raw_data.size());
+      Check(c < output.raw_data.size());
       num_samples += input.raw_data[c].size();
       for (size_t i = 0; i < input.raw_data[c].size(); ++i) {
         double sample_orig = get_sample(input, input.raw_data[c], i);
@@ -761,23 +841,23 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
   double rms = DistanceRms(input, output, start_line, num_lines, &max_d);
   printf("rms: %f, max_rms: %f, max_d: %f,  max_diff: %f\n", rms, max_rms,
          max_d, max_diff);
-  JXL_CHECK(rms <= max_rms);
-  JXL_CHECK(max_d <= max_diff);
+  Check(rms <= max_rms);
+  Check(max_d <= max_diff);
 }
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
                        double max_rms, double max_diff) {
-  JXL_CHECK(output.xsize == input.xsize);
-  JXL_CHECK(output.ysize == input.ysize);
-  JXL_CHECK(output.components == input.components);
-  JXL_CHECK(output.color_space == input.color_space);
+  Check(output.xsize == input.xsize);
+  Check(output.ysize == input.ysize);
+  Check(output.components == input.components);
+  Check(output.color_space == input.color_space);
   if (!input.coeffs.empty()) {
-    JXL_CHECK(input.coeffs.size() == input.components);
-    JXL_CHECK(output.coeffs.size() == input.components);
+    Check(input.coeffs.size() == input.components);
+    Check(output.coeffs.size() == input.components);
     for (size_t c = 0; c < input.components; ++c) {
-      JXL_CHECK(output.coeffs[c].size() == input.coeffs[c].size());
-      JXL_CHECK(0 == memcmp(input.coeffs[c].data(), output.coeffs[c].data(),
-                            input.coeffs[c].size()));
+      Check(output.coeffs[c].size() == input.coeffs[c].size());
+      Check(0 == memcmp(input.coeffs[c].data(), output.coeffs[c].data(),
+                        input.coeffs[c].size()));
     }
   } else {
     VerifyOutputImage(input, output, 0, output.ysize, max_rms, max_diff);

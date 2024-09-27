@@ -6,12 +6,14 @@
 #ifndef TOOLS_THREAD_POOL_INTERNAL_H_
 #define TOOLS_THREAD_POOL_INTERNAL_H_
 
+#include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
-#include <stddef.h>
 
-#include <cmath>
+#include <cstddef>
+#include <memory>
 #include <thread>  // NOLINT
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
 
 namespace jpegxl {
@@ -29,12 +31,13 @@ class ThreadPoolInternal {
       size_t num_threads = std::thread::hardware_concurrency()) {
     runner_ =
         JxlThreadParallelRunnerMake(/* memory_manager */ nullptr, num_threads);
-    pool_.reset(new ThreadPool(JxlThreadParallelRunner, runner_.get()));
+    pool_ =
+        jxl::make_unique<ThreadPool>(JxlThreadParallelRunner, runner_.get());
   }
 
   ThreadPoolInternal(const ThreadPoolInternal&) = delete;
   ThreadPoolInternal& operator&(const ThreadPoolInternal&) = delete;
-  ThreadPool* operator&() { return pool_.get(); }
+  ThreadPool* get() { return pool_.get(); }
 
  private:
   JxlThreadParallelRunnerPtr runner_;

@@ -5,16 +5,17 @@
 
 #include "lib/jxl/render_pipeline/stage_xyb.h"
 
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/sanitizers.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_xyb.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/base/common.h"
 #include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/dec_xyb-inl.h"
-#include "lib/jxl/sanitizers.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -28,11 +29,11 @@ class XYBStage : public RenderPipelineStage {
         output_is_xyb_(output_encoding_info.color_encoding.GetColorSpace() ==
                        ColorSpace::kXYB) {}
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
     const HWY_FULL(float) d;
-    JXL_ASSERT(xextra == 0);
+    JXL_ENSURE(xextra == 0);
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
@@ -52,7 +53,8 @@ class XYBStage : public RenderPipelineStage {
       const auto offset_x = Set(d, jxl::cms::kScaledXYBOffset[0]);
       const auto offset_y = Set(d, jxl::cms::kScaledXYBOffset[1]);
       const auto offset_bmy = Set(d, jxl::cms::kScaledXYBOffset[2]);
-      for (ssize_t x = -xextra; x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
+      for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+           x += Lanes(d)) {
         const auto in_x = LoadU(d, row0 + x);
         const auto in_y = LoadU(d, row1 + x);
         const auto in_b = LoadU(d, row2 + x);
@@ -64,7 +66,8 @@ class XYBStage : public RenderPipelineStage {
         StoreU(out_b, d, row2 + x);
       }
     } else {
-      for (ssize_t x = -xextra; x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
+      for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+           x += Lanes(d)) {
         const auto in_opsin_x = LoadU(d, row0 + x);
         const auto in_opsin_y = LoadU(d, row1 + x);
         const auto in_opsin_b = LoadU(d, row2 + x);
@@ -81,6 +84,7 @@ class XYBStage : public RenderPipelineStage {
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
@@ -130,18 +134,18 @@ class FastXYBStage : public RenderPipelineStage {
         has_alpha_(has_alpha),
         alpha_c_(alpha_c) {}
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
-    if (ypos >= height_) return;
-    JXL_ASSERT(xextra == 0);
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
+    if (ypos >= height_) return true;
+    JXL_ENSURE(xextra == 0);
     const float* xyba[4] = {
         GetInputRow(input_rows, 0, 0), GetInputRow(input_rows, 1, 0),
         GetInputRow(input_rows, 2, 0),
         has_alpha_ ? GetInputRow(input_rows, alpha_c_, 0) : nullptr};
     uint8_t* out_buf = rgb_ + stride_ * ypos + (rgba_ ? 4 : 3) * xpos;
-    FastXYBTosRGB8(xyba, out_buf, rgba_,
-                   xsize + xpos <= width_ ? xsize : width_ - xpos);
+    return FastXYBTosRGB8(xyba, out_buf, rgba_,
+                          xsize + xpos <= width_ ? xsize : width_ - xpos);
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
@@ -168,7 +172,7 @@ class FastXYBStage : public RenderPipelineStage {
 std::unique_ptr<RenderPipelineStage> GetFastXYBTosRGB8Stage(
     uint8_t* rgb, size_t stride, size_t width, size_t height, bool rgba,
     bool has_alpha, size_t alpha_c) {
-  JXL_ASSERT(HasFastXYBTosRGB8());
+  if (!HasFastXYBTosRGB8()) return nullptr;
   return make_unique<FastXYBStage>(rgb, stride, width, height, rgba, has_alpha,
                                    alpha_c);
 }

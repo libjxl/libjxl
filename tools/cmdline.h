@@ -6,13 +6,13 @@
 #ifndef TOOLS_CMDLINE_H_
 #define TOOLS_CMDLINE_H_
 
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace jpegxl {
@@ -159,11 +159,11 @@ class CommandLineParser {
   // A positional argument.
   class CmdOptionPositional : public CmdOptionInterface {
    public:
-    CmdOptionPositional(const char* name, const std::string& help_text,
+    CmdOptionPositional(const char* name, std::string help_text,
                         const char** storage, int verbosity_level,
                         bool required)
         : name_(name),
-          help_text_(help_text),
+          help_text_(std::move(help_text)),
           storage_(storage),
           verbosity_level_(verbosity_level),
           required_(required) {}
@@ -270,7 +270,7 @@ class CommandLineParser {
             return (*parser_.parser_with_arg_)(arg, storage_);
           } else {
             fprintf(stderr, "--%s didn't expect any argument passed to it.\n",
-                    argv[*i]);
+                    long_name_);
             return false;
           }
         }
@@ -279,7 +279,7 @@ class CommandLineParser {
       (*i)++;
       if (metavar_) {
         if (argc <= *i) {
-          fprintf(stderr, "--%s expected an argument but none passed.\n",
+          fprintf(stderr, "%s expected an argument but none passed.\n",
                   argv[*i - 1]);
           return false;
         }
@@ -438,5 +438,15 @@ static inline bool SetBooleanFalse(bool* out) {
 
 }  // namespace tools
 }  // namespace jpegxl
+
+#define JPEGXL_TOOLS_ABORT(M)                      \
+  fprintf(stderr, "JPEGXL_TOOLS_ABORT: %s\n", #M); \
+  std::exit(EXIT_FAILURE);
+
+#define JPEGXL_TOOLS_CHECK(C)                        \
+  if (!(C)) {                                        \
+    fprintf(stderr, "JPEGXL_TOOLS_CHECK: %s\n", #C); \
+    std::exit(EXIT_FAILURE);                         \
+  }
 
 #endif  // TOOLS_CMDLINE_H_

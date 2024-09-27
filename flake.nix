@@ -19,13 +19,14 @@
               cmake
               pkg-config
               gtest
-              gmock
               doxygen
               graphviz
               python3
               libclang.python
               libpng
               giflib
+              lcms2
+              brotli
             ];
             shellHook = ''
               export CC=clang

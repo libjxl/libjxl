@@ -6,25 +6,23 @@
 #include "lib/extras/enc/jpg.h"
 
 #if JPEGXL_ENABLE_JPEG
-#include <jpeglib.h>
-#include <setjmp.h>
+#include "lib/jxl/base/include_jpeglib.h"  // NOLINT
 #endif
-#include <stdint.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
-#include <iterator>
 #include <memory>
-#include <numeric>
 #include <sstream>
 #include <utility>
 #include <vector>
 
 #include "lib/extras/exif.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/sanitizers.h"
 #if JPEGXL_ENABLE_SJPEG
 #include "sjpeg.h"
 #include "sjpegi.h"
@@ -50,23 +48,21 @@ enum class JpegEncoder {
   kSJpeg,
 };
 
-#define ARRAY_SIZE(X) (sizeof(X) / sizeof((X)[0]))
-
 // Popular jpeg scan scripts
 // The fields of the individual scans are:
 // comps_in_scan, component_index[], Ss, Se, Ah, Al
-static constexpr jpeg_scan_info kScanScript1[] = {
+constexpr auto kScanScript1 = to_array<jpeg_scan_info>({
     {1, {0}, 0, 0, 0, 0},   //
     {1, {1}, 0, 0, 0, 0},   //
     {1, {2}, 0, 0, 0, 0},   //
     {1, {0}, 1, 8, 0, 0},   //
     {1, {0}, 9, 63, 0, 0},  //
     {1, {1}, 1, 63, 0, 0},  //
-    {1, {2}, 1, 63, 0, 0},  //
-};
-static constexpr size_t kNumScans1 = ARRAY_SIZE(kScanScript1);
+    {1, {2}, 1, 63, 0, 0}   //
+});
+constexpr size_t kNumScans1 = kScanScript1.size();
 
-static constexpr jpeg_scan_info kScanScript2[] = {
+constexpr auto kScanScript2 = to_array<jpeg_scan_info>({
     {1, {0}, 0, 0, 0, 0},   //
     {1, {1}, 0, 0, 0, 0},   //
     {1, {2}, 0, 0, 0, 0},   //
@@ -74,11 +70,11 @@ static constexpr jpeg_scan_info kScanScript2[] = {
     {1, {0}, 3, 63, 0, 1},  //
     {1, {0}, 1, 63, 1, 0},  //
     {1, {1}, 1, 63, 0, 0},  //
-    {1, {2}, 1, 63, 0, 0},  //
-};
-static constexpr size_t kNumScans2 = ARRAY_SIZE(kScanScript2);
+    {1, {2}, 1, 63, 0, 0}   //
+});
+constexpr size_t kNumScans2 = kScanScript2.size();
 
-static constexpr jpeg_scan_info kScanScript3[] = {
+constexpr auto kScanScript3 = to_array<jpeg_scan_info>({
     {1, {0}, 0, 0, 0, 0},   //
     {1, {1}, 0, 0, 0, 0},   //
     {1, {2}, 0, 0, 0, 0},   //
@@ -86,11 +82,11 @@ static constexpr jpeg_scan_info kScanScript3[] = {
     {1, {0}, 1, 63, 2, 1},  //
     {1, {0}, 1, 63, 1, 0},  //
     {1, {1}, 1, 63, 0, 0},  //
-    {1, {2}, 1, 63, 0, 0},  //
-};
-static constexpr size_t kNumScans3 = ARRAY_SIZE(kScanScript3);
+    {1, {2}, 1, 63, 0, 0}   //
+});
+constexpr size_t kNumScans3 = kScanScript3.size();
 
-static constexpr jpeg_scan_info kScanScript4[] = {
+constexpr auto kScanScript4 = to_array<jpeg_scan_info>({
     {3, {0, 1, 2}, 0, 0, 0, 1},  //
     {1, {0}, 1, 5, 0, 2},        //
     {1, {2}, 1, 63, 0, 1},       //
@@ -100,11 +96,11 @@ static constexpr jpeg_scan_info kScanScript4[] = {
     {3, {0, 1, 2}, 0, 0, 1, 0},  //
     {1, {2}, 1, 63, 1, 0},       //
     {1, {1}, 1, 63, 1, 0},       //
-    {1, {0}, 1, 63, 1, 0},       //
-};
-static constexpr size_t kNumScans4 = ARRAY_SIZE(kScanScript4);
+    {1, {0}, 1, 63, 1, 0}        //
+});
+constexpr size_t kNumScans4 = kScanScript4.size();
 
-static constexpr jpeg_scan_info kScanScript5[] = {
+constexpr auto kScanScript5 = to_array<jpeg_scan_info>({
     {3, {0, 1, 2}, 0, 0, 0, 1},  //
     {1, {0}, 1, 5, 0, 2},        //
     {1, {1}, 1, 5, 0, 2},        //
@@ -118,12 +114,12 @@ static constexpr jpeg_scan_info kScanScript5[] = {
     {3, {0, 1, 2}, 0, 0, 1, 0},  //
     {1, {0}, 1, 63, 1, 0},       //
     {1, {1}, 1, 63, 1, 0},       //
-    {1, {2}, 1, 63, 1, 0},       //
-};
-static constexpr size_t kNumScans5 = ARRAY_SIZE(kScanScript5);
+    {1, {2}, 1, 63, 1, 0}        //
+});
+constexpr size_t kNumScans5 = kScanScript5.size();
 
 // default progressive mode of jpegli
-static constexpr jpeg_scan_info kScanScript6[] = {
+constexpr auto kScanScript6 = to_array<jpeg_scan_info>({
     {3, {0, 1, 2}, 0, 0, 0, 0},  //
     {1, {0}, 1, 2, 0, 0},        //
     {1, {1}, 1, 2, 0, 0},        //
@@ -137,8 +133,8 @@ static constexpr jpeg_scan_info kScanScript6[] = {
     {1, {0}, 3, 63, 1, 0},       //
     {1, {1}, 3, 63, 1, 0},       //
     {1, {2}, 3, 63, 1, 0},       //
-};
-static constexpr size_t kNumScans6 = ARRAY_SIZE(kScanScript6);
+});
+constexpr size_t kNumScans6 = kScanScript6.size();
 
 // Adapt RGB scan info to grayscale jpegs.
 void FilterScanComponents(const jpeg_compress_struct* cinfo,
@@ -163,12 +159,12 @@ Status SetJpegProgression(int progressive_id,
     jpeg_simple_progression(cinfo);
     return true;
   }
-  constexpr const jpeg_scan_info* kScanScripts[] = {kScanScript1, kScanScript2,
-                                                    kScanScript3, kScanScript4,
-                                                    kScanScript5, kScanScript6};
-  constexpr size_t kNumScans[] = {kNumScans1, kNumScans2, kNumScans3,
-                                  kNumScans4, kNumScans5, kNumScans6};
-  if (progressive_id > static_cast<int>(ARRAY_SIZE(kNumScans))) {
+  const jpeg_scan_info* kScanScripts[] = {
+      kScanScript1.data(), kScanScript2.data(), kScanScript3.data(),
+      kScanScript4.data(), kScanScript5.data(), kScanScript6.data()};
+  constexpr auto kNumScans = to_array<size_t>(
+      {kNumScans1, kNumScans2, kNumScans3, kNumScans4, kNumScans5, kNumScans6});
+  if (progressive_id > static_cast<int>(kNumScans.size())) {
     return JXL_FAILURE("Unknown jpeg scan script id %d", progressive_id);
   }
   const jpeg_scan_info* scan_script = kScanScripts[progressive_id - 1];
@@ -178,20 +174,12 @@ Status SetJpegProgression(int progressive_id,
     jpeg_scan_info scan_info = scan_script[i];
     FilterScanComponents(cinfo, &scan_info);
     if (scan_info.comps_in_scan > 0) {
-      scan_infos->emplace_back(std::move(scan_info));
+      scan_infos->emplace_back(scan_info);
     }
   }
   cinfo->scan_info = scan_infos->data();
   cinfo->num_scans = scan_infos->size();
   return true;
-}
-
-bool IsSRGBEncoding(const JxlColorEncoding& c) {
-  return ((c.color_space == JXL_COLOR_SPACE_RGB ||
-           c.color_space == JXL_COLOR_SPACE_GRAY) &&
-          c.primaries == JXL_PRIMARIES_SRGB &&
-          c.white_point == JXL_WHITE_POINT_D65 &&
-          c.transfer_function == JXL_TRANSFER_FUNCTION_SRGB);
 }
 
 void WriteICCProfile(jpeg_compress_struct* const cinfo,
@@ -225,8 +213,8 @@ void WriteExif(jpeg_compress_struct* const cinfo,
   for (const unsigned char c : kExifSignature) {
     jpeg_write_m_byte(cinfo, c);
   }
-  for (size_t i = 0; i < exif.size(); ++i) {
-    jpeg_write_m_byte(cinfo, exif[i]);
+  for (uint8_t c : exif) {
+    jpeg_write_m_byte(cinfo, c);
   }
 }
 
@@ -285,14 +273,18 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
   cinfo.err = jpeg_std_error(&jerr);
   jpeg_create_compress(&cinfo);
   unsigned char* buffer = nullptr;
-  unsigned long size = 0;
+#ifdef LIBJPEG_TURBO_VERSION
+  unsigned long size = 0;  // NOLINT
+#else
+  size_t size = 0;  // NOLINT
+#endif
   jpeg_mem_dest(&cinfo, &buffer, &size);
   cinfo.image_width = image.xsize;
   cinfo.image_height = image.ysize;
   cinfo.input_components = info.num_color_channels;
   cinfo.in_color_space = info.num_color_channels == 1 ? JCS_GRAYSCALE : JCS_RGB;
   jpeg_set_defaults(&cinfo);
-  cinfo.optimize_coding = params.optimize_coding;
+  cinfo.optimize_coding = static_cast<boolean>(params.optimize_coding);
   if (cinfo.input_components == 3) {
     JXL_RETURN_IF_ERROR(
         SetChromaSubsampling(params.chroma_subsampling, &cinfo));
@@ -318,10 +310,10 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
 
   std::vector<uint8_t> row_bytes(image.stride);
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
-  if (cinfo.num_components == (int)image.format.num_channels &&
+  if (cinfo.num_components == static_cast<int>(image.format.num_channels) &&
       image.format.data_type == JXL_TYPE_UINT8) {
     for (size_t y = 0; y < info.ysize; ++y) {
-      memcpy(&row_bytes[0], pixels + y * image.stride, image.stride);
+      memcpy(row_bytes.data(), pixels + y * image.stride, image.stride);
       JSAMPROW row[] = {row_bytes.data()};
       jpeg_write_scanlines(&cinfo, row, 1);
     }
@@ -409,7 +401,7 @@ struct MySearchHook : public sjpeg::SearchHook {
   }
   bool Update(float result) override {
     value = result;
-    if (fabs(value - target) < tolerance * target) {
+    if (std::fabs(value - target) < tolerance * target) {
       return true;
     }
     if (value > target) {
@@ -428,9 +420,9 @@ struct MySearchHook : public sjpeg::SearchHook {
     } else {
       q = (qmin + qmax) / 2.;
     }
-    return (pass > 0 && fabs(q - last_q) < q_precision);
+    return (pass > 0 && std::fabs(q - last_q) < q_precision);
   }
-  ~MySearchHook() override {}
+  ~MySearchHook() override = default;
 };
 #endif
 
@@ -485,7 +477,7 @@ Status EncodeWithSJpeg(const PackedImage& image, const JxlBasicInfo& info,
     param.tolerance = params.search_tolerance;
     param.qmin = params.search_q_min;
     param.qmax = params.search_q_max;
-    hook.reset(new MySearchHook());
+    hook = jxl::make_unique<MySearchHook>();
     hook->ReadBaseTables(params.custom_base_quant_fn);
     hook->q_start = params.search_q_start;
     hook->q_precision = params.search_q_precision;
@@ -547,7 +539,7 @@ class JPEGEncoder : public Encoder {
     return formats;
   }
   Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded_image,
-                ThreadPool* pool = nullptr) const override {
+                ThreadPool* pool) const override {
     JXL_RETURN_IF_ERROR(VerifyBasicInfo(ppf.info));
     JpegEncoder jpeg_encoder = JpegEncoder::kLibJpeg;
     JpegParams params;
@@ -598,18 +590,14 @@ class JPEGEncoder : public Encoder {
       }
     }
     params.is_xyb = (ppf.color_encoding.color_space == JXL_COLOR_SPACE_XYB);
-    std::vector<uint8_t> icc;
-    if (!IsSRGBEncoding(ppf.color_encoding)) {
-      icc = ppf.icc;
-    }
     encoded_image->bitstreams.clear();
     encoded_image->bitstreams.reserve(ppf.frames.size());
     for (const auto& frame : ppf.frames) {
       JXL_RETURN_IF_ERROR(VerifyPackedImage(frame.color, ppf.info));
       encoded_image->bitstreams.emplace_back();
       JXL_RETURN_IF_ERROR(EncodeImageJPG(
-          frame.color, ppf.info, icc, ppf.metadata.exif, jpeg_encoder, params,
-          pool, &encoded_image->bitstreams.back()));
+          frame.color, ppf.info, ppf.icc, ppf.metadata.exif, jpeg_encoder,
+          params, pool, &encoded_image->bitstreams.back()));
     }
     return true;
   }

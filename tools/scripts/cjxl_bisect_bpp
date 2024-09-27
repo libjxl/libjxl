@@ -17,16 +17,18 @@
 # The `get_bpp` helper is taken from the same directory as the current script.
 #
 
+self=$(realpath "$0")
+mydir=$(dirname "${self}")
+
 input_filename=$1
 output_filename=$2
 target_size=$3
 
-script_dir=$(dirname $(readlink -f $0))
 bisect_tool=$(which bisector)
 if [ -z $bisect_tool ] ; then
-  bisect_tool="${script_dir}/bisector"
+  bisect_tool="${mydir}/bisector"
 fi
-jxl_get_bpp_helper="${script_dir}/jxl_get_bpp_helper"
+jxl_get_bpp_helper="${my}/jxl_get_bpp_helper"
 # If $CJXL_BIN is set, we use this instead of looking for `cjxl` on $PATH.
 
 cjxl_bin=${CJXL_BIN}

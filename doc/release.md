@@ -93,6 +93,15 @@ branches](https://docs.github.com/en/github/administering-a-repository/defining-
 in our repository, however you can push to a protected branch when *creating* it
 but you can't directly push to it after it is created. To include more changes
 in the release branch see the "Cherry-picking fixes to a release" section below.
+Remember to tag the first commit in the `main` branch after the branch of point
+with the suffix `-snapshot`, so for instances, if you just made the
+branch `v0.5.x`, run
+```
+git checkout [hash of first commit after the branch off point]
+git tag v0.5-snapshot
+git push git@github.com:libjxl/libjxl.git v0.5-snapshot
+```
+
 
 ## Creating a merge label
 
@@ -274,10 +283,29 @@ instructions:
    the release itself that are not included in the CHANGELOG.md, although prefer
    to include those in the CHANGELOG.md file. You can switch to the Preview tab
    to see the results.
+ * Copy-paste the following note:
+ ```markdown
+  **Note:** This release is for evaluation purposes and may contain bugs, including security bugs, that may not be individually documented when fixed. See the [SECURITY.md](SECURITY.md) file for details. Always prefer to use the latest release.
+
+Please provide feedback and report bugs [here](https://github.com/libjxl/libjxl/issues).
+```
+
 
  * Finally click "Publish release" and go celebrate with the team. 🎉
 
- * Make sure to manually push the commit of the release also to https://gitlab.com/wg1/jpeg-xl.
+ * The branch v0.7.x will be pushed to gitlab automatically, but make sure to
+   manually push the *tag* of the release also to
+   https://gitlab.com/wg1/jpeg-xl, by doing configuring `gitlab` to be the remote `git@gitlab.com:wg1/jpeg-xl.git` and then running:
+
+```bash
+git push gitlab v0.7.1
+```
+and possibly also push the tag for the snapshot to gitlab, if it wasn't done yet:
+```bash
+git push gitlab v0.7-snapshot
+```
+
+
 
 ### How to build downstream projects
 
@@ -289,26 +317,33 @@ apt install -y clang cmake git libbrotli-dev nasm pkg-config ninja-build
 export CC=clang
 export CXX=clang++
 
-git clone --recurse-submodules --depth 1 -b v0.7.x \
+mkdir -p /src
+cd /src
+
+git clone --recurse-submodules --depth 1 -b v0.9.x \
   https://github.com/libjxl/libjxl.git
 git clone --recurse-submodules --depth 1 \
   https://github.com/ImageMagick/ImageMagick.git
 git clone --recurse-submodules --depth 1 \
   https://github.com/FFmpeg/FFmpeg.git
 
-cd ~/libjxl
-git checkout v0.7.x
+cd /src/libjxl
 cmake -B build -G Ninja .
-cmake --build build
-cmake --install build
+cmake --build build -j`nproc`
+cmake --install build --prefix="/usr"
 
-cd ~/ImageMagick
+cd /src/ImageMagick
 ./configure --with-jxl=yes
 # check for "JPEG XL --with-jxl=yes yes"
-make -j 80
+make -j `nproc`
+./utilities/magick -version
 
-cd ~/FFmpeg
-./configure --enable-libjxl
+cd /src/FFmpeg
+./configure --disable-all --disable-debug --enable-avcodec --enable-avfilter \
+  --enable-avformat --enable-libjxl --enable-encoder=libjxl \
+  --enable-decoder=libjxl --enable-ffmpeg
 # check for libjxl decoder/encoder support
-make -j 80
+make -j `nproc`
+ldd ./ffmpeg
+./ffmpeg -version
 ```

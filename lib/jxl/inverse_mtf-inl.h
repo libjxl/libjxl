@@ -14,7 +14,7 @@
 
 #include <hwy/highway.h>
 
-#include "lib/jxl/sanitizers.h"
+#include "lib/jxl/base/sanitizers.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -82,7 +82,7 @@ HWY_AFTER_NAMESPACE();
 
 namespace jxl {
 inline void InverseMoveToFrontTransform(uint8_t* v, int v_len) {
-  return HWY_STATIC_DISPATCH(InverseMoveToFrontTransform)(v, v_len);
+  HWY_STATIC_DISPATCH(InverseMoveToFrontTransform)(v, v_len);
 }
 }  // namespace jxl
 

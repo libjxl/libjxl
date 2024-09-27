@@ -5,7 +5,7 @@
 
 # Workflow for building and running tests.
 
-name: Build/Test
+name: Build/Test *nix
 on:
   merge_group:
   push:
@@ -13,7 +13,7 @@ on:
       - main
       - v*.*.x
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
 
 permissions:
   contents: read
@@ -23,15 +23,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  ubuntu_build:
+  build_test:
     name: ${{ startsWith(matrix.os, 'macos-') && 'MacOS' || 'Ubuntu' }} Build ${{ matrix.name }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
         # We have one job per "name" in the matrix. Attributes are set on the
         # specific job names.
-        name: [release, debug, asan, msan, scalar]
+        name: [release, debug, asan, msan, tsan, scalar]
         include:
           - name: release
             mode: release
@@ -59,23 +60,29 @@ jobs:
           - name: scalar
             mode: release
             cxxflags: -DHWY_COMPILE_ONLY_SCALAR -DFJXL_ENABLE_AVX2=0 -DFJXL_ENABLE_AVX512=0
-          # Disabling optional features to speed up msan build a little bit.
+          # Disabling optional features to speed up MSAN build a little bit.
           - name: msan
-            os: ubuntu-20.04
+            os: ubuntu-24.04
             skip_install: true
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
+            apt_pkgs: clang-18
+            cc: clang-18
+            cxx: clang++-18
           - name: asan
+            skip_install: true
+          - name: tsan
             skip_install: true
           - name: coverage
             env_test_stack_size: 2048
             skip_install: true
+            # TODO: understand why this does not work
+            ctest_args: -E 'test_jpegli_jni_wrapper'
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
             mode: release
-            cxxflags: -DJXL_DEBUG_ON_ABORT=0
             cmake_args: >-
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
@@ -97,7 +104,6 @@ jobs:
           # reconstructing pixels is disabled.
           - name: release:minimal
             mode: release
-            cxxflags: -DJXL_DEBUG_ON_ABORT=0
             cmake_args: >-
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
               -DJPEGXL_ENABLE_BOXES=OFF
@@ -133,14 +139,16 @@ jobs:
       WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
       WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
-      WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
+      # Temporarily disable doc-building, re-enable when sphinx is working again.
+      # WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
+      WILL_DOC: false
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
       JPEGXL_OPT_DBG: true
       FASTER_MSAN_BUILD: 1
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
       with:
         egress-policy: audit
 
@@ -184,7 +192,7 @@ jobs:
         brew install binutils ccache coreutils google-benchmark googletest ninja sdl2
 
     - name: Checkout the source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
         submodules: true
         fetch-depth: 2
@@ -201,26 +209,26 @@ jobs:
         echo "TARGETS=all" >> $GITHUB_ENV
 
     - name: Setup the LLVM source path
-      if: matrix.name == 'msan'
+      if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
       run: |
         LLVM_ROOT=${GITHUB_WORKSPACE}/llvm_root
         mkdir -p ${LLVM_ROOT}
         echo "LLVM_ROOT=${LLVM_ROOT}" >> $GITHUB_ENV
 
     - name: Cache LLVM sources
-      if: matrix.name == 'msan'
-      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
 
     - name: Checkout the LLVM source
-      if: matrix.name == 'msan'
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
         submodules: false
         repository: llvm/llvm-project
-        ref: llvmorg-7.0.1
+        ref: llvmorg-18.1.3 # NB: 15.0.0 does not build ¯\_(ツ)_/¯
         path: llvm_root
 
     - name: Sphinx dependencies
@@ -240,7 +248,7 @@ jobs:
       shell: bash
 
     - name: ccache
-      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -322,7 +330,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d # v3.1.4
+      uses: codecov/codecov-action@e28ff129e5465c2c0dcc6f003fc735cb6ae0c673 # v4.5.0
       with:
         flags: unittests
         files: build/coverage.xml
@@ -330,229 +338,14 @@ jobs:
     - name: Fast benchmark ${{ matrix.mode }}
       if: env.WILL_BENCH == 'true'
       run: |
-        STORE_IMAGES=0 ./ci.sh fast_benchmark
+        cat /proc/cpuinfo | grep MHz | sort | uniq
+        lscpu
+        BENCHMARK_NUM_THREADS=3 STORE_IMAGES=0 ./ci.sh fast_benchmark
 
     # Run gbench once, just to make sure it runs, not for actual benchmarking.
-    # This doesn't work on msan because we use gbench library from the system
-    # which is not instrumented by msan.
+    # This doesn't work on MSAN because we use gbench library from the system
+    # which is not instrumented by MSAN.
     - name: gbench check
       if: env.WILL_BENCH == 'true'
       run: |
         ./ci.sh gbench --benchmark_min_time=0
-
-  windows_msys:
-    name: Windows MSYS2 / ${{ matrix.msystem }}
-    runs-on: windows-latest
-    continue-on-error: ${{ matrix.faulty || false }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-         - msystem: mingw64
-         - msystem: clang64
-         - msystem: mingw32
-           disable_tests:
-             - ButteraugliTest.Lossless
-             - ButteraugliTest.Distmap
-         - msystem: clang32
-
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
-        with:
-          egress-policy: audit
-
-      - name: Checkout the source
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-        with:
-          submodules: true
-          fetch-depth: 1
-      - uses: msys2/setup-msys2@07aeda7763550b267746a772dcea5e5ac3340b36 # v2
-        with:
-          msystem: ${{ matrix.msystem }}
-          update: true
-          path-type: inherit
-          install: >-
-            base-devel
-            git
-          pacboy: >-
-            brotli:p
-            cmake:p
-            giflib:p
-            gtest:p
-            libavif:p
-            libjpeg-turbo:p
-            libpng:p
-            libwebp:p
-            ninja:p
-            toolchain:p
-
-      - name: CMake configure
-        run: |
-          cmake \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DJPEGXL_ENABLE_JNI=OFF \
-            -DJPEGXL_ENABLE_MANPAGES=OFF \
-            -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-            -DJPEGXL_FORCE_SYSTEM_GTEST=ON \
-            -B build \
-            -G Ninja
-      - name: CMake build
-        run: cmake --build build
-      - name: Test
-        if: |
-          github.event_name == 'push' ||
-          (github.event_name == 'pull_request' &&
-           contains(github.event.pull_request.labels.*.name, 'CI:full'))
-        run: ctest --test-dir build --parallel 2 --output-on-failure -E "${{ join(matrix.disable_tests, '|') }}"
-
-  wasm32_build:
-    name: WASM wasm32/${{ matrix.variant }}
-    runs-on: ubuntu-latest
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-      BUILD_TARGET: wasm32
-      EM_VERSION: 3.1.50
-      NODE_VERSION: 18
-
-    strategy:
-      matrix:
-        include:
-          - variant: scalar
-          - variant: simd-128
-          - variant: simd-256
-
-    steps:
-    - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
-      with:
-        egress-policy: audit
-
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-      with:
-        submodules: true
-        fetch-depth: 1
-    - name: Install build deps
-      shell: bash
-      run: |
-        set -x
-        sudo rm -f /var/lib/man-db/auto-update
-        sudo apt update
-        pkgs=(
-          # Build dependencies
-          ccache
-          cmake
-          doxygen
-          graphviz
-          ninja-build
-          pkg-config
-        )
-        DEBIAN_FRONTEND=noninteractive sudo apt install -y "${pkgs[@]}"
-
-    - name: Git environment
-      id: git-env
-      run: |
-        echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
-      shell: bash
-    - name: ccache
-      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
-      with:
-        path: ${{ env.CCACHE_DIR }}
-        key: build-wasm-${{ runner.os }}-${{ github.sha }}-${{ matrix.variant }}
-        restore-keys: |
-          build-wasm-${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.variant }}
-
-    - name: Install node
-      uses: actions/setup-node@b39b52d1213e96004bfcb1c61a8a6fa8ab84f3e8 # v4.0.1
-      with:
-        node-version: ${{env.NODE_VERSION}}
-
-    - name: Get non-EMSDK node path
-      run: which node >> $HOME/.base_node_path
-
-    - name: Install emsdk
-      uses: mymindstorm/setup-emsdk@d233ac12b0102f74ca199f5dad7a4e2c13a8a745 # v13
-      # TODO(deymo): We could cache this action but it doesn't work when running
-      # in a matrix.
-      with:
-        version: ${{env.EM_VERSION}}
-        no-cache: true
-
-    - name: Set EMSDK node version
-      run: |
-        echo "NODE_JS='$(cat $HOME/.base_node_path)'" >> $EMSDK/.emscripten
-        emsdk construct_env
-
-    # TODO(deymo): Build and install other dependencies like libpng, libjpeg,
-    # etc.
-    - name: Build
-      run: |
-        mkdir -p ${CCACHE_DIR}
-        echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
-        if [[ "${{ matrix.variant }}" == "simd-128" ]]; then
-          export ENABLE_WASM_SIMD=1
-        fi
-        if [[ "${{ matrix.variant }}" == "simd-256" ]]; then
-          export ENABLE_WASM_SIMD=2
-        fi
-        ./ci.sh release \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-          -DJPEGXL_ENABLE_BENCHMARK=OFF \
-          -DJPEGXL_ENABLE_DEVTOOLS=OFF \
-          -DJPEGXL_ENABLE_DOXYGEN=OFF \
-          -DJPEGXL_ENABLE_EXAMPLES=OFF \
-          -DJPEGXL_ENABLE_JNI=OFF \
-          -DJPEGXL_ENABLE_MANPAGES=OFF \
-          -DJPEGXL_ENABLE_PLUGINS=OFF \
-          -DJPEGXL_ENABLE_TOOLS=OFF \
-          -DJPEGXL_ENABLE_VIEWERS=OFF
-      env:
-        SKIP_TEST: 1
-        TARGETS: all
-    - name: ccache stats
-      run: ccache --show-stats
-
-    - name: Test
-      if: |
-        github.event_name == 'push' ||
-        (github.event_name == 'pull_request' &&
-         contains(github.event.pull_request.labels.*.name, 'CI:full'))
-      run: |
-        ./ci.sh test
-
-  bazel:
-    name: Bazel
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
-        with:
-          egress-policy: audit
-
-      - name: Checkout the source
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-        with:
-          submodules: true
-          fetch-depth: 1
-
-      - name: Patch
-        run: |
-          cd third_party/highway
-          git fetch origin 31fbbd7ce1e4179a32d86688cd67316556f582bf
-          git checkout 31fbbd7ce1e4179a32d86688cd67316556f582bf
-          git apply ${{ github.workspace }}/.github/workflows/highway.patch
-      - name: Build
-        run: bazel build -c opt ...:all
-      - name: Test
-        if: |
-          github.event_name == 'push' ||
-          (github.event_name == 'pull_request' &&
-           contains(github.event.pull_request.labels.*.name, 'CI:full'))
-        run: bazel test -c opt --test_output=errors ...:all

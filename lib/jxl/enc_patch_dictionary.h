@@ -8,17 +8,18 @@
 
 // Chooses reference patches, and avoids encoding them once per occurrence.
 
-#include <stddef.h>
-#include <string.h>
+#include <jxl/cms_interface.h>
 #include <sys/types.h>
 
-#include <tuple>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <utility>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
@@ -28,6 +29,7 @@
 namespace jxl {
 
 struct AuxOut;
+enum class LayerType : uint8_t;
 
 constexpr size_t kMaxPatchSize = 32;
 
@@ -76,31 +78,33 @@ using PatchInfo =
 class PatchDictionaryEncoder {
  public:
   // Only call if HasAny().
-  static void Encode(const PatchDictionary& pdic, BitWriter* writer,
-                     size_t layer, AuxOut* aux_out);
+  static Status Encode(const PatchDictionary& pdic, BitWriter* writer,
+                       LayerType layer, AuxOut* aux_out);
 
   static void SetPositions(PatchDictionary* pdic,
                            std::vector<PatchPosition> positions,
                            std::vector<PatchReferencePosition> ref_positions,
-                           std::vector<PatchBlending> blendings) {
+                           std::vector<PatchBlending> blendings,
+                           size_t blendings_stride) {
     pdic->positions_ = std::move(positions);
     pdic->ref_positions_ = std::move(ref_positions);
     pdic->blendings_ = std::move(blendings);
+    pdic->blendings_stride_ = blendings_stride;
     pdic->ComputePatchTree();
   }
 
-  static void SubtractFrom(const PatchDictionary& pdic, Image3F* opsin);
+  static Status SubtractFrom(const PatchDictionary& pdic, Image3F* opsin);
 };
 
-void FindBestPatchDictionary(const Image3F& opsin,
-                             PassesEncoderState* JXL_RESTRICT state,
-                             const JxlCmsInterface& cms, ThreadPool* pool,
-                             AuxOut* aux_out, bool is_xyb = true);
+Status FindBestPatchDictionary(const Image3F& opsin,
+                               PassesEncoderState* JXL_RESTRICT state,
+                               const JxlCmsInterface& cms, ThreadPool* pool,
+                               AuxOut* aux_out, bool is_xyb = true);
 
-void RoundtripPatchFrame(Image3F* reference_frame,
-                         PassesEncoderState* JXL_RESTRICT state, int idx,
-                         CompressParams& cparams, const JxlCmsInterface& cms,
-                         ThreadPool* pool, AuxOut* aux_out, bool subtract);
+Status RoundtripPatchFrame(Image3F* reference_frame,
+                           PassesEncoderState* JXL_RESTRICT state, int idx,
+                           CompressParams& cparams, const JxlCmsInterface& cms,
+                           ThreadPool* pool, AuxOut* aux_out, bool subtract);
 
 }  // namespace jxl
 

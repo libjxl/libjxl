@@ -12,22 +12,19 @@
 #include <jxl/codestream_header.h>
 #include <jxl/encode.h>
 #include <jxl/types.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <memory>
-#include <mutex>
-#include <set>
 #include <string>
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/c_callback_support.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 
@@ -37,11 +34,18 @@ namespace extras {
 // Class representing an interleaved image with a bunch of channels.
 class PackedImage {
  public:
-  PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format)
-      : PackedImage(xsize, ysize, format, CalcStride(format, xsize)) {}
+  static StatusOr<PackedImage> Create(size_t xsize, size_t ysize,
+                                      const JxlPixelFormat& format) {
+    PackedImage image(xsize, ysize, format, CalcStride(format, xsize));
+    if (!image.pixels()) {
+      // TODO(szabadka): use specialized OOM error code
+      return JXL_FAILURE("Failed to allocate memory for image");
+    }
+    return image;
+  }
 
   PackedImage Copy() const {
-    PackedImage copy(xsize, ysize, format);
+    PackedImage copy(xsize, ysize, format, CalcStride(format, xsize));
     memcpy(reinterpret_cast<uint8_t*>(copy.pixels()),
            reinterpret_cast<const uint8_t*>(pixels()), pixels_size);
     return copy;
@@ -73,6 +77,15 @@ class PackedImage {
 
   size_t pixel_stride() const { return pixel_stride_; }
 
+  static Status ValidateDataType(JxlDataType data_type) {
+    if ((data_type != JXL_TYPE_UINT8) && (data_type != JXL_TYPE_UINT16) &&
+        (data_type != JXL_TYPE_FLOAT) && (data_type != JXL_TYPE_FLOAT16)) {
+      return JXL_FAILURE("Unhandled data type: %d",
+                         static_cast<int>(data_type));
+    }
+    return true;
+  }
+
   static size_t BitsPerChannel(JxlDataType data_type) {
     switch (data_type) {
       case JXL_TYPE_UINT8:
@@ -84,7 +97,8 @@ class PackedImage {
       case JXL_TYPE_FLOAT16:
         return 16;
       default:
-        JXL_ABORT("Unhandled JxlDataType");
+        JXL_DEBUG_ABORT("Unreachable");
+        return 0;
     }
   }
 
@@ -104,11 +118,12 @@ class PackedImage {
         return swap_endianness_ ? BSwapFloat(val) : val;
       }
       default:
-        JXL_ABORT("Unhandled JxlDataType");
+        JXL_DEBUG_ABORT("Unreachable");
+        return 0.0f;
     }
   }
 
-  void SetPixelValue(size_t y, size_t x, size_t c, float val) {
+  void SetPixelValue(size_t y, size_t x, size_t c, float val) const {
     uint8_t* data = pixels(y, x, c);
     switch (format.data_type) {
       case JXL_TYPE_UINT8:
@@ -130,7 +145,7 @@ class PackedImage {
         break;
       }
       default:
-        JXL_ABORT("Unhandled JxlDataType");
+        JXL_DEBUG_ABORT("Unreachable");
     }
   }
 
@@ -169,17 +184,25 @@ class PackedImage {
 // as all other frames in the same image.
 class PackedFrame {
  public:
-  template <typename... Args>
-  explicit PackedFrame(Args&&... args) : color(std::forward<Args>(args)...) {}
+  explicit PackedFrame(PackedImage&& image) : color(std::move(image)) {}
 
-  PackedFrame Copy() const {
-    PackedFrame copy(color.xsize, color.ysize, color.format);
+  static StatusOr<PackedFrame> Create(size_t xsize, size_t ysize,
+                                      const JxlPixelFormat& format) {
+    JXL_ASSIGN_OR_RETURN(PackedImage image,
+                         PackedImage::Create(xsize, ysize, format));
+    PackedFrame frame(std::move(image));
+    return frame;
+  }
+
+  StatusOr<PackedFrame> Copy() const {
+    JXL_ASSIGN_OR_RETURN(
+        PackedFrame copy,
+        PackedFrame::Create(color.xsize, color.ysize, color.format));
     copy.frame_info = frame_info;
     copy.name = name;
     copy.color = color.Copy();
-    for (size_t i = 0; i < extra_channels.size(); ++i) {
-      PackedImage ec = extra_channels[i].Copy();
-      copy.extra_channels.emplace_back(std::move(ec));
+    for (const auto& ec : extra_channels) {
+      copy.extra_channels.emplace_back(ec.Copy());
     }
     return copy;
   }
@@ -225,6 +248,7 @@ class PackedMetadata {
  public:
   std::vector<uint8_t> exif;
   std::vector<uint8_t> iptc;
+  std::vector<uint8_t> jhgm;
   std::vector<uint8_t> jumbf;
   std::vector<uint8_t> xmp;
 };
@@ -244,11 +268,25 @@ class PackedPixelFile {
   std::vector<PackedExtraChannel> extra_channels_info;
 
   // Color information of the decoded pixels.
-  // If the icc is empty, the JxlColorEncoding should be used instead.
-  std::vector<uint8_t> icc;
+  // `primary_color_representation` indicates whether `color_encoding` or `icc`
+  // is the “authoritative” encoding of the colorspace, as opposed to a fallback
+  // encoding. For example, if `color_encoding` is the primary one, as would
+  // occur when decoding a jxl file with such a representation, then `enc/jxl`
+  // will use it and ignore the ICC profile, whereas `enc/png` will include the
+  // ICC profile for compatibility.
+  // If `icc` is the primary representation, `enc/jxl` will preserve it when
+  // compressing losslessly, but *may* encode it as a color_encoding when
+  // compressing lossily.
+  enum {
+    kColorEncodingIsPrimary,
+    kIccIsPrimary
+  } primary_color_representation = kColorEncodingIsPrimary;
   JxlColorEncoding color_encoding = {};
+  std::vector<uint8_t> icc;
   // The icc profile of the original image.
   std::vector<uint8_t> orig_icc;
+
+  JxlBitDepth input_bitdepth = {JXL_BIT_DEPTH_FROM_PIXEL_FORMAT, 0, 0};
 
   std::unique_ptr<PackedFrame> preview_frame;
   std::vector<PackedFrame> frames;
@@ -260,6 +298,8 @@ class PackedPixelFile {
   size_t num_frames() const {
     return chunked_frames.empty() ? frames.size() : chunked_frames.size();
   }
+  size_t xsize() const { return info.xsize; }
+  size_t ysize() const { return info.ysize; }
 };
 
 }  // namespace extras

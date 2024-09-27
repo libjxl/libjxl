@@ -9,15 +9,18 @@
 
 set -eu
 
-MYDIR=$(dirname $(realpath "$0"))
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 
 # Git revisions we use for the given submodules. Update these whenever you
 # update a git submodule.
+TESTDATA="873045a9c42ed60721756e26e2a6b32e17415205"
 THIRD_PARTY_BROTLI="36533a866ed1ca4b75cf049f4521e4ec5fe24727"
-THIRD_PARTY_HIGHWAY="ba0900a4957b929390ab73827235557959234fea"
+THIRD_PARTY_GOOGLETEST="58d77fa8070e8cec2dc1ed015d66b454c8d78850"
+THIRD_PARTY_HIGHWAY="457c891775a7397bdb0376bb1031e6e027af1c48"
 THIRD_PARTY_SKCMS="42030a771244ba67f86b1c1c76a6493f873c5f91"
 THIRD_PARTY_SJPEG="e5ab13008bb214deb66d5f3e17ca2f8dbff150bf"
-THIRD_PARTY_ZLIB="cacf7f1d4e3d44d871b605da3b647f07d718623f"
+THIRD_PARTY_ZLIB="51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf" # v1.3.1
 THIRD_PARTY_LIBPNG="f135775ad4e5d4408d2e12ffcc71bb36e6b48551" # v1.6.40
 THIRD_PARTY_LIBJPEG_TURBO="8ecba3647edb6dd940463fedf38ca33a8e2a73d1" # 2.1.5.1
 
@@ -27,7 +30,7 @@ download_github() {
   local project="$2"
 
   local varname=`echo "$path" | tr '[:lower:]' '[:upper:]'`
-  varname="${varname/[\/-]/_}"
+  varname="${varname//[\/-]/_}"
   local sha
   eval "sha=\${${varname}}"
 
@@ -79,7 +82,9 @@ EOF
   fi
 
   # Sources downloaded from a tarball.
+  download_github testdata libjxl/testdata
   download_github third_party/brotli google/brotli
+  download_github third_party/googletest google/googletest
   download_github third_party/highway google/highway
   download_github third_party/sjpeg webmproject/sjpeg
   download_github third_party/skcms \

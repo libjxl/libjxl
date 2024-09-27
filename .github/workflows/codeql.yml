@@ -35,6 +35,7 @@ concurrency:
 jobs:
   analyze:
     name: Analyze
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -50,16 +51,16 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
         with:
           egress-policy: audit
 
       - name: Checkout repository
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@b374143c1149a9115d881581d29b8390bbcbb59c # v3.22.11
+        uses: github/codeql-action/init@294a9d92911152fe08befb9ec03e240add280cb3 # v3.26.8
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -97,7 +98,7 @@ jobs:
           echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
           echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
       - name: Checkout the source
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           submodules: true
           fetch-depth: 2
@@ -111,6 +112,6 @@ jobs:
           SKIP_TEST: 1
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@b374143c1149a9115d881581d29b8390bbcbb59c # v3.22.11
+        uses: github/codeql-action/analyze@294a9d92911152fe08befb9ec03e240add280cb3 # v3.26.8
         with:
           category: "/language:${{matrix.language}}"

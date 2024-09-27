@@ -14,9 +14,7 @@
 #ifndef JXL_COLOR_ENCODING_H_
 #define JXL_COLOR_ENCODING_H_
 
-#include <stdint.h>
-
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -24,9 +22,9 @@ extern "C" {
 typedef enum {
   /** Tristimulus RGB */
   JXL_COLOR_SPACE_RGB,
-  /** Luminance based, the primaries in JxlColorEncoding must be ignored. This
-   * value implies that num_color_channels in JxlBasicInfo is 1, any other value
-   * implies num_color_channels is 3. */
+  /** Luminance based, the primaries in @ref JxlColorEncoding must be ignored.
+   * This value implies that num_color_channels in @ref JxlBasicInfo is 1, any
+   * other value implies num_color_channels is 3. */
   JXL_COLOR_SPACE_GRAY,
   /** XYB (opsin) color space */
   JXL_COLOR_SPACE_XYB,
@@ -34,19 +32,19 @@ typedef enum {
   JXL_COLOR_SPACE_UNKNOWN,
 } JxlColorSpace;
 
-/** Built-in whitepoints for color encoding. When decoding, the numerical xy
- * whitepoint value can be read from the JxlColorEncoding white_point field
- * regardless of the enum value. When encoding, enum values except
- * JXL_WHITE_POINT_CUSTOM override the numerical fields. Some enum values match
- * a subset of CICP (Rec. ITU-T H.273 | ISO/IEC 23091-2:2019(E)), however the
- * white point and RGB primaries are separate enums here.
+/** Built-in white points for color encoding. When decoding, the numerical xy
+ * white point value can be read from the @ref JxlColorEncoding white_point
+ * field regardless of the enum value. When encoding, enum values except
+ * ::JXL_WHITE_POINT_CUSTOM override the numerical fields. Some enum values
+ * match a subset of CICP (Rec. ITU-T H.273 | ISO/IEC 23091-2:2019(E)), however
+ * the white point and RGB primaries are separate enums here.
  */
 typedef enum {
   /** CIE Standard Illuminant D65: 0.3127, 0.3290 */
   JXL_WHITE_POINT_D65 = 1,
-  /** White point must be read from the JxlColorEncoding white_point field, or
-   * as ICC profile. This enum value is not an exact match of the corresponding
-   * CICP value. */
+  /** White point must be read from the @ref JxlColorEncoding white_point field,
+   * or as ICC profile. This enum value is not an exact match of the
+   * corresponding CICP value. */
   JXL_WHITE_POINT_CUSTOM = 2,
   /** CIE Standard Illuminant E (equal-energy): 1/3, 1/3 */
   JXL_WHITE_POINT_E = 10,
@@ -55,10 +53,10 @@ typedef enum {
 } JxlWhitePoint;
 
 /** Built-in primaries for color encoding. When decoding, the primaries can be
- * read from the JxlColorEncoding primaries_red_xy, primaries_green_xy and
+ * read from the @ref JxlColorEncoding primaries_red_xy, primaries_green_xy and
  * primaries_blue_xy fields regardless of the enum value. When encoding, the
- * enum values except JXL_PRIMARIES_CUSTOM override the numerical fields. Some
- * enum values match a subset of CICP (Rec. ITU-T H.273 | ISO/IEC
+ * enum values except ::JXL_PRIMARIES_CUSTOM override the numerical fields.
+ * Some enum values match a subset of CICP (Rec. ITU-T H.273 | ISO/IEC
  * 23091-2:2019(E)), however the white point and RGB primaries are separate
  * enums here.
  */
@@ -66,7 +64,7 @@ typedef enum {
   /** The CIE xy values of the red, green and blue primaries are: 0.639998686,
      0.330010138; 0.300003784, 0.600003357; 0.150002046, 0.059997204 */
   JXL_PRIMARIES_SRGB = 1,
-  /** Primaries must be read from the JxlColorEncoding primaries_red_xy,
+  /** Primaries must be read from the @ref JxlColorEncoding primaries_red_xy,
    * primaries_green_xy and primaries_blue_xy fields, or as ICC profile. This
    * enum value is not an exact match of the corresponding CICP value. */
   JXL_PRIMARIES_CUSTOM = 2,
@@ -80,7 +78,7 @@ typedef enum {
  * of CICP (Rec. ITU-T H.273 | ISO/IEC 23091-2:2019(E)) unless specified
  * otherwise. */
 typedef enum {
-  /** As specified in SMPTE RP 431-2 */
+  /** As specified in ITU-R BT.709-6 */
   JXL_TRANSFER_FUNCTION_709 = 1,
   /** None of the other table entries describe the transfer function. */
   JXL_TRANSFER_FUNCTION_UNKNOWN = 2,
@@ -94,12 +92,12 @@ typedef enum {
   JXL_TRANSFER_FUNCTION_DCI = 17,
   /** As specified in Rec. ITU-R BT.2100-1 (HLG) */
   JXL_TRANSFER_FUNCTION_HLG = 18,
-  /** Transfer function follows power law given by the gamma value in
+  /** Transfer function follows power law given by the gamma value in @ref
      JxlColorEncoding. Not a CICP value. */
   JXL_TRANSFER_FUNCTION_GAMMA = 65535,
 } JxlTransferFunction;
 
-/** Renderig intent for color encoding, as specified in ISO 15076-1:2010 */
+/** Rendering intent for color encoding, as specified in ISO 15076-1:2010 */
 typedef enum {
   /** vendor-specific */
   JXL_RENDERING_INTENT_PERCEPTUAL = 0,
@@ -118,18 +116,18 @@ typedef struct {
    */
   JxlColorSpace color_space;
 
-  /** Built-in white point. If this value is JXL_WHITE_POINT_CUSTOM, must
-   * use the numerical whitepoint values from white_point_xy.
+  /** Built-in white point. If this value is ::JXL_WHITE_POINT_CUSTOM, must
+   * use the numerical white point values from white_point_xy.
    */
   JxlWhitePoint white_point;
 
   /** Numerical whitepoint values in CIE xy space. */
   double white_point_xy[2];
 
-  /** Built-in RGB primaries. If this value is JXL_PRIMARIES_CUSTOM, must
+  /** Built-in RGB primaries. If this value is ::JXL_PRIMARIES_CUSTOM, must
    * use the numerical primaries values below. This field and the custom values
    * below are unused and must be ignored if the color space is
-   * JXL_COLOR_SPACE_GRAY or JXL_COLOR_SPACE_XYB.
+   * ::JXL_COLOR_SPACE_GRAY or ::JXL_COLOR_SPACE_XYB.
    */
   JxlPrimaries primaries;
 
@@ -145,7 +143,8 @@ typedef struct {
   /** Transfer function if have_gamma is 0 */
   JxlTransferFunction transfer_function;
 
-  /** Gamma value used when transfer_function is JXL_TRANSFER_FUNCTION_GAMMA
+  /** Gamma value used when transfer_function is @ref
+   * JXL_TRANSFER_FUNCTION_GAMMA
    */
   double gamma;
 
@@ -153,7 +152,7 @@ typedef struct {
   JxlRenderingIntent rendering_intent;
 } JxlColorEncoding;
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 }
 #endif
 

@@ -13,7 +13,7 @@ on:
       - main
       - v*.*.x
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
 
 permissions:
   contents: read
@@ -25,7 +25,8 @@ concurrency:
 jobs:
   compile:
     name: Cross-compiling ${{ matrix.identifier }}
-    runs-on: [ubuntu-22.04]
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
+    runs-on: [ubuntu-latest]
     container:
       image: debian:bookworm
     strategy:
@@ -75,7 +76,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
       with:
         egress-policy: audit
 
@@ -88,7 +89,7 @@ jobs:
         apt-get install -y ca-certificates debian-ports-archive-keyring git python3
 
     - name: Checkout the source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
         submodules: true
         fetch-depth: 1
@@ -190,7 +191,7 @@ jobs:
           mkdir -p ./build/Testing/Temporary
           unzip ./tools/scripts/test_cost-${{ matrix.identifier }}.zip -d ./build/Testing/Temporary
 
-    - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
+    - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
       if: env.WILL_RUN_TESTS == 'true'
       with:
         name: cross_binary-${{ matrix.identifier }}
@@ -204,8 +205,9 @@ jobs:
 
   test:
     name: Testing ${{ matrix.identifier }} shard ${{ matrix.shard_number }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     needs: compile
-    runs-on: [ubuntu-22.04]
+    runs-on: [ubuntu-latest]
     container:
       image: debian:bookworm
     strategy:
@@ -244,11 +246,11 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
       with:
         egress-policy: audit
 
-    - uses: actions/download-artifact@7a1cd3216ca9260cd8022db641d960b1db4d1be4 # v4.0.0
+    - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       with:
         name: cross_binary-${{ matrix.identifier }}
@@ -302,9 +304,9 @@ jobs:
         chmod +x `cat executable.lst`
         ./ci.sh test \
           -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
-          -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper)'
+          -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper|test_jpegli_jni_wrapper)'
 
-    - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
+    - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
       name: Upload test cost
       if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
       with:

@@ -3,12 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include <atomic>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <thread>
 #include <vector>
 
@@ -38,12 +37,14 @@ int main(int argc, char** argv) {
   }
 
   unsigned char* png;
-  unsigned w, h;
-  size_t nb_chans = 4, bitdepth = 8;
-
+  unsigned w;
+  unsigned h;
   unsigned error = lodepng_decode32_file(&png, &w, &h, in);
 
-  size_t width = w, height = h;
+  size_t nb_chans = 4;
+  size_t bitdepth = 8;
+  size_t width = w;
+  size_t height = h;
   if (error && !DecodePAM(in, &png, &width, &height, &nb_chans, &bitdepth)) {
     fprintf(stderr, "lodepng error %u: %s\n", error, lodepng_error_text(error));
     return 1;
@@ -51,7 +52,7 @@ int main(int argc, char** argv) {
 
   auto parallel_runner = [](void* num_threads_ptr, void* opaque,
                             void fun(void*, size_t), size_t count) {
-    size_t num_threads = *(size_t*)num_threads_ptr;
+    size_t num_threads = *static_cast<size_t*>(num_threads_ptr);
     if (num_threads == 0) {
       num_threads = std::thread::hardware_concurrency();
     }
@@ -85,9 +86,11 @@ int main(int argc, char** argv) {
   auto start = std::chrono::high_resolution_clock::now();
   for (size_t _ = 0; _ < num_reps; _++) {
     free(encoded);
+    encoded = nullptr;
     encoded_size = JxlFastLosslessEncode(
         png, width, stride, height, nb_chans, bitdepth,
         /*big_endian=*/true, effort, &encoded, &num_threads, +parallel_runner);
+    if (encoded_size == 0) return EXIT_FAILURE;
   }
   auto stop = std::chrono::high_resolution_clock::now();
   if (num_reps > 1) {
@@ -98,7 +101,8 @@ int main(int argc, char** argv) {
     float mps = pixels / us;
     fprintf(stderr, "%10.3f MP/s\n", mps);
     fprintf(stderr, "%10.3f bits/pixel\n",
-            encoded_size * 8.0 / float(width) / float(height));
+            encoded_size * 8.0 / static_cast<float>(width) /
+                static_cast<float>(height));
   }
 
   FILE* o = fopen(out, "wb");

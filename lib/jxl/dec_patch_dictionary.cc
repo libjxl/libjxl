@@ -5,44 +5,39 @@
 
 #include "lib/jxl/dec_patch_dictionary.h"
 
-#include <stdint.h>
-#include <stdlib.h>
+#include <jxl/memory_manager.h>
 #include <sys/types.h>
 
 #include <algorithm>
-#include <string>
-#include <tuple>
+#include <cstdint>
+#include <cstdlib>
 #include <utility>
 #include <vector>
 
-#include "lib/jxl/ans_params.h"
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
-#include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/common.h"  // kMaxNumReferenceFrames
 #include "lib/jxl/dec_ans.h"
-#include "lib/jxl/dec_frame.h"
-#include "lib/jxl/entropy_coder.h"
-#include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/image_ops.h"
 #include "lib/jxl/pack_signed.h"
 #include "lib/jxl/patch_dictionary_internal.h"
 
 namespace jxl {
 
-Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
+Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
+                               size_t xsize, size_t ysize,
+                               size_t num_extra_channels,
                                bool* uses_extra_channels) {
   positions_.clear();
+  blendings_stride_ = num_extra_channels + 1;
   std::vector<uint8_t> context_map;
   ANSCode code;
-  JXL_RETURN_IF_ERROR(
-      DecodeHistograms(br, kNumPatchDictionaryContexts, &code, &context_map));
-  ANSSymbolReader decoder(&code, br);
+  JXL_RETURN_IF_ERROR(DecodeHistograms(
+      memory_manager, br, kNumPatchDictionaryContexts, &code, &context_map));
+  JXL_ASSIGN_OR_RETURN(ANSSymbolReader decoder,
+                       ANSSymbolReader::Create(&code, br));
 
   auto read_num = [&](size_t context) {
     size_t r = decoder.ReadHybridUint(context, br, context_map);
@@ -59,7 +54,6 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
   if (num_ref_patch > max_ref_patches) {
     return JXL_FAILURE("Too many patches in dictionary");
   }
-  size_t num_ec = shared_->metadata->m.num_extra_channels;
 
   size_t total_patches = 0;
   size_t next_size = 1;
@@ -68,14 +62,14 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
     PatchReferencePosition ref_pos;
     ref_pos.ref = read_num(kReferenceFrameContext);
     if (ref_pos.ref >= kMaxNumReferenceFrames ||
-        shared_->reference_frames[ref_pos.ref].frame.xsize() == 0) {
+        reference_frames_->at(ref_pos.ref).frame->xsize() == 0) {
       return JXL_FAILURE("Invalid reference frame ID");
     }
-    if (!shared_->reference_frames[ref_pos.ref].ib_is_in_xyb) {
+    if (!reference_frames_->at(ref_pos.ref).ib_is_in_xyb) {
       return JXL_FAILURE(
           "Patches cannot use frames saved post color transforms");
     }
-    const ImageBundle& ib = shared_->reference_frames[ref_pos.ref].frame;
+    const ImageBundle& ib = *reference_frames_->at(ref_pos.ref).frame;
     ref_pos.x0 = read_num(kPatchReferencePositionContext);
     ref_pos.y0 = read_num(kPatchReferencePositionContext);
     ref_pos.xsize = read_num(kPatchSizeContext) + 1;
@@ -99,11 +93,12 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
       next_size *= 2;
       next_size = std::min<size_t>(next_size, max_patches);
     }
-    if (next_size * (num_ec + 1) > max_blending_infos) {
+    if (next_size * blendings_stride_ > max_blending_infos) {
       return JXL_FAILURE("Too many patches in dictionary");
     }
     positions_.reserve(next_size);
-    blendings_.reserve(next_size * (num_ec + 1));
+    blendings_.reserve(next_size * blendings_stride_);
+    bool choose_alpha = (num_extra_channels > 1);
     for (size_t i = 0; i < id_count; i++) {
       PatchPosition pos;
       pos.ref_pos_idx = ref_positions_.size();
@@ -136,9 +131,9 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
                            " > %" PRIuS,
                            pos.y, ref_pos.ysize, ysize);
       }
-      for (size_t j = 0; j < num_ec + 1; j++) {
+      for (size_t j = 0; j < blendings_stride_; j++) {
         uint32_t blend_mode = read_num(kPatchBlendModeContext);
-        if (blend_mode >= uint32_t(PatchBlendMode::kNumBlendModes)) {
+        if (blend_mode >= kNumPatchBlendModes) {
           return JXL_FAILURE("Invalid patch blend mode: %u", blend_mode);
         }
         PatchBlending info;
@@ -149,29 +144,26 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
         if (info.mode != PatchBlendMode::kNone && j > 0) {
           *uses_extra_channels = true;
         }
-        if (UsesAlpha(info.mode) &&
-            shared_->metadata->m.extra_channel_info.size() > 1) {
+        if (UsesAlpha(info.mode) && choose_alpha) {
           info.alpha_channel = read_num(kPatchAlphaChannelContext);
-          if (info.alpha_channel >=
-              shared_->metadata->m.extra_channel_info.size()) {
+          if (info.alpha_channel >= num_extra_channels) {
             return JXL_FAILURE(
                 "Invalid alpha channel for blending: %u out of %u\n",
-                info.alpha_channel,
-                (uint32_t)shared_->metadata->m.extra_channel_info.size());
+                info.alpha_channel, static_cast<uint32_t>(num_extra_channels));
           }
         } else {
           info.alpha_channel = 0;
         }
         if (UsesClamp(info.mode)) {
-          info.clamp = read_num(kPatchClampContext);
+          info.clamp = static_cast<bool>(read_num(kPatchClampContext));
         } else {
           info.clamp = false;
         }
         blendings_.push_back(info);
       }
-      positions_.push_back(std::move(pos));
+      positions_.emplace_back(pos);
     }
-    ref_positions_.emplace_back(std::move(ref_pos));
+    ref_positions_.emplace_back(ref_pos);
   }
   positions_.shrink_to_fit();
 
@@ -185,8 +177,8 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
 
 int PatchDictionary::GetReferences() const {
   int result = 0;
-  for (size_t i = 0; i < ref_positions_.size(); ++i) {
-    result |= (1 << static_cast<int>(ref_positions_[i].ref));
+  for (const auto& ref_pos : ref_positions_) {
+    result |= (1 << static_cast<int>(ref_pos.ref));
   }
   return result;
 }
@@ -263,11 +255,11 @@ void PatchDictionary::ComputePatchTree() {
     node.start = sorted_patches_y0_.size();
     for (ssize_t i = static_cast<ssize_t>(right_start) - 1;
          i >= static_cast<ssize_t>(left_end); --i) {
-      sorted_patches_y1_.push_back({intervals[i].y1, intervals[i].idx});
+      sorted_patches_y1_.emplace_back(intervals[i].y1, intervals[i].idx);
     }
     sort_by_y0(left_end, right_start);
     for (size_t i = left_end; i < right_start; ++i) {
-      sorted_patches_y0_.push_back({intervals[i].y0, intervals[i].idx});
+      sorted_patches_y0_.emplace_back(intervals[i].y0, intervals[i].idx);
     }
     // Create the left and right nodes (if not empty).
     node.left_child = node.right_child = -1;
@@ -294,7 +286,7 @@ std::vector<size_t> PatchDictionary::GetPatchesForRow(size_t y) const {
   if (y < num_patches_.size() && num_patches_[y] > 0) {
     result.reserve(num_patches_[y]);
     for (ssize_t tree_idx = 0; tree_idx != -1;) {
-      JXL_DASSERT(tree_idx < (ssize_t)patch_tree_.size());
+      JXL_DASSERT(tree_idx < static_cast<ssize_t>(patch_tree_.size()));
       const auto& node = patch_tree_[tree_idx];
       if (y <= node.y_center) {
         for (size_t i = 0; i < node.num; ++i) {
@@ -322,19 +314,21 @@ std::vector<size_t> PatchDictionary::GetPatchesForRow(size_t y) const {
 
 // Adds patches to a segment of `xsize` pixels, starting at `inout`, assumed
 // to be located at position (x0, y) in the frame.
-void PatchDictionary::AddOneRow(float* const* inout, size_t y, size_t x0,
-                                size_t xsize) const {
-  size_t num_ec = shared_->metadata->m.num_extra_channels;
+Status PatchDictionary::AddOneRow(
+    float* const* inout, size_t y, size_t x0, size_t xsize,
+    const std::vector<ExtraChannelInfo>& extra_channel_info) const {
+  size_t num_ec = extra_channel_info.size();
+  JXL_ENSURE(num_ec + 1 <= blendings_stride_);
   std::vector<const float*> fg_ptrs(3 + num_ec);
   for (size_t pos_idx : GetPatchesForRow(y)) {
-    const size_t blending_idx = pos_idx * (num_ec + 1);
+    const size_t blending_idx = pos_idx * blendings_stride_;
     const PatchPosition& pos = positions_[pos_idx];
     const PatchReferencePosition& ref_pos = ref_positions_[pos.ref_pos_idx];
     size_t by = pos.y;
     size_t bx = pos.x;
     size_t patch_xsize = ref_pos.xsize;
-    JXL_DASSERT(y >= by);
-    JXL_DASSERT(y < by + ref_pos.ysize);
+    JXL_ENSURE(y >= by);
+    JXL_ENSURE(y < by + ref_pos.ysize);
     size_t iy = y - by;
     size_t ref = ref_pos.ref;
     if (bx >= x0 + xsize) continue;
@@ -342,20 +336,21 @@ void PatchDictionary::AddOneRow(float* const* inout, size_t y, size_t x0,
     size_t patch_x0 = std::max(bx, x0);
     size_t patch_x1 = std::min(bx + patch_xsize, x0 + xsize);
     for (size_t c = 0; c < 3; c++) {
-      fg_ptrs[c] = shared_->reference_frames[ref].frame.color().ConstPlaneRow(
+      fg_ptrs[c] = reference_frames_->at(ref).frame->color()->ConstPlaneRow(
                        c, ref_pos.y0 + iy) +
                    ref_pos.x0 + x0 - bx;
     }
     for (size_t i = 0; i < num_ec; i++) {
       fg_ptrs[3 + i] =
-          shared_->reference_frames[ref].frame.extra_channels()[i].ConstRow(
+          reference_frames_->at(ref).frame->extra_channels()[i].ConstRow(
               ref_pos.y0 + iy) +
           ref_pos.x0 + x0 - bx;
     }
-    PerformBlending(inout, fg_ptrs.data(), inout, patch_x0 - x0,
-                    patch_x1 - patch_x0, blendings_[blending_idx],
-                    blendings_.data() + blending_idx + 1,
-                    shared_->metadata->m.extra_channel_info);
+    JXL_RETURN_IF_ERROR(PerformBlending(
+        memory_manager_, inout, fg_ptrs.data(), inout, patch_x0 - x0,
+        patch_x1 - patch_x0, blendings_[blending_idx],
+        blendings_.data() + blending_idx + 1, extra_channel_info));
   }
+  return true;
 }
 }  // namespace jxl

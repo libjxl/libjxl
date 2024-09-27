@@ -6,8 +6,8 @@
 
 set -eu
 
-MYDIR=$(dirname $(realpath "$0"))
-
+SELF=$(realpath "$0")
+MYDIR=$(dirname "${SELF}")
 
 main() {
   cd "${MYDIR}/../../../third_party"

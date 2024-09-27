@@ -8,6 +8,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+  - Gain Map API (#3552 and #3628):  `JxlGainMapBundle` struct and API functions
+    to read and write gain map bundles`JxlGainMapWriteBundle` and
+    `JxlGainMapReadBundle` as well as handling compressed ICC profiles:
+    `JxlICCProfileEncode` and `JxlICCProfileDecode`.
+  - decoder API: added `JXL_DEC_BOX_COMPLETE` event to signal that the output
+    buffer for the current box has received all contents. Previously, this was
+    to be determined from the fact that the decoder had moved on either to
+    `JXL_DEC_SUCCESS` or to another subsequent `JXL_DEC_BOX`. This change is
+    made backward-compatible by the fact that the new event must be explicitly
+    subscribed to, and that `JXL_DEC_SUCCESS` / `JXL_DEC_BOX` still occur
+    afterwards and still imply that the previous box must be complete.
+
+### Changed / clarified
+  - avoiding abort in release build (#3631 and #3639)
+
+## [0.10.2] - 2024-03-08
+
+### Fixed
+  - bugs in (lossless) encoding (#3367, #3359 and #3386)
+  - re-enable installation of MIME file (#3375)
+  - bugs in streaming mode (#3379 and #3380)
+
+## [0.10.1] - 2024-02-28
+
+### Fixed
+ - reduce allocations (#3336 and #3339),
+   fixing a significant speed regression present since 0.9.0
+ - bug in streaming encoding (#3331)
+
+##  [0.10.0] - 2024-02-21
+
+### Added
+ - decoder API: added `JxlDecoderGetBoxSizeContents` for getting the size of the
+   content of a box without the headers.
+ - encoder API: implemented new api functions for streaming encoding.
+
+### Changed / clarified
+ - decoder/encoder API: return failure when surface allocation fail
+ - encoder API / cjxl: updated modular effort levels to faster settings; the
+   effort range is now 1-10, with 11 available in advanced mode.
+
+## [0.9.2] - 2024-02-07
+
+### Fixed
+ - bugs in the gdk-pixbuf plugin
+ - some build issues
+
+## [0.9.1] - 2024-01-08
+
+### Fixed
+ - multiple build issues
+
+## [0.9.0] - 2023-12-22
+
+### Added
  - encoder API: add `JxlEncoderSetExtraChannelDistance` to adjust the quality
    of extra channels (like alpha) separately.
  - encoder API: new api functions for streaming encoding:
@@ -24,6 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF`
  - encoder API: new function `JxlEncoderSetUpsamplingMode` to change the upsampling
    method, e.g. to use nearest-neighbor upsampling for pixel art
+ - decoder API: implemented `JxlDecoderSetOutputColorProfile` and
+   `JxlDecoderSetCms` to enable decoding to desired colorspace.
  - cjxl can now be used to explicitly add/update/strip Exif/XMP/JUMBF metadata using
    the decoder-hints syntax, e.g. `cjxl input.ppm -x exif=input.exif output.jxl`
  - djxl can now be used to extract Exif/XMP/JUMBF metadata
@@ -42,8 +99,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    `JxlDecoderGetICCProfileSize`, and `JxlDecoderGetColorAsICCProfile`
    changed: a deprecated unused argument was removed.
 
-### Changed
+### Changed / clarified
  - changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
+ - fixed how large boxes are decoded (#2958)
+ - fixed encoding files with unreadable patches (#3042, #3046)
+
+## [0.8.2] - 2023-06-14
+
+### Changed
+ - Security: Fix an integer underflow bug in patch decoding (#2551- CVE-2023-35790).
+
+## [0.8.1] - 2023-02-03
+
+### Changed
+ - Allow fast-lossless for 16-bit float input (#2093)
+ - Fix bug in palette (#2120)
+ - Security: Fix OOB read in exif.h (#2101 - [CVE-2023-0645](https://www.cve.org/cverecord?id=CVE-2023-0645))
 
 ## [0.8.0] - 2023-01-18
 

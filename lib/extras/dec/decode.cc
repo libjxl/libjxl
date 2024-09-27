@@ -22,41 +22,30 @@ namespace {
 // Any valid encoding is larger (ensures codecs can read the first few bytes)
 constexpr size_t kMinBytes = 9;
 
-void BasenameAndExtension(const std::string& path, std::string* filename,
-                          std::string* extension) {
-  // Pattern: "png:name" or "png:-"
-  size_t pos = path.find_first_of(':');
-  if (pos != std::string::npos) {
-    *extension = "." + path.substr(0, pos);
-    *filename = path.substr(pos + 1);
-    //+ ((path.length() == pos + 2 && path.substr(pos + 1, 1) == "-") ? "" :
-    //*extension);
-    return;
-  }
-
+std::string GetExtension(const std::string& path) {
   // Pattern: "name.png"
-  pos = path.find_last_of('.');
+  size_t pos = path.find_last_of('.');
   if (pos != std::string::npos) {
-    *extension = path.substr(pos);
-    *filename = path;
-    return;
+    return path.substr(pos);
   }
 
   // Extension not found
-  *filename = path;
-  *extension = "";
+  return "";
 }
 
 }  // namespace
 
-Codec CodecFromPath(std::string path, size_t* JXL_RESTRICT bits_per_sample,
-                    std::string* filename, std::string* extension) {
-  std::string base;
-  std::string ext;
-  BasenameAndExtension(path, &base, &ext);
-  if (filename) *filename = base;
-  if (extension) *extension = ext;
-
+Codec CodecFromPath(const std::string& path,
+                    size_t* JXL_RESTRICT bits_per_sample,
+                    std::string* extension) {
+  std::string ext = GetExtension(path);
+  if (extension) {
+    if (extension->empty()) {
+      *extension = ext;
+    } else {
+      ext = *extension;
+    }
+  }
   std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) {
     return std::tolower(c, std::locale::classic());
   });
@@ -102,6 +91,15 @@ bool CanDecode(Codec codec) {
   }
 }
 
+std::string ListOfDecodeCodecs() {
+  std::string list_of_codecs("JXL, PPM, PNM, PFM, PAM, PGX");
+  if (CanDecode(Codec::kPNG)) list_of_codecs.append(", PNG, APNG");
+  if (CanDecode(Codec::kGIF)) list_of_codecs.append(", GIF");
+  if (CanDecode(Codec::kJPG)) list_of_codecs.append(", JPEG");
+  if (CanDecode(Codec::kEXR)) list_of_codecs.append(", EXR");
+  return list_of_codecs;
+}
+
 Status DecodeBytes(const Span<const uint8_t> bytes,
                    const ColorHints& color_hints, extras::PackedPixelFile* ppf,
                    const SizeConstraints* constraints, Codec* orig_codec) {
@@ -110,7 +108,7 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
   *ppf = extras::PackedPixelFile();
 
   // Default values when not set by decoders.
-  ppf->info.uses_original_profile = true;
+  ppf->info.uses_original_profile = JXL_TRUE;
   ppf->info.orientation = JXL_ORIENT_IDENTITY;
 
   const auto choose_codec = [&]() -> Codec {
@@ -128,6 +126,7 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
       dparams.accepted_formats.push_back(
           {num_channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, /*align=*/0});
     }
+    dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
     size_t decoded_bytes;
     if (DecodeImageJXL(bytes.data(), bytes.size(), dparams, &decoded_bytes,
                        ppf) &&

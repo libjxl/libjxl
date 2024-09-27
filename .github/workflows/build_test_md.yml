@@ -5,10 +5,10 @@
 
 # Workflow for building and running tests.
 
-name: Build/Test
+name: Build/Test MD
 on:
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
     paths:
       - '**.md'
 
@@ -20,8 +20,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  ubuntu-build:
+  build_test:
     name: Ubuntu Build ${{ matrix.name }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     # Include all names of required jobs here
     strategy:
       matrix:
@@ -36,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
         with:
           egress-policy: audit
 
@@ -44,6 +45,7 @@ jobs:
 
   windows_msys:
     name: Windows MSYS2 / ${{ matrix.msystem }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     # Include all msystem of required jobs here
     strategy:
       matrix:
@@ -53,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
         with:
           egress-policy: audit
 
