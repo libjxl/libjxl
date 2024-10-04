@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.11.0] - 2024-09-13
 
+
+## [0.11.0] - 2024-09-13
+
 ### Added
   - Gain Map API (#3552 and #3628):  `JxlGainMapBundle` struct and API functions
     to read and write gain map bundles`JxlGainMapWriteBundle` and
