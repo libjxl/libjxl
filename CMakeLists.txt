@@ -460,7 +460,7 @@ if(JPEGXL_ENABLE_MANPAGES)
   find_program(ASCIIDOC a2x)
   if(ASCIIDOC)
     file(STRINGS "${ASCIIDOC}" ASCIIDOC_SHEBANG LIMIT_COUNT 1)
-    if(ASCIIDOC_SHEBANG MATCHES "sh$" OR ASCIIDOC_SHEBANG MATCHES "libexec/bin/python$" OR MINGW)
+    if(ASCIIDOC_SHEBANG MATCHES "sh( -e)?$" OR ASCIIDOC_SHEBANG MATCHES "libexec/bin/python$" OR MINGW)
       set(ASCIIDOC_PY_FOUND ON)
       # Run the program directly and set ASCIIDOC as empty.
       set(ASCIIDOC_PY "${ASCIIDOC}")
