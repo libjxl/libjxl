@@ -397,7 +397,10 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
                  PNG_FILTER_TYPE_BASE);
     if (count == 0 && !encode_extra_channels) {
       if (!MaybeAddSRGB(ppf.color_encoding, png_ptr, info_ptr)) {
-        MaybeAddCICP(ppf.color_encoding, png_ptr, info_ptr);
+        if (ppf.primary_color_representation !=
+            PackedPixelFile::kIccIsPrimary) {
+          MaybeAddCICP(ppf.color_encoding, png_ptr, info_ptr);
+        }
         if (!ppf.icc.empty()) {
           png_set_benign_errors(png_ptr, 1);
           png_set_iCCP(png_ptr, info_ptr, "1", 0, ppf.icc.data(),
