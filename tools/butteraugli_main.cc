@@ -103,10 +103,10 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
     butteraugli_params.intensity_target = intensity_target;
   } else {
     const auto& transfer_function = io1.Main().c_current().Tf();
-    butteraugli_params.intensity_target = transfer_function.IsPQ() ? 10000.f
-                                          : transfer_function.IsHLG()
-                                              ? 1000.f
-                                              : 80.f;  // sRGB intensity target.
+    butteraugli_params.intensity_target =
+        transfer_function.IsPQ() || transfer_function.IsHLG()
+            ? io1.metadata.m.IntensityTarget()
+            : 80.f;  // sRGB intensity target.
   }
   const JxlCmsInterface& cms = *JxlGetDefaultCms();
   JxlButteraugliComparator comparator(butteraugli_params, cms);
