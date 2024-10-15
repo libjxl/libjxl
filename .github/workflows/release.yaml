@@ -152,7 +152,7 @@ jobs:
       run: |
         rm -f /var/lib/man-db/auto-update
         apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -f --fix-missing -y \
+        DEBIAN_FRONTEND=noninteractive apt-get install -f --ignore-missing -y \
           build-essential \
           devscripts \
         #
