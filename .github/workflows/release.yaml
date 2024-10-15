@@ -48,8 +48,8 @@ jobs:
     - name: Install build deps
       run: |
         sudo rm -f /var/lib/man-db/auto-update
-        sudo apt update
-        sudo apt install -y \
+        sudo apt-get update
+        sudo apt-get install -y \
           asciidoc \
           clang \
           cmake \
@@ -58,7 +58,6 @@ jobs:
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
           libgif-dev \
-          libgimp2.0-dev \
           libgtest-dev \
           libgtk2.0-dev  \
           libjpeg-dev \
@@ -152,8 +151,8 @@ jobs:
     - name: Install build deps
       run: |
         rm -f /var/lib/man-db/auto-update
-        apt update
-        DEBIAN_FRONTEND=noninteractive apt install -y \
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -f -y \
           build-essential \
           devscripts \
         #

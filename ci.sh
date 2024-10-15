@@ -709,7 +709,7 @@ cmd_msan_install() {
       ["16"]="16.0.6"
       ["17"]="17.0.6"
       ["18"]="18.1.6"
-    ) 
+    )
     local llvm_tag="${CLANG_VERSION}.0.0"
     if [[ -n "${llvm_tag_by_version["${CLANG_VERSION}"]}" ]]; then
       llvm_tag=${llvm_tag_by_version["${CLANG_VERSION}"]}
@@ -1339,6 +1339,7 @@ EOF
   return ${ret}
 }
 
+
 # Print stats about all the packages built in ${BUILD_DIR}/debs/.
 cmd_debian_stats() {
   { set +x; } 2>/dev/null
@@ -1391,7 +1392,6 @@ cmd_debian_build() {
       ;;
   esac
 }
-
 get_version() {
   local varname=$1
   local line=$(grep -F "set(${varname} " lib/CMakeLists.txt | head -n 1)
