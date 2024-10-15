@@ -58,12 +58,10 @@ jobs:
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
           libgif-dev \
-          libgimp2.0-dev \
           libgtest-dev \
           libgtk2.0-dev  \
           libjpeg-dev \
           libopenexr-dev \
-          libparams-classify-perl \
           libpng-dev \
           libwebp-dev \
           ninja-build \
@@ -156,6 +154,8 @@ jobs:
         apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -f -y \
           build-essential \
+          libgimp2.0-dev \
+          libparams-classify-perl \
           devscripts \
         #
 
