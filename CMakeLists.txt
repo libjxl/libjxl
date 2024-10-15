@@ -335,7 +335,7 @@ else ()
 
   # Machine flags.
   add_compile_options(-funwind-tables)
-  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "riscv")
     add_compile_options("SHELL:-Xclang -mrelax-all")
   endif()
   if (CXX_CONSTRUCTOR_ALIASES_SUPPORTED)
