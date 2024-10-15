@@ -154,8 +154,6 @@ jobs:
         apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get install -f --fix-missing -y \
           build-essential \
-          libgimp2.0-dev \
-          libparams-classify-perl \
           devscripts \
         #
 
