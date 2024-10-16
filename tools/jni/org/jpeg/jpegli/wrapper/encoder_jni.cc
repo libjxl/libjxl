@@ -121,7 +121,7 @@ class Encoder {
     if (config_present & 1) {
       quality_ = config[0];
       healthy_ &= (static_cast<jint>(quality_) == config[0]);
-      // TODO(eustas): check range
+      healthy_ &= (quality_ >= 1 && quality_ <= 100);
     } else {
       healthy_ = false;  // quality is mandatory
     }
@@ -177,6 +177,7 @@ class Encoder {
     cinfo_.input_components = 3;
     cinfo_.in_color_space = JCS_RGB;
     jpegli_set_defaults(&cinfo_);
+    jpegli_set_quality(&cinfo_, quality_, TRUE);
     cinfo_.comp_info[0].v_samp_factor = v_sampling_[0];
     jpegli_set_progressive_level(&cinfo_, 0);
     cinfo_.optimize_coding = FALSE;
@@ -224,6 +225,8 @@ class Encoder {
     for (size_t i = 0; i < num_pixels; ++i) {
       // TODO(eustas): take care of endianness.
       memcpy(buffer + 3 * i, tmp_buffer + i, 4);
+      // Convert BGRA input data to RGB.
+      std::swap(buffer[3 * i], buffer[3 * i + 2]);
     }
     return true;
   }
