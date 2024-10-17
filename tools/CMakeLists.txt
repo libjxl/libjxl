@@ -336,6 +336,18 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
     endif()
     set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS}")
   endif()
+  
+  # Attach manifest that tells Windows to use UTF-8 for eg. fopen
+  if(WIN32)
+    # Accommodate cl, clang-cl and clang with GNU-like command
+    if(NOT MINGW)
+      target_sources(${BINARY} PRIVATE utf8.manifest)
+    # Since CMake in MINGW doesn't support linking
+    # .manifest file, do it with .rc file
+    elseif(MINGW)
+      target_sources(${BINARY} PRIVATE utf8.rc)
+    endif()
+  endif()
 endforeach()
 
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
