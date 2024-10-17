@@ -231,6 +231,10 @@ if(JPEGXL_STATIC)
   # ourselves; for real use case we don't care about stdlib, as it is "granted",
   # so just linking all other libraries is fine.
   if (NOT MSVC)
+    # FIXME: For some reason, CMake generator doesn't work well
+	# with Clang GNU driver on MSVC. So, this variable needs to
+	# be set again. See issue #3855
+    set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded)
     string(APPEND CMAKE_EXE_LINKER_FLAGS " -static")
   endif()
   if ((NOT WIN32 AND NOT APPLE) OR CYGWIN OR MINGW)
