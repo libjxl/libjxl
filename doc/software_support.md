@@ -94,3 +94,4 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [MConverter](https://mconverter.eu/)
 - [jpegxl.io](https://jpegxl.io/)
 - [EXIF Viewer](https://stefan-oltmann.de/exif-viewer)
+- [Immich](https://immich.app/), a self-hosted image gallery service
