@@ -27,7 +27,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 
 - [ImageMagick](https://imagemagick.org/): supported since 7.0.10-54
 - [libvips](https://libvips.github.io/libvips/): supported since 8.11
-- [Imlib2](https://github.com/alistair7/imlib2-jxl)
+- [Imlib2](https://docs.enlightenment.org/api/imlib2/html/)
 - [FFmpeg](https://github.com/FFmpeg/FFmpeg/search?q=jpeg-xl&type=commits)
 - [GDAL](https://gdal.org/drivers/raster/jpegxl.html): supported since 3.4.0 as a TIFF codec, and 3.6.0 as standalone format
 - [GraphicsMagick](http://www.graphicsmagick.org/NEWS.html#march-26-2022): supported since 1.3.38

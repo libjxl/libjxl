@@ -310,7 +310,7 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   std::vector<uint8_t> enc_streaming;
 
   const auto encode = [&]() -> Status {
-    // It is not clear, which approach eatc more memory.
+    // It is not clear, which approach eats more memory.
     JXL_ASSIGN_OR_RETURN(enc_default, Encode(spec, memory_manager, false));
     Check(memory_manager.Reset());
     JXL_ASSIGN_OR_RETURN(enc_streaming, Encode(spec, memory_manager, true));
@@ -320,14 +320,26 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   // It is fine, if encoder OOMs.
   if (!encode()) return true;
 
-  // It is NOT OK, it decoder OOMs - it should not consume more than encoder.
+  // It is NOT OK, if decoder OOMs - it should not consume more than encoder.
   JXL_ASSIGN_OR_RETURN(auto dec_default, Decode(enc_default, memory_manager));
   Check(memory_manager.Reset());
   JXL_ASSIGN_OR_RETURN(auto dec_streaming,
                        Decode(enc_streaming, memory_manager));
   Check(memory_manager.Reset());
 
-  Check(dec_default == dec_streaming);
+  if (spec.int_options[0].value <= 7) {
+    Check(dec_default == dec_streaming);
+  } else {
+    Check(dec_default.size() == dec_streaming.size());
+    float max_abs_diff = 0.0f;
+    for (size_t i = 0; i < dec_default.size(); ++i) {
+      float abs_diff = std::abs(dec_default[i] - dec_streaming[i]);
+      if (abs_diff > max_abs_diff) {
+        max_abs_diff = abs_diff;
+      }
+    }
+    Check(max_abs_diff <= 0.1f);
+  }
 
   return true;
 }

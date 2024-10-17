@@ -222,6 +222,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(JPEGXL_STATIC)
   set(BUILD_SHARED_LIBS 0)
+
+  # https://learn.microsoft.com/en-us/cpp/build/reference/md-mt-ld-use-run-time-library?view=msvc-170
+  # https://cmake.org/cmake/help/latest/variable/CMAKE_MSVC_RUNTIME_LIBRARY.html
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "$<$<NOT:$<CONFIG:Debug>>:MultiThreaded>" CACHE STRING "")
+
   # Clang developers say that in case to use "static" we have to build stdlib
   # ourselves; for real use case we don't care about stdlib, as it is "granted",
   # so just linking all other libraries is fine.
@@ -455,7 +460,7 @@ if(JPEGXL_ENABLE_MANPAGES)
   find_program(ASCIIDOC a2x)
   if(ASCIIDOC)
     file(STRINGS "${ASCIIDOC}" ASCIIDOC_SHEBANG LIMIT_COUNT 1)
-    if(ASCIIDOC_SHEBANG MATCHES "sh$" OR MINGW)
+    if(ASCIIDOC_SHEBANG MATCHES "sh$" OR ASCIIDOC_SHEBANG MATCHES "libexec/bin/python$" OR MINGW)
       set(ASCIIDOC_PY_FOUND ON)
       # Run the program directly and set ASCIIDOC as empty.
       set(ASCIIDOC_PY "${ASCIIDOC}")

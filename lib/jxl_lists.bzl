@@ -542,7 +542,7 @@ libjxl_jpegli_wrapper_sources = [
 
 libjxl_major_version = 0
 
-libjxl_minor_version = 11
+libjxl_minor_version = 12
 
 libjxl_patch_version = 0
 

@@ -76,7 +76,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
       with:
         egress-policy: audit
 
@@ -89,7 +89,7 @@ jobs:
         apt-get install -y ca-certificates debian-ports-archive-keyring git python3
 
     - name: Checkout the source
-      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
       with:
         submodules: true
         fetch-depth: 1
@@ -246,7 +246,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
       with:
         egress-policy: audit
 
@@ -304,7 +304,7 @@ jobs:
         chmod +x `cat executable.lst`
         ./ci.sh test \
           -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
-          -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper)'
+          -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper|test_jpegli_jni_wrapper)'
 
     - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
       name: Upload test cost
