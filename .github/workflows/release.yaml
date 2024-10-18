@@ -330,6 +330,7 @@ jobs:
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
+          -DCMAKE_CXX_COMPILER=clang-cl \
           -DJPEGXL_ENABLE_DEVTOOLS=${{ matrix.tools || 'ON'}} \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
         #
