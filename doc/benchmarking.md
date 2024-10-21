@@ -22,12 +22,11 @@ build/tools/benchmark_xl --input "/path/*.png" --codec jxl:wombat:d1,jxl:cheetah
 Multiple comma-separated codecs are allowed. The characters after : are
 parameters for the codec, separated by colons, in this case specifying maximum
 target psychovisual distances of 1 and 2 (higher implies lower quality) and
-the encoder effort (see below). Other common parameters are `r0.5` (target
-bitrate 0.5 bits per pixel) and `q92` (quality 92, on a scale of 0-100, where
-higher is better). The `jxl` codec supports the following additional parameters:
+the encoder effort (see below). Another common parameter is `q92` (quality 92, on a scale of 0-100, where
+higher is better). Quality is directly mapped to distance (quality 90 equals a distance of 1). The `jxl` codec supports the following additional parameters:
 
 Speed: `lightning`, `thunder`, `falcon`, `cheetah`, `hare`, `wombat`, `squirrel`,
-`kitten`, `tortoise` control the encoder effort in ascending order. This also
+`kitten`, `tortoise`, `glacier`, and `tectonic plate` control the encoder effort in ascending order. This also
 affects memory usage: using lower effort will typically reduce memory consumption
 during encoding.
 
@@ -43,6 +42,8 @@ during encoding.
     context clustering.
 *   `kitten` optimizes the adaptive quantization for a psychovisual metric.
 *   `tortoise` enables a more thorough adaptive quantization search.
+*   `glacier` disables chunked encoding and enables whole image optimizaions.
+*   `tectonic plate` exhaustively tries different glacier settings.
 
 Mode: JPEG XL has two modes. The default is Var-DCT mode, which is suitable for
 lossy compression. The other mode is Modular mode, which is suitable for lossless
@@ -65,18 +66,18 @@ Other arguments to benchmark_xl include:
 The benchmark output begins with a header:
 
 ```
-Compr              Input    Compr            Compr       Compr  Decomp  Butteraugli
-Method            Pixels     Size              BPP   #    MP/s    MP/s     Distance    Error p norm           BPP*pnorm   Errors
+Encoding    kPixels   Bytes  BPP    E MP/s    D MP/s    Max norm    SSIMULACRA2 PSNR    pnorm   BPP*pnorm   QABPP   Bugs
 ```
 
-`ComprMethod` lists each each comma-separated codec. `InputPixels` is the number
-of pixels in the input image. `ComprSize` is the codestream size in bytes and
-`ComprBPP` the bitrate. `Compr MP/s` and `Decomp MP/s` are the
+`Encoding` lists each each comma-separated codec. `kPixels` is the number
+of pixels in the input image. `Bytes` is the codestream size in bytes and
+`BPP` stands for Bits Per Pixel. `E MP/s` and `D MP/s` are the
 compress/decompress throughput, in units of Megapixels/second.
-`Butteraugli Distance` indicates the maximum psychovisual error in the decoded
-image (larger is worse). `Error p norm` is a similar summary of the psychovisual
+`Max norm` indicates the maximum psychovisual error in the decoded
+image (larger is worse). `pnorm` is a similar summary of the psychovisual
 error, but closer to an average, giving less weight to small low-quality
-regions. `BPP*pnorm` is the product of `ComprBPP` and `Error p norm`, which is a
-figure of merit for the codec (lower is better). `Errors` is nonzero if errors
-occurred while loading or encoding/decoding the image.
-
+regions. `SSIMULACRA2` is a modern psychovisal metric, the range is 100
+(lossless) to -∞. `PSNR` is a signal-to-noise ratio meausred in dB.
+`BPP*pnorm` is the product of `BPP` and `pnorm`, which is a figure of merit
+for the codec (lower is better). `Bugs` is nonzero if errors occurred
+while loading or encoding/decoding the image.
