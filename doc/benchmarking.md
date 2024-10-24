@@ -25,25 +25,12 @@ target psychovisual distances of 1 and 2 (higher implies lower quality) and
 the encoder effort (see below). Another common parameter is `q92` (quality 92, on a scale of 0-100, where
 higher is better). Quality is directly mapped to distance (quality 90 equals a distance of 1). The `jxl` codec supports the following additional parameters:
 
-Speed: `lightning`, `thunder`, `falcon`, `cheetah`, `hare`, `wombat`, `squirrel`,
-`kitten`, `tortoise`, `glacier`, and `tectonic plate` control the encoder effort in ascending order. This also
+Speeds: `lightning`, `thunder`, `falcon`, `cheetah`, `hare`, `wombat`, `squirrel`,
+`kitten`, `tortoise`, `glacier`, and `tectonic_plate` control the encoder effort in ascending order. This also
 affects memory usage: using lower effort will typically reduce memory consumption
 during encoding.
 
-*   `lightning` and `thunder` are fast modes useful for lossless mode (modular).
-*   `falcon` disables all of the following tools.
-*   `cheetah` enables coefficient reordering, context clustering, and heuristics
-    for selecting DCT sizes and quantization steps.
-*   `hare` enables Gaborish filtering, chroma from luma, and an initial estimate
-    of quantization steps.
-*   `wombat` enables error diffusion quantization and full DCT size selection
-    heuristics.
-*   `squirrel` (default) enables dots, patches, and spline detection, and full
-    context clustering.
-*   `kitten` optimizes the adaptive quantization for a psychovisual metric.
-*   `tortoise` enables a more thorough adaptive quantization search.
-*   `glacier` disables chunked encoding and enables whole image optimizaions.
-*   `tectonic plate` exhaustively tries different glacier settings.
+[Encode_effort.md](https://github.com/libjxl/libjxl/blob/main/doc/encode_effort.md) describes what the various effort settings do.
 
 Mode: JPEG XL has two modes. The default is Var-DCT mode, which is suitable for
 lossy compression. The other mode is Modular mode, which is suitable for lossless
