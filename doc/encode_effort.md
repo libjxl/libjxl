@@ -30,4 +30,4 @@ The following table describes what the various effort settings do:
 | e10 | e9 + global MA tree, try all predictors, and disables chunked encoding | e9 + more thorough adaptive quantization |
 | e11 | e10 + previous-channel MA tree properties, different group dimensions, and try multiple e10 configurations | N/A |
 
-For VarDCT, chunked encoding is disable at distances >=3. Chunked encoding is also disabled when `--patches=1`.<br>For the entropy coding (context clustering, lz77 search, hybriduint configuration): slower/more exhaustive search as effort goes up.
+For VarDCT, chunked encoding is disabled at distances >=3. Chunked encoding is also disabled when `--patches=1`.<br>For the entropy coding (context clustering, lz77 search, hybriduint configuration): slower/more exhaustive search as effort goes up.
