@@ -929,6 +929,7 @@ StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,
   return decoded;
 }
 
+constexpr int kDefaultButteraugliIters = 2;
 constexpr int kMaxButteraugliIters = 4;
 
 Status FindBestQuantization(const FrameHeader& frame_header,
@@ -983,9 +984,9 @@ Status FindBestQuantization(const FrameHeader& frame_header,
   JXL_ENSURE(qf_higher / qf_lower < 253);
 
   constexpr int kOriginalComparisonRound = 1;
-  int iters = kMaxButteraugliIters;
-  if (cparams.speed_tier > SpeedTier::kTortoise) {
-    iters = 2;
+  int iters = kDefaultButteraugliIters;
+  if (cparams.speed_tier <= SpeedTier::kTortoise) {
+    iters = kMaxButteraugliIters;
   }
   for (int i = 0; i < iters + 1; ++i) {
     if (JXL_DEBUG_ADAPTIVE_QUANTIZATION) {
@@ -1023,7 +1024,7 @@ Status FindBestQuantization(const FrameHeader& frame_header,
       float minval;
       float maxval;
       ImageMinMax(quant_field, &minval, &maxval);
-      printf("\nButteraugli iter: %d/%d\n", i, kMaxButteraugliIters);
+      printf("\nButteraugli iter: %d/%d\n", i, iters);
       printf("Butteraugli distance: %f  (target = %f)\n", score,
              original_butteraugli);
       printf("quant range: %f ... %f  DC quant: %f\n", minval, maxval,
