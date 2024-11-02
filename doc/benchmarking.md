@@ -66,5 +66,6 @@ error, but closer to an average, giving less weight to small low-quality
 regions. `SSIMULACRA2` is a modern psychovisal metric, the range is 100
 (lossless) to -∞. `PSNR` is a signal-to-noise ratio meausred in dB.
 `BPP*pnorm` is the product of `BPP` and `pnorm`, which is a figure of merit
-for the codec (lower is better). `Bugs` is nonzero if errors occurred
+for the codec (lower is better). `QABPP` is quality adjusted bits per pixel,
+which is represented as `BPP`*`Max norm`. `Bugs` is nonzero if errors occurred
 while loading or encoding/decoding the image.
