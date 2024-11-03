@@ -25,8 +25,8 @@ The following table describes what the various effort settings do:
 | e5 | e4 + patches, local palette / local channel palette, different local RCTs | e4 + gabor-like transform, chroma from luma |
 | e6 | e5 + more RCTs and MA tree properties | e5 + error diffusion, full variable blocks heuristics |
 | e7 | e6 + more RCTs and MA tree properties | e6 + patches (including dots) |
-| e8 | e7 + more RCTs, MA tree properties and Weighted predictor parameters | e7 + Butteraugli iterations for adaptive quantization and disables chunked encoding |
-| e9 | e8 + more RCTs, MA tree properties, and Gradient/Weighted predictors | e8 + more Butteraugli iterations |
+| e8 | e7 + more RCTs, MA tree properties, and Weighted predictor parameters | e7 + Butteraugli iterations for adaptive quantization and disables chunked encoding |
+| e9 | e8 + more RCTs, MA tree properties, and Weighted predictor parameters | e8 + more Butteraugli iterations |
 | e10 | e9 + global MA tree, try all predictors, and disables chunked encoding | e9 + more thorough adaptive quantization |
 | e11 | e10 + previous-channel MA tree properties, different group dimensions, and try multiple e10 configurations | N/A |
 
