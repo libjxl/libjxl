@@ -12,6 +12,17 @@ import java.nio.channels.WritableByteChannel;
 
 /** Jpegli JNI encoder wrapper. */
 public class Encoder {
+  static {
+    try {
+      System.loadLibrary("jpegli_encoder_jni");
+    } catch (UnsatisfiedLinkError e) {
+      UnsatisfiedLinkError error =
+          new UnsatisfiedLinkError("Could not load jni library: jpegli_encoder_jni");
+      error.initCause(e);
+      throw error;
+    }
+  }
+
   /** Utility library, disable object construction. */
   private Encoder() {}
 
