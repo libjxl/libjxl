@@ -10,6 +10,10 @@ import java.nio.ByteBuffer;
 
 /** JPEG XL JNI decoder wrapper. */
 public class Decoder {
+  static {
+    JniHelper.ensureInitialized();
+  }
+
   /** Utility library, disable object construction. */
   private Decoder() {}
 
