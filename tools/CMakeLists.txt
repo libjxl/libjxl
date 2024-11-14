@@ -472,6 +472,7 @@ if (JNI_FOUND AND Java_FOUND)
     jni/org/jpeg/jpegxl/wrapper/Decoder.java
     jni/org/jpeg/jpegxl/wrapper/DecoderJni.java
     jni/org/jpeg/jpegxl/wrapper/ImageData.java
+    jni/org/jpeg/jpegxl/wrapper/JniHelper.java
     jni/org/jpeg/jpegxl/wrapper/PixelFormat.java
     jni/org/jpeg/jpegxl/wrapper/Status.java
     jni/org/jpeg/jpegxl/wrapper/StreamInfo.java
@@ -501,6 +502,7 @@ if (JNI_FOUND AND Java_FOUND)
 
     add_jar(jpegli_jni_wrapper SOURCES
       jni/org/jpeg/jpegli/wrapper/Encoder.java
+      jni/org/jpeg/jpegli/wrapper/JniHelper.java
       OUTPUT_NAME org.jpeg.jpegli
     )
     get_target_property(JPEGLI_JNI_WRAPPER_JAR jpegli_jni_wrapper JAR_FILE)
