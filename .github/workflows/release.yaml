@@ -126,7 +126,8 @@ jobs:
         - ubuntu:20.04
         - debian:bullseye
         - debian:bookworm
-        - debian:trixie
+        # GIMP package is removed: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1078402
+        # - debian:trixie
         - debian:sid
 
     container:
