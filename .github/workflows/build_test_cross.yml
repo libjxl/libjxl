@@ -32,13 +32,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        identifier: [arm64, arm64-sve, arm64-lowprecision, armhf, i386]
+        identifier: [arm64, arm64-sve, arm64-lowprecision, armhf, i386, powerpc]
         include:
           - arch: arm64
             identifier: arm64
             build_target: aarch64-linux-gnu
             cmake_args:
              - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
+             - -DJPEGXL_FORCE_SYSTEM_BROTLI=ON
 
           - arch: arm64
             identifier: arm64-sve
@@ -47,6 +48,7 @@ jobs:
              - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
              - -DJPEGXL_ENABLE_OPENEXR=off
              - -DJPEGXL_ENABLE_SIZELESS_VECTORS=on
+             - -DJPEGXL_FORCE_SYSTEM_BROTLI=ON
              - -DJPEGXL_WARNINGS_AS_ERRORS=off
             cmake_flags: -march=armv8-a+sve
             c_compiler: aarch64-linux-gnu-gcc
@@ -59,16 +61,29 @@ jobs:
             cmake_args:
              - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
              - -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
+             - -DJPEGXL_FORCE_SYSTEM_BROTLI=ON
 
           - arch: armhf
             identifier: armhf
             build_target: arm-linux-gnueabihf
-            cmake_args: [-DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-arm-static]
+            cmake_args:
+             - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-arm-static
+             - -DJPEGXL_FORCE_SYSTEM_BROTLI=ON
 
           - arch: i386
             identifier: i386
             test_in_pr: true
             build_target: i686-linux-gnu
+            cmake_args:
+             - -DJPEGXL_FORCE_SYSTEM_BROTLI=ON
+
+          - arch: powerpc
+            identifier: powerpc
+            build_target: powerpc-linux-gnu
+            cmake_args:
+             - -DCMAKE_CROSSCOMPILING_EMULATOR="/usr/bin/qemu-ppc-static;-L;/usr/powerpc-linux-gnu/"
+             - -DJPEGXL_BUNDLE_LIBPNG=ON
+             - -DPNG_POWERPC_VSX=off
 
     env:
       BUILD_DIR: build
@@ -124,30 +139,34 @@ jobs:
           g++-aarch64-linux-gnu
           libc6-dev-${{ matrix.arch }}-cross
           libstdc++-12-dev-${{ matrix.arch }}-cross
-          libstdc++-12-dev:${{ matrix.arch }}
-
-          # Dependencies
-          libbrotli-dev:${{ matrix.arch }}
-          libgif-dev:${{ matrix.arch }}
-          libjpeg-dev:${{ matrix.arch }}
-          libpng-dev:${{ matrix.arch }}
-          libwebp-dev:${{ matrix.arch }}
-
-          # For OpenEXR:
-          libilmbase-dev:${{ matrix.arch }}
-          libopenexr-dev:${{ matrix.arch }}
-
-          # GTK plugins
-          libgdk-pixbuf2.0-dev:${{ matrix.arch }}
-          libgtk2.0-dev:${{ matrix.arch }}
         )
+        if [[ "${{ matrix.arch }}" != "powerpc" ]]; then
+          pkgs+=(
+            libstdc++-12-dev:${{ matrix.arch }}
+
+            # Dependencies
+            libbrotli-dev:${{ matrix.arch }}
+            libgif-dev:${{ matrix.arch }}
+            libjpeg-dev:${{ matrix.arch }}
+            libpng-dev:${{ matrix.arch }}
+            libwebp-dev:${{ matrix.arch }}
+
+            # For OpenEXR:
+            libilmbase-dev:${{ matrix.arch }}
+            libopenexr-dev:${{ matrix.arch }}
+
+            # GTK plugins
+            libgdk-pixbuf2.0-dev:${{ matrix.arch }}
+            libgtk2.0-dev:${{ matrix.arch }}
+          )
+        fi
         if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
           pkgs+=(
             binutils-${{ matrix.build_target }}
             gcc-${{ matrix.build_target }}
           )
         fi
-        if [[ "${{ matrix.arch }}" != "i386" ]]; then
+        if [[ "${{ matrix.arch }}" != "i386" ]] && [[ "${{ matrix.arch }}" != "powerpc" ]]; then
           pkgs+=(
             # TCMalloc
             libgoogle-perftools-dev:${{ matrix.arch }}
@@ -163,7 +182,6 @@ jobs:
     - name: Build
       run: |
         CMAKE_FLAGS="${{ matrix.cmake_flags }}" ./ci.sh release \
-          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DJPEGXL_ENABLE_JNI=OFF \
           ${{ join(matrix.cmake_args, ' ') }}
       env:
@@ -214,10 +232,10 @@ jobs:
       fail-fast: false
       matrix:
         shard_number: [0, 1, 2, 3, 4, 5, 6, 7]
-        identifier: [arm64, arm64-lowprecision, armhf, i386]
+        identifier: [arm64, arm64-lowprecision, armhf, i386, powerpc]
         include:
           - arch: arm64
-          - identifier: arm64
+            identifier: arm64
             last_shard: 8
 
           #- arch: arm64
@@ -236,6 +254,10 @@ jobs:
             identifier: i386
             test_in_pr: true
             last_shard: 4
+
+          - arch: powerpc
+            identifier: powerpc
+            last_shard: 8
 
     env:
       BUILD_DIR: build
@@ -278,18 +300,23 @@ jobs:
           # Build dependencies
           cmake
           qemu-user-static
-
-          # Dependencies
-          libbrotli-dev:${{ matrix.arch }}
-          libgif-dev:${{ matrix.arch }}
-          libjpeg-dev:${{ matrix.arch }}
-          libpng-dev:${{ matrix.arch }}
-          libwebp-dev:${{ matrix.arch }}
-
-          # For OpenEXR:
-          libilmbase-dev:${{ matrix.arch }}
-          libopenexr-dev:${{ matrix.arch }}
         )
+        if [[ "${{ matrix.arch }}" = "powerpc" ]]; then
+          pkgs+=(libc6-powerpc-cross libstdc++6-powerpc-cross libatomic1-powerpc-cross)
+        else
+          pkgs+=(
+            # Dependencies
+            libbrotli-dev:${{ matrix.arch }}
+            libgif-dev:${{ matrix.arch }}
+            libjpeg-dev:${{ matrix.arch }}
+            libpng-dev:${{ matrix.arch }}
+            libwebp-dev:${{ matrix.arch }}
+
+            # For OpenEXR:
+            libilmbase-dev:${{ matrix.arch }}
+            libopenexr-dev:${{ matrix.arch }}
+          )
+        fi
         DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
 
     - name: Prepare
