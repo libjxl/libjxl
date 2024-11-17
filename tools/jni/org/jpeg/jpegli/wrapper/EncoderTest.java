@@ -15,22 +15,6 @@ import java.util.Base64;
  * Tests for jpegli encoder wrapper.
  */
 public class EncoderTest {
-  static {
-    String jniLibrary = System.getProperty("org.jpeg.jpegli.wrapper.lib");
-    if (jniLibrary != null) {
-      try {
-        System.load(new java.io.File(jniLibrary).getAbsolutePath());
-      } catch (UnsatisfiedLinkError ex) {
-        String message =
-            "If the nested exception message says that some standard library (stdc++, tcmalloc,"
-            + " etc.) was not found, it is likely that JDK discovered by the build system"
-            + " overrides library search path. Try specifying a different JDK via JAVA_HOME"
-            + " environment variable and doing a clean build.";
-        throw new RuntimeException(message, ex);
-      }
-    }
-  }
-
   static void checkTrue(boolean condition) {
     if (!condition) {
       throw new IllegalStateException("check failed");

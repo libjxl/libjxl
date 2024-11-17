@@ -71,7 +71,7 @@ jobs:
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: true
         fetch-depth: 1
@@ -126,7 +126,8 @@ jobs:
         - ubuntu:20.04
         - debian:bullseye
         - debian:bookworm
-        - debian:trixie
+        # GIMP package is removed: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1078402
+        # - debian:trixie
         - debian:sid
 
     container:
@@ -163,7 +164,7 @@ jobs:
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: true
         fetch-depth: 1
@@ -272,12 +273,12 @@ jobs:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@3624ceb22c1c5a301c8db4169662070a689d9ea8 # v4.1.1
+    - uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a # v4.1.2
       id: cache-vcpkg
       with:
         path: vcpkg

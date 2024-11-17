@@ -39,8 +39,11 @@ jobs:
              - ButteraugliTest.Lossless
              - ButteraugliTest.Distmap
            disable_benchmark: true
-         - msystem: clang32
-           disable_benchmark: true
+         # "Legacy" toolchains are being "phased-out":
+         # https://www.msys2.org/news/#2023-12-13-starting-to-drop-some-32-bit-packages
+         # clang32 is already missing required "gtest" and "libavif"
+         # - msystem: clang32
+         #   disable_benchmark: true
 
     defaults:
       run:
@@ -52,7 +55,7 @@ jobs:
           egress-policy: audit
 
       - name: Checkout the source
-        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: true
           fetch-depth: 1

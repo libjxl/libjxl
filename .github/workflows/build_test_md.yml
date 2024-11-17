@@ -51,7 +51,7 @@ jobs:
       matrix:
           include:
            - msystem: clang64
-           - msystem: clang32
+           # - msystem: clang32
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
