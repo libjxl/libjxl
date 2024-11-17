@@ -25,9 +25,25 @@ The following table describes what the various effort settings do:
 | e5 | e4 + patches, local palette / local channel palette, different local RCTs | e4 + gabor-like transform, chroma from luma |
 | e6 | e5 + more RCTs and MA tree properties | e5 + error diffusion, full variable blocks heuristics |
 | e7 | e6 + more RCTs and MA tree properties | e6 + patches (including dots) |
-| e8 | e7 + more RCTs, MA tree properties, and Weighted predictor parameters | e7 + Butteraugli iterations for adaptive quantization and disables chunked encoding |
-| e9 | e8 + more RCTs, MA tree properties, and Weighted predictor parameters | e8 + more Butteraugli iterations |
+| e8 | e7 + more RCTs, MA tree properties, and Weighted predictor parameters | e7 + Butteraugli iterations for adaptive quantization |
+| e9 | e8 + more RCTs, MA tree properties, and Weighted predictor parameters | e8 + more Butteraugli iterations and disables chunked encoding |
 | e10 | e9 + global MA tree, try all predictors, and disables chunked encoding | e9 + more thorough adaptive quantization |
 | e11 | e10 + previous-channel MA tree properties, different group dimensions, and try multiple e10 configurations | N/A |
 
-For VarDCT, chunked encoding is disabled at distances >=3. Chunked encoding is also disabled when `--patches=1`.<br>For the entropy coding (context clustering, lz77 search, hybriduint configuration): slower/more exhaustive search as effort goes up.
+For the entropy coding (context clustering, lz77 search, hybriduint configuration): slower/more exhaustive search as effort goes up.
+
+<u>Chunked encoding is also disabled under these circumstances:</u>
+* When the image is smaller than 2048x2048.
+* Lossless Jpeg transcoding.
+* VarDCT at distances ≥20.
+* Effort 7 VarDCT at distances ≥3.0.
+* Effort 8 VarDCT at distances >0.5.
+* Lossy Modular.
+* When using any of these flags:
+  * `--patches=1`
+  * `--progressive_dc >0`
+  * `-p`
+  * `-d 0` and `-R 1`
+  * `--noise=1`
+  * `--resampling >1`
+  * `--disable_perceptual_optimizations`
