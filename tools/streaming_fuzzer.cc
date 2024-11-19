@@ -13,6 +13,7 @@
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
 
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -327,19 +328,20 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
                        Decode(enc_streaming, memory_manager));
   Check(memory_manager.Reset());
 
-  if (spec.int_options[0].value <= 7) {
-    Check(dec_default == dec_streaming);
-  } else {
-    Check(dec_default.size() == dec_streaming.size());
-    float max_abs_diff = 0.0f;
-    for (size_t i = 0; i < dec_default.size(); ++i) {
-      float abs_diff = std::abs(dec_default[i] - dec_streaming[i]);
-      if (abs_diff > max_abs_diff) {
-        max_abs_diff = abs_diff;
-      }
+  Check(dec_default.size() == dec_streaming.size());
+  float max_abs_diff = 0.0f;
+  for (size_t i = 0; i < dec_default.size(); ++i) {
+    float abs_diff = std::abs(dec_default[i] - dec_streaming[i]);
+    if (abs_diff > max_abs_diff) {
+      max_abs_diff = abs_diff;
     }
-    Check(max_abs_diff <= 0.1f);
   }
+
+  Check(spec.int_options[0].flag == JXL_ENC_FRAME_SETTING_EFFORT);
+  int effort = spec.int_options[0].value;
+  std::array<float, 10> kThreshold = {0.00f, 0.05f, 0.05f, 0.05f, 0.05f,
+                                      0.05f, 0.05f, 0.05f, 0.10f, 0.10f};
+  Check(max_abs_diff <= kThreshold[effort]);
 
   return true;
 }
