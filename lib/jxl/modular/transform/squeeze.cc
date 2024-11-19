@@ -375,7 +375,7 @@ void DefaultSqueezeParameters(std::vector<SqueezeParams> *parameters,
   bool wide = (w > h);
 
   if (nb_channels > 2 && image.channel[image.nb_meta_channels + 1].w == w &&
-      image.channel[image.nb_meta_channels + 1].h == h) {
+      image.channel[image.nb_meta_channels + 1].h == h && w > 1 && h > 1) {
     // assume channels 1 and 2 are chroma, and can be squeezed first for 4:2:0
     // previews
     JXL_DEBUG_V(7, "(4:2:0 chroma), %" PRIuS "x%" PRIuS " image", w, h);
