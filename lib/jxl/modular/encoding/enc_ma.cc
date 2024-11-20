@@ -935,13 +935,13 @@ void CollectPixelSamples(const Image &image, const ModularOptions &options,
   size_t total_pixels = 0;
   std::vector<size_t> channel_ids;
   for (size_t i = 0; i < image.channel.size(); i++) {
-    if (image.channel[i].w <= 1 || image.channel[i].h == 0) {
-      continue;  // skip empty or width-1 channels.
-    }
     if (i >= image.nb_meta_channels &&
         (image.channel[i].w > options.max_chan_size ||
          image.channel[i].h > options.max_chan_size)) {
       break;
+    }
+    if (image.channel[i].w <= 1 || image.channel[i].h == 0) {
+      continue;  // skip empty or width-1 channels.
     }
     channel_ids.push_back(i);
     group_pixel_count[group_id] += image.channel[i].w * image.channel[i].h;
