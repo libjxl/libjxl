@@ -617,13 +617,13 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
           options.max_property_values);
     }
     for (size_t i = 0; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
       if (i >= image.nb_meta_channels &&
           (image.channel[i].w > options.max_chan_size ||
            image.channel[i].h > options.max_chan_size)) {
         break;
+      }
+      if (!image.channel[i].w || !image.channel[i].h) {
+        continue;  // skip empty channels
       }
       JXL_RETURN_IF_ERROR(GatherTreeData(
           image, i, group_id, header->wp_header, options,
@@ -694,13 +694,13 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     tokens->resize(pos + total_tokens);
     Token *tokenp = tokens->data() + pos;
     for (size_t i = 0; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
       if (i >= image.nb_meta_channels &&
           (image.channel[i].w > options.max_chan_size ||
            image.channel[i].h > options.max_chan_size)) {
         break;
+      }
+      if (!image.channel[i].w || !image.channel[i].h) {
+        continue;  // skip empty channels
       }
       JXL_RETURN_IF_ERROR(EncodeModularChannelMAANS(
           image, i, header->wp_header, *tree, &tokenp, aux_out, group_id,
