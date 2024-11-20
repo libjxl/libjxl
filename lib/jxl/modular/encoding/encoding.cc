@@ -566,12 +566,12 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   size_t distance_multiplier = 0;
   for (size_t i = 0; i < nb_channels; i++) {
     Channel &channel = image.channel[i];
-    if (!channel.w || !channel.h) {
-      continue;  // skip empty channels
-    }
     if (i >= image.nb_meta_channels && (channel.w > options->max_chan_size ||
                                         channel.h > options->max_chan_size)) {
       break;
+    }
+    if (!channel.w || !channel.h) {
+      continue;  // skip empty channels
     }
     if (channel.w > distance_multiplier) {
       distance_multiplier = channel.w;
@@ -631,13 +631,13 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   uint32_t fl_v = 0;
   for (; next_channel < nb_channels; next_channel++) {
     Channel &channel = image.channel[next_channel];
-    if (!channel.w || !channel.h) {
-      continue;  // skip empty channels
-    }
     if (next_channel >= image.nb_meta_channels &&
         (channel.w > options->max_chan_size ||
          channel.h > options->max_chan_size)) {
       break;
+    }
+    if (!channel.w || !channel.h) {
+      continue;  // skip empty channels
     }
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
         br, &reader, *context_map, *tree, header.wp_header, next_channel,
