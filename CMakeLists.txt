@@ -372,7 +372,7 @@ else ()
 
   if(JPEGXL_ENABLE_COVERAGE)
     set(JPEGXL_COVERAGE_FLAGS
-        -g -O0 -fprofile-arcs -ftest-coverage
+        -g -O0 -fprofile-arcs -ftest-coverage -fprofile-update=atomic
     )
     set(JPEGXL_COVERAGE_LINK_FLAGS
         --coverage
