@@ -129,7 +129,7 @@ jobs:
         cp build/libjxl_threads.so.0.7.1 build/tools/conformance
       env:
         SKIP_TEST: 1
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v3
       with:
         name: conformance_binary-${{ matrix.name }}
         path: |
@@ -168,7 +168,7 @@ jobs:
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@v3
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests
