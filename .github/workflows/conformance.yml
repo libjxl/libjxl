@@ -20,7 +20,7 @@ permissions:
 
 env:
   CONFORMANCE_REPO_HASH: a3ee00672dd1b58c2b5a7d5e8b9e4a7b9e53ec1e
-  LIBJXL_VERSION: "0.11.0"
+  LIBJXL_VERSION: "0.11.1"
   LIBJXL_ABI_VERSION: "0.11"
 
 concurrency:
