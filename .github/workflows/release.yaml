@@ -100,7 +100,9 @@ jobs:
       matrix:
         os:
         - ubuntu:20.04
-        - ubuntu:18.04
+        # Disabled due to github-actions compatibility.
+        # Anyways: libjxl is included in Ubuntu only starting from 24.04
+        #- ubuntu:18.04
         - debian:buster
         - debian:bullseye
         - debian:bookworm
