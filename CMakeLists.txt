@@ -402,6 +402,9 @@ endif()
 add_subdirectory(lib)
 
 if(BUILD_TESTING)
+  if (NOT EXISTS "${JPEGXL_TEST_DATA_PATH}/README.md")
+    message(FATAL_ERROR "testdata directory '${JPEGXL_TEST_DATA_PATH}' is not populated")
+  endif()
   # Script to run tests over the source code in bash.
   find_program (BASH_PROGRAM bash)
   if(BASH_PROGRAM)
