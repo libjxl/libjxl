@@ -83,6 +83,7 @@ struct ProgressiveMode {
       }
       previous_pass = passes[i] = p[i];
     }
+    (void)last_downsampling_factor;
   }
 };
 

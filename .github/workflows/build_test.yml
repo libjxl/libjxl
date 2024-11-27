@@ -76,15 +76,16 @@ jobs:
             cmake_args: >-
               -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
           # Builds with clang-5 in release mode
-          - name: release:clang-5
-            os: ubuntu-18.04
-            mode: release
+          # ubuntu-18.04 env is no longer available
+          # - name: release:clang-5
+            # os: ubuntu-18.04
+            # mode: release
             # TODO(eustas): investigate, why static brotli library is not found.
-            skip_install: true
-            apt_pkgs: clang-5.0
-            cmake_args: >-
-              -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0
-              -DJPEGXL_ENABLE_PLUGINS=OFF
+            # skip_install: true
+            # apt_pkgs: clang-5.0
+            # cmake_args: >-
+              # -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0
+              # -DJPEGXL_ENABLE_PLUGINS=OFF
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
