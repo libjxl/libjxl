@@ -933,6 +933,7 @@ void ColorEncoding::DecideIfWantICC() {
 
   // Successfully created a profile => reconstruction should be equivalent.
   JXL_ASSERT(equivalent);
+  (void)equivalent;
   want_icc_ = false;
 }
 
