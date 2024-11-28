@@ -1026,7 +1026,7 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
     }
   }
   // Non-aligned matching for 32X32, 16X32 and 32X16.
-  size_t step = cparams.speed_tier >= SpeedTier::kTortoise ? 2 : 1;
+  size_t step = (cparams.speed_tier >= SpeedTier::kTortoise) ? 2 : 1;
   for (size_t cy = 0; cy + 3 < rect.ysize(); cy += step) {
     for (size_t cx = 0; cx + 3 < rect.xsize(); cx += step) {
       if ((cy | cx) % 4 == 0) {
