@@ -149,6 +149,38 @@ class PackedImage {
     }
   }
 
+  Status ShrinkTo(size_t new_xsize, size_t new_ysize) {
+    if (new_xsize > xsize || new_ysize > ysize) {
+      return JXL_FAILURE("Cannot shrink PackedImage to a larger size");
+    }
+
+    size_t new_stride = CalcStride(format, new_xsize);
+    size_t new_pixels_size = new_ysize * new_stride;
+    std::unique_ptr<void, decltype(free)*> new_pixels(
+        malloc(std::max<size_t>(1, new_pixels_size)), free);
+
+    if (!new_pixels) {
+      // TODO(firsching): use specialized OOM error code
+      return JXL_FAILURE("Failed to allocate memory for shrunk image");
+    }
+
+    // Copy data row by row
+    for (size_t y = 0; y < new_ysize; ++y) {
+      memcpy(reinterpret_cast<uint8_t*>(new_pixels.get()) + y * new_stride,
+             reinterpret_cast<const uint8_t*>(pixels()) + y * stride,
+             new_xsize * pixel_stride_);
+    }
+
+    // Update image properties
+    xsize = new_xsize;
+    ysize = new_ysize;
+    stride = new_stride;
+    pixels_size = new_pixels_size;
+    pixels_ = std::move(new_pixels);
+
+    return true;
+  }
+
  private:
   PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format,
               size_t stride)
@@ -205,6 +237,16 @@ class PackedFrame {
       copy.extra_channels.emplace_back(ec.Copy());
     }
     return copy;
+  }
+
+  Status ShrinkTo(size_t new_xsize, size_t new_ysize) {
+    JXL_RETURN_IF_ERROR(color.ShrinkTo(new_xsize, new_ysize));
+    for (auto& ec : extra_channels) {
+      JXL_RETURN_IF_ERROR(ec.ShrinkTo(new_xsize, new_ysize));
+    }
+    frame_info.layer_info.xsize = new_xsize;
+    frame_info.layer_info.ysize = new_ysize;
+    return true;
   }
 
   // The Frame metadata.
@@ -300,6 +342,23 @@ class PackedPixelFile {
   }
   size_t xsize() const { return info.xsize; }
   size_t ysize() const { return info.ysize; }
+
+  Status ShrinkTo(size_t new_xsize, size_t new_ysize) {
+    if (new_xsize > info.xsize || new_ysize > info.ysize) {
+      return JXL_FAILURE("Cannot shrink PackedPixelFile to a larger size");
+    }
+
+    // Shrink frames
+    for (auto& frame : frames) {
+      JXL_RETURN_IF_ERROR(frame.ShrinkTo(new_xsize, new_ysize));
+    }
+
+    // Update image size metadata
+    info.xsize = new_xsize;
+    info.ysize = new_ysize;
+
+    return true;
+  }
 };
 
 }  // namespace extras
