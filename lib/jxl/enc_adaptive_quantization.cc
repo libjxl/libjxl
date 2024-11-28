@@ -984,7 +984,7 @@ Status FindBestQuantization(const FrameHeader& frame_header,
 
   constexpr int kOriginalComparisonRound = 1;
   int iters = kMaxButteraugliIters;
-  if (cparams.speed_tier != SpeedTier::kTortoise) {
+  if (cparams.speed_tier > SpeedTier::kTortoise) {
     iters = 2;
   }
   for (int i = 0; i < iters + 1; ++i) {
