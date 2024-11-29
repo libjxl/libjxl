@@ -138,3 +138,17 @@ jobs:
          contains(github.event.pull_request.labels.*.name, 'CI:full'))
       run: |
         ./ci.sh test
+
+    # TODO: cache install of uglify-js
+    - name: Build demo site
+      run: |
+        set -e
+        set -x
+        npm install -g uglify-js
+        mkdir -p site
+        python3 ./tools/wasm_demo/build_site.py ./tools/wasm_demo/ /home/runner/work/libjxl/libjxl/build-wasm32/tools/wasm_demo/ site/
+    - name: Upload demo site artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: wasm-demo-${{matrix.variant}}
+        path: site/*
