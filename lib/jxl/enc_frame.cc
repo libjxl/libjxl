@@ -716,7 +716,7 @@ Status DownsampleColorChannels(const CompressParams& cparams,
 
 template <size_t L, typename V, typename R>
 void FindIndexOfSumMaximum(const V* array, R* idx, V* sum) {
-  static_assert(L > 0);
+  static_assert(L > 0, "Empty arrays have undefined maximum");
   V maxval = 0;
   V val = 0;
   R maxidx = 0;
