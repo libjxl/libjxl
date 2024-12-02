@@ -62,7 +62,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Graphic Converter (since 11.5)](https://www.lemkesoft.de/en/products/graphicconverter/)
 - [Krita](https://invent.kde.org/graphics/krita/-/commit/13e5d2e5b9f0eac5c8064b7767f0b62264a0797b)
 - [Paint.NET](https://www.getpaint.net/index.html); supported since 4.3.12 - requires a [plugin](https://github.com/0xC0000054/pdn-jpegxl) to be downloaded and installed.
-- Photoshop: no plugin available yet, no official support yet
+- [Photoshop](https://gitlab.com/SuperSaltyGamer/jpegxlformat); plugin for Adobe Photoshop 2020 and above on Windows, supports 8-bit and 16-bit color depth, embedded ICC color profiles, transparency.
 - [XL Converter](https://github.com/JacobDev1/xl-converter)
 - [Image Toolbox (supported since 2.6.0)](https://github.com/T8RIN/ImageToolbox)
 - [JPEG XL Toolbox by SUIKA LTD](https://apps.apple.com/app/jpeg-xl-toolbox/id6470681357)
