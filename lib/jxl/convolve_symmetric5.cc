@@ -184,11 +184,5 @@ Status Symmetric5(const ImageF& in, const Rect& in_rect,
                                           out_rect);
 }
 
-Status Symmetric5(const ImageF& in, const Rect& rect,
-                  const WeightsSymmetric5& weights, ThreadPool* pool,
-                  ImageF* JXL_RESTRICT out) {
-  return Symmetric5(in, rect, weights, pool, out, Rect(*out));
-}
-
 }  // namespace jxl
 #endif  // HWY_ONCE

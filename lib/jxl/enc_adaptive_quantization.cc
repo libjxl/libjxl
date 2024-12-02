@@ -662,7 +662,8 @@ Status Blur1x1Masking(JxlMemoryManager* memory_manager, ThreadPool* pool,
                         {HWY_REP4(normalize_mul * kFilterMask1x1[3])}};
   JXL_ASSIGN_OR_RETURN(
       ImageF temp, ImageF::Create(memory_manager, rect.xsize(), rect.ysize()));
-  JXL_RETURN_IF_ERROR(Symmetric5(*mask1x1, rect, weights, pool, &temp));
+  JXL_RETURN_IF_ERROR(
+      Symmetric5(*mask1x1, rect, weights, pool, &temp, Rect(temp)));
   *mask1x1 = std::move(temp);
   return true;
 }
