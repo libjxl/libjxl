@@ -269,7 +269,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     ppf->info.ysize = cinfo.image_height;
     // Original data is uint, so exponent_bits_per_sample = 0.
     ppf->info.bits_per_sample = BITS_IN_JSAMPLE;
-    static_assert(BITS_IN_JSAMPLE == 8 || BITS_IN_JSAMPLE == 16);
+    static_assert(BITS_IN_JSAMPLE == 8 || BITS_IN_JSAMPLE == 16,
+                  "Only 8/16 bit samples are supported");
     ppf->info.exponent_bits_per_sample = 0;
     ppf->info.uses_original_profile = JXL_TRUE;
 

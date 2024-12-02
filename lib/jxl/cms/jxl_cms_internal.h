@@ -200,8 +200,9 @@ static std::vector<uint16_t> CreateTableCurve(bool tone_map) {
   // TODO(sboukortt): make this variable?
   static constexpr float kPQIntensityTarget = 10000;
 
-  static_assert(N <= 4096);  // ICC MFT2 only allows 4K entries
-  static_assert(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG);
+  static_assert(N <= 4096, "ICC MFT2 only allows 4K entries");
+  static_assert(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG,
+                "Only PQ/HLG is supported");
 
   static constexpr Vector3 kLuminances{1.f / 3, 1.f / 3, 1.f / 3};
   Rec2408ToneMapperBase tone_mapper(

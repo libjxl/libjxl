@@ -110,7 +110,7 @@ class RowBuffer {
  public:
   template <typename CInfoType>
   void Allocate(CInfoType cinfo, size_t num_rows, size_t rowsize) {
-    static_assert(sizeof(T) == 4);
+    static_assert(sizeof(T) == 4, "4-byte T is assumed");
     size_t vec_size = std::max(VectorSize(), sizeof(T));
     size_t alignment = std::max<size_t>(HWY_ALIGNMENT, vec_size);
     size_t min_memstride = alignment + rowsize * sizeof(T) + vec_size;

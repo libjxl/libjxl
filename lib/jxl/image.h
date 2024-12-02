@@ -147,8 +147,9 @@ class Plane : public detail::PlaneBase {
   static StatusOr<Plane> Create(JxlMemoryManager* memory_manager,
                                 const size_t xsize, const size_t ysize,
                                 const size_t pre_padding = 0) {
-    static_assert(sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 ||
-                  sizeof(T) == 8);
+    static_assert(
+        sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8,
+        "Only 1/2/4/8-byte samples are supported");
     uint32_t xsize32 = static_cast<uint32_t>(xsize);
     uint32_t ysize32 = static_cast<uint32_t>(ysize);
     JXL_ENSURE(xsize32 == xsize);

@@ -368,7 +368,7 @@ class DctShardedTest : public ::hwy::TestWithParamTargetAndT<uint32_t> {};
 template <size_t n>
 std::vector<uint32_t> ShardRange() {
 #ifdef JXL_DISABLE_SLOW_TESTS
-  static_assert(n > 6);
+  static_assert(n > 6, "'large' range is too small");
   std::vector<uint32_t> ret = {0, 1, 3, 5, n - 1};
 #else
   std::vector<uint32_t> ret(n);

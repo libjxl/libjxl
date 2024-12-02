@@ -1683,7 +1683,8 @@ StatusOr<size_t> BuildAndEncodeHistograms(
       const size_t alphabet_size = ANS_MAX_ALPHABET_SIZE;
       const size_t log_alpha_size = 8;
       JXL_ENSURE(alphabet_size == 1u << log_alpha_size);
-      static_assert(ANS_MAX_ALPHABET_SIZE <= ANS_TAB_SIZE);
+      static_assert(ANS_MAX_ALPHABET_SIZE <= ANS_TAB_SIZE,
+                    "Alphabet does not fit table");
       std::vector<int32_t> counts =
           CreateFlatHistogram(alphabet_size, ANS_TAB_SIZE);
       codes->encoding_info.emplace_back();
