@@ -447,6 +447,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Rec2100") {
     JXL_RETURN_IF_ERROR(
         io.metadata.m.color_encoding.SetPrimariesType(jxl::Primaries::k2100));
+  } else if (t == "16BitBuffers") {
+    io.metadata.m.modular_16_bit_buffer_sufficient = true;
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;
@@ -474,6 +476,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   cparams.colorspace = 0;
   JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
   CodecInOut io{memory_manager};
+  io.metadata.m.modular_16_bit_buffer_sufficient = false;
   int have_next = JXL_FALSE;
 
   std::istream* f = &std::cin;
@@ -525,7 +528,6 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   JXL_RETURN_IF_ERROR(metadata->size.Set(io.xsize(), io.ysize()));
 
   metadata->m.xyb_encoded = (cparams.color_transform == ColorTransform::kXYB);
-  metadata->m.modular_16_bit_buffer_sufficient = false;
 
   if (cparams.move_to_front_from_channel < -1) {
     size_t nch = -1 - cparams.move_to_front_from_channel;
