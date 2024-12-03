@@ -154,6 +154,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/dct_util.h
   jxl/dec_ans.cc
   jxl/dec_ans.h
+  jxl/dec_bit_reader.cc
   jxl/dec_bit_reader.h
   jxl/dec_cache.cc
   jxl/dec_cache.h
@@ -229,6 +230,8 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/modular/transform/rct.h
   jxl/modular/transform/squeeze.cc
   jxl/modular/transform/squeeze.h
+  jxl/modular/transform/squeeze_params.cc
+  jxl/modular/transform/squeeze_params.h
   jxl/modular/transform/transform.cc
   jxl/modular/transform/transform.h
   jxl/noise.h
@@ -248,6 +251,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/render_pipeline/low_memory_render_pipeline.h
   jxl/render_pipeline/render_pipeline.cc
   jxl/render_pipeline/render_pipeline.h
+  jxl/render_pipeline/render_pipeline_stage.cc
   jxl/render_pipeline/render_pipeline_stage.h
   jxl/render_pipeline/simple_render_pipeline.cc
   jxl/render_pipeline/simple_render_pipeline.h

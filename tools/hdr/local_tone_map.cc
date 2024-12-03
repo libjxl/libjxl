@@ -115,7 +115,7 @@ StatusOr<ImageF> Upsample(const ImageF& image, ThreadPool* pool) {
     }
     return true;
   };
-  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
+  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), ThreadPool::NoInit,
                                process_row_h, "UpsampleHorizontally"));
 
   HWY_FULL(float) df;
@@ -150,7 +150,7 @@ StatusOr<ImageF> Upsample(const ImageF& image, ThreadPool* pool) {
     }
     return true;
   };
-  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
+  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), ThreadPool::NoInit,
                                process_row_v, "UpsampleVertically"));
   return upsampled;
 }
@@ -199,7 +199,7 @@ Status ApplyLocalToneMapping(const ImageF& blurred_luminances,
     }
     return true;
   };
-  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, color->ysize(), &ThreadPool::NoInit,
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, color->ysize(), ThreadPool::NoInit,
                                 process_row, "ApplyLocalToneMapping"));
 
   return true;
