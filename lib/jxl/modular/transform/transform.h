@@ -6,7 +6,6 @@
 #ifndef LIB_JXL_MODULAR_TRANSFORM_TRANSFORM_H_
 #define LIB_JXL_MODULAR_TRANSFORM_TRANSFORM_H_
 
-#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -18,6 +17,7 @@
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/squeeze_params.h"
 
 namespace jxl {
 
@@ -33,25 +33,6 @@ enum class TransformId : uint32_t {
 
   // Invalid for now.
   kInvalid = 3,
-};
-
-struct SqueezeParams : public Fields {
-  JXL_FIELDS_NAME(SqueezeParams)
-  bool horizontal;
-  bool in_place;
-  uint32_t begin_c;
-  uint32_t num_c;
-  SqueezeParams();
-  Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
-    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &horizontal));
-    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &in_place));
-    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Bits(3), BitsOffset(6, 8),
-                                           BitsOffset(10, 72),
-                                           BitsOffset(13, 1096), 0, &begin_c));
-    JXL_QUIET_RETURN_IF_ERROR(
-        visitor->U32(Val(1), Val(2), Val(3), BitsOffset(4, 4), 2, &num_c));
-    return true;
-  }
 };
 
 class Transform : public Fields {
@@ -78,62 +59,9 @@ class Transform : public Fields {
 
   explicit Transform(TransformId id);
   // default constructor for bundles.
-  Transform() : Transform(TransformId::kInvalid) {}
+  Transform();
 
-  Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
-    JXL_QUIET_RETURN_IF_ERROR(
-        visitor->U32(Val(static_cast<uint32_t>(TransformId::kRCT)),
-                     Val(static_cast<uint32_t>(TransformId::kPalette)),
-                     Val(static_cast<uint32_t>(TransformId::kSqueeze)),
-                     Val(static_cast<uint32_t>(TransformId::kInvalid)),
-                     static_cast<uint32_t>(TransformId::kRCT),
-                     reinterpret_cast<uint32_t *>(&id)));
-    if (id == TransformId::kInvalid) {
-      return JXL_FAILURE("Invalid transform ID");
-    }
-    if (visitor->Conditional(id == TransformId::kRCT ||
-                             id == TransformId::kPalette)) {
-      JXL_QUIET_RETURN_IF_ERROR(
-          visitor->U32(Bits(3), BitsOffset(6, 8), BitsOffset(10, 72),
-                       BitsOffset(13, 1096), 0, &begin_c));
-    }
-    if (visitor->Conditional(id == TransformId::kRCT)) {
-      // 0-41, default YCoCg.
-      JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(6), Bits(2), BitsOffset(4, 2),
-                                             BitsOffset(6, 10), 6, &rct_type));
-      if (rct_type >= 42) {
-        return JXL_FAILURE("Invalid transform RCT type");
-      }
-    }
-    if (visitor->Conditional(id == TransformId::kPalette)) {
-      JXL_QUIET_RETURN_IF_ERROR(
-          visitor->U32(Val(1), Val(3), Val(4), BitsOffset(13, 1), 3, &num_c));
-      JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
-          BitsOffset(8, 0), BitsOffset(10, 256), BitsOffset(12, 1280),
-          BitsOffset(16, 5376), 256, &nb_colors));
-      JXL_QUIET_RETURN_IF_ERROR(
-          visitor->U32(Val(0), BitsOffset(8, 1), BitsOffset(10, 257),
-                       BitsOffset(16, 1281), 0, &nb_deltas));
-      JXL_QUIET_RETURN_IF_ERROR(
-          visitor->Bits(4, static_cast<uint32_t>(Predictor::Zero),
-                        reinterpret_cast<uint32_t *>(&predictor)));
-      if (predictor >= Predictor::Best) {
-        return JXL_FAILURE("Invalid predictor");
-      }
-    }
-
-    if (visitor->Conditional(id == TransformId::kSqueeze)) {
-      uint32_t num_squeezes = static_cast<uint32_t>(squeezes.size());
-      JXL_QUIET_RETURN_IF_ERROR(
-          visitor->U32(Val(0), BitsOffset(4, 1), BitsOffset(6, 9),
-                       BitsOffset(8, 41), 0, &num_squeezes));
-      if (visitor->IsReading()) squeezes.resize(num_squeezes);
-      for (size_t i = 0; i < num_squeezes; i++) {
-        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&squeezes[i]));
-      }
-    }
-    return true;
-  }
+  Status VisitFields(Visitor *JXL_RESTRICT visitor) override;
 
   JXL_FIELDS_NAME(Transform)
 

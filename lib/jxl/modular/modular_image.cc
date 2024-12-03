@@ -17,6 +17,13 @@
 
 namespace jxl {
 
+StatusOr<Channel> Channel::Create(JxlMemoryManager *memory_manager, size_t iw,
+                                  size_t ih, int hsh, int vsh) {
+  JXL_ASSIGN_OR_RETURN(Plane<pixel_type> plane,
+                       Plane<pixel_type>::Create(memory_manager, iw, ih));
+  return Channel(std::move(plane), iw, ih, hsh, vsh);
+}
+
 void Image::undo_transforms(const weighted::Header &wp_header,
                             jxl::ThreadPool *pool) {
   while (!transform.empty()) {

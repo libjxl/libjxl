@@ -157,6 +157,7 @@ HWY_NOINLINE void TestFast709EFD() {
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
 }
 
+#if !JXL_HIGH_PRECISION
 HWY_NOINLINE void TestFastXYB() {
   if (!HasFastXYBTosRGB8()) return;
   ImageMetadata metadata;
@@ -217,6 +218,7 @@ HWY_NOINLINE void TestFastXYB() {
     }
   }
 }
+#endif  // !JXL_HIGH_PRECISION
 
 }  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -238,7 +240,10 @@ HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastErf);
 HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestCubeRoot);
 HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastSRGB);
 HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFast709EFD);
+
+#if !JXL_HIGH_PRECISION
 HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastXYB);
+#endif
 
 }  // namespace jxl
 #endif  // HWY_ONCE

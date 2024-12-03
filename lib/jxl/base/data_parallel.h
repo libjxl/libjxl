@@ -24,6 +24,8 @@
 
 namespace jxl {
 
+struct ThreadPoolNoInit {};
+
 class ThreadPool {
  public:
   ThreadPool(JxlParallelRunner runner, void* runner_opaque)
@@ -77,7 +79,7 @@ class ThreadPool {
   }
 
   // Use this as init_func when no initialization is needed.
-  static Status NoInit(size_t num_threads) { return true; }
+  static constexpr ThreadPoolNoInit NoInit{};
 
  private:
   // class holding the state of a Run() call to pass to the runner_ as an
@@ -135,6 +137,14 @@ Status RunOnPool(ThreadPool* pool, const uint32_t begin, const uint32_t end,
   } else {
     return pool->Run(begin, end, init_func, data_func, caller);
   }
+}
+
+template <class DataFunc>
+Status RunOnPool(ThreadPool* pool, const uint32_t begin, const uint32_t end,
+                 const ThreadPoolNoInit& no_init_func,
+                 const DataFunc& data_func, const char* caller) {
+  const auto init_func = [](size_t num_threads) -> Status { return true; };
+  return RunOnPool(pool, begin, end, init_func, data_func, caller);
 }
 
 }  // namespace jxl

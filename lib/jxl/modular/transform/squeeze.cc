@@ -13,7 +13,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/modular/modular_image.h"
-#include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/modular/transform/squeeze_params.h"
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/modular/transform/squeeze.cc"
 #include <hwy/foreach_target.h>
