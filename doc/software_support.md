@@ -71,15 +71,19 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 ## Image viewers
 
 - [Aspect](https://aspect.bildhuus.com)
+- [feh](https://github.com/derf/feh)
+- [Fossify-Gallery](https://github.com/FossifyOrg/Gallery)
 - [ImageGlass](https://imageglass.org/)
+- [imv](https://git.sr.ht/~exec64/imv/)
 - [IrfanView](https://www.irfanview.com/); supported since 4.59 - requires a [plugin](https://www.irfanview.com/plugins.htm) to be downloaded and enabled.
 - [jpegview](https://github.com/sylikc/jpegview/releases)
 - [Swayimg](https://github.com/artemsen/swayimg)
 - [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi/releases/tag/v0.12.1)
+- [timg](https://github.com/hzeller/timg)
 - [XnView](https://www.xnview.com/en/)
 - Any viewer based on Qt, KDE, GDK-pixbuf, EFL, ImageMagick, libvips or imlib2 (see above)
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
-  - GTK viewers: Eye of Gnome (eog), gThumb, Geeqie
+  - GTK viewers: Eye of Gnome (eog), Eye of Mate (eom), gThumb, Geeqie
   - EFL viewers: entice, ephoto
  
 ## Duplicate image finders
