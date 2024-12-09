@@ -15,6 +15,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -177,10 +178,9 @@ class ConvolveT {
 #endif
   }
 
-  // "Image" is ImageF or Image3F.
-  template <class Image, class Weights>
-  static void Run(const Image& in, const Rect& rect, const Weights& weights,
-                  ThreadPool* pool, Image* out) {
+  template <class Weights>
+  static void Run(const ImageF& in, const Rect& rect, const Weights& weights,
+                  ThreadPool* pool, ImageF* out) {
     JXL_DASSERT(SameSize(rect, *out));
     JXL_DASSERT(rect.xsize() >= MinWidth());
 
@@ -220,21 +220,6 @@ class ConvolveT {
     }
   }
 
-  // Image3F.
-  template <size_t kSizeModN, class Weights>
-  static JXL_INLINE void RunBorderRows(const Image3F& in, const Rect& rect,
-                                       const int64_t ybegin, const int64_t yend,
-                                       const Weights& weights, Image3F* out) {
-    const int64_t stride = in.PixelsPerRow();
-    for (int64_t y = ybegin; y < yend; ++y) {
-      for (size_t c = 0; c < 3; ++c) {
-        const WrapRowMirror wrap_row(in.Plane(c), rect.ysize());
-        RunRow<kSizeModN>(rect.ConstPlaneRow(in, c, y), rect.xsize(), stride,
-                          wrap_row, weights, out->PlaneRow(c, y));
-      }
-    }
-  }
-
   template <size_t kSizeModN, class Weights>
   static JXL_INLINE void RunInteriorRows(const ImageF& in, const Rect& rect,
                                          const int64_t ybegin,
@@ -253,31 +238,10 @@ class ConvolveT {
     JXL_DASSERT(status);
   }
 
-  // Image3F.
   template <size_t kSizeModN, class Weights>
-  static JXL_INLINE void RunInteriorRows(const Image3F& in, const Rect& rect,
-                                         const int64_t ybegin,
-                                         const int64_t yend,
-                                         const Weights& weights,
-                                         ThreadPool* pool, Image3F* out) {
-    const int64_t stride = in.PixelsPerRow();
-    const auto process_row = [&](const uint32_t y, size_t /*thread*/) HWY_ATTR {
-      for (size_t c = 0; c < 3; ++c) {
-        RunRow<kSizeModN>(rect.ConstPlaneRow(in, c, y), rect.xsize(), stride,
-                          WrapRowUnchanged(), weights, out->PlaneRow(c, y));
-      }
-      return true;
-    };
-    Status status = RunOnPool(pool, ybegin, yend, ThreadPool::NoInit,
-                              process_row, "Convolve3");
-    (void)status;
-    JXL_DASSERT(status);
-  }
-
-  template <size_t kSizeModN, class Image, class Weights>
-  static JXL_INLINE void RunRows(const Image& in, const Rect& rect,
+  static JXL_INLINE void RunRows(const ImageF& in, const Rect& rect,
                                  const Weights& weights, ThreadPool* pool,
-                                 Image* out) {
+                                 ImageF* out) {
     const int64_t ysize = rect.ysize();
     RunBorderRows<kSizeModN>(in, rect, 0,
                              std::min(static_cast<int64_t>(kRadius), ysize),
