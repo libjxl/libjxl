@@ -180,7 +180,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   const auto make_pixel = [](uint64_t v, pixel_type multiplier,
                              pixel_type_w offset) -> pixel_type {
     JXL_DASSERT((v & 0xFFFFFFFF) == v);
-    pixel_type_w val = UnpackSigned(v);
+    pixel_type_w val = static_cast<pixel_type_w>(UnpackSigned(v));
     // if it overflows, it overflows, and we have a problem anyway
     return val * multiplier + offset;
   };
