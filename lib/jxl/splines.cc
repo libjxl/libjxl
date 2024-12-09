@@ -237,13 +237,18 @@ Status DecodeAllStartingPoints(std::vector<Spline::Point>* const points,
   int64_t last_x = 0;
   int64_t last_y = 0;
   for (size_t i = 0; i < num_splines; i++) {
-    int64_t x =
+    size_t dx =
         reader->ReadHybridUint(kStartingPositionContext, br, context_map);
-    int64_t y =
+    size_t dy =
         reader->ReadHybridUint(kStartingPositionContext, br, context_map);
+    int64_t x;
+    int64_t y;
     if (i != 0) {
-      x = UnpackSigned(x) + last_x;
-      y = UnpackSigned(y) + last_y;
+      x = UnpackSigned(dx) + last_x;
+      y = UnpackSigned(dy) + last_y;
+    } else {
+      x = dx;
+      y = dy;
     }
     JXL_RETURN_IF_ERROR(ValidateSplinePointPos(x, y));
     points->emplace_back(static_cast<float>(x), static_cast<float>(y));
