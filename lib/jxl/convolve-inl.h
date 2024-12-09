@@ -242,18 +242,14 @@ class ConvolveT {
   static JXL_INLINE void RunRows(const ImageF& in, const Rect& rect,
                                  const Weights& weights, ThreadPool* pool,
                                  ImageF* out) {
+    constexpr int64_t r = static_cast<int64_t>(kRadius);
     const int64_t ysize = rect.ysize();
-    RunBorderRows<kSizeModN>(in, rect, 0,
-                             std::min(static_cast<int64_t>(kRadius), ysize),
-                             weights, out);
-    if (ysize > 2 * static_cast<int64_t>(kRadius)) {
-      RunInteriorRows<kSizeModN>(in, rect, static_cast<int64_t>(kRadius),
-                                 ysize - static_cast<int64_t>(kRadius), weights,
-                                 pool, out);
-    }
-    if (ysize > static_cast<int64_t>(kRadius)) {
-      RunBorderRows<kSizeModN>(in, rect, ysize - static_cast<int64_t>(kRadius),
-                               ysize, weights, out);
+    if (ysize <= 2 * r) {
+      RunBorderRows<kSizeModN>(in, rect, 0, ysize, weights, out);
+    } else {
+      RunBorderRows<kSizeModN>(in, rect, 0, r, weights, out);
+      RunInteriorRows<kSizeModN>(in, rect, r, ysize - r, weights, pool, out);
+      RunBorderRows<kSizeModN>(in, rect, ysize - r, ysize, weights, out);
     }
   }
 };
