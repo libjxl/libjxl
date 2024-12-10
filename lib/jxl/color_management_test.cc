@@ -368,7 +368,7 @@ TEST_F(ColorManagementTest, XYBProfile) {
 
   ImageMetadata metadata;
   metadata.color_encoding = c_native;
-  ImageBundle ib(memory_manager, &metadata);
+  ImageBundle img(memory_manager, &metadata);
   JXL_TEST_ASSIGN_OR_DIE(Image3F native,
                          Image3F::Create(memory_manager, kNumColors, 1));
   float mul = 1.0f / (kGridDim - 1);
@@ -381,11 +381,11 @@ TEST_F(ColorManagementTest, XYBProfile) {
       }
     }
   }
-  ASSERT_TRUE(ib.SetFromImage(std::move(native), c_native));
-  const Image3F& in = *ib.color();
+  ASSERT_TRUE(img.SetFromImage(std::move(native), c_native));
+  const Image3F& in = *img.color();
   JXL_TEST_ASSIGN_OR_DIE(Image3F opsin,
                          Image3F::Create(memory_manager, kNumColors, 1));
-  ASSERT_TRUE(ToXYB(ib, nullptr, &opsin, cms, nullptr));
+  ASSERT_TRUE(ToXYB(img, nullptr, &opsin, cms, nullptr));
 
   JXL_TEST_ASSIGN_OR_DIE(Image3F opsin2,
                          Image3F::Create(memory_manager, kNumColors, 1));

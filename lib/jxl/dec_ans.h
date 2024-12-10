@@ -304,8 +304,8 @@ class ANSSymbolReader {
                        lz77_min_length_;
         br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
         // Distance code.
-        size_t token = ReadSymbolWithoutRefill(lz77_ctx_, br);
-        size_t distance = ReadHybridUintConfig(configs[lz77_ctx_], token, br);
+        size_t d_token = ReadSymbolWithoutRefill(lz77_ctx_, br);
+        size_t distance = ReadHybridUintConfig(configs[lz77_ctx_], d_token, br);
         if (JXL_LIKELY(distance < num_special_distances_)) {
           distance = special_distances_[distance];
         } else {

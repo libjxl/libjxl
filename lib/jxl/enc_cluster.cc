@@ -326,13 +326,14 @@ Status ClusterHistograms(const HistogramParams& params,
         Histogram histo;
         histo.AddHistogram((*out)[first]);
         histo.AddHistogram((*out)[j]);
-        JXL_ASSIGN_OR_RETURN(float cost, ANSPopulationCost(histo.data_.data(),
-                                                           histo.data_.size()));
-        cost -= (*out)[first].entropy_ + (*out)[j].entropy_;
+        JXL_ASSIGN_OR_RETURN(
+            float merge_cost,
+            ANSPopulationCost(histo.data_.data(), histo.data_.size()));
+        merge_cost -= (*out)[first].entropy_ + (*out)[j].entropy_;
         // Avoid enqueueing pairs that are not advantageous to merge.
-        if (cost >= 0) continue;
+        if (merge_cost >= 0) continue;
         pairs_to_merge.push(
-            HistogramPair{cost, std::min(first, j), std::max(first, j),
+            HistogramPair{merge_cost, std::min(first, j), std::max(first, j),
                           std::max(version[first], version[j])});
       }
     }

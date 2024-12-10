@@ -443,11 +443,11 @@ Status SeparateMFAndHF(const ButteraugliParams& params, Image3F* mf, ImageF* hf,
         float* BUTTERAUGLI_RESTRICT row_mf = mf->PlaneRow(0, y);
         float* BUTTERAUGLI_RESTRICT row_hf = hf[0].Row(y);
         for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          auto mf = Load(d, row_mf + x);
-          auto hf = Sub(Load(d, row_hf + x), mf);
-          mf = RemoveRangeAroundZero(d, kRemoveMfRange, mf);
-          Store(mf, d, row_mf + x);
-          Store(hf, d, row_hf + x);
+          auto mfv = Load(d, row_mf + x);
+          auto hfv = Sub(Load(d, row_hf + x), mfv);
+          mfv = RemoveRangeAroundZero(d, kRemoveMfRange, mfv);
+          Store(mfv, d, row_mf + x);
+          Store(hfv, d, row_hf + x);
         }
       }
     } else {
@@ -455,12 +455,12 @@ Status SeparateMFAndHF(const ButteraugliParams& params, Image3F* mf, ImageF* hf,
         float* BUTTERAUGLI_RESTRICT row_mf = mf->PlaneRow(1, y);
         float* BUTTERAUGLI_RESTRICT row_hf = hf[1].Row(y);
         for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          auto mf = Load(d, row_mf + x);
-          auto hf = Sub(Load(d, row_hf + x), mf);
+          auto mfv = Load(d, row_mf + x);
+          auto hfv = Sub(Load(d, row_hf + x), mfv);
 
-          mf = AmplifyRangeAroundZero(d, kAddMfRange, mf);
-          Store(mf, d, row_mf + x);
-          Store(hf, d, row_hf + x);
+          mfv = AmplifyRangeAroundZero(d, kAddMfRange, mfv);
+          Store(mfv, d, row_mf + x);
+          Store(hfv, d, row_hf + x);
         }
       }
     }
@@ -501,12 +501,12 @@ Status SeparateHFAndUHF(const ButteraugliParams& params, ImageF* hf,
         float* BUTTERAUGLI_RESTRICT row_uhf = uhf[0].Row(y);
         float* BUTTERAUGLI_RESTRICT row_hf = hf[0].Row(y);
         for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          auto hf = Load(d, row_hf + x);
-          auto uhf = Sub(Load(d, row_uhf + x), hf);
-          hf = RemoveRangeAroundZero(d, kRemoveHfRange, hf);
-          uhf = RemoveRangeAroundZero(d, kRemoveUhfRange, uhf);
-          Store(hf, d, row_hf + x);
-          Store(uhf, d, row_uhf + x);
+          auto hfv = Load(d, row_hf + x);
+          auto uhfv = Sub(Load(d, row_uhf + x), hfv);
+          hfv = RemoveRangeAroundZero(d, kRemoveHfRange, hfv);
+          uhfv = RemoveRangeAroundZero(d, kRemoveUhfRange, uhfv);
+          Store(hfv, d, row_hf + x);
+          Store(uhfv, d, row_uhf + x);
         }
       }
     } else {
@@ -514,17 +514,17 @@ Status SeparateHFAndUHF(const ButteraugliParams& params, ImageF* hf,
         float* BUTTERAUGLI_RESTRICT row_uhf = uhf[1].Row(y);
         float* BUTTERAUGLI_RESTRICT row_hf = hf[1].Row(y);
         for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          auto hf = Load(d, row_hf + x);
-          hf = MaximumClamp(d, hf, kMaxclampHf);
+          auto hfv = Load(d, row_hf + x);
+          hfv = MaximumClamp(d, hfv, kMaxclampHf);
 
-          auto uhf = Sub(Load(d, row_uhf + x), hf);
-          uhf = MaximumClamp(d, uhf, kMaxclampUhf);
-          uhf = Mul(uhf, Set(d, kMulYUhf));
-          Store(uhf, d, row_uhf + x);
+          auto uhfv = Sub(Load(d, row_uhf + x), hfv);
+          uhfv = MaximumClamp(d, uhfv, kMaxclampUhf);
+          uhfv = Mul(uhfv, Set(d, kMulYUhf));
+          Store(uhfv, d, row_uhf + x);
 
-          hf = Mul(hf, Set(d, kMulYHf));
-          hf = AmplifyRangeAroundZero(d, kAddHfRange, hf);
-          Store(hf, d, row_hf + x);
+          hfv = Mul(hfv, Set(d, kMulYHf));
+          hfv = AmplifyRangeAroundZero(d, kAddHfRange, hfv);
+          Store(hfv, d, row_hf + x);
         }
       }
     }
@@ -1178,36 +1178,28 @@ void FuzzyErosion(const ImageF& from, ImageF* to) {
       float min1 = 2 * min0;
       float min2 = min1;
       if (x >= kStep) {
-        float v = from.Row(y)[x - kStep];
-        StoreMin3(v, min0, min1, min2);
+        StoreMin3(from.Row(y)[x - kStep], min0, min1, min2);
         if (y >= kStep) {
-          float v = from.Row(y - kStep)[x - kStep];
-          StoreMin3(v, min0, min1, min2);
+          StoreMin3(from.Row(y - kStep)[x - kStep], min0, min1, min2);
         }
         if (y < ysize - kStep) {
-          float v = from.Row(y + kStep)[x - kStep];
-          StoreMin3(v, min0, min1, min2);
+          StoreMin3(from.Row(y + kStep)[x - kStep], min0, min1, min2);
         }
       }
       if (x < xsize - kStep) {
-        float v = from.Row(y)[x + kStep];
-        StoreMin3(v, min0, min1, min2);
+        StoreMin3(from.Row(y)[x + kStep], min0, min1, min2);
         if (y >= kStep) {
-          float v = from.Row(y - kStep)[x + kStep];
-          StoreMin3(v, min0, min1, min2);
+          StoreMin3(from.Row(y - kStep)[x + kStep], min0, min1, min2);
         }
         if (y < ysize - kStep) {
-          float v = from.Row(y + kStep)[x + kStep];
-          StoreMin3(v, min0, min1, min2);
+          StoreMin3(from.Row(y + kStep)[x + kStep], min0, min1, min2);
         }
       }
       if (y >= kStep) {
-        float v = from.Row(y - kStep)[x];
-        StoreMin3(v, min0, min1, min2);
+        StoreMin3(from.Row(y - kStep)[x], min0, min1, min2);
       }
       if (y < ysize - kStep) {
-        float v = from.Row(y + kStep)[x];
-        StoreMin3(v, min0, min1, min2);
+        StoreMin3(from.Row(y + kStep)[x], min0, min1, min2);
       }
       to->Row(y)[x] = (0.45f * min0 + 0.3f * min1 + 0.25f * min2);
     }

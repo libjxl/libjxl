@@ -1838,14 +1838,14 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
                   JxlEncoderAddImageFrame(frame_settings, &frame.format,
                                           pixels.data(), pixels.size()));
       }
-      for (size_t i = 0; i < number_extra_channels; i++) {
+      for (size_t ec = 0; ec < number_extra_channels; ec++) {
         // Copy pixel data here because it is only guaranteed to be available
         // during the call to JxlEncoderSetExtraChannelBuffer().
         std::vector<uint8_t> ec_pixels(ec_frame.pixels_size);
         memcpy(ec_pixels.data(), ec_frame.pixels(), ec_pixels.size());
         EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetExtraChannelBuffer(
                                        frame_settings, &ec_frame.format,
-                                       ec_pixels.data(), ec_pixels.size(), i));
+                                       ec_pixels.data(), ec_pixels.size(), ec));
       }
     }
     JxlEncoderCloseInput(frame_settings->enc);

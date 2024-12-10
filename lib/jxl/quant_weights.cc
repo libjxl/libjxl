@@ -1241,18 +1241,18 @@ Status DequantMatrices::EnsureComputed(JxlMemoryManager* memory_manager,
   for (size_t table = 0; table < kNumQuantTables; table++) {
     if ((1 << table) & computed_kind_mask) continue;
     if ((1 << table) & ~kind_mask) continue;
-    size_t pos = offsets[table * 3];
+    size_t offset = offsets[table * 3];
     float* mutable_table = table_storage_.address<float>();
     if (encodings_[table].mode == QuantEncoding::kQuantModeLibrary) {
       JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(ComputeQuantTable)(
           library[table], mutable_table, mutable_table + kTotalTableSize, table,
-          QuantTable(table), &pos));
+          QuantTable(table), &offset));
     } else {
       JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(ComputeQuantTable)(
           encodings_[table], mutable_table, mutable_table + kTotalTableSize,
-          table, QuantTable(table), &pos));
+          table, QuantTable(table), &offset));
     }
-    JXL_ENSURE(pos == offsets[table * 3 + 3]);
+    JXL_ENSURE(offset == offsets[table * 3 + 3]);
   }
   computed_mask_ |= acs_mask;
 

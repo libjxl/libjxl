@@ -73,7 +73,7 @@ std::pair<uint32_t, uint32_t> ComputeUsedOrders(
   return {ret, ret_customize};
 }
 
-Status ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
+Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
                          const AcStrategyImage& ac_strategy,
                          const FrameDimensions& frame_dim,
                          uint32_t& all_used_orders, uint32_t prev_used_acs,
@@ -119,9 +119,9 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
                       kGroupDimInBlocks, kGroupDimInBlocks,
                       frame_dim.xsize_blocks, frame_dim.ysize_blocks);
       ConstACPtr rows[3];
-      ACType type = acs.Type();
+      ACType type = ac_image.Type();
       for (size_t c = 0; c < 3; c++) {
-        rows[c] = acs.PlaneRow(c, group_index, 0);
+        rows[c] = ac_image.PlaneRow(c, group_index, 0);
       }
       size_t ac_offset = 0;
 

@@ -65,8 +65,8 @@ class BlendingStage : public RenderPipelineStage {
 
     Status ok = verify_bg_size(bg);
     for (const auto& info : ec_info) {
-      const ImageBundle& bg = *state_.reference_frames[info.source].frame;
-      if (!!ok) ok = verify_bg_size(bg);
+      const ImageBundle& ec_bg = *state_.reference_frames[info.source].frame;
+      if (!!ok) ok = verify_bg_size(ec_bg);
     }
     if (!ok) {
       initialized_ = ok;

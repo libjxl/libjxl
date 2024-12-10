@@ -269,10 +269,10 @@ TEST(SplinesTest, DuplicatePoints) {
   std::vector<Spline> spline_data{spline};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
-  for (const Spline& spline : spline_data) {
+  for (const Spline& ospline : spline_data) {
     JXL_ASSIGN_OR_QUIT(
         QuantizedSpline qspline,
-        QuantizedSpline::Create(spline, kQuantizationAdjustment, kYToX, kYToB),
+        QuantizedSpline::Create(ospline, kQuantizationAdjustment, kYToX, kYToB),
         "Failed to create QuantizedSpline.");
     quantized_splines.emplace_back(std::move(qspline));
     starting_points.push_back(spline.control_points.front());
@@ -310,10 +310,10 @@ TEST(SplinesTest, Drawing) {
   std::vector<Spline> spline_data = {spline};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
-  for (const Spline& spline : spline_data) {
+  for (const Spline& ospline : spline_data) {
     JXL_ASSIGN_OR_QUIT(
         QuantizedSpline qspline,
-        QuantizedSpline::Create(spline, kQuantizationAdjustment, kYToX, kYToB),
+        QuantizedSpline::Create(ospline, kQuantizationAdjustment, kYToX, kYToB),
         "Failed to create QuantizedSpline.");
     quantized_splines.emplace_back(std::move(qspline));
     starting_points.push_back(spline.control_points.front());

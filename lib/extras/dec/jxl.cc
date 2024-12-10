@@ -540,22 +540,23 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
                            "Failed to create extra channel image.");
         frame.extra_channels.emplace_back(std::move(image));
         auto& ec = frame.extra_channels.back();
-        size_t buffer_size;
-        if (JXL_DEC_SUCCESS != JxlDecoderExtraChannelBufferSize(
-                                   dec, &ec_format, &buffer_size, eci.index)) {
+        size_t ec_buffer_size;
+        if (JXL_DEC_SUCCESS != JxlDecoderExtraChannelBufferSize(dec, &ec_format,
+                                                                &ec_buffer_size,
+                                                                eci.index)) {
           fprintf(stderr, "JxlDecoderExtraChannelBufferSize failed\n");
           return false;
         }
-        if (buffer_size != ec.pixels_size) {
+        if (ec_buffer_size != ec.pixels_size) {
           fprintf(stderr,
                   "Invalid extra channel buffer size"
                   " %" PRIuS " %" PRIuS "\n",
-                  buffer_size, ec.pixels_size);
+                  ec_buffer_size, ec.pixels_size);
           return false;
         }
         if (JXL_DEC_SUCCESS !=
             JxlDecoderSetExtraChannelBuffer(dec, &ec_format, ec.pixels(),
-                                            buffer_size, eci.index)) {
+                                            ec_buffer_size, eci.index)) {
           fprintf(stderr, "JxlDecoderSetExtraChannelBuffer failed\n");
           return false;
         }

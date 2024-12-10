@@ -67,6 +67,7 @@ else ()
       -Wno-unused-command-line-argument
       -Wprivate-header
       -Wself-assign
+      -Wshadow
       -Wstring-conversion
       -Wtautological-overlap-compare
       -Wthread-safety-analysis
