@@ -57,8 +57,8 @@ void DequantBlock(const int16_t* JXL_RESTRICT qblock,
     const auto not_0 = Gt(abs_quant, Zero(df));
     const auto sign_quant = Xor(quant, abs_quant);
     const auto biased_quant = Sub(quant, Xor(bias, sign_quant));
-    const auto dequant = IfThenElseZero(not_0, Mul(biased_quant, mul));
-    Store(dequant, d, block + k);
+    const auto deq = IfThenElseZero(not_0, Mul(biased_quant, mul));
+    Store(deq, d, block + k);
   }
 }
 

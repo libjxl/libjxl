@@ -161,7 +161,7 @@ HWY_NOINLINE void TestFast709EFD() {
 HWY_NOINLINE void TestFastXYB() {
   if (!HasFastXYBTosRGB8()) return;
   ImageMetadata metadata;
-  ImageBundle ib(jxl::test::MemoryManager(), &metadata);
+  ImageBundle img(jxl::test::MemoryManager(), &metadata);
   int scaling = 1;
   int n = 256 * scaling;
   float inv_scaling = 1.0f / scaling;
@@ -185,12 +185,12 @@ HWY_NOINLINE void TestFastXYB() {
             }
           }
         }
-        ASSERT_TRUE(ib.SetFromImage(std::move(chunk), ColorEncoding::SRGB()));
+        ASSERT_TRUE(img.SetFromImage(std::move(chunk), ColorEncoding::SRGB()));
         JXL_TEST_ASSIGN_OR_DIE(Image3F xyb,
                                Image3F::Create(jxl::test::MemoryManager(),
                                                kChunk * kChunk, kChunk));
         std::vector<uint8_t> roundtrip(kChunk * kChunk * kChunk * 3);
-        ASSERT_TRUE(ToXYB(ib, nullptr, &xyb, *JxlGetDefaultCms()));
+        ASSERT_TRUE(ToXYB(img, nullptr, &xyb, *JxlGetDefaultCms()));
         for (int y = 0; y < kChunk; y++) {
           const float* xyba[4] = {xyb.PlaneRow(0, y), xyb.PlaneRow(1, y),
                                   xyb.PlaneRow(2, y), nullptr};

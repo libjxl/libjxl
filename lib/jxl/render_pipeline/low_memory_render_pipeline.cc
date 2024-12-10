@@ -772,11 +772,11 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
       // current frame.
       size_t x0 =
           i < first_image_dim_stage_ ? full_image_x0 - frame_x0 : full_image_x0;
-      size_t y =
+      size_t y0 =
           i < first_image_dim_stage_ ? full_image_y - frame_y0 : full_image_y;
       JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
           input_rows[first_trailing_stage_], output_rows,
-          /*xextra=*/0, full_image_x1 - full_image_x0, x0, y, thread_id));
+          /*xextra=*/0, full_image_x1 - full_image_x0, x0, y0, thread_id));
     }
   }
   return true;

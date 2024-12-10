@@ -94,7 +94,7 @@ Status PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
         add_num(kPatchOffsetContext,
                 PackSigned(pos.y - pdic.positions_[j - 1].y));
       }
-      for (size_t j = 0; j < blending_stride; ++j, ++blend_pos) {
+      for (size_t k = 0; k < blending_stride; ++k, ++blend_pos) {
         const PatchBlending& info = pdic.blendings_[blend_pos];
         add_num(kPatchBlendModeContext, static_cast<uint32_t>(info.mode));
         if (UsesAlpha(info.mode) && choose_alpha) {

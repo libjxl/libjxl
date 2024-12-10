@@ -237,7 +237,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         const pixel_type *JXL_RESTRICT rtop = (y ? channel.Row(y - 1) : r - 1);
         const pixel_type *JXL_RESTRICT rtopleft =
             (y ? channel.Row(y - 1) - 1 : r - 1);
-        pixel_type_w guess = (y ? rtop[0] : 0);
+        pixel_type_w guess_0 = (y ? rtop[0] : 0);
         if (fl_run == 0) {
           reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &fl_v,
                                                      &fl_run);
@@ -245,7 +245,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         } else {
           fl_run--;
         }
-        r[0] = sv + guess;
+        r[0] = sv + guess_0;
         for (size_t x = 1; x < channel.w; x++) {
           pixel_type left = r[x - 1];
           pixel_type top = rtop[x];

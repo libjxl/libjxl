@@ -194,14 +194,14 @@ void EncodeDHT(j_compress_ptr cinfo, size_t offset, size_t num) {
   data[pos++] = 0xC4;
   data[pos++] = marker_len >> 8u;
   data[pos++] = marker_len & 0xFFu;
-  for (size_t i = 0; i < num; ++i) {
-    const JHUFF_TBL& table = m->huffman_tables[offset + i];
+  for (size_t t = 0; t < num; ++t) {
+    const JHUFF_TBL& table = m->huffman_tables[offset + t];
     if (table.sent_table) continue;
     size_t total_count = 0;
     for (size_t i = 0; i <= kJpegHuffmanMaxBitLength; ++i) {
       total_count += table.bits[i];
     }
-    data[pos++] = m->slot_id_map[offset + i];
+    data[pos++] = m->slot_id_map[offset + t];
     for (size_t i = 1; i <= kJpegHuffmanMaxBitLength; ++i) {
       data[pos++] = table.bits[i];
     }
@@ -316,9 +316,9 @@ void WriteTokens(j_compress_ptr cinfo, int scan_index, JpegBitWriter* bw) {
   size_t restart_idx = 0;
   size_t next_restart = sti.restarts[restart_idx];
   uint8_t* context_map = m->context_map;
-  for (size_t i = 0; i < num_token_arrays; ++i) {
-    Token* tokens = m->token_arrays[i].tokens;
-    size_t num_tokens = m->token_arrays[i].num_tokens;
+  for (size_t ta = 0; ta < num_token_arrays; ++ta) {
+    Token* tokens = m->token_arrays[ta].tokens;
+    size_t num_tokens = m->token_arrays[ta].num_tokens;
     if (sti.token_offset < total_tokens + num_tokens &&
         total_tokens < sti.token_offset + sti.num_tokens) {
       size_t start_ix =

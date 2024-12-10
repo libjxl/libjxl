@@ -374,17 +374,19 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
         size_t ec_index = dis(mt);
         // There is also a probability no extra channel is chosen
         if (ec_index < info.num_extra_channels) {
-          size_t ec_index = info.num_extra_channels - 1;
+          // TODO(eustas): that looks suspicious to me
+          size_t last_ec_index = info.num_extra_channels - 1;
           size_t ec_size;
-          if (JXL_DEC_SUCCESS != JxlDecoderExtraChannelBufferSize(
-                                     dec.get(), &format, &ec_size, ec_index)) {
+          if (JXL_DEC_SUCCESS !=
+              JxlDecoderExtraChannelBufferSize(dec.get(), &format, &ec_size,
+                                               last_ec_index)) {
             return false;
           }
           extra_channel_pixels.resize(ec_size);
           if (JXL_DEC_SUCCESS !=
               JxlDecoderSetExtraChannelBuffer(dec.get(), &format,
                                               extra_channel_pixels.data(),
-                                              ec_size, ec_index)) {
+                                              ec_size, last_ec_index)) {
             return false;
           }
         }

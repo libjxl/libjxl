@@ -84,8 +84,8 @@ struct CompressParams {
 
   JxlCmsInterface cms;
   bool cms_set = false;
-  void SetCms(const JxlCmsInterface& cms) {
-    this->cms = cms;
+  void SetCms(const JxlCmsInterface& new_cms) {
+    cms = new_cms;
     cms_set = true;
   }
 

@@ -604,10 +604,10 @@ struct AdaptiveQuantizationImpl {
       }
       if (y % 4 == 3) {
         float* row_d_out = pre_erosion[thread].Row((y - y_start) / 4);
-        for (size_t x = 0; x < (x_end - x_start) / 4; x++) {
-          row_d_out[x] = (row_out[x * 4] + row_out[x * 4 + 1] +
-                          row_out[x * 4 + 2] + row_out[x * 4 + 3]) *
-                         0.25f;
+        for (size_t qx = 0; qx < (x_end - x_start) / 4; qx++) {
+          row_d_out[qx] = (row_out[qx * 4] + row_out[qx * 4 + 1] +
+                           row_out[qx * 4 + 2] + row_out[qx * 4 + 3]) *
+                          0.25f;
         }
       }
     }

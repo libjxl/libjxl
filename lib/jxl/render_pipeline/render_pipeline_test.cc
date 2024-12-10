@@ -291,14 +291,14 @@ StatusOr<Splines> CreateTestSplines() {
   std::vector<Spline> spline_data = {spline};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
-  for (const Spline& spline : spline_data) {
+  for (const Spline& ospline : spline_data) {
     JXL_ASSIGN_OR_RETURN(
         QuantizedSpline qspline,
-        QuantizedSpline::Create(spline, /*quantization_adjustment=*/0,
+        QuantizedSpline::Create(ospline, /*quantization_adjustment=*/0,
                                 color_correlation.YtoXRatio(0),
                                 color_correlation.YtoBRatio(0)));
     quantized_splines.emplace_back(std::move(qspline));
-    starting_points.push_back(spline.control_points.front());
+    starting_points.push_back(ospline.control_points.front());
   }
   return Splines(/*quantization_adjustment=*/0, std::move(quantized_splines),
                  std::move(starting_points));
