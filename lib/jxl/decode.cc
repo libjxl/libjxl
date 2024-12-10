@@ -6,6 +6,7 @@
 #include <jxl/decode.h>
 #include <jxl/types.h>
 #include <jxl/version.h>
+#include <jxl/cms.h>
 
 #include <algorithm>
 #include <array>
@@ -2336,6 +2337,10 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec,
   dec->passes_state->output_encoding_info.color_management_system = cms;
   dec->passes_state->output_encoding_info.cms_set = true;
   return JXL_DEC_SUCCESS;
+}
+
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetDefaultCms(JxlDecoder* dec) {
+  return JxlDecoderSetCms(dec, *JxlGetDefaultCms());
 }
 
 static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
