@@ -95,3 +95,8 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [jpegxl.io](https://jpegxl.io/)
 - [EXIF Viewer](https://stefan-oltmann.de/exif-viewer)
 - [Immich](https://immich.app/), a self-hosted image gallery service
+
+## 3D Software
+
+- [Okino PolyTrans|CAD+DCC 3D Conversion System](https://www.okino.com/conv/conv.htm)
+- [Okino NuGraf|CAD+DCC 3D Visualization and Conversion System](https://www.okino.com)
