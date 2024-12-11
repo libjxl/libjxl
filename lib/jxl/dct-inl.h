@@ -69,9 +69,9 @@ struct CoeffBundle {
   }
   static void B(float* JXL_RESTRICT coeff) {
     auto sqrt2 = Set(FV<SZ>(), kSqrt2);
-    auto in1 = Load(FV<SZ>(), coeff);
-    auto in2 = Load(FV<SZ>(), coeff + SZ);
-    Store(MulAdd(in1, sqrt2, in2), FV<SZ>(), coeff);
+    auto in1_0 = Load(FV<SZ>(), coeff);
+    auto in2_0 = Load(FV<SZ>(), coeff + SZ);
+    Store(MulAdd(in1_0, sqrt2, in2_0), FV<SZ>(), coeff);
     for (size_t i = 1; i + 1 < N; i++) {
       auto in1 = Load(FV<SZ>(), coeff + i * SZ);
       auto in2 = Load(FV<SZ>(), coeff + (i + 1) * SZ);

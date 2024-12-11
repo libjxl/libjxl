@@ -397,19 +397,19 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
                (*tree)[pos].predictor != Predictor::Weighted);
           bool zero_entropy_side = rcost == 0 || lcost == 0;
 
-          SplitInfo &best =
+          SplitInfo &best_ref =
               prop < kNumStaticProperties
                   ? (zero_entropy_side ? best_split_static_constant
                                        : best_split_static)
                   : (adds_wp ? best_split_nonstatic : best_split_nowp);
-          if (lcost + rcost < best.Cost()) {
-            best.prop = prop;
-            best.val = i;
-            best.pos = split;
-            best.lcost = lcost;
-            best.lpred = costs_l[i - first_used].pred;
-            best.rcost = rcost;
-            best.rpred = costs_r[i - first_used].pred;
+          if (lcost + rcost < best_ref.Cost()) {
+            best_ref.prop = prop;
+            best_ref.val = i;
+            best_ref.pos = split;
+            best_ref.lcost = lcost;
+            best_ref.lpred = costs_l[i - first_used].pred;
+            best_ref.rcost = rcost;
+            best_ref.rpred = costs_r[i - first_used].pred;
           }
         }
         // Clear extra_bits_increase and cost_increase for last_used.
@@ -610,14 +610,14 @@ void TreeSamples::AddToTable(size_t a) {
   }
 }
 
-void TreeSamples::PrepareForSamples(size_t num_samples) {
+void TreeSamples::PrepareForSamples(size_t extra_num_samples) {
   for (auto &res : residuals) {
-    res.reserve(res.size() + num_samples);
+    res.reserve(res.size() + extra_num_samples);
   }
   for (auto &p : props) {
-    p.reserve(p.size() + num_samples);
+    p.reserve(p.size() + extra_num_samples);
   }
-  size_t total_num_samples = num_samples + sample_counts.size();
+  size_t total_num_samples = extra_num_samples + sample_counts.size();
   size_t next_size = CeilLog2Nonzero(total_num_samples * 3 / 2);
   InitTable(next_size);
 }

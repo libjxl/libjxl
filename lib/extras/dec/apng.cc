@@ -1220,15 +1220,14 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         for (size_t y = 0; y < ysize; y++) {
           JXL_RETURN_IF_ERROR(
               PackedImage::ValidateDataType(new_data.format.data_type));
-          size_t bytes_per_pixel =
+          size_t pixel_stride =
               PackedImage::BitsPerChannel(new_data.format.data_type) *
               new_data.format.num_channels / 8;
           memcpy(
               static_cast<uint8_t*>(new_data.pixels()) +
-                  new_data.stride * (y + y0 - py0) +
-                  bytes_per_pixel * (x0 - px0),
+                  new_data.stride * (y + y0 - py0) + pixel_stride * (x0 - px0),
               static_cast<const uint8_t*>(pixels.pixels()) + pixels.stride * y,
-              xsize * bytes_per_pixel);
+              xsize * pixel_stride);
         }
 
         x0 = px0;
