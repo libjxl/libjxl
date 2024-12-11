@@ -188,8 +188,8 @@ jobs:
         # Should be already installed:
         #  brew install brotli giflib jpeg-turbo libpng zlib
         # Not required, since we skip building documentation
-        #  brew install doxygen
-        brew install binutils ccache coreutils google-benchmark googletest ninja sdl2
+        #  brew install doxygen graphviz
+        brew install binutils ccache coreutils google-benchmark googletest libavif ninja openexr sdl2 webp
 
     - name: Checkout the source
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
