@@ -522,6 +522,7 @@ cmd_coverage_report() {
   local gcovr_args=(
     -r "${real_build_dir}"
     --gcov-executable "${LLVM_COV} gcov"
+    --gcov-ignore-parse-errors suspicious_hits.warn_once_per_file
     # Only print coverage information for the libjxl directories. The rest
     # is not part of the code under test.
     --filter '.*jxl/.*'
