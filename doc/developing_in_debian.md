@@ -35,7 +35,7 @@ the following packages:
 
 ```bash
 sudo apt install qt6-base-dev libwebp-dev libgimp2.0-dev libopenexr-dev \
-  libgtest-dev libbenchmark-dev libbenchmark-tools
+  libgtest-dev libbenchmark-dev libbenchmark-tools xdg-utils
 ```
 
 For the lint/coverage commands, you will also need additional packages:

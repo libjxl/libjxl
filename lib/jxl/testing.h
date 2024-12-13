@@ -43,7 +43,7 @@
 #define JXL_X86_64_TEST_P(T, C) TEST_P(T, C)
 #else
 #define JXL_X86_64_TEST(T, C) TEST(T, DISABLED_##C)
-#define JXL_X86_64_TEST_P(T, C) TEST_P(T, C)
+#define JXL_X86_64_TEST_P(T, C) TEST_P(T, DISABLED_##C)
 #endif  // defined(__x86_64__)
 
 // googletest before 1.10 didn't define INSTANTIATE_TEST_SUITE_P() but instead
