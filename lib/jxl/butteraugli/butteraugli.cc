@@ -33,6 +33,7 @@
 #include <memory>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/image.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -1404,7 +1405,7 @@ static void L2DiffAsymmetric(const ImageF& i0, const ImageF& i1, float w_0gt1,
 template <class DF, class V>
 V Gamma(const DF df, V v) {
   // ln(2) constant folded in because we want std::log but have FastLog2f.
-  const auto kRetMul = Set(df, 19.245013259874995f * 0.693147180559945f);
+  const auto kRetMul = Set(df, 19.245013259874995f * kInvLog2e);
   const auto kRetAdd = Set(df, -23.16046239805755);
   // This should happen rarely, but may lead to a NaN in log, which is
   // undesirable. Since negative photons don't exist we solve the NaNs by
