@@ -72,7 +72,8 @@ void BM_GaussBlur2d(benchmark::State& state) {
   const auto rg = CreateRecursiveGaussian(sigma);
   for (auto _ : state) {
     BM_CHECK(FastGaussian(
-        rg, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+        memory_manager, rg, in.xsize(), in.ysize(),
+        [&](size_t y) { return in.ConstRow(y); },
         [&](size_t y) { return temp.Row(y); },
         [&](size_t y) { return out.Row(y); }));
     // Prevent optimizing out
