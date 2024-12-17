@@ -5,11 +5,15 @@
 
 #include "tools/gauss_blur.h"
 
+#include <jxl/memory_manager.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tools/gauss_blur.cc"
@@ -200,7 +204,8 @@ void FastGaussian1D(const RecursiveGaussian& rg, const intptr_t xsize,
 }
 
 // Ring buffer is for n, n-1, n-2; round up to 4 for faster modulo.
-constexpr size_t kMod = 4;
+constexpr size_t kRingBufferLen = 1 << 2;
+constexpr size_t kRingBufferMask = kRingBufferLen - 1;
 
 // Avoids an unnecessary store during warmup.
 struct OutputNone {
@@ -255,38 +260,37 @@ class TwoInputs {
 template <size_t kVectors, class V, class Input, class Output>
 void VerticalBlock(const V& d1_1, const V& d1_3, const V& d1_5, const V& n2_1,
                    const V& n2_3, const V& n2_5, const Input& input,
-                   size_t& ctr, float* ring_buffer, const Output output,
+                   const ssize_t n, float* ring_buffer, const Output output,
                    float* JXL_RESTRICT out_pos) {
   const HWY_FULL(float) d;
-  constexpr size_t kVN = MaxLanes(d);
   // More cache-friendly to process an entirely cache line at a time
-  constexpr size_t kLanes = kVectors * kVN;
+  constexpr size_t kLanes = kVectors * Lanes(d);
 
-  float* JXL_RESTRICT y_1 = ring_buffer + 0 * kLanes * kMod;
-  float* JXL_RESTRICT y_3 = ring_buffer + 1 * kLanes * kMod;
-  float* JXL_RESTRICT y_5 = ring_buffer + 2 * kLanes * kMod;
+  float* JXL_RESTRICT y_1 = ring_buffer + 0 * kLanes * kRingBufferLen;
+  float* JXL_RESTRICT y_3 = ring_buffer + 1 * kLanes * kRingBufferLen;
+  float* JXL_RESTRICT y_5 = ring_buffer + 2 * kLanes * kRingBufferLen;
 
-  const size_t n_0 = (++ctr) % kMod;
-  const size_t n_1 = (ctr - 1) % kMod;
-  const size_t n_2 = (ctr - 2) % kMod;
+  const size_t n_0 = (n - 0) & kRingBufferMask;
+  const size_t n_1 = (n - 1) & kRingBufferMask;
+  const size_t n_2 = (n - 2) & kRingBufferMask;
 
-  for (size_t idx_vec = 0; idx_vec < kVectors; ++idx_vec) {
-    const V sum = input(idx_vec * kVN);
+  for (size_t idx_vec = 0; idx_vec < kLanes; idx_vec += Lanes(d)) {
+    const V sum = input(idx_vec);
 
-    const V y_n1_1 = Load(d, y_1 + kLanes * n_1 + idx_vec * kVN);
-    const V y_n1_3 = Load(d, y_3 + kLanes * n_1 + idx_vec * kVN);
-    const V y_n1_5 = Load(d, y_5 + kLanes * n_1 + idx_vec * kVN);
-    const V y_n2_1 = Load(d, y_1 + kLanes * n_2 + idx_vec * kVN);
-    const V y_n2_3 = Load(d, y_3 + kLanes * n_2 + idx_vec * kVN);
-    const V y_n2_5 = Load(d, y_5 + kLanes * n_2 + idx_vec * kVN);
+    const V y_n1_1 = Load(d, y_1 + kLanes * n_1 + idx_vec);
+    const V y_n1_3 = Load(d, y_3 + kLanes * n_1 + idx_vec);
+    const V y_n1_5 = Load(d, y_5 + kLanes * n_1 + idx_vec);
+    const V y_n2_1 = Load(d, y_1 + kLanes * n_2 + idx_vec);
+    const V y_n2_3 = Load(d, y_3 + kLanes * n_2 + idx_vec);
+    const V y_n2_5 = Load(d, y_5 + kLanes * n_2 + idx_vec);
     // (35)
     const V y1 = MulAdd(n2_1, sum, NegMulSub(d1_1, y_n1_1, y_n2_1));
     const V y3 = MulAdd(n2_3, sum, NegMulSub(d1_3, y_n1_3, y_n2_3));
     const V y5 = MulAdd(n2_5, sum, NegMulSub(d1_5, y_n1_5, y_n2_5));
-    Store(y1, d, y_1 + kLanes * n_0 + idx_vec * kVN);
-    Store(y3, d, y_3 + kLanes * n_0 + idx_vec * kVN);
-    Store(y5, d, y_5 + kLanes * n_0 + idx_vec * kVN);
-    output(Add(y1, Add(y3, y5)), out_pos, idx_vec * kVN);
+    Store(y1, d, y_1 + kLanes * n_0 + idx_vec);
+    Store(y3, d, y_3 + kLanes * n_0 + idx_vec);
+    Store(y5, d, y_5 + kLanes * n_0 + idx_vec);
+    output(Add(y1, Add(y3, y5)), out_pos, idx_vec);
   }
   // NOTE: flushing cache line out_pos hurts performance - less so with
   // clflushopt than clflush but still a significant slowdown.
@@ -295,16 +299,14 @@ void VerticalBlock(const V& d1_1, const V& d1_3, const V& d1_5, const V& n2_1,
 // Reads/writes one block (kVectors full vectors) in each row.
 template <size_t kVectors>
 void VerticalStrip(const RecursiveGaussian& rg, const size_t x,
-                   const size_t ysize, const GetConstRow& in,
-                   const GetRow& out) {
+                   const size_t ysize, float* ring_buffer, const float* zero,
+                   const GetConstRow& in, const GetRow& out) {
   // We're iterating vertically, so use multiple full-length vectors (each lane
   // is one column of row n).
   using D = HWY_FULL(float);
   using V = Vec<D>;
   const D d;
-  constexpr size_t kVN = MaxLanes(d);
   // More cache-friendly to process an entirely cache line at a time
-  constexpr size_t kLanes = kVectors * kVN;
 #if HWY_TARGET == HWY_SCALAR
   const V d1_1 = Set(d, rg.d1[0 * 4]);
   const V d1_3 = Set(d, rg.d1[1 * 4]);
@@ -323,9 +325,8 @@ void VerticalStrip(const RecursiveGaussian& rg, const size_t x,
 
   const size_t N = rg.radius;
 
-  size_t ctr = 0;
-  HWY_ALIGN float ring_buffer[3 * kLanes * kMod] = {0};
-  HWY_ALIGN static constexpr float zero[kLanes] = {0};
+  memset(ring_buffer, 0,
+         3 * kVectors * Lanes(d) * kRingBufferLen * sizeof(float));
 
   // Warmup: top is out of bounds (zero padded), bottom is usually in-bounds.
   ssize_t n = -static_cast<ssize_t>(N) + 1;
@@ -334,7 +335,7 @@ void VerticalStrip(const RecursiveGaussian& rg, const size_t x,
     const size_t bottom = n + N - 1;
     VerticalBlock<kVectors>(d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
                             SingleInput(bottom < ysize ? in(bottom) + x : zero),
-                            ctr, ring_buffer, OutputNone(), nullptr);
+                            n, ring_buffer, OutputNone(), nullptr);
   }
 
   // Start producing output; top is still out of bounds.
@@ -342,7 +343,7 @@ void VerticalStrip(const RecursiveGaussian& rg, const size_t x,
     const size_t bottom = n + N - 1;
     VerticalBlock<kVectors>(d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
                             SingleInput(bottom < ysize ? in(bottom) + x : zero),
-                            ctr, ring_buffer, OutputStore(), out(n) + x);
+                            n, ring_buffer, OutputStore(), out(n) + x);
   }
 
   // Interior outputs with prefetching and without bounds checks.
@@ -351,7 +352,7 @@ void VerticalStrip(const RecursiveGaussian& rg, const size_t x,
     const size_t top = n - N - 1;
     const size_t bottom = n + N - 1;
     VerticalBlock<kVectors>(d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
-                            TwoInputs(in(top) + x, in(bottom) + x), ctr,
+                            TwoInputs(in(top) + x, in(bottom) + x), n,
                             ring_buffer, OutputStore(), out(n) + x);
     hwy::Prefetch(in(top + kPrefetchRows) + x);
     hwy::Prefetch(in(bottom + kPrefetchRows) + x);
@@ -363,31 +364,48 @@ void VerticalStrip(const RecursiveGaussian& rg, const size_t x,
     const size_t bottom = n + N - 1;
     VerticalBlock<kVectors>(
         d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
-        TwoInputs(in(top) + x, bottom < ysize ? in(bottom) + x : zero), ctr,
+        TwoInputs(in(top) + x, bottom < ysize ? in(bottom) + x : zero), n,
         ring_buffer, OutputStore(), out(n) + x);
   }
 }
 
 // Apply 1D vertical scan to multiple columns (one per vector lane).
 // Not yet parallelized.
-void FastGaussianVertical(const RecursiveGaussian& rg, const size_t xsize,
-                          const size_t ysize, const GetConstRow& in,
-                          const GetRow& out, ThreadPool* /* pool */) {
+Status FastGaussianVertical(JxlMemoryManager* memory_manager,
+                            const RecursiveGaussian& rg, const size_t xsize,
+                            const size_t ysize, const GetConstRow& in,
+                            const GetRow& out, ThreadPool* /* pool */) {
   const HWY_FULL(float) df;
   constexpr size_t kCacheLineLanes = 64 / sizeof(float);
-  constexpr size_t kVN = MaxLanes(df);
-  constexpr size_t kCacheLineVectors =
-      (kVN < kCacheLineLanes) ? (kCacheLineLanes / kVN) : 4;
-  constexpr size_t kFastPace = kCacheLineVectors * kVN;
-
-  // TODO(eustas): why pool is unused?
+  const size_t unroll = std::max<size_t>(kCacheLineLanes / Lanes(df), 4);
+  const size_t fast_pace = unroll * Lanes(df);
+  const size_t scratch_size =
+      fast_pace * sizeof(float) * (1 + 3 * kRingBufferLen);
+  JXL_ASSIGN_OR_RETURN(AlignedMemory mem,
+                       AlignedMemory::Create(memory_manager, scratch_size));
+  float* zero = mem.address<float>();
+  float* ring_buffer = zero + fast_pace;
+  memset(zero, 0, fast_pace * sizeof(float));
   size_t x = 0;
-  for (; x + kFastPace <= xsize; x += kFastPace) {
-    VerticalStrip<kCacheLineVectors>(rg, x, ysize, in, out);
+  if (unroll == 4) {
+    for (; x + fast_pace <= xsize; x += fast_pace) {
+      VerticalStrip<4>(rg, x, ysize, ring_buffer, zero, in, out);
+    }
+  } else if (unroll == 8) {
+    for (; x + fast_pace <= xsize; x += fast_pace) {
+      VerticalStrip<8>(rg, x, ysize, ring_buffer, zero, in, out);
+    }
+  } else if (unroll == 16) {
+    for (; x + fast_pace <= xsize; x += fast_pace) {
+      VerticalStrip<16>(rg, x, ysize, ring_buffer, zero, in, out);
+    }
+  } else {
+    JXL_UNREACHABLE("Unexpected vector size");
   }
-  for (; x < xsize; x += kVN) {
-    VerticalStrip<1>(rg, x, ysize, in, out);
+  for (; x < xsize; x += Lanes(df)) {
+    VerticalStrip<1>(rg, x, ysize, ring_buffer, zero, in, out);
   }
+  return true;
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -522,13 +540,14 @@ Status FastGaussianHorizontal(const RecursiveGaussian& rg, const size_t xsize,
 
 }  // namespace
 
-Status FastGaussian(const RecursiveGaussian& rg, const size_t xsize,
+Status FastGaussian(JxlMemoryManager* memory_manager,
+                    const RecursiveGaussian& rg, const size_t xsize,
                     const size_t ysize, const GetConstRow& in,
                     const GetRow& temp, const GetRow& out, ThreadPool* pool) {
   JXL_RETURN_IF_ERROR(FastGaussianHorizontal(rg, xsize, ysize, in, temp, pool));
   GetConstRow temp_in = [&](size_t y) { return temp(y); };
-  HWY_DYNAMIC_DISPATCH(FastGaussianVertical)
-  (rg, xsize, ysize, temp_in, out, pool);
+  JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(FastGaussianVertical)(
+      memory_manager, rg, xsize, ysize, temp_in, out, pool));
   return true;
 }
 

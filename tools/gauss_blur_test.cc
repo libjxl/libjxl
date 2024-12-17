@@ -215,7 +215,8 @@ void TestDirac2D(size_t xsize, size_t ysize, double sigma) {
                          ImageF::Create(memory_manager, xsize, ysize));
   const auto rg = CreateRecursiveGaussian(sigma);
   ASSERT_TRUE(FastGaussian(
-      rg, xsize, ysize, [&](size_t y) { return in.ConstRow(y); },
+      memory_manager, rg, xsize, ysize,
+      [&](size_t y) { return in.ConstRow(y); },
       [&](size_t y) { return temp.Row(y); },
       [&](size_t y) { return out.Row(y); }));
 
@@ -329,7 +330,8 @@ void TestRandom(size_t xsize, size_t ysize, float min, float max, double sigma,
                          ImageF::Create(memory_manager, xsize, ysize));
   const auto rg = CreateRecursiveGaussian(sigma);
   ASSERT_TRUE(FastGaussian(
-      rg, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+      memory_manager, rg, in.xsize(), in.ysize(),
+      [&](size_t y) { return in.ConstRow(y); },
       [&](size_t y) { return temp.Row(y); },
       [&](size_t y) { return out.Row(y); }));
 
@@ -573,7 +575,8 @@ TEST(GaussBlurTest, TestSign) {
                          ImageF::Create(memory_manager, xsize, ysize));
   const auto rg = CreateRecursiveGaussian(sigma);
   ASSERT_TRUE(FastGaussian(
-      rg, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+      memory_manager, rg, in.xsize(), in.ysize(),
+      [&](size_t y) { return in.ConstRow(y); },
       [&](size_t y) { return temp.Row(y); },
       [&](size_t y) { return out_rg.Row(y); }));
 
