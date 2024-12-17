@@ -150,6 +150,53 @@ class Separable5Strategy {
   }
 
  private:
+#if HWY_TARGET != HWY_SCALAR
+  // Returns indices for SetTableIndices such that TableLookupLanes on the
+  // rightmost unaligned vector (rightmost sample in its most-significant lane)
+  // returns the mirrored values, with the mirror outside the last valid sample.
+  static inline const int32_t* MirrorLanes(const size_t mod) {
+    D d;
+    constexpr size_t kN = MaxLanes(d);  // Safe: D is capped
+
+    // typo:off
+    // For mod = `image width mod 16` 0..15:
+    // last full vec     mirrored (mem order)  loadedVec  mirrorVec  idxVec
+    // 0123456789abcdef| fedcba9876543210      fed..210   012..def   012..def
+    // 0123456789abcdef|0 0fedcba98765432      0fe..321   234..f00   123..eff
+    // 0123456789abcdef|01 10fedcba987654      10f..432   456..110   234..ffe
+    // 0123456789abcdef|012 210fedcba9876      210..543   67..2210   34..ffed
+    // 0123456789abcdef|0123 3210fedcba98      321..654   8..33210   4..ffedc
+    // 0123456789abcdef|01234 43210fedcba
+    // 0123456789abcdef|012345 543210fedc
+    // 0123456789abcdef|0123456 6543210fe
+    // 0123456789abcdef|01234567 76543210
+    // 0123456789abcdef|012345678 8765432
+    // 0123456789abcdef|0123456789 987654
+    // 0123456789abcdef|0123456789A A9876
+    // 0123456789abcdef|0123456789AB BA98
+    // 0123456789abcdef|0123456789ABC CBA
+    // 0123456789abcdef|0123456789ABCD DC
+    // 0123456789abcdef|0123456789ABCDE E      EDC..10f   EED..210   ffe..321
+    // typo:on
+#if HWY_CAP_GE512
+    static_assert(kN == 16, "Unexpected vector size");
+    HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {
+        1,  2,  3,  4,  5,  6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 15,  //
+        14, 13, 12, 11, 10, 9, 8, 7, 6, 5,  4,  3,  2,  1,  0};
+#elif HWY_CAP_GE256
+    static_assert(kN == 8, "Unexpected vector size");
+    HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {
+        1, 2, 3, 4, 5, 6, 7, 7,  //
+        6, 5, 4, 3, 2, 1, 0};
+#else  // 128-bit
+    static_assert(kN == 4, "Unexpected vector size");
+    HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {1, 2, 3, 3,  //
+                                                                2, 1, 0};
+#endif
+    return idx_lanes + kN - 1 - mod;
+  }
+#endif  // HWY_TARGET != HWY_SCALAR
+
   // Same as HorzConvolve for the first/last vector in a row.
   static JXL_MAYBE_INLINE V HorzConvolveFirst(
       const float* const JXL_RESTRICT row, const int64_t x, const int64_t xsize,
