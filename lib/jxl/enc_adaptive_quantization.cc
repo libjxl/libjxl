@@ -109,9 +109,8 @@ V ComputeMask(const D d, const V out_val) {
 // mul and mul2 represent a scaling difference between jxl and butteraugli.
 const float kSGmul = 226.77216153508914f;
 const float kSGmul2 = 1.0f / 73.377132366608819f;
-const float kLog2 = 0.693147181f;
 // Includes correction factor for std::log -> log2.
-const float kSGRetMul = kSGmul2 * 18.6580932135f * kLog2;
+const float kSGRetMul = kSGmul2 * 18.6580932135f * kInvLog2e;
 const float kSGVOffset = 7.7825991679894591f;
 
 template <bool invert, typename D, typename V>
@@ -125,8 +124,8 @@ V RatioOfDerivativesOfCubicRootToSimpleGamma(const D d, V v) {
   float kEpsilon = 1e-2;
   v = ZeroIfNegative(v);
   const auto kNumMul = Set(d, kSGRetMul * 3 * kSGmul);
-  const auto kVOffset = Set(d, kSGVOffset * kLog2 + kEpsilon);
-  const auto kDenMul = Set(d, kLog2 * kSGmul);
+  const auto kVOffset = Set(d, kSGVOffset * kInvLog2e + kEpsilon);
+  const auto kDenMul = Set(d, kInvLog2e * kSGmul);
 
   const auto v2 = Mul(v, v);
 

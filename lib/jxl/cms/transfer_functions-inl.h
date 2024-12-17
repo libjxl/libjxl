@@ -5,6 +5,7 @@
 
 // Transfer functions for color encodings.
 
+#include "lib/jxl/base/common.h"
 #if defined(LIB_JXL_CMS_TRANSFER_FUNCTIONS_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_CMS_TRANSFER_FUNCTIONS_INL_H_
 #undef LIB_JXL_CMS_TRANSFER_FUNCTIONS_INL_H_
@@ -60,7 +61,7 @@ class TF_HLG : TF_HLG_Base {
     x = AndNot(kSign, x);  // abs
     const V below_div12 = Sqrt(Mul(Set(d, 3.0f), x));
     const V e =
-        MulAdd(Set(d, kA * 0.693147181f),
+        MulAdd(Set(d, kA * kInvLog2e),
                FastLog2f(d, MulAdd(Set(d, 12), x, Set(d, -kB))), Set(d, kC));
     const V magnitude = IfThenElse(Le(x, Set(d, kDiv12)), below_div12, e);
     return Or(AndNot(kSign, magnitude), original_sign);
