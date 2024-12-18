@@ -5,6 +5,7 @@
 
 // Transfer functions for color encodings.
 
+#include "lib/jxl/base/common.h"
 #if defined(LIB_JXL_CMS_TRANSFER_FUNCTIONS_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_CMS_TRANSFER_FUNCTIONS_INL_H_
 #undef LIB_JXL_CMS_TRANSFER_FUNCTIONS_INL_H_
@@ -58,13 +59,38 @@ class TF_HLG : TF_HLG_Base {
     const V kSign = BitCast(d, Set(du, 0x80000000u));
     const V original_sign = And(x, kSign);
     x = AndNot(kSign, x);  // abs
-    const V below_div12 = Sqrt(Mul(Set(d, 3.0f), x));
-    const V e =
-        MulAdd(Set(d, kA * 0.693147181f),
+    const auto belowInv12 = Le(x, Set(d, kInv12));
+    const V lo = Sqrt(Mul(Set(d, k3), x));
+    const V hi =
+        MulAdd(Set(d, kA * kInvLog2e),
                FastLog2f(d, MulAdd(Set(d, 12), x, Set(d, -kB))), Set(d, kC));
-    const V magnitude = IfThenElse(Le(x, Set(d, kDiv12)), below_div12, e);
+    const V magnitude = IfThenElse(belowInv12, lo, hi);
     return Or(AndNot(kSign, magnitude), original_sign);
   }
+
+  template <class D, class V>
+  JXL_INLINE V DisplayFromEncoded(D d, V x) const {
+    const hwy::HWY_NAMESPACE::Rebind<uint32_t, D> du;
+    const V kSign = BitCast(d, Set(du, 0x80000000u));
+    const V original_sign = And(x, kSign);
+    x = AndNot(kSign, x);  // abs
+    const auto below05 = Le(x, Set(d, k05));
+    const V lo = Mul(x, Mul(x, Set(d, kInv3)));
+    const V hi = MulAdd(FastPow2f(d, Mul(x, Set(d, kHiPow))), Set(d, kHiMul),
+                        Set(d, kHiAdd));
+    const V magnitude = IfThenElse(below05, lo, hi);
+    return Or(AndNot(kSign, magnitude), original_sign);
+  }
+
+ private:
+  static constexpr double k05 = 0.5;
+  static constexpr double k3 = 3.0;
+  static constexpr double kInv3 = 1.0 / 3.0;
+  static constexpr double kHiAdd = kB * kInv12;
+  // std::exp(-kC * kRA) * kInv12;
+  static constexpr double kHiMul = 0.003639807079052639;
+  // kRA * std::log2e_v
+  static constexpr double kHiPow = 8.067285659607931;
 };
 
 class TF_709 {

@@ -75,6 +75,10 @@ else ()
       -Wunreachable-code
       -Wunused-comparison
     )
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 8.0)
+      # for SKCMS on PPC
+      list(APPEND HWY_FLAGS -Wno-deprecated-altivec-src-compat)
+    endif()
     if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
       list(APPEND HWY_FLAGS -Wc++2a-extensions)
     endif()
