@@ -88,78 +88,7 @@ class Neighbors {
 #endif
 #endif
   }
-
-  // Returns l[i] == c[Mirror(i - 3)].
-  HWY_INLINE HWY_MAYBE_UNUSED static V FirstL3(const V c) {
-#if HWY_CAP_GE256
-    const D d;
-    HWY_ALIGN constexpr int32_t lanes[16] = {2, 1, 0, 0, 1, 2,  3,  4,
-                                             5, 6, 7, 8, 9, 10, 11, 12};
-    const auto indices = SetTableIndices(d, lanes);
-    // c = PONM'LKJI
-    return TableLookupLanes(c, indices);  // MLKJ'IIJK
-#elif HWY_TARGET == HWY_SCALAR
-    const D d;
-    JXL_DEBUG_ABORT("Unsipported");
-    return Zero(d);
-#else  // 128 bit
-    // c = LKJI
-#if HWY_TARGET <= (1 << HWY_HIGHEST_TARGET_BIT_X86)
-    return V{_mm_shuffle_ps(c.raw, c.raw, _MM_SHUFFLE(0, 0, 1, 2))};  // IIJK
-#else
-    const D d;
-    HWY_ALIGN constexpr int lanes[4] = {2, 1, 0, 0};  // IIJK
-    const auto indices = SetTableIndices(d, lanes);
-    return TableLookupLanes(c, indices);
-#endif
-#endif
-  }
 };
-
-#if HWY_TARGET != HWY_SCALAR
-
-// Returns indices for SetTableIndices such that TableLookupLanes on the
-// rightmost unaligned vector (rightmost sample in its most-significant lane)
-// returns the mirrored values, with the mirror outside the last valid sample.
-inline const int32_t* MirrorLanes(const size_t mod) {
-  const HWY_CAPPED(float, 16) d;
-  constexpr size_t kN = MaxLanes(d);
-  // typo:off
-  // For mod = `image width mod 16` 0..15:
-  // last full vec     mirrored (mem order)  loadedVec  mirrorVec  idxVec
-  // 0123456789abcdef| fedcba9876543210      fed..210   012..def   012..def
-  // 0123456789abcdef|0 0fedcba98765432      0fe..321   234..f00   123..eff
-  // 0123456789abcdef|01 10fedcba987654      10f..432   456..110   234..ffe
-  // 0123456789abcdef|012 210fedcba9876      210..543   67..2210   34..ffed
-  // 0123456789abcdef|0123 3210fedcba98      321..654   8..33210   4..ffedc
-  // 0123456789abcdef|01234 43210fedcba
-  // 0123456789abcdef|012345 543210fedc
-  // 0123456789abcdef|0123456 6543210fe
-  // 0123456789abcdef|01234567 76543210
-  // 0123456789abcdef|012345678 8765432
-  // 0123456789abcdef|0123456789 987654
-  // 0123456789abcdef|0123456789A A9876
-  // 0123456789abcdef|0123456789AB BA98
-  // 0123456789abcdef|0123456789ABC CBA
-  // 0123456789abcdef|0123456789ABCD DC
-  // 0123456789abcdef|0123456789ABCDE E      EDC..10f   EED..210   ffe..321
-  // typo:on
-#if HWY_CAP_GE512
-  HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {
-      1,  2,  3,  4,  5,  6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 15,  //
-      14, 13, 12, 11, 10, 9, 8, 7, 6, 5,  4,  3,  2,  1,  0};
-#elif HWY_CAP_GE256
-  HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {
-      1, 2, 3, 4, 5, 6, 7, 7,  //
-      6, 5, 4, 3, 2, 1, 0};
-#else  // 128-bit
-  HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {1, 2, 3, 3,  //
-                                                              2, 1, 0};
-#endif
-  return idx_lanes + kN - 1 - mod;
-}
-
-#endif  // HWY_TARGET != HWY_SCALAR
 
 // Single entry point for convolution.
 // "Strategy" (Direct*/Separable*) decides kernel size and how to evaluate it.
