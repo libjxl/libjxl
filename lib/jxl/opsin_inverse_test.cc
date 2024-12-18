@@ -6,6 +6,8 @@
 #include <jxl/cms.h>
 #include <jxl/memory_manager.h>
 
+#include <cstddef>
+
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/rect.h"
