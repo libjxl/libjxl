@@ -13,6 +13,7 @@
 #include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/cms/opsin_params.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"

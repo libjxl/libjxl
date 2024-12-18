@@ -39,6 +39,7 @@ Design:
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_ops.h"
 #include "tools/gauss_blur.h"
 #include "tools/no_memory_manager.h"
 
