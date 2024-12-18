@@ -264,7 +264,7 @@ void VerticalBlock(const V& d1_1, const V& d1_3, const V& d1_5, const V& n2_1,
                    float* JXL_RESTRICT out_pos) {
   const HWY_FULL(float) d;
   // More cache-friendly to process an entirely cache line at a time
-  constexpr size_t kLanes = kVectors * Lanes(d);
+  const size_t kLanes = kVectors * Lanes(d);
 
   float* JXL_RESTRICT y_1 = ring_buffer + 0 * kLanes * kRingBufferLen;
   float* JXL_RESTRICT y_3 = ring_buffer + 1 * kLanes * kRingBufferLen;
