@@ -20,6 +20,13 @@ include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag("-fsanitize=fuzzer-no-link" CXX_FUZZERS_SUPPORTED)
 check_cxx_compiler_flag("-fmacro-prefix-map=OLD=NEW" CXX_MACRO_PREFIX_MAP)
 check_cxx_compiler_flag("-fno-rtti" CXX_NO_RTTI_SUPPORTED)
+check_cxx_compiler_flag("-mavx2" CXX_MAVX2_SUPPORTED)
+check_cxx_compiler_flag("-mf16c" CXX_MF16C_SUPPORTED)
+check_cxx_compiler_flag("-mavx512f" CXX_MAVX512F_SUPPORTED)
+check_cxx_compiler_flag("-mavx512dq" CXX_MAVX512DQ_SUPPORTED)
+check_cxx_compiler_flag("-mavx512cd" CXX_MAVX512CD_SUPPORTED)
+check_cxx_compiler_flag("-mavx512bw" CXX_MAVX512BW_SUPPORTED)
+check_cxx_compiler_flag("-mavx512vl" CXX_MAVX512VL_SUPPORTED)
 
 # Add "DebugOpt" CMake build type. Unlike builtin DEBUG it is optimized.
 string(REGEX REPLACE "-DNDEBUG " "" CMAKE_CXX_FLAGS_DEBUGOPT "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -DDEBUG" )
