@@ -45,6 +45,7 @@ void BM_GaussBlur1d(benchmark::State& state) {
                      "Failed to allocate image.");
   const auto rg = CreateRecursiveGaussian(sigma);
   for (auto _ : state) {
+    (void)_;
     FastGaussian1D(rg, length, in.Row(0), out.Row(0));
     // Prevent optimizing out
     BM_CHECK(std::abs(out.ConstRow(0)[length / 2] - expected) / expected <
@@ -71,6 +72,7 @@ void BM_GaussBlur2d(benchmark::State& state) {
                      "Failed to allocate image.");
   const auto rg = CreateRecursiveGaussian(sigma);
   for (auto _ : state) {
+    (void)_;
     BM_CHECK(FastGaussian(
         memory_manager, rg, in.xsize(), in.ysize(),
         [&](size_t y) { return in.ConstRow(y); },
