@@ -112,7 +112,8 @@ TEST(RenderPipelineTest, Build) {
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   builder.UseSimpleImplementation();
   FrameDimensions frame_dimensions;
-  frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
+  frame_dimensions.Set(/*xsize_px=*/1024, /*ysize_px=*/1024,
+                       /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
   JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
@@ -128,7 +129,8 @@ TEST(RenderPipelineTest, CallAllGroups) {
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   builder.UseSimpleImplementation();
   FrameDimensions frame_dimensions;
-  frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
+  frame_dimensions.Set(/*xsize_px=*/1024, /*ysize_px=*/1024,
+                       /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
   JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
@@ -152,7 +154,8 @@ TEST(RenderPipelineTest, BuildFast) {
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<UpsampleYSlowStage>()));
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   FrameDimensions frame_dimensions;
-  frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
+  frame_dimensions.Set(/*xsize_px=*/1024, /*ysize_px=*/1024,
+                       /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
   JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
@@ -168,7 +171,8 @@ TEST(RenderPipelineTest, CallAllGroupsFast) {
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   builder.UseSimpleImplementation();
   FrameDimensions frame_dimensions;
-  frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
+  frame_dimensions.Set(/*xsize_px=*/1024, /*ysize_px=*/1024,
+                       /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
   JXL_TEST_ASSIGN_OR_DIE(auto pipeline,

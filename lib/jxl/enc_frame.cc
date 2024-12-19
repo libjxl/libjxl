@@ -768,6 +768,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
       JpegOrder(frame_header.color_transform, jpeg_data.components.size() == 1);
 
   std::vector<int> qt(192);
+  std::array<int32_t, 3> qt_dc;
   for (size_t c = 0; c < 3; c++) {
     size_t jpeg_c = jpeg_c_map[c];
     const int32_t* quant =
@@ -780,6 +781,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
         qt[c * 64 + 8 * x + y] = quant[8 * y + x];
       }
     }
+    qt_dc[c] = qt[c * 64];
   }
   JXL_RETURN_IF_ERROR(DequantMatricesSetCustomDC(
       memory_manager, &shared.matrices, dcquantization));
@@ -956,7 +958,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
           if (DCzero) {
             idc = inputjpeg[base];
           } else {
-            idc = inputjpeg[base] + 1024 / qt[c * 64];
+            idc = inputjpeg[base] + 1024 / qt_dc[c];
           }
           dc_counts[c][std::min(static_cast<uint32_t>(idc + 1024),
                                 static_cast<uint32_t>(2047))]++;
