@@ -25,6 +25,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -225,15 +226,22 @@ void ComputePremulAbsorb(float intensity_target, float* premul_absorb) {
 Status ToXYB(const ColorEncoding& c_current, float intensity_target,
              const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
              const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear) {
+  JXL_ENSURE(image);
   if (black) JXL_ENSURE(SameSize(*image, *black));
   if (linear) JXL_ENSURE(SameSize(*image, *linear));
 
+  JxlMemoryManager* memory_manager = image->memory_manager();
+  JXL_ENSURE(memory_manager);
+
   const HWY_FULL(float) d;
   // Pre-broadcasted constants
-  HWY_ALIGN float premul_absorb[MaxLanes(d) * 12];
+  JXL_ASSIGN_OR_RETURN(
+      AlignedMemory mem,
+      AlignedMemory::Create(memory_manager, Lanes(d) * 12 * sizeof(float)));
+  float* premul_absorb = mem.address<float>();
   ComputePremulAbsorb(intensity_target, premul_absorb);
 
-  const bool want_linear = linear != nullptr;
+  const bool want_linear = (linear != nullptr);
 
   const ColorEncoding& c_linear_srgb =
       ColorEncoding::LinearSRGB(c_current.IsGray());

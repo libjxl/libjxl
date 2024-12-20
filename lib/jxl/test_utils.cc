@@ -632,7 +632,9 @@ float Butteraugli3Norm(const extras::PackedPixelFile& a,
   ImageF distmap;
   ButteraugliDistance(io0.frames, io1.frames, butteraugli_params,
                       *JxlGetDefaultCms(), &distmap, pool);
-  return ComputeDistanceP(distmap, butteraugli_params, 3);
+  JXL_TEST_ASSIGN_OR_DIE(double pnorm,
+                         ComputeDistanceP(distmap, butteraugli_params, 3));
+  return pnorm;
 }
 
 float ComputeDistance2(const extras::PackedPixelFile& a,
