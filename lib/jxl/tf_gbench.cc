@@ -26,6 +26,7 @@ namespace {
   auto sum2 = Zero(d);                                              \
   auto sum3 = Zero(d);                                              \
   for (auto _ : state) {                                            \
+    (void)_;                                                        \
     auto x = Set(d, 1e-5);                                          \
     auto v1 = Set(d, 1e-5);                                         \
     auto v2 = Set(d, 1.1e-5);                                       \
@@ -50,6 +51,7 @@ namespace {
   float sum2 = 0;                                            \
   float sum3 = 0;                                            \
   for (auto _ : state) {                                     \
+    (void)_;                                                 \
     float x = 1e-5;                                          \
     float v1 = 1e-5;                                         \
     float v2 = 1.1e-5;                                       \
