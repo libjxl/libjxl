@@ -16,33 +16,37 @@
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
+
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::GetLane;
+
 namespace {
 
-#define RUN_BENCHMARK(F)                                            \
-  constexpr size_t kNum = 1 << 12;                                  \
-  HWY_FULL(float) d;                                                \
-  /* Three parallel runs, as this will run on R, G and B. */        \
-  auto sum1 = Zero(d);                                              \
-  auto sum2 = Zero(d);                                              \
-  auto sum3 = Zero(d);                                              \
-  for (auto _ : state) {                                            \
-    (void)_;                                                        \
-    auto x = Set(d, 1e-5);                                          \
-    auto v1 = Set(d, 1e-5);                                         \
-    auto v2 = Set(d, 1.1e-5);                                       \
-    auto v3 = Set(d, 1.2e-5);                                       \
-    for (size_t i = 0; i < kNum; i++) {                             \
-      sum1 += F(d, v1);                                             \
-      sum2 += F(d, v2);                                             \
-      sum3 += F(d, v3);                                             \
-      v1 += x;                                                      \
-      v2 += x;                                                      \
-      v3 += x;                                                      \
-    }                                                               \
-  }                                                                 \
-  /* floats per second */                                           \
-  state.SetItemsProcessed(kNum* state.iterations() * Lanes(d) * 3); \
-  benchmark::DoNotOptimize(sum1 + sum2 + sum3);
+#define RUN_BENCHMARK(F)                                             \
+  constexpr size_t kNum = 1 << 12;                                   \
+  HWY_FULL(float) d;                                                 \
+  /* Three parallel runs, as this will run on R, G and B. */         \
+  auto sum1 = Zero(d);                                               \
+  auto sum2 = Zero(d);                                               \
+  auto sum3 = Zero(d);                                               \
+  for (auto _ : state) {                                             \
+    (void)_;                                                         \
+    auto x = Set(d, 1e-5);                                           \
+    auto v1 = Set(d, 1e-5);                                          \
+    auto v2 = Set(d, 1.1e-5);                                        \
+    auto v3 = Set(d, 1.2e-5);                                        \
+    for (size_t i = 0; i < kNum; i++) {                              \
+      sum1 = Add(sum1, F(d, v1));                                    \
+      sum2 = Add(sum2, F(d, v2));                                    \
+      sum3 = Add(sum3, F(d, v3));                                    \
+      v1 = Add(v1, x);                                               \
+      v2 = Add(v2, x);                                               \
+      v3 = Add(v3, x);                                               \
+    }                                                                \
+  }                                                                  \
+  /* floats per second */                                            \
+  state.SetItemsProcessed(state.iterations() * Lanes(d) * 3 * kNum); \
+  benchmark::DoNotOptimize(GetLane(SumOfLanes(d, Add(sum1, Add(sum2, sum3)))));
 
 #define RUN_BENCHMARK_SCALAR(F, I)                           \
   constexpr size_t kNum = 1 << 12;                           \
