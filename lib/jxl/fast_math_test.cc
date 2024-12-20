@@ -14,14 +14,15 @@
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/dec_xyb-inl.h"
+#include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/test_memory_manager.h"
+#include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
 #if !JXL_HIGH_PRECISION
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/test_memory_manager.h"
-#include "lib/jxl/test_utils.h"
 #endif
 
 // Test utils
@@ -117,10 +118,15 @@ HWY_NOINLINE void TestFastErf() {
 
 HWY_NOINLINE void TestCubeRoot() {
   const HWY_FULL(float) d;
+  JxlMemoryManager* memory_manager = ::jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory mem,
+      AlignedMemory::Create(memory_manager, Lanes(d) * sizeof(float)));
+  float* approx = mem.address<float>();
+
   for (uint64_t x5 = 0; x5 < 2000000; x5++) {
     const float x = x5 * 1E-5f;
     const float expected = cbrtf(x);
-    HWY_ALIGN float approx[MaxLanes(d)];
     Store(CubeRootAndAdd(Set(d, x), Zero(d)), d, approx);
 
     // All lanes are same

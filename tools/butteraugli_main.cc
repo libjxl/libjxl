@@ -116,7 +116,8 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
                                    /* ignore_alpha */ false));
   printf("%.10f\n", distance);
 
-  double pnorm = jxl::ComputeDistanceP(distmap, butteraugli_params, p);
+  JXL_ASSIGN_OR_RETURN(double pnorm,
+                       jxl::ComputeDistanceP(distmap, butteraugli_params, p));
   printf("%g-norm: %f\n", p, pnorm);
 
   if (!distmap_filename.empty()) {

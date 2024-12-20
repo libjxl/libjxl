@@ -14,8 +14,8 @@
 namespace jxl {
 
 // Computes p-norm given the butteraugli distmap.
-double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
-                        double p);
+StatusOr<double> ComputeDistanceP(const ImageF& distmap,
+                                  const ButteraugliParams& params, double p);
 
 double ComputeDistance2(const ImageBundle& ib1, const ImageBundle& ib2,
                         const JxlCmsInterface& cms);

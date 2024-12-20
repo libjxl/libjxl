@@ -3,10 +3,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdint.h>
+#include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <vector>
+
+#include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/test_memory_manager.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/xorshift128plus_test.cc"
@@ -294,12 +298,16 @@ void TestFloat() {
   const uint32_t kMaxSeed = 4096;
 #endif  // JXL_DISABLE_SLOW_TESTS
   const auto test_seed = [](const uint32_t seed, size_t /*thread*/) -> Status {
+    JxlMemoryManager* memory_manager = ::jxl::test::MemoryManager();
     HWY_ALIGN Xorshift128Plus rng(seed);
 
     const HWY_FULL(uint32_t) du;
     const HWY_FULL(float) df;
     HWY_ALIGN uint64_t batch[Xorshift128Plus::N];
-    HWY_ALIGN float lanes[MaxLanes(df)];
+    JXL_TEST_ASSIGN_OR_DIE(
+        AlignedMemory mem,
+        AlignedMemory::Create(memory_manager, Lanes(df) * sizeof(float)));
+    float* lanes = mem.address<float>();
     double sum = 0.0;
     size_t count = 0;
     const size_t kReps = 2000;
@@ -313,7 +321,8 @@ void TestFloat() {
             BitCast(df, Or(ShiftRight<9>(bits), Set(du, 0x3F800000)));
         const auto rand01 = Sub(rand12, Set(df, 1.0f));
         Store(rand01, df, lanes);
-        for (float lane : lanes) {
+        for (size_t j = 0; j < Lanes(df); ++j) {
+          float lane = lanes[j];
           sum += lane;
           count += 1;
           EXPECT_LE(lane, 1.0f);
