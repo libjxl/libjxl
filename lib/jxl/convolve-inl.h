@@ -24,10 +24,6 @@ namespace HWY_NAMESPACE {
 namespace {
 
 // These templates are not found via ADL.
-using hwy::HWY_NAMESPACE::Broadcast;
-#if HWY_TARGET != HWY_SCALAR
-using hwy::HWY_NAMESPACE::CombineShiftRightBytes;
-#endif
 using hwy::HWY_NAMESPACE::TableLookupLanes;
 using hwy::HWY_NAMESPACE::Vec;
 
@@ -90,6 +86,7 @@ class Neighbors {
   }
 };
 
+// TODO(eustas): move into convolve_separable5.cc
 // Single entry point for convolution.
 // "Strategy" (Direct*/Separable*) decides kernel size and how to evaluate it.
 template <class Strategy>

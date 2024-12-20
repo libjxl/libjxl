@@ -5,8 +5,8 @@
 
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/convolve-inl.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/image_ops.h"
 
 namespace jxl {
 
