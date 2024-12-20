@@ -19,9 +19,20 @@ namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::IndicesFromVec;
+using hwy::HWY_NAMESPACE::Iota;
+using hwy::HWY_NAMESPACE::Max;
+using hwy::HWY_NAMESPACE::Min;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
+using hwy::HWY_NAMESPACE::Sub;
 using hwy::HWY_NAMESPACE::Vec;
+
+using D = HWY_CAPPED(float, 16);
+using DI32 = HWY_CAPPED(int32_t, 16);
+using V = Vec<D>;
+using VI32 = Vec<DI32>;
+using I = decltype(SetTableIndices(D(), static_cast<int32_t*>(nullptr)));
 
 // 5x5 convolution by separable kernel with a single scan through the input.
 // This is more cache-efficient than separate horizontal/vertical passes, and
@@ -47,9 +58,6 @@ using hwy::HWY_NAMESPACE::Vec;
 // modulo the vector size enables a small optimization: for smaller offsets,
 // a non-mirrored load is sufficient.
 class Separable5Strategy {
-  using D = HWY_CAPPED(float, 16);
-  using V = Vec<D>;
-
  public:
   static constexpr int64_t kRadius = 2;
 
@@ -75,6 +83,8 @@ class Separable5Strategy {
     const V wv0 = LoadDup128(d, weights.vert + 0 * 4);
     const V wv1 = LoadDup128(d, weights.vert + 1 * 4);
     const V wv2 = LoadDup128(d, weights.vert + 2 * 4);
+    const I ml1 = MirrorLanes<1>();
+    const I ml2 = MirrorLanes<2>();
 
     size_t x = 0;
 
@@ -113,19 +123,20 @@ class Separable5Strategy {
 #else
     if (kSizeModN < kRadius) {
 #endif
-      const V conv0 =
-          Mul(HorzConvolveLast<kSizeModN>(row_m, x, xsize, wh0, wh1, wh2), wv0);
+      const V conv0 = Mul(
+          HorzConvolveLast<kSizeModN>(row_m, x, xsize, wh0, wh1, wh2, ml1, ml2),
+          wv0);
 
-      const V conv1t =
-          HorzConvolveLast<kSizeModN>(row_t1, x, xsize, wh0, wh1, wh2);
-      const V conv1b =
-          HorzConvolveLast<kSizeModN>(row_b1, x, xsize, wh0, wh1, wh2);
+      const V conv1t = HorzConvolveLast<kSizeModN>(row_t1, x, xsize, wh0, wh1,
+                                                   wh2, ml1, ml2);
+      const V conv1b = HorzConvolveLast<kSizeModN>(row_b1, x, xsize, wh0, wh1,
+                                                   wh2, ml1, ml2);
       const V conv1 = MulAdd(Add(conv1t, conv1b), wv1, conv0);
 
-      const V conv2t =
-          HorzConvolveLast<kSizeModN>(row_t2, x, xsize, wh0, wh1, wh2);
-      const V conv2b =
-          HorzConvolveLast<kSizeModN>(row_b2, x, xsize, wh0, wh1, wh2);
+      const V conv2t = HorzConvolveLast<kSizeModN>(row_t2, x, xsize, wh0, wh1,
+                                                   wh2, ml1, ml2);
+      const V conv2b = HorzConvolveLast<kSizeModN>(row_b2, x, xsize, wh0, wh1,
+                                                   wh2, ml1, ml2);
       const V conv2 = MulAdd(Add(conv2t, conv2b), wv2, conv1);
       Store(conv2, d, row_out + x);
       x += Lanes(d);
@@ -150,52 +161,18 @@ class Separable5Strategy {
   }
 
  private:
-#if HWY_TARGET != HWY_SCALAR
-  // Returns indices for SetTableIndices such that TableLookupLanes on the
+  // Returns IndicesFromVec(d, indices) such that TableLookupLanes on the
   // rightmost unaligned vector (rightmost sample in its most-significant lane)
   // returns the mirrored values, with the mirror outside the last valid sample.
-  static inline const int32_t* MirrorLanes(const size_t mod) {
+  template <size_t M>
+  static inline I MirrorLanes() {
+    static_assert(M >= 1 && M <= 2, "Only M in range {1..2} is supported");
     D d;
-    constexpr size_t kN = MaxLanes(d);  // Safe: D is capped
-
-    // typo:off
-    // For mod = `image width mod 16` 0..15:
-    // last full vec     mirrored (mem order)  loadedVec  mirrorVec  idxVec
-    // 0123456789abcdef| fedcba9876543210      fed..210   012..def   012..def
-    // 0123456789abcdef|0 0fedcba98765432      0fe..321   234..f00   123..eff
-    // 0123456789abcdef|01 10fedcba987654      10f..432   456..110   234..ffe
-    // 0123456789abcdef|012 210fedcba9876      210..543   67..2210   34..ffed
-    // 0123456789abcdef|0123 3210fedcba98      321..654   8..33210   4..ffedc
-    // 0123456789abcdef|01234 43210fedcba
-    // 0123456789abcdef|012345 543210fedc
-    // 0123456789abcdef|0123456 6543210fe
-    // 0123456789abcdef|01234567 76543210
-    // 0123456789abcdef|012345678 8765432
-    // 0123456789abcdef|0123456789 987654
-    // 0123456789abcdef|0123456789A A9876
-    // 0123456789abcdef|0123456789AB BA98
-    // 0123456789abcdef|0123456789ABC CBA
-    // 0123456789abcdef|0123456789ABCD DC
-    // 0123456789abcdef|0123456789ABCDE E      EDC..10f   EED..210   ffe..321
-    // typo:on
-#if HWY_CAP_GE512
-    static_assert(kN == 16, "Unexpected vector size");
-    HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {
-        1,  2,  3,  4,  5,  6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 15,  //
-        14, 13, 12, 11, 10, 9, 8, 7, 6, 5,  4,  3,  2,  1,  0};
-#elif HWY_CAP_GE256
-    static_assert(kN == 8, "Unexpected vector size");
-    HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {
-        1, 2, 3, 4, 5, 6, 7, 7,  //
-        6, 5, 4, 3, 2, 1, 0};
-#else  // 128-bit
-    static_assert(kN == 4, "Unexpected vector size");
-    HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {1, 2, 3, 3,  //
-                                                                2, 1, 0};
-#endif
-    return idx_lanes + kN - 1 - mod;
+    DI32 di32;
+    const VI32 up = Min(Iota(di32, M), Set(di32, Lanes(d) - 1));
+    const VI32 down = Max(Iota(di32, M - Lanes(d)), Zero(di32));
+    return IndicesFromVec(d, Sub(up, down));
   }
-#endif  // HWY_TARGET != HWY_SCALAR
 
   // Same as HorzConvolve for the first/last vector in a row.
   static JXL_MAYBE_INLINE V HorzConvolveFirst(
@@ -223,9 +200,9 @@ class Separable5Strategy {
   }
 
   template <size_t kSizeModN>
-  static JXL_MAYBE_INLINE V
-  HorzConvolveLast(const float* const JXL_RESTRICT row, const int64_t x,
-                   const int64_t xsize, const V wh0, const V wh1, const V wh2) {
+  static JXL_MAYBE_INLINE V HorzConvolveLast(
+      const float* const JXL_RESTRICT row, const int64_t x, const int64_t xsize,
+      const V wh0, const V wh1, const V wh2, const I ml1, const I ml2) {
     const D d;
     const V c = LoadU(d, row + x);
     const V mul0 = Mul(c, wh0);
@@ -238,14 +215,16 @@ class Separable5Strategy {
 #if HWY_TARGET == HWY_SCALAR
     r1 = LoadU(d, row + Mirror(x + 1, xsize));
     r2 = LoadU(d, row + Mirror(x + 2, xsize));
+    (void)ml1;
+    (void)ml2;
 #else
     const size_t N = Lanes(d);
     if (kSizeModN == 0) {
-      r2 = TableLookupLanes(c, SetTableIndices(d, MirrorLanes(N - 2)));
-      r1 = TableLookupLanes(c, SetTableIndices(d, MirrorLanes(N - 1)));
+      r2 = TableLookupLanes(c, ml2);
+      r1 = TableLookupLanes(c, ml1);
     } else {  // == 1
       const auto last = LoadU(d, row + xsize - N);
-      r2 = TableLookupLanes(last, SetTableIndices(d, MirrorLanes(N - 1)));
+      r2 = TableLookupLanes(last, ml1);
       r1 = last;
     }
 #endif
