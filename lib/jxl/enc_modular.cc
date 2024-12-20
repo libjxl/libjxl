@@ -1031,6 +1031,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       if (fc.w > frame_dim_.group_dim || fc.h > frame_dim_.group_dim) break;
     }
     for (; ch < full_image.channel.size(); ch++) {
+      // TODO(eustas): shrink / assign channel to keep size consistency
       full_image.channel[ch].plane = ImageI();
     }
   }
