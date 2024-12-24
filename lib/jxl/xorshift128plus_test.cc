@@ -310,10 +310,11 @@ void TestFloat() {
     float* lanes = mem.address<float>();
     double sum = 0.0;
     size_t count = 0;
-    const size_t kReps = 2000;
-    for (size_t reps = 0; reps < kReps; ++reps) {
+    const size_t kReps = 32000;
+    while (count < kReps) {
       rng.Fill(batch);
-      for (size_t i = 0; i < Xorshift128Plus::N * 2; i += Lanes(df)) {
+      size_t batch_size = Xorshift128Plus::N * 2;
+      for (size_t i = 0; i < batch_size; i += Lanes(df)) {
         const auto bits =
             Load(du, reinterpret_cast<const uint32_t*>(batch) + i);
         // 1.0 + 23 random mantissa bits = [1, 2)
@@ -321,7 +322,8 @@ void TestFloat() {
             BitCast(df, Or(ShiftRight<9>(bits), Set(du, 0x3F800000)));
         const auto rand01 = Sub(rand12, Set(df, 1.0f));
         Store(rand01, df, lanes);
-        for (size_t j = 0; j < Lanes(df); ++j) {
+        size_t last = std::min<size_t>(batch_size, i + Lanes(df)) - i;
+        for (size_t j = 0; j < last; ++j) {
           float lane = lanes[j];
           sum += lane;
           count += 1;
