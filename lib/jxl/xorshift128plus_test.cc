@@ -299,42 +299,45 @@ void TestFloat() {
 #endif  // JXL_DISABLE_SLOW_TESTS
   const auto test_seed = [](const uint32_t seed, size_t /*thread*/) -> Status {
     JxlMemoryManager* memory_manager = ::jxl::test::MemoryManager();
-    HWY_ALIGN Xorshift128Plus rng(seed);
+    // RNG output is 64-bit integers -> 2x as much 32-bit integers / floats.
+    constexpr size_t kVecCap = 2 * Xorshift128Plus::N;
+    const HWY_CAPPED(uint32_t, kVecCap) du;
+    const HWY_CAPPED(float, kVecCap) df;
+    JXL_ENSURE(kVecCap % Lanes(df) == 0);
 
-    const HWY_FULL(uint32_t) du;
-    const HWY_FULL(float) df;
+    HWY_ALIGN Xorshift128Plus rng(seed);
     HWY_ALIGN uint64_t batch[Xorshift128Plus::N];
     JXL_TEST_ASSIGN_OR_DIE(
         AlignedMemory mem,
         AlignedMemory::Create(memory_manager, Lanes(df) * sizeof(float)));
     float* lanes = mem.address<float>();
+
     double sum = 0.0;
     size_t count = 0;
     const size_t kReps = 32000;
+    // It is OK if count become bigger than kReps.
     while (count < kReps) {
       rng.Fill(batch);
-      size_t batch_size = Xorshift128Plus::N * 2;
-      for (size_t i = 0; i < batch_size; i += Lanes(df)) {
+      for (size_t i = 0; i < kVecCap; i += Lanes(df)) {
         const auto bits =
             Load(du, reinterpret_cast<const uint32_t*>(batch) + i);
         // 1.0 + 23 random mantissa bits = [1, 2)
         const auto rand12 =
             BitCast(df, Or(ShiftRight<9>(bits), Set(du, 0x3F800000)));
-        const auto rand01 = Sub(rand12, Set(df, 1.0f));
-        Store(rand01, df, lanes);
-        size_t last = std::min<size_t>(batch_size, i + Lanes(df)) - i;
-        for (size_t j = 0; j < last; ++j) {
+        Store(rand12, df, lanes);
+        for (size_t j = 0; j < Lanes(df); ++j) {
           float lane = lanes[j];
           sum += lane;
-          count += 1;
-          EXPECT_LE(lane, 1.0f);
-          EXPECT_GE(lane, 0.0f);
+          count++;
+          // Generally, that is guaranteed.
+          JXL_DASSERT(lane < 2.0f);
+          JXL_DASSERT(lane >= 1.0f);
         }
       }
     }
 
     // Verify average (uniform distribution)
-    EXPECT_NEAR(0.5, sum / count, 0.00702);
+    EXPECT_NEAR(1.5, sum / count, 0.00702);
     return true;
   };
   EXPECT_TRUE(RunOnPool(pool.get(), 0, kMaxSeed, ThreadPool::NoInit, test_seed,
