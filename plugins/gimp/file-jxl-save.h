@@ -10,8 +10,8 @@
 
 namespace jxl {
 
-bool SaveJpegXlImage(gint32 image_id, gint32 drawable_id, gint32 orig_image_id,
-                     const gchar* filename);
+bool SaveJpegXlImage(GimpImageOrId image_id, gint32 drawable_id,
+                     GimpImageOrId orig_image_id, const gchar* filename);
 
 }  // namespace jxl
 

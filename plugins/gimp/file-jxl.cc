@@ -104,7 +104,7 @@ void Run(const gchar* const name, const gint nparams,
     }
 
     const gchar* const filename = params[1].data.d_string;
-    gint32 image_id;
+    GimpImageOrId image_id;
     if (!LoadJpegXlImage(filename, &image_id)) {
       values[0].data.d_status = GIMP_PDB_EXECUTION_ERROR;
       return;
@@ -120,10 +120,10 @@ void Run(const gchar* const name, const gint nparams,
       return;
     }
 
-    gint32 image_id = params[1].data.d_image;
+    GimpImageOrId image_id = params[1].data.d_image;
     gint32 drawable_id = params[2].data.d_drawable;
     const gchar* const filename = params[3].data.d_string;
-    const gint32 orig_image_id = image_id;
+    const GimpImageOrId orig_image_id = image_id;
     const GimpExportReturn export_result = gimp_export_image(
         &image_id, &drawable_id, "JPEG XL",
         static_cast<GimpExportCapabilities>(GIMP_EXPORT_CAN_HANDLE_RGB |

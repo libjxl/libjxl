@@ -10,7 +10,7 @@
 
 namespace jxl {
 
-bool LoadJpegXlImage(const gchar* filename, gint32* image_id);
+bool LoadJpegXlImage(const gchar* filename, GimpImageOrId* image_id);
 
 }  // namespace jxl
 

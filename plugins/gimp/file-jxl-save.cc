@@ -611,22 +611,22 @@ bool JpegXlSaveOpts::SetBablType(std::string type) {
 
 bool JpegXlSaveOpts::SetPrecision(int gimp_precision) {
   switch (gimp_precision) {
-    case GIMP_PRECISION_HALF_GAMMA:
+    case GIMP_PRECISION_HALF_NON_LINEAR:
     case GIMP_PRECISION_HALF_LINEAR:
       basic_info.bits_per_sample = 16;
       basic_info.exponent_bits_per_sample = 5;
       break;
 
     // UINT32 not supported by encoder; using FLOAT instead
-    case GIMP_PRECISION_U32_GAMMA:
+    case GIMP_PRECISION_U32_NON_LINEAR:
     case GIMP_PRECISION_U32_LINEAR:
-    case GIMP_PRECISION_FLOAT_GAMMA:
+    case GIMP_PRECISION_FLOAT_NON_LINEAR:
     case GIMP_PRECISION_FLOAT_LINEAR:
       basic_info.bits_per_sample = 32;
       basic_info.exponent_bits_per_sample = 8;
       break;
 
-    case GIMP_PRECISION_U16_GAMMA:
+    case GIMP_PRECISION_U16_NON_LINEAR:
     case GIMP_PRECISION_U16_LINEAR:
       basic_info.bits_per_sample = 16;
       basic_info.exponent_bits_per_sample = 0;
@@ -634,7 +634,7 @@ bool JpegXlSaveOpts::SetPrecision(int gimp_precision) {
 
     default:
     case GIMP_PRECISION_U8_LINEAR:
-    case GIMP_PRECISION_U8_GAMMA:
+    case GIMP_PRECISION_U8_NON_LINEAR:
       basic_info.bits_per_sample = 8;
       basic_info.exponent_bits_per_sample = 0;
       break;
@@ -644,14 +644,20 @@ bool JpegXlSaveOpts::SetPrecision(int gimp_precision) {
 
 }  // namespace
 
-bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
-                     const gint32 orig_image_id, const gchar* const filename) {
+bool SaveJpegXlImage(const GimpImageOrId image_id, const gint32 drawable_id,
+                     const GimpImageOrId orig_image_id,
+                     const gchar* const filename) {
   if (!jxl_save_gui.SaveDialog()) {
     return true;
   }
 
   gint32 nlayers;
-  gint32* layers;
+  struct LayersScope {
+    ~LayersScope() {
+      if (layers) g_free(layers);
+    }
+    GimpLayerOrId* layers = nullptr;
+  } layers_scope = {};
   gint32 duplicate = gimp_image_duplicate(image_id);
 
   JpegXlGimpProgress gimp_save_progress(
@@ -683,10 +689,10 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
                               gimp_image_height(image_id));
 
   jxl_save_opts.SetPrecision(gimp_image_get_precision(image_id));
-  layers = gimp_image_get_layers(duplicate, &nlayers);
+  layers_scope.layers = gimp_image_get_layers(duplicate, &nlayers);
 
   for (int i = 0; i < nlayers; i++) {
-    if (gimp_drawable_has_alpha(layers[i])) {
+    if (gimp_drawable_has_alpha(layers_scope.layers[i])) {
       jxl_save_opts.has_alpha = true;
       break;
     }
@@ -696,7 +702,7 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
 
   // layers need to match image size, for now
   for (int i = 0; i < nlayers; i++) {
-    gimp_layer_resize_to_image_size(layers[i]);
+    gimp_layer_resize_to_image_size(layers_scope.layers[i]);
   }
 
   // treat layers as animation frames, for now
@@ -799,7 +805,7 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
       jxl_save_opts.basic_info.bits_per_sample < 32) {
     gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_LINEAR);
   } else {
-    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_GAMMA);
+    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_NON_LINEAR);
   }
 
   // process layers and compress into JXL
@@ -816,9 +822,10 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     pixels_buffer_1 = g_malloc(buffer_size);
     pixels_buffer_2 = g_malloc(buffer_size);
 
-    gimp_layer_resize_to_image_size(layers[i]);
+    gimp_layer_resize_to_image_size(layers_scope.layers[i]);
 
-    GeglBuffer* buffer = gimp_drawable_get_buffer(layers[i]);
+    GeglBuffer* buffer =
+        gimp_drawable_get_buffer(GimpLayerToDrawable(layers_scope.layers[i]));
 
     // using gegl_buffer_set_format to get the format because
     // gegl_buffer_get_format doesn't always get the original format

@@ -7,6 +7,28 @@
 
 namespace jxl {
 
+#if GIMP_MAJOR_VERSION >= 3
+GimpDrawable* GimpLayerToDrawable(GimpLayer* ptr) {
+  return reinterpret_cast<GimpDrawable*>(ptr);
+}
+GimpItem* GimpLayerToItem(GimpLayer* ptr) {
+  return reinterpret_cast<GimpItem*>(ptr);
+}
+void GimpImageSetFileName(GimpImageOrId image_id,
+                          const gchar* const file_name) {
+  GFile* file = g_file_new_for_path(file_name);
+  gimp_image_set_file(image_id, file);
+  g_object_unref(file);
+}
+#else   // GIMP_MAJOR_VERSION == 2
+gint32 GimpLayerToDrawable(gint32 id) { return id; }
+gint32 GimpLayerToItem(gint32 id) { return id; }
+void GimpImageSetFileName(GimpImageOrId image_id,
+                          const gchar *const file_name) {
+  gimp_image_set_filename(image_id, file_name);
+}
+#endif  // GIMP_MAJOR_VERSION
+
 JpegXlGimpProgress::JpegXlGimpProgress(const char *message) {
   cur_progress = 0;
   max_progress = 100;

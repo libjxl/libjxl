@@ -8,6 +8,8 @@
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 
+#include "common.h"
+
 #define _PROFILE_ORIGIN_ JXL_COLOR_PROFILE_TARGET_ORIGINAL
 #define _PROFILE_TARGET_ JXL_COLOR_PROFILE_TARGET_DATA
 #define LOAD_PROC "file-jxl-load"
@@ -32,7 +34,8 @@ bool SetJpegXlOutBuffer(
   return true;
 }
 
-bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
+bool LoadJpegXlImage(const gchar *const filename,
+                     GimpImageOrId *const image_id) {
   bool stop_processing = false;
   JxlDecoderStatus status = JXL_DEC_NEED_MORE_INPUT;
   std::vector<uint8_t> icc_profile;
@@ -48,7 +51,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   double tps_denom = 1.f;
   double tps_numerator = 1.f;
 
-  gint32 layer;
+  GimpLayerOrId layer;
 
   gpointer pixels_buffer_1 = nullptr;
   gpointer pixels_buffer_2 = nullptr;
@@ -56,7 +59,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
 
   GimpImageBaseType image_type = GIMP_RGB;
   GimpImageType layer_type = GIMP_RGB_IMAGE;
-  GimpPrecision precision = GIMP_PRECISION_U16_GAMMA;
+  GimpPrecision precision = GIMP_PRECISION_U16_NON_LINEAR;
   JxlBasicInfo info = {};
   JxlPixelFormat format = {};
   JxlAnimationHeader animation = {};
@@ -302,31 +305,31 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         if (is_linear) {
           precision = GIMP_PRECISION_U8_LINEAR;
         } else {
-          precision = GIMP_PRECISION_U8_GAMMA;
+          precision = GIMP_PRECISION_U8_NON_LINEAR;
         }
       } else if (info.bits_per_sample <= 16) {
         if (info.exponent_bits_per_sample > 0) {
           if (is_linear) {
             precision = GIMP_PRECISION_HALF_LINEAR;
           } else {
-            precision = GIMP_PRECISION_HALF_GAMMA;
+            precision = GIMP_PRECISION_HALF_NON_LINEAR;
           }
         } else if (is_linear) {
           precision = GIMP_PRECISION_U16_LINEAR;
         } else {
-          precision = GIMP_PRECISION_U16_GAMMA;
+          precision = GIMP_PRECISION_U16_NON_LINEAR;
         }
       } else {
         if (info.exponent_bits_per_sample > 0) {
           if (is_linear) {
             precision = GIMP_PRECISION_FLOAT_LINEAR;
           } else {
-            precision = GIMP_PRECISION_FLOAT_GAMMA;
+            precision = GIMP_PRECISION_FLOAT_NON_LINEAR;
           }
         } else if (is_linear) {
           precision = GIMP_PRECISION_U32_LINEAR;
         } else {
-          precision = GIMP_PRECISION_U32_GAMMA;
+          precision = GIMP_PRECISION_U32_NON_LINEAR;
         }
       }
 
@@ -335,8 +338,8 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         *image_id = gimp_image_new_with_precision(xsize, ysize, image_type,
                                                   GIMP_PRECISION_FLOAT_LINEAR);
       } else {
-        *image_id = gimp_image_new_with_precision(xsize, ysize, image_type,
-                                                  GIMP_PRECISION_FLOAT_GAMMA);
+        *image_id = gimp_image_new_with_precision(
+            xsize, ysize, image_type, GIMP_PRECISION_FLOAT_NON_LINEAR);
       }
 
       if (profile_int) {
@@ -375,11 +378,11 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
                              /*opacity=*/100,
                              gimp_image_get_default_new_layer_mode(*image_id));
 
-      gimp_image_insert_layer(*image_id, layer, /*parent_id=*/-1,
+      gimp_image_insert_layer(*image_id, layer, kNoGimpLayerOrId,
                               /*position=*/0);
 
       pixels_buffer_2 = g_malloc(buffer_size);
-      GeglBuffer *buffer = gimp_drawable_get_buffer(layer);
+      GeglBuffer *buffer = gimp_drawable_get_buffer(GimpLayerToDrawable(layer));
       const Babl *destination_format = gegl_buffer_set_format(buffer, nullptr);
 
       std::string babl_format_str = "";
@@ -400,7 +403,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
 
       gegl_buffer_set(buffer, GEGL_RECTANGLE(0, 0, xsize, ysize), 0, nullptr,
                       pixels_buffer_2, GEGL_AUTO_ROWSTRIDE);
-      gimp_item_transform_translate(layer, crop_x0, crop_y0);
+      gimp_item_transform_translate(GimpLayerToItem(layer), crop_x0, crop_y0);
 
       g_clear_object(&buffer);
       g_free(pixels_buffer_1);
@@ -474,7 +477,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
     gimp_image_convert_precision(*image_id, precision);
   }
 
-  gimp_image_set_filename(*image_id, filename);
+  GimpImageSetFileName(*image_id, filename);
 
   gimp_load_progress.finished();
   return true;
