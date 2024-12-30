@@ -306,21 +306,25 @@ void TestFloat() {
     JXL_ENSURE(kVecCap % Lanes(df) == 0);
 
     HWY_ALIGN Xorshift128Plus rng(seed);
-    HWY_ALIGN uint64_t batch[Xorshift128Plus::N];
     JXL_TEST_ASSIGN_OR_DIE(
         AlignedMemory mem,
         AlignedMemory::Create(memory_manager, Lanes(df) * sizeof(float)));
     float* lanes = mem.address<float>();
+
+    HWY_ALIGN uint64_t batch64[Xorshift128Plus::N];
+    HWY_ALIGN uint32_t batch32[2 * Xorshift128Plus::N];
 
     double sum = 0.0;
     size_t count = 0;
     const size_t kReps = 32000;
     // It is OK if count become bigger than kReps.
     while (count < kReps) {
-      rng.Fill(batch);
+      rng.Fill(batch64);
+      // Workaround for https://github.com/llvm/llvm-project/issues/121229
+      memcpy(batch32, batch64, sizeof(batch32));
       for (size_t i = 0; i < kVecCap; i += Lanes(df)) {
         const auto bits =
-            Load(du, reinterpret_cast<const uint32_t*>(batch) + i);
+            Load(du, reinterpret_cast<const uint32_t*>(batch32) + i);
         // 1.0 + 23 random mantissa bits = [1, 2)
         const auto rand12 =
             BitCast(df, Or(ShiftRight<9>(bits), Set(du, 0x3F800000)));
