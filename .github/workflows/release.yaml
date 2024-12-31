@@ -126,9 +126,10 @@ jobs:
         - ubuntu:20.04
         - debian:bullseye
         - debian:bookworm
-        # GIMP package is removed: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1078402
+        # GIMP-2 package is removed: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1078402
+        # GIMP-3 package has incompatible API: https://github.com/libjxl/libjxl/issues/4037
         # - debian:trixie
-        - debian:sid
+        # - debian:sid
 
     container:
       image: ${{ matrix.os }}
