@@ -24,30 +24,49 @@
   return EXIT_FAILURE;
 
 int PrintUsage(char** argv) {
-  fprintf(stderr, "Usage: %s orig.png distorted.png\n", argv[0]);
+  fprintf(stderr, "Usage: %s original.png distorted.png\n", argv[0]);
   fprintf(stderr,
           "Returns a score in range -inf..100, which correlates to subjective "
           "visual quality:\n");
+  fprintf(
+      stderr,
+      "     negative scores: extremely low quality, very strong distortion\n");
   fprintf(stderr,
-          "     30 = low quality (p10 worst output of mozjpeg -quality 30)\n");
+          "     10 = very low quality (average output of cjxl -d 14 / -q 12 or "
+          "libjpeg-turbo quality 14)\n");
   fprintf(stderr,
-          "     50 = medium quality (average output of cjxl -q 40 or mozjpeg "
-          "-quality 40,\n");
+          "     30 = low quality (average output of cjxl -d 9 / -q 20 or "
+          "libjpeg-turbo quality 20)\n");
   fprintf(stderr,
-          "                          p10 output of cjxl -q 50 or mozjpeg "
-          "-quality 60)\n");
+          "     50 = medium quality (average output of cjxl -d 5 / -q 45 or "
+          "libjpeg-turbo quality 35)\n");
   fprintf(stderr,
-          "     70 = high quality (average output of cjxl -q 70 or mozjpeg "
-          "-quality 70,\n");
+          "     70 = high quality (hard to notice artifacts without comparison "
+          "to the original,\n");
   fprintf(stderr,
-          "                        p10 output of cjxl -q 75 or mozjpeg "
-          "-quality 80)\n");
+          "                        average output of cjxl -d 2.5 / -q 73 or "
+          "libjpeg-turbo quality 70)\n");
   fprintf(stderr,
-          "     90 = very high quality (impossible to distinguish from "
-          "original at 1:1,\n");
+          "     80 = very high quality (impossible to distinguish from the "
+          "original in a side-by-side comparison at 1:1,\n");
   fprintf(stderr,
-          "                             average output of cjxl -q 90 or "
-          "mozjpeg -quality 90)\n");
+          "                             average output of cjxl -d 1.5 / -q 85 "
+          "or libjpeg-turbo quality 85 (4:2:2))\n");
+  fprintf(stderr,
+          "     85 = excellent quality (impossible to distinguish from the "
+          "original in a flip test at 1:1,\n");
+  fprintf(stderr,
+          "                             average output of cjxl -d 1 / -q 90 or "
+          "libjpeg-turbo quality 90 (4:4:4))\n");
+  fprintf(stderr,
+          "     90 = visually lossless (impossible to distinguish from the "
+          "original in a flicker test at 1:1,\n");
+
+  fprintf(stderr,
+          "                             average output of cjxl -d 0.5 / -q 95 "
+          "or libjpeg-turbo quality 95 (4:4:4)\n");
+  fprintf(stderr, "     100 = mathematically lossless\n");
+
   return 1;
 }
 
