@@ -38,17 +38,6 @@
 #define JXL_TSAN_SLOW_TEST(T, C) TEST(T, C)
 #endif  // THREAD_SANITIZER
 
-#if defined(__x86_64__) || defined(_M_X64)  // x86_64
-#define JXL_NOT_X86_32_TEST(T, C) TEST(T, C)
-#define JXL_NOT_X86_32_TEST_P(T, C) TEST_P(T, C)
-#elif defined(i386) || defined(__i386__) || defined(__i386) || defined(_M_IX86)
-#define JXL_NOT_X86_32_TEST(T, C) TEST(T, DISABLED_##C)
-#define JXL_NOT_X86_32_TEST_P(T, C) TEST_P(T, DISABLED_##C)
-#else  // not x86
-#define JXL_NOT_X86_32_TEST(T, C) TEST(T, C)
-#define JXL_NOT_X86_32_TEST_P(T, C) TEST_P(T, C)
-#endif  // defined(__x86_64__)
-
 // googletest before 1.10 didn't define INSTANTIATE_TEST_SUITE_P() but instead
 // used INSTANTIATE_TEST_CASE_P which is now deprecated.
 #ifdef INSTANTIATE_TEST_SUITE_P
