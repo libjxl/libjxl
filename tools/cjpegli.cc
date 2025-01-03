@@ -243,7 +243,8 @@ int CJpegliMain(int argc, const char* argv[]) {
   }
   if (!args.quiet) {
     fprintf(stderr, "Compressed to %" PRIuS " bytes ", jpeg_bytes.size());
-    const size_t num_pixels = ppf.info.xsize * ppf.info.ysize;
+    const double num_pixels =
+        static_cast<double>(ppf.info.xsize) * ppf.info.ysize;
     const double bpp =
         static_cast<double>(jpeg_bytes.size() * jxl::kBitsPerByte) / num_pixels;
     fprintf(stderr, "(%.3f bpp).\n", bpp);

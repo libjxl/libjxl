@@ -177,7 +177,8 @@ bool EncodeWithJpegli(const ImageSpec& spec, const std::vector<uint8_t>& pixels,
     jpegli_set_progressive_level(&cinfo, spec.progressive_level);
     cinfo.restart_interval = spec.restart_interval;
     jpegli_start_compress(&cinfo, TRUE);
-    size_t stride = cinfo.image_width * cinfo.input_components;
+    size_t stride =
+        cinfo.image_width * static_cast<size_t>(cinfo.input_components);
     std::vector<uint8_t> row_bytes(stride);
     for (size_t y = 0; y < cinfo.image_height; ++y) {
       memcpy(row_bytes.data(), &pixels[y * stride], stride);
