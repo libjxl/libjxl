@@ -27,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-#include "lib/extras/codec.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"

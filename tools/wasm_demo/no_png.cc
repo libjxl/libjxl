@@ -5,9 +5,12 @@
 
 #include "tools/wasm_demo/no_png.h"
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace {
 

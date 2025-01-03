@@ -7,13 +7,17 @@
 
 #include <jxl/memory_manager.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <map>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/icc_codec_common.h"

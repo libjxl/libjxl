@@ -6,8 +6,12 @@
 #include "lib/jxl/enc_photon_noise.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/cms/opsin_params.h"
+#include "lib/jxl/noise.h"
 
 namespace jxl {
 

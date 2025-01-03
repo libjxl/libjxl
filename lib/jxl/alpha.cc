@@ -5,9 +5,10 @@
 
 #include "lib/jxl/alpha.h"
 
-#include <string.h>
-
 #include <algorithm>
+#include <cstring>
+
+#include "lib/jxl/base/compiler_specific.h"
 
 namespace jxl {
 

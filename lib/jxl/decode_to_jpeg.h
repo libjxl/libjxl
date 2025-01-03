@@ -21,7 +21,7 @@
 #include <vector>
 
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #if JPEGXL_ENABLE_TRANSCODE_JPEG

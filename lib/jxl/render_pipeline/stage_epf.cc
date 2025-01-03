@@ -5,11 +5,21 @@
 
 #include "lib/jxl/render_pipeline/stage_epf.h"
 
+#include <array>
+#include <cstddef>
+#include <memory>
+#include <utility>
+
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/epf.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/loop_filter.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_epf.cc"
@@ -280,7 +290,7 @@ class EPF1Stage : public RenderPipelineStage {
         sad1c = Add(sad1c, t);  // SAD 1, 2
         sad2c = Add(sad2c, t);  // SAD 3, 2
         t = AbsDiff(p22, p21);
-        auto sad3c = t;  // SAD 2, 3
+        auto sad3c = t;         // SAD 2, 3
         sad0c = Add(sad0c, t);  // SAD 2, 1
 
         const auto p32 = LoadU(df, rows[c][2 + 0] + x + 1);

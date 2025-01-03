@@ -5,9 +5,15 @@
 
 #include "lib/jpegli/libjpeg_test_util.h"
 
+#include <csetjmp>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
+#include <vector>
 
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/test_params.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/include_jpeglib.h"  // NOLINT
 #include "lib/jxl/base/sanitizers.h"

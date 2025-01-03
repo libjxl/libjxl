@@ -4,18 +4,20 @@
 // license that can be found in the LICENSE file.
 
 #include <setjmp.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/stat.h>
-#include <sys/types.h>
+
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <thread>
+#include <utility>
 
 #include "lib/jxl/base/status.h"
 #if defined(_WIN32) || defined(_WIN64)
 #include "third_party/dirent.h"
 #else
-#include <dirent.h>
-#include <unistd.h>
 #endif
 
 #include <algorithm>

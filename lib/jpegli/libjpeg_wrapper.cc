@@ -7,10 +7,12 @@
 // shared library that is API- and ABI-compatible with libjpeg-turbo's version
 // of libjpeg.so.
 
+#include <cstddef>
+#include <cstdio>
+
 #include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
-#include "lib/jpegli/error.h"
 
 struct jpeg_error_mgr *jpeg_std_error(struct jpeg_error_mgr *err) {
   return jpegli_std_error(err);

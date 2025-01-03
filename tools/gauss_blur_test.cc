@@ -7,12 +7,16 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
-#include <hwy/targets.h>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_memory_manager.h"

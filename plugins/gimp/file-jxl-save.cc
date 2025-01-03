@@ -5,12 +5,17 @@
 
 #include "plugins/gimp/file-jxl-save.h"
 
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 #include <jxl/types.h>
 
 #include <cmath>
-#include <utility>
+#include <cstddef>
+#include <cstdint>
+#include <fstream>
+#include <string>
 
 #include "gobject/gsignal.h"
 

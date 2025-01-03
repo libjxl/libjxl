@@ -5,11 +5,16 @@
 
 #include "lib/jxl/image_bundle.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <utility>
+#include <vector>
 
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_metadata.h"
 
 namespace jxl {
 

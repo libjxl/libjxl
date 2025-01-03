@@ -6,8 +6,6 @@
 #ifndef TOOLS_TOOL_VERSION_H_
 #define TOOLS_TOOL_VERSION_H_
 
-#include <string>
-
 namespace jpegxl {
 namespace tools {
 

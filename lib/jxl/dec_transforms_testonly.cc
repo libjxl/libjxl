@@ -5,6 +5,10 @@
 
 #include "lib/jxl/dec_transforms_testonly.h"
 
+#include <cstddef>
+
+#include "lib/jxl/base/compiler_specific.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_transforms_testonly.cc"
 #include <hwy/foreach_target.h>

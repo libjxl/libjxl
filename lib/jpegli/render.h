@@ -6,7 +6,7 @@
 #ifndef LIB_JPEGLI_RENDER_H_
 #define LIB_JPEGLI_RENDER_H_
 
-#include <stdint.h>
+#include <cstddef>
 
 #include "lib/jpegli/common.h"
 

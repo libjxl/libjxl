@@ -6,9 +6,11 @@
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
 
 #include <cinttypes>  // PRId64
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"

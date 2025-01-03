@@ -7,13 +7,17 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <map>
 #include <numeric>
 #include <queue>
 #include <tuple>
+#include <vector>
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/enc_ans_params.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_cluster.cc"

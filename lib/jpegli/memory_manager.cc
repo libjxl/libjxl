@@ -5,11 +5,14 @@
 
 #include "lib/jpegli/memory_manager.h"
 
-#include <string.h>
-
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <hwy/aligned_allocator.h>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/error.h"
 

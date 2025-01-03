@@ -5,7 +5,9 @@
 
 // TODO(deymo): Move these tests to dec_ans.h and common.h
 
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/dec_ans.h"

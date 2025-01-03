@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/color_encoding_internal.h"

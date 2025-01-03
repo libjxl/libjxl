@@ -3,15 +3,20 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
+#include <cstdlib>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/matrix_ops.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/cms/tone_mapping_test.cc"
-#include "lib/jxl/cms/tone_mapping.h"
-
 #include <cstdio>
 #include <hwy/foreach_target.h>
 
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/cms/tone_mapping-inl.h"
+#include "lib/jxl/cms/tone_mapping.h"
 #include "lib/jxl/testing.h"
 
 // Test utils

@@ -3,6 +3,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/frame_dimensions.h"
+
 #if defined(LIB_JXL_ENC_TRANSFORMS_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_ENC_TRANSFORMS_INL_H_
 #undef LIB_JXL_ENC_TRANSFORMS_INL_H_

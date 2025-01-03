@@ -3,6 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstddef>
+#include <cstdint>
+
+#include "lib/jxl/base/compiler_specific.h"
+
 #if defined(LIB_JXL_CONVOLVE_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_CONVOLVE_INL_H_
 #undef LIB_JXL_CONVOLVE_INL_H_
@@ -11,6 +16,10 @@
 #endif
 
 #include <hwy/highway.h>
+
+#if HWY_TARGET <= (1 << HWY_HIGHEST_TARGET_BIT_X86)
+#include <xmmintrin.h>
+#endif
 
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/rect.h"

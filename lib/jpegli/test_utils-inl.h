@@ -7,6 +7,8 @@
 // test_utils.cc files with different JPEG_API_FN macros and possibly different
 // include paths for the jpeg headers.
 
+#include "lib/jxl/base/sanitizers.h"
+
 // Sequential non-interleaved.
 constexpr jpeg_scan_info kScript1[] = {
     {1, {0}, 0, 63, 0, 0},

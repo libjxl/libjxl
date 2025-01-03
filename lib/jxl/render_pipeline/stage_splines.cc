@@ -8,6 +8,8 @@
 #include <cstddef>
 #include <memory>
 
+#include "lib/jxl/base/common.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_splines.cc"
 #include <hwy/foreach_target.h>

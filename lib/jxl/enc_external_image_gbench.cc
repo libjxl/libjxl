@@ -10,7 +10,9 @@
 #include <vector>
 
 #include "benchmark/benchmark.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_external_image.h"
+#include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
 #include "tools/no_memory_manager.h"
 

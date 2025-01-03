@@ -6,20 +6,28 @@
 #include "lib/extras/packed_image_convert.h"
 
 #include <jxl/cms.h>
+#include <jxl/codestream_header.h>
 #include <jxl/color_encoding.h>
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
 #include <cstdint>
 #include <cstdio>
+#include <utility>
 
 #include "lib/extras/packed_image.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/luminance.h"
 
 namespace jxl {

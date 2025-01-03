@@ -7,17 +7,28 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
 #include <map>
 #include <set>
+#include <utility>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/enc_transform.h"
 #include "lib/jxl/modular/transform/palette.h"
+#include "lib/jxl/modular/transform/transform.h"
 
 namespace jxl {
 

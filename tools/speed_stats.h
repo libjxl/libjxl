@@ -6,9 +6,7 @@
 #ifndef TOOLS_SPEED_STATS_H_
 #define TOOLS_SPEED_STATS_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <cstddef>
 #include <vector>
 
 namespace jpegxl {

@@ -7,15 +7,13 @@
 
 #include <algorithm>
 #include <cmath>
-#include <vector>
+#include <cstddef>
+#include <cstdint>
 
-#include "lib/jpegli/adaptive_quantization.h"
 #include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/error.h"
-#include "lib/jpegli/memory_manager.h"
-#include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/status.h"
 
 namespace jpegli {
 

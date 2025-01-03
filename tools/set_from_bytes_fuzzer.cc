@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/size_constraints.h"

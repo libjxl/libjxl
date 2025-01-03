@@ -6,6 +6,8 @@
 #ifndef LIB_JXL_JPEG_DEC_JPEG_DATA_H_
 #define LIB_JXL_JPEG_DEC_JPEG_DATA_H_
 
+#include <cstdint>
+
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/jpeg/jpeg_data.h"

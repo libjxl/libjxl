@@ -6,7 +6,7 @@
 #ifndef LIB_JPEGLI_MEMORY_MANAGER_H_
 #define LIB_JPEGLI_MEMORY_MANAGER_H_
 
-#include <stdlib.h>
+#include <cstdlib>
 
 #include "lib/jpegli/common.h"
 

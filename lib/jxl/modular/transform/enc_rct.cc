@@ -5,6 +5,9 @@
 
 #include "lib/jxl/modular/transform/enc_rct.h"
 
+#include <cstddef>
+
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/transform/transform.h"  // CheckEqualChannels

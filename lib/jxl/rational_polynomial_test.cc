@@ -3,8 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
 #include <cmath>
-#include <string>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/rational_polynomial_test.cc"
@@ -14,7 +17,6 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/rational_polynomial-inl.h"
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/testing.h"
 
 HWY_BEFORE_NAMESPACE();

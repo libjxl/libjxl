@@ -5,6 +5,8 @@
 
 // Fast SIMD math ops (log2, encoder only, cos, erf for splines)
 
+#include <cstdint>
+
 #if defined(LIB_JXL_BASE_FAST_MATH_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_BASE_FAST_MATH_INL_H_
 #undef LIB_JXL_BASE_FAST_MATH_INL_H_

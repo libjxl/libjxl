@@ -6,8 +6,7 @@
 #ifndef LIB_JPEGLI_DECODE_INTERNAL_H_
 #define LIB_JPEGLI_DECODE_INTERNAL_H_
 
-#include <sys/types.h>
-
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 

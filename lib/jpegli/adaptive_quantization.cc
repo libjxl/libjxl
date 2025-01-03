@@ -6,14 +6,14 @@
 #include "lib/jpegli/adaptive_quantization.h"
 
 #include <jxl/types.h>
-#include <stddef.h>
-#include <stdlib.h>
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
-#include <string>
-#include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+
+#include "lib/jpegli/common_internal.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jpegli/adaptive_quantization.cc"
@@ -22,7 +22,6 @@
 
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/status.h"
 HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {

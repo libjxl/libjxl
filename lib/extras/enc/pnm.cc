@@ -5,15 +5,21 @@
 
 #include "lib/extras/enc/pnm.h"
 
+#include <jxl/codestream_header.h>
+#include <jxl/types.h>
+
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 

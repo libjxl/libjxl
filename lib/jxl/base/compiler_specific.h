@@ -8,7 +8,7 @@
 
 // Macros for compiler version + nonstandard keywords, e.g. __builtin_expect.
 
-#include <sys/types.h>
+#include <sys/types.h>  // ssize_t
 
 #include "lib/jxl/base/sanitizer_definitions.h"
 

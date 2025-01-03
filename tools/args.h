@@ -14,6 +14,7 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/override.h"

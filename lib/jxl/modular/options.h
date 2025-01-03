@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/enc_ans_params.h"
 
 namespace jxl {

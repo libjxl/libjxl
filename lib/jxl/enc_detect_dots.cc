@@ -15,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/enc_patch_dictionary.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_detect_dots.cc"
 #include <hwy/foreach_target.h>

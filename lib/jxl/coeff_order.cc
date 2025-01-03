@@ -8,7 +8,9 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include "lib/jxl/ac_strategy.h"
@@ -16,6 +18,7 @@
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/lehmer_code.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 

@@ -7,14 +7,21 @@
 
 #include <jxl/types.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <initializer_list>
 #include <vector>
 
+#include "jpeglib.h"
 #include "lib/jpegli/adaptive_quantization.h"
 #include "lib/jpegli/bit_writer.h"
 #include "lib/jpegli/bitstream.h"
 #include "lib/jpegli/color_transform.h"
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/downsample.h"
 #include "lib/jpegli/encode_finish.h"
 #include "lib/jpegli/encode_internal.h"
@@ -25,6 +32,8 @@
 #include "lib/jpegli/input.h"
 #include "lib/jpegli/memory_manager.h"
 #include "lib/jpegli/quant.h"
+#include "lib/jpegli/simd.h"
+#include "lib/jpegli/types.h"
 
 namespace jpegli {
 

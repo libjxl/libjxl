@@ -9,10 +9,16 @@
 #include <cinttypes>  // PRIu64
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <hwy/base.h>
 
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/field_encodings.h"
 
 namespace jxl {
 
