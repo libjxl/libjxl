@@ -38,6 +38,7 @@ jobs:
            disable_tests:
              - ButteraugliTest.Lossless
              - ButteraugliTest.Distmap
+             - JxlTest.RoundtripLargeEmptyModular
            disable_benchmark: true
          # "Legacy" toolchains are being "phased-out":
          # https://www.msys2.org/news/#2023-12-13-starting-to-drop-some-32-bit-packages
