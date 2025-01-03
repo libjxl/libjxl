@@ -7,9 +7,11 @@
 #define LIB_JXL_AC_CONTEXT_H_
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
-#include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
 

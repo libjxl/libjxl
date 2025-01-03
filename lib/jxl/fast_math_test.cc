@@ -5,9 +5,17 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#include "lib/jxl/common.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/fast_math_test.cc"
-#include <jxl/cms.h>
 
 #include <hwy/foreach_target.h>
 
@@ -20,6 +28,8 @@
 #include "lib/jxl/testing.h"
 
 #if !JXL_HIGH_PRECISION
+#include <jxl/cms.h>
+
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"

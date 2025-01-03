@@ -6,9 +6,11 @@
 #ifndef LIB_JXL_MODULAR_TRANSFORM_RCT_H_
 #define LIB_JXL_MODULAR_TRANSFORM_RCT_H_
 
+#include <cstddef>
+
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/modular/modular_image.h"
-#include "lib/jxl/modular/transform/transform.h"  // CheckEqualChannels
 
 namespace jxl {
 

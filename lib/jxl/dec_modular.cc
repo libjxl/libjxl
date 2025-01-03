@@ -7,10 +7,31 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <utility>
 #include <vector>
 
+#include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/dec_ans.h"
+#include "lib/jxl/dec_cache.h"
+#include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/image_ops.h"
+#include "lib/jxl/loop_filter.h"
+#include "lib/jxl/modular/encoding/dec_ma.h"
+#include "lib/jxl/modular/options.h"
+#include "lib/jxl/quant_weights.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_modular.cc"

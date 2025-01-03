@@ -12,6 +12,17 @@
 #include <cmath>
 #include <cstdlib>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
+#include <limits>
+
+#include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/quant_weights.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_chroma_from_luma.cc"

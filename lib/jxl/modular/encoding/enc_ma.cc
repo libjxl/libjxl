@@ -6,13 +6,22 @@
 #include "lib/jxl/modular/encoding/enc_ma.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <numeric>
 #include <queue>
 #include <vector>
 
+#include "lib/jxl/ans_params.h"
+#include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
+#include "lib/jxl/modular/modular_image.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/modular/encoding/enc_ma.cc"

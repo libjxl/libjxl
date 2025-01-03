@@ -3,10 +3,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "jxl/gain_map.h"
-
 #include <jxl/color_encoding.h>
 #include <jxl/encode.h>
+#include <jxl/gain_map.h>
 #include <jxl/types.h>
 
 #include <algorithm>

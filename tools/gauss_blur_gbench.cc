@@ -5,10 +5,12 @@
 
 #include <jxl/memory_manager.h>
 
-#include <hwy/targets.h>
+#include <cstddef>
+#include <cstdlib>
 
 #include "benchmark/benchmark.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "tools/gauss_blur.h"
 #include "tools/no_memory_manager.h"

@@ -5,6 +5,10 @@
 
 #include "lib/extras/alpha_blend.h"
 
+#include <jxl/types.h>
+
+#include <cstddef>
+
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/status.h"
 

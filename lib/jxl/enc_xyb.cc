@@ -5,10 +5,17 @@
 
 #include "lib/jxl/enc_xyb.h"
 
+#include <jxl/cms_interface.h>
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <cstdlib>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_xyb.cc"

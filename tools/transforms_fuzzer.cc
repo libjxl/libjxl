@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"

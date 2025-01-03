@@ -5,12 +5,20 @@
 
 #include "tools/wasm_demo/jxl_decompressor.h"
 
+#include <jxl/color_encoding.h>
+#include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #include "lib/extras/dec/jxl.h"
+#include "lib/extras/packed_image.h"
 #include "tools/wasm_demo/no_png.h"
 
 extern "C" {

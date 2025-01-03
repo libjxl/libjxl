@@ -3,6 +3,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cmath>
+
+#include "lib/jxl/base/matrix_ops.h"
+
 #if defined(LIB_JXL_CMS_TONE_MAPPING_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_CMS_TONE_MAPPING_INL_H_
 #undef LIB_JXL_CMS_TONE_MAPPING_INL_H_

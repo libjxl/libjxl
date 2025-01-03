@@ -6,7 +6,8 @@
 #ifndef LIB_JXL_DEC_HUFFMAN_H_
 #define LIB_JXL_DEC_HUFFMAN_H_
 
-#include <memory>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "lib/jxl/dec_bit_reader.h"

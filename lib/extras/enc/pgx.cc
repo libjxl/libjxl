@@ -6,11 +6,20 @@
 #include "lib/extras/enc/pgx.h"
 
 #include <jxl/codestream_header.h>
+#include <jxl/types.h>
 
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <memory>
+#include <vector>
 
+#include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {

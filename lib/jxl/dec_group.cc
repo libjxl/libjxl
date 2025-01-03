@@ -5,14 +5,30 @@
 
 #include "lib/jxl/dec_group.h"
 
+#include <jxl/memory_manager.h>
+
 #include <algorithm>
+#include <array>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <utility>
+#include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/dct_util.h"
+#include "lib/jxl/dec_ans.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_group.cc"

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <csetjmp>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>

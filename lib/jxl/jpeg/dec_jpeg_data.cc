@@ -7,10 +7,17 @@
 
 #include <brotli/decode.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <vector>
+
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/fields.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
 namespace jpeg {

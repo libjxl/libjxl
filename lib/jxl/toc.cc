@@ -6,9 +6,15 @@
 #include "lib/jxl/toc.h"
 
 #include <jxl/memory_manager.h>
-#include <stdint.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/fields.h"

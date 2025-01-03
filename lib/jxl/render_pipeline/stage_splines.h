@@ -6,7 +6,7 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_SPLINES_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_SPLINES_H_
 
-#include <utility>
+#include <memory>
 
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 #include "lib/jxl/splines.h"

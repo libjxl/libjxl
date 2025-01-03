@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <unordered_map>
@@ -17,9 +18,13 @@
 #include <vector>
 
 #include "lib/jxl/ans_common.h"
+#include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
