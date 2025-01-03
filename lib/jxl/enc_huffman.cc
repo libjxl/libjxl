@@ -6,9 +6,12 @@
 #include "lib/jxl/enc_huffman.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_huffman_tree.h"
 
 namespace jxl {

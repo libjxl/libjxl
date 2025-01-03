@@ -7,10 +7,13 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/icc_codec_common.h"
 #include "lib/jxl/padded_bytes.h"

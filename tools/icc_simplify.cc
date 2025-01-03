@@ -4,12 +4,16 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/color_encoding.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_description.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "tools/cmdline.h"

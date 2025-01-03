@@ -5,9 +5,10 @@
 
 #include "lib/jpegli/common.h"
 
-#include "lib/jpegli/decode_internal.h"
-#include "lib/jpegli/encode_internal.h"
+#include "lib/jpegli/common_internal.h"
+#include "lib/jpegli/decode_internal.h"  // for jpeg_decomp_master
 #include "lib/jpegli/memory_manager.h"
+#include "lib/jpegli/types.h"
 
 void jpegli_abort(j_common_ptr cinfo) {
   if (cinfo->mem == nullptr) return;

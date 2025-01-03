@@ -6,10 +6,7 @@
 #ifndef LIB_JXL_ALPHA_H_
 #define LIB_JXL_ALPHA_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
-#include <limits>
+#include <cstddef>
 
 #include "lib/jxl/base/compiler_specific.h"
 

@@ -4,6 +4,15 @@
 // license that can be found in the LICENSE file.
 
 #include "lib/jxl/modular/transform/rct.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/transform/transform.h"
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/modular/transform/rct.cc"
 #include <hwy/foreach_target.h>

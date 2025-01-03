@@ -6,11 +6,14 @@
 #ifndef LIB_JXL_IMAGE_TEST_UTILS_H_
 #define LIB_JXL_IMAGE_TEST_UTILS_H_
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <sstream>
+#include <type_traits>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/random.h"

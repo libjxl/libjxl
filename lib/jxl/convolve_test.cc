@@ -9,7 +9,13 @@
 #include <jxl/types.h>
 
 #include <cinttypes>  // PRIx64
+#include <cstdint>
+#include <cstdio>
 #include <ctime>
+
+#include "hwy/timer.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/convolve_test.cc"

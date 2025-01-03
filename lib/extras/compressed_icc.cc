@@ -4,11 +4,21 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/compressed_icc.h>
+#include <jxl/memory_manager.h>
+#include <jxl/types.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_aux_out.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/icc_codec.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 JXL_BOOL JxlICCProfileEncode(const JxlMemoryManager* memory_manager,
                              const uint8_t* icc, size_t icc_size,

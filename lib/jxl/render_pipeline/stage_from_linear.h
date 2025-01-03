@@ -6,6 +6,8 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_FROM_LINEAR_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_FROM_LINEAR_H_
 
+#include <memory>
+
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 

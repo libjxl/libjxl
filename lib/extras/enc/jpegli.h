@@ -8,8 +8,8 @@
 
 // Encodes JPG pixels and metadata in memory using the libjpegli library.
 
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 

@@ -7,12 +7,13 @@
 
 #include <string.h>
 
-#include <algorithm>
-#include <memory>
+#include <cstdint>
 
 #include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/common.h"  // kMaxNumPasses
-#include "lib/jxl/image.h"
+#include "lib/jxl/frame_dimensions.h"
 
 namespace jxl {
 
@@ -60,7 +61,7 @@ void ProgressiveSplitter::SplitACCoefficients(
         }
         output[num_pass][pos] = shift_right_round0(v, pass_shift);
       }  // superblk-x
-    }    // superblk-y
+    }  // superblk-y
     // We just finished a pass.
     // Hence, we are now guaranteed to have included all coeffs up to
     // frame_ncoeffs in every block, unless the current pass is shifted.

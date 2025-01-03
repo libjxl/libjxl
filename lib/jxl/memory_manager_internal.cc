@@ -6,8 +6,8 @@
 #include "lib/jxl/memory_manager_internal.h"
 
 #include <jxl/memory_manager.h>
-#include <jxl/types.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdio>

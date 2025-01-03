@@ -5,6 +5,8 @@
 
 #include <jxl/memory_manager.h>
 
+#include <cstddef>
+
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"

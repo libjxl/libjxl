@@ -6,13 +6,21 @@
 #include "lib/jxl/modular/transform/transform.h"
 
 #include <cinttypes>  // PRIu32
+#include <cstddef>
+#include <cstdint>
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/palette.h"
 #include "lib/jxl/modular/transform/rct.h"
 #include "lib/jxl/modular/transform/squeeze.h"
+#include "lib/jxl/modular/transform/squeeze_params.h"
 
 namespace jxl {
 

@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
@@ -17,7 +18,9 @@
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/modular/encoding/encoding.h"
+#include "lib/jxl/quant_weights.h"
 
 namespace jxl {
 

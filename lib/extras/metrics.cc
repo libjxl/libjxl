@@ -5,11 +5,18 @@
 
 #include "lib/extras/metrics.h"
 
+#include <jxl/cms_interface.h>
 #include <jxl/memory_manager.h>
 
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
+
+#include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_ops.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/extras/metrics.cc"

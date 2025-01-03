@@ -9,6 +9,12 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/enc_ans.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/frame_header.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_entropy_coder.cc"
 #include <hwy/foreach_target.h>

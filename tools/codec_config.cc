@@ -5,7 +5,10 @@
 
 #include "tools/codec_config.h"
 
+#include <cstdint>
+#include <cstdio>
 #include <hwy/targets.h>
+#include <string>
 
 #include "tools/tool_version.h"
 

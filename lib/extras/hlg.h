@@ -6,6 +6,8 @@
 #ifndef LIB_EXTRAS_HLG_H_
 #define LIB_EXTRAS_HLG_H_
 
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/image_bundle.h"
 
 namespace jxl {

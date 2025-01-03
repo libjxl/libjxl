@@ -8,14 +8,33 @@
 #include <jxl/cms.h>
 #include <jxl/types.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
+#include "tools/benchmark/benchmark_args.h"
+#include "tools/benchmark/benchmark_codec.h"
 #include "tools/cmdline.h"
 #include "tools/no_memory_manager.h"
+#include "tools/speed_stats.h"
 #include "tools/thread_pool_internal.h"
 
 #define JXL_RETURN_IF_AVIF_ERROR(result)                                       \

@@ -5,12 +5,21 @@
 
 #include "lib/jpegli/color_quantize.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <limits>
+#include <memory>
 #include <unordered_map>
+#include <vector>
 
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
+#include "lib/jpegli/memory_manager.h"
 
 namespace jpegli {
 

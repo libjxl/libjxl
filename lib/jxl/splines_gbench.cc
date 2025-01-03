@@ -4,12 +4,14 @@
 // license that can be found in the LICENSE file.
 
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 #include "benchmark/benchmark.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/splines.h"
 #include "tools/no_memory_manager.h"

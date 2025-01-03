@@ -3,16 +3,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/types.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "lib/extras/dec/jpegli.h"
-#include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "tools/cmdline.h"

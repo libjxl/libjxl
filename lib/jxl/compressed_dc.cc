@@ -13,6 +13,10 @@
 #include <cstring>
 #include <vector>
 
+#include "lib/jxl/ac_context.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/modular/modular_image.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/compressed_dc.cc"
 #include <hwy/foreach_target.h>

@@ -6,12 +6,15 @@
 #include "lib/jpegli/decode_marker.h"
 
 #include <jxl/types.h>
-#include <string.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
 
 #include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
-#include "lib/jpegli/huffman.h"
 #include "lib/jpegli/memory_manager.h"
 #include "lib/jxl/base/printf_macros.h"
 

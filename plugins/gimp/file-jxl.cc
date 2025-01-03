@@ -3,9 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <string.h>
-
-#include <string>
+#include <cstring>  // strcmp
 
 #include "plugins/gimp/common.h"
 #include "plugins/gimp/file-jxl-load.h"

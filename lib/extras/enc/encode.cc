@@ -5,7 +5,17 @@
 
 #include "lib/extras/enc/encode.h"
 
+#include <jxl/codestream_header.h>
+#include <jxl/types.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cstddef>
+#include <cstdint>
 #include <locale>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/exr.h"
@@ -13,6 +23,10 @@
 #include "lib/extras/enc/npy.h"
 #include "lib/extras/enc/pgx.h"
 #include "lib/extras/enc/pnm.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {

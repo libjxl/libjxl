@@ -4,8 +4,12 @@
 // license that can be found in the LICENSE file.
 
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <numeric>
+#include <vector>
+
+#include "lib/jxl/base/status.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dct_test.cc"

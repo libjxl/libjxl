@@ -18,12 +18,14 @@ CLANG_TIDY_CONFIG="{\
   }\
 }"
 
+echo "Processing ${SRC}"
+
 `which clang-tidy` \
   -config="${CLANG_TIDY_CONFIG}" \
   -p build \
   -format-style=file \
   -fix-errors \
   --extra-arg=-I${HERE}/lib/include \
-  $SRC
-sed -i -r 's/#include "jxl\/(.+)"/#include <jxl\/\1>/g' $SRC
-clang-format -i $SRC
+  ${SRC}
+sed -i -r 's/#include "jxl\/(.+)"/#include <jxl\/\1>/g' ${SRC}
+clang-format -i ${SRC}

@@ -6,14 +6,20 @@
 #include "lib/jxl/enc_noise.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <numeric>
 #include <utility>
+#include <vector>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_optimize.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/noise.h"
 
 namespace jxl {
 namespace {

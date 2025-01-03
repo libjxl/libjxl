@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstddef>
+
 #if defined(LIB_JPEGLI_TRANSPOSE_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JPEGLI_TRANSPOSE_INL_H_
 #undef LIB_JPEGLI_TRANSPOSE_INL_H_

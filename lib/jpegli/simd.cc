@@ -5,6 +5,9 @@
 
 #include "lib/jpegli/simd.h"
 
+#include <cstddef>
+#include <cstdint>
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jpegli/simd.cc"
 #include <hwy/foreach_target.h>

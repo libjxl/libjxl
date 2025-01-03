@@ -6,7 +6,8 @@
 #ifndef LIB_JXL_MODULAR_TRANSFORM_ENC_TRANSFORM_H_
 #define LIB_JXL_MODULAR_TRANSFORM_ENC_TRANSFORM_H_
 
-#include "lib/jxl/fields.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/transform/transform.h"
 

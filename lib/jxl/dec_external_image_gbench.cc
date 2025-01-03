@@ -4,10 +4,20 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/memory_manager.h>
+#include <jxl/types.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 #include "benchmark/benchmark.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
 #include "tools/no_memory_manager.h"
 

@@ -5,10 +5,15 @@
 
 #include <jxl/memory_manager.h>
 
+#include <utility>
+
 #include "benchmark/benchmark.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 #include "tools/no_memory_manager.h"
 
 namespace jxl {

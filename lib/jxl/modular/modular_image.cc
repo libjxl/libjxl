@@ -7,6 +7,12 @@
 
 #include <jxl/memory_manager.h>
 
+#include <cstddef>
+#include <utility>
+
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/image.h"
+
 #if JXL_DEBUG_V_LEVEL >= 1
 #include <sstream>
 #endif

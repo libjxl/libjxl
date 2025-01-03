@@ -5,15 +5,17 @@
 
 #include "lib/jxl/enc_ac_strategy.h"
 
-#include <jxl/memory_manager.h>
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
-#include "lib/jxl/base/common.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/common.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/memory_manager_internal.h"
 
 #undef HWY_TARGET_INCLUDE

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/metrics.h"

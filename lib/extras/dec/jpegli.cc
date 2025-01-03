@@ -5,16 +5,27 @@
 
 #include "lib/extras/dec/jpegli.h"
 
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
+#include <jxl/types.h>
 #include <setjmp.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "lib/extras/packed_image.h"
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
+#include "lib/jpegli/types.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 

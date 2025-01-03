@@ -7,10 +7,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <numeric>
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {

@@ -5,6 +5,8 @@
 
 #include "lib/jxl/icc_codec_common.h"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <tuple>
 
