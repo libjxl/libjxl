@@ -20,7 +20,6 @@
 #include <utility>
 #include <vector>
 
-#include "lib/extras/codec.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/butteraugli/butteraugli.h"

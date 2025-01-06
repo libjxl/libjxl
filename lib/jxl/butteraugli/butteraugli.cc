@@ -25,15 +25,18 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <vector>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/convolve.h"
 #include "lib/jxl/image.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -41,9 +44,7 @@
 #include <hwy/foreach_target.h>
 
 #include "lib/jxl/base/fast_math-inl.h"
-#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/convolve.h"
 #include "lib/jxl/image_ops.h"
 
 #if BUTTERAUGLI_ENABLE_CHECKS

@@ -5,6 +5,8 @@
 
 #include <jni.h>
 
+#include <cstddef>
+
 #include "tools/jni/org/jpeg/jpegxl/wrapper/decoder_jni.h"
 
 #ifdef __cplusplus

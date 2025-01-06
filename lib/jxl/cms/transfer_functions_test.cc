@@ -3,15 +3,17 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
+#include <cstdlib>
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/cms/transfer_functions_test.cc"
-#include "lib/jxl/cms/transfer_functions.h"
-
 #include <cstdio>
 #include <hwy/foreach_target.h>
 
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
+#include "lib/jxl/cms/transfer_functions.h"
 #include "lib/jxl/testing.h"
 
 // Test utils

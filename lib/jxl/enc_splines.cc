@@ -3,11 +3,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_ans_params.h"
+#include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/pack_signed.h"
 #include "lib/jxl/splines.h"
 

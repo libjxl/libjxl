@@ -6,6 +6,10 @@
 #ifndef LIB_EXTRAS_TONE_MAPPING_H_
 #define LIB_EXTRAS_TONE_MAPPING_H_
 
+#include <utility>
+
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 
 namespace jxl {

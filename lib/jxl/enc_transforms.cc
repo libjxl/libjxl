@@ -5,12 +5,15 @@
 
 #include "lib/jxl/enc_transforms.h"
 
+#include <cstddef>
+
+#include "lib/jxl/base/compiler_specific.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_transforms.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/dct_scales.h"
 #include "lib/jxl/enc_transforms-inl.h"
 
 namespace jxl {

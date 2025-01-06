@@ -40,8 +40,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <mutex>               //NOLINT
-#include <thread>              //NOLINT
+#include <mutex>   //NOLINT
+#include <thread>  //NOLINT
 #include <vector>
 
 namespace jpegxl {

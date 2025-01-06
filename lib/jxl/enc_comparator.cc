@@ -5,15 +5,21 @@
 
 #include "lib/jxl/enc_comparator.h"
 
+#include <jxl/cms_interface.h>
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
 #include <cstddef>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_gamma_correct.h"
 #include "lib/jxl/enc_image_bundle.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 
 namespace jxl {
 namespace {

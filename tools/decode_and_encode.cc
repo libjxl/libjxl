@@ -5,12 +5,16 @@
 
 #include <stdio.h>
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/base/data_parallel.h"
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/dec/decode.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 

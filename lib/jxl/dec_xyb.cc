@@ -5,7 +5,16 @@
 
 #include "lib/jxl/dec_xyb.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <iterator>
+
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/image_ops.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_xyb.cc"

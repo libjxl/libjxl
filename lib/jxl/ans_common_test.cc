@@ -5,6 +5,9 @@
 
 #include "lib/jxl/ans_common.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "lib/jxl/ans_params.h"

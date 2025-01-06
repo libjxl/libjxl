@@ -5,15 +5,28 @@
 
 #include "lib/extras/dec/decode.h"
 
+#include <jxl/codestream_header.h>
+#include <jxl/types.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cstddef>
+#include <cstdint>
 #include <locale>
+#include <string>
 
 #include "lib/extras/dec/apng.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/exr.h"
 #include "lib/extras/dec/gif.h"
 #include "lib/extras/dec/jpg.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {

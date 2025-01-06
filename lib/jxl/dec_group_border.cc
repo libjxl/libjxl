@@ -5,10 +5,12 @@
 
 #include "lib/jxl/dec_group_border.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"

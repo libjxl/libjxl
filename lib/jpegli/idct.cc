@@ -5,8 +5,12 @@
 
 #include "lib/jpegli/idct.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"

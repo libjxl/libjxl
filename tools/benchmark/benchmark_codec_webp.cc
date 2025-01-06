@@ -304,8 +304,8 @@ class WebPCodec : public ImageCodec {
   int quality_ = 90;
   bool lossless_ = false;
   bool near_lossless_ = false;
-  int near_lossless_quality_ = 40;   // only used if near_lossless_
-  int method_ = 6;                   // smallest, some speed cost
+  int near_lossless_quality_ = 40;  // only used if near_lossless_
+  int method_ = 6;                  // smallest, some speed cost
 };
 
 ImageCodec* CreateNewWebPCodec(const BenchmarkArgs& args) {
