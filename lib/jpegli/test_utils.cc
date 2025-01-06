@@ -29,6 +29,7 @@
 #include "lib/jpegli/types.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/sanitizers.h"  // for test_utils-inl.h
 #include "lib/jxl/base/status.h"
 
 #if !defined(TEST_DATA_PATH)
