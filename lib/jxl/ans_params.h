@@ -9,8 +9,7 @@
 // Common parameters that are needed for both the ANS entropy encoding and
 // decoding methods.
 
-#include <stdint.h>
-#include <stdlib.h>
+#include <cstdlib>
 
 namespace jxl {
 

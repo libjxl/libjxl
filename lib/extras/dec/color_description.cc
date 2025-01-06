@@ -5,11 +5,17 @@
 
 #include "lib/extras/dec/color_description.h"
 
-#include <errno.h>
+#include <jxl/color_encoding.h>
 
+#include <array>
+#include <cerrno>
 #include <cmath>
+#include <cstddef>
+#include <cstdlib>
+#include <string>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 

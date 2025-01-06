@@ -9,11 +9,13 @@
 #include <jxl/memory_manager.h>
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_stats.h"

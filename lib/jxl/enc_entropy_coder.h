@@ -6,8 +6,6 @@
 #ifndef LIB_JXL_ENC_ENTROPY_CODER_H_
 #define LIB_JXL_ENC_ENTROPY_CODER_H_
 
-#include <sys/types.h>
-
 #include <cstdint>
 #include <vector>
 

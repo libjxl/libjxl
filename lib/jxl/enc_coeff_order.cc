@@ -5,7 +5,15 @@
 
 #include <jxl/memory_manager.h>
 
+#include <cstddef>
+#include <cstring>
+#include <limits>
+#include <utility>
+
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/common.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/memory_manager_internal.h"
 
 // Suppress any -Wdeprecated-declarations warning that might be emitted by

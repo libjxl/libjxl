@@ -6,6 +6,7 @@
 #include "lib/jxl/render_pipeline/render_pipeline.h"
 
 #include <jxl/cms.h>
+#include <jxl/memory_manager.h>
 
 #include <algorithm>
 #include <cctype>
@@ -17,7 +18,6 @@
 #include <utility>
 #include <vector>
 
-#include "jxl/memory_manager.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"

@@ -5,6 +5,10 @@
 
 // SIMDified inverse-move-to-front transform.
 
+#include <cstdint>
+
+#include "lib/jxl/base/sanitizer_definitions.h"
+
 #if defined(LIB_JXL_INVERSE_MTF_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_INVERSE_MTF_INL_H_
 #undef LIB_JXL_INVERSE_MTF_INL_H_
@@ -13,8 +17,6 @@
 #endif
 
 #include <hwy/highway.h>
-
-#include "lib/jxl/base/sanitizers.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {

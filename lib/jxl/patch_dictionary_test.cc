@@ -3,19 +3,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <jxl/cms.h>
-#include <jxl/memory_manager.h>
+#include <jxl/encode.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
-#include "lib/extras/codec.h"
-#include "lib/jxl/base/override.h"
+#include "lib/extras/dec/decode.h"
+#include "lib/extras/enc/jxl.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/enc_params.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_test_utils.h"
-#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 

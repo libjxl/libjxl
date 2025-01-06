@@ -7,6 +7,23 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
+#include <memory>
+#include <vector>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_cache.h"
+#include "lib/jxl/dec_patch_dictionary.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_blending.cc"
 #include <hwy/foreach_target.h>

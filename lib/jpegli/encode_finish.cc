@@ -5,10 +5,15 @@
 
 #include "lib/jpegli/encode_finish.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <limits>
 
-#include "lib/jpegli/error.h"
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/memory_manager.h"
 #include "lib/jpegli/quant.h"
 

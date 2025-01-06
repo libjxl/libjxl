@@ -6,9 +6,12 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/test_memory_manager.h"
 

@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include <algorithm>
-#include <string>
+#include <cstdint>
 #include <vector>
 
 #include "lib/jxl/base/common.h"

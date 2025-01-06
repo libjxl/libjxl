@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstddef>
+
 #if defined(LIB_JPEGLI_ENTROPY_CODING_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JPEGLI_ENTROPY_CODING_INL_H_
 #undef LIB_JPEGLI_ENTROPY_CODING_INL_H_
@@ -10,6 +12,7 @@
 #define LIB_JPEGLI_ENTROPY_CODING_INL_H_
 #endif
 
+#include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
 
 HWY_BEFORE_NAMESPACE();

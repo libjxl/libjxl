@@ -183,6 +183,11 @@ jobs:
 
     - name: Install deps
       run: |
+        sudo rm -f /var/lib/man-db/auto-update
+        sudo apt update
+        sudo apt install -y \
+          libopenexr-3-1-30 \
+          libgif7
         pip install numpy
     - name: Checkout the conformance source
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

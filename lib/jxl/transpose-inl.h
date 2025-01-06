@@ -5,6 +5,8 @@
 
 // Block transpose for DCT/IDCT
 
+#include "lib/jxl/base/compiler_specific.h"
+
 #if defined(LIB_JXL_TRANSPOSE_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_TRANSPOSE_INL_H_
 #undef LIB_JXL_TRANSPOSE_INL_H_

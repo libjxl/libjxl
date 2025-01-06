@@ -3,8 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cmath>
+#include <cstddef>
+
 #include "benchmark/benchmark.h"
-#include "lib/jxl/image_ops.h"
+#include "lib/jxl/cms/transfer_functions.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/tf_gbench.cc"

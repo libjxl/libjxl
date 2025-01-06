@@ -9,7 +9,6 @@
 // Chooses reference patches, and avoids encoding them once per occurrence.
 
 #include <jxl/memory_manager.h>
-#include <sys/types.h>
 
 #include <array>
 #include <cstddef>
@@ -19,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/image_bundle.h"

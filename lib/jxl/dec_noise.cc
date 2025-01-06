@@ -9,6 +9,13 @@
 #include <cstdlib>
 #include <utility>
 
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/dec_cache.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/noise.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_noise.cc"
 #include <hwy/foreach_target.h>

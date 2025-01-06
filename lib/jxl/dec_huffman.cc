@@ -6,12 +6,15 @@
 #include "lib/jxl/dec_huffman.h"
 
 #include <jxl/types.h>
-#include <string.h> /* for memset */
 
+#include <cstdint>
+#include <cstring> /* for memset */
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/huffman_table.h"
 
 namespace jxl {

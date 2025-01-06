@@ -5,6 +5,8 @@
 
 #include "lib/jxl/image_ops.h"
 
+#include <jxl/thread_parallel_runner.h>
+
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>

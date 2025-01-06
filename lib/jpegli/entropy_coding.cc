@@ -5,12 +5,22 @@
 
 #include "lib/jpegli/entropy_coding.h"
 
+#include <jxl/types.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/huffman.h"
+#include "lib/jpegli/memory_manager.h"
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/status.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jpegli/entropy_coding.cc"

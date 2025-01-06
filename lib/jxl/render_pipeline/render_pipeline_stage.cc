@@ -5,6 +5,13 @@
 
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
+#include <cstddef>
+#include <utility>
+#include <vector>
+
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/frame_header.h"
+
 namespace jxl {
 
 Status RenderPipelineStage::SetInputSizes(

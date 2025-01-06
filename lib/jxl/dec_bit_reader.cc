@@ -5,6 +5,12 @@
 
 #include "lib/jxl/dec_bit_reader.h"
 
+#include <cstddef>
+#include <cstdint>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
+
 namespace jxl {
 
 void BitReader::BoundsCheckedRefill() {

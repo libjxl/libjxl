@@ -15,9 +15,11 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/ac_context.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/fields.h"

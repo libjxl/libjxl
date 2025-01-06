@@ -3,12 +3,21 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/types.h>
+
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/image.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/no_memory_manager.h"
