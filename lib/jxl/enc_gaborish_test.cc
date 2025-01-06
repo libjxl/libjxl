@@ -40,8 +40,8 @@ WeightsSymmetric3 GaborishKernel(float weight1, float weight2) {
 void ConvolveGaborish(const ImageF& in, float weight1, float weight2,
                       ThreadPool* pool, ImageF* JXL_RESTRICT out) {
   ASSERT_TRUE(SameSize(in, *out));
-  ASSERT_TRUE(
-      Symmetric3(in, Rect(in), GaborishKernel(weight1, weight2), pool, out));
+  ASSERT_TRUE(SlowSymmetric3(in, Rect(in), GaborishKernel(weight1, weight2),
+                             pool, out));
 }
 
 void TestRoundTrip(const Image3F& in, float max_l1) {

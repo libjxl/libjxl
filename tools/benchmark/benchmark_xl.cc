@@ -292,8 +292,9 @@ Status DoCompress(const std::string& filename, const PackedPixelFile& ppf,
         compressed->empty()
             ? 0
             : jxl::ComputePSNR(ib1, ib2, *JxlGetDefaultCms()) * input_pixels;
-    double pnorm =
-        ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm);
+    JXL_ASSIGN_OR_RETURN(
+        double pnorm,
+        ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm));
     s->distance_p_norm += pnorm * input_pixels;
     JXL_ASSIGN_OR_RETURN(Msssim msssim, ComputeSSIMULACRA2(ib1, ib2));
     double ssimulacra2 = msssim.Score();
@@ -1015,9 +1016,9 @@ class Benchmark {
           memcpy(row_out, &row_in[x0], size * sizeof(row_out[0]));
         }
       }
-      std::string fn_output =
-          StringPrintf("%s/%s.crop_%dx%d+%d+%d.png", sample_tmp_dir.c_str(),
-                       FileBaseName(fnames[idx]).c_str(), size, size, x0, y0);
+      std::string fn_output = StringPrintf(
+          "%s/%s.crop_%" PRIuS "x%" PRIuS "+%d+%d.png", sample_tmp_dir.c_str(),
+          FileBaseName(fnames[idx]).c_str(), size, size, x0, y0);
       ThreadPool* null_pool = nullptr;
       JPEGXL_TOOLS_CHECK(WriteImage(sample, null_pool, fn_output));
       fnames_out.push_back(fn_output);

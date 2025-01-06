@@ -264,19 +264,20 @@ void MaybeAddGAMA(const JxlColorEncoding& c_enc, png_structp png_ptr,
 void MaybeAddCLLi(const JxlColorEncoding& c_enc, const float intensity_target,
                   png_structp png_ptr, png_infop info_ptr) {
   if (c_enc.transfer_function != JXL_TRANSFER_FUNCTION_PQ) return;
+  if (intensity_target == 10'000) return;
 
   const uint32_t max_content_light_level =
-      static_cast<uint32_t>(10000.f * Clamp1(intensity_target, 0.f, 10000.f));
+      static_cast<uint32_t>(10'000.f * Clamp1(intensity_target, 0.f, 10'000.f));
   png_byte chunk_data[8] = {};
   png_save_uint_32(chunk_data, max_content_light_level);
   // Leave MaxFALL set to 0.
   png_unknown_chunk chunk;
-  memcpy(chunk.name, "cLLi", 5);
+  memcpy(chunk.name, "cLLI", 5);
   chunk.data = chunk_data;
   chunk.size = sizeof chunk_data;
   chunk.location = PNG_HAVE_IHDR;
   png_set_keep_unknown_chunks(png_ptr, PNG_HANDLE_CHUNK_ALWAYS,
-                              reinterpret_cast<const png_byte*>("cLLi"), 1);
+                              reinterpret_cast<const png_byte*>("cLLI"), 1);
   png_set_unknown_chunks(png_ptr, info_ptr, &chunk, 1);
 }
 

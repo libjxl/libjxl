@@ -13,7 +13,7 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/rect.h"
-#include "lib/jxl/convolve-inl.h"
+#include "lib/jxl/image_ops.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -182,12 +182,6 @@ Status Symmetric5(const ImageF& in, const Rect& in_rect,
                   ImageF* JXL_RESTRICT out, const Rect& out_rect) {
   return HWY_DYNAMIC_DISPATCH(Symmetric5)(in, in_rect, weights, pool, out,
                                           out_rect);
-}
-
-Status Symmetric5(const ImageF& in, const Rect& rect,
-                  const WeightsSymmetric5& weights, ThreadPool* pool,
-                  ImageF* JXL_RESTRICT out) {
-  return Symmetric5(in, rect, weights, pool, out, Rect(*out));
 }
 
 }  // namespace jxl

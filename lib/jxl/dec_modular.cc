@@ -106,7 +106,7 @@ void SingleFromSingleAccurate(const size_t xsize,
 Status int_to_float(const pixel_type* const JXL_RESTRICT row_in,
                     float* const JXL_RESTRICT row_out, const size_t xsize,
                     const int bits, const int exp_bits) {
-  static_assert(sizeof(pixel_type) == sizeof(float));
+  static_assert(sizeof(pixel_type) == sizeof(float), "32-bit input is assumed");
   if (bits == 32) {
     JXL_ENSURE(exp_bits == 8);
     memcpy(row_out, row_in, xsize * sizeof(float));

@@ -188,7 +188,8 @@ class Blur {
 
   Status BlurPlane(const ImageF& in, ImageF* JXL_RESTRICT out) {
     JXL_RETURN_IF_ERROR(FastGaussian(
-        rg_, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+        in.memory_manager(), rg_, in.xsize(), in.ysize(),
+        [&](size_t y) { return in.ConstRow(y); },
         [&](size_t y) { return temp_.Row(y); },
         [&](size_t y) { return out->Row(y); }));
     return true;

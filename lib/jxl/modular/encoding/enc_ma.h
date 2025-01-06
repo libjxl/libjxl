@@ -73,7 +73,7 @@ struct TreeSamples {
 
   // Preallocate data for a given number of samples. MUST be called before
   // adding any sample.
-  void PrepareForSamples(size_t num_samples);
+  void PrepareForSamples(size_t extra_num_samples);
   // Add a sample.
   void AddSample(pixel_type_w pixel, const Properties &properties,
                  const pixel_type_w *predictions);

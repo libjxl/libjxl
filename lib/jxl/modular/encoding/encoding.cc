@@ -180,7 +180,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   const auto make_pixel = [](uint64_t v, pixel_type multiplier,
                              pixel_type_w offset) -> pixel_type {
     JXL_DASSERT((v & 0xFFFFFFFF) == v);
-    pixel_type_w val = UnpackSigned(v);
+    pixel_type_w val = static_cast<pixel_type_w>(UnpackSigned(v));
     // if it overflows, it overflows, and we have a problem anyway
     return val * multiplier + offset;
   };
@@ -237,7 +237,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         const pixel_type *JXL_RESTRICT rtop = (y ? channel.Row(y - 1) : r - 1);
         const pixel_type *JXL_RESTRICT rtopleft =
             (y ? channel.Row(y - 1) - 1 : r - 1);
-        pixel_type_w guess = (y ? rtop[0] : 0);
+        pixel_type_w guess_0 = (y ? rtop[0] : 0);
         if (fl_run == 0) {
           reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &fl_v,
                                                      &fl_run);
@@ -245,7 +245,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         } else {
           fl_run--;
         }
-        r[0] = sv + guess;
+        r[0] = sv + guess_0;
         for (size_t x = 1; x < channel.w; x++) {
           pixel_type left = r[x - 1];
           pixel_type top = rtop[x];
@@ -566,12 +566,12 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   size_t distance_multiplier = 0;
   for (size_t i = 0; i < nb_channels; i++) {
     Channel &channel = image.channel[i];
-    if (!channel.w || !channel.h) {
-      continue;  // skip empty channels
-    }
     if (i >= image.nb_meta_channels && (channel.w > options->max_chan_size ||
                                         channel.h > options->max_chan_size)) {
       break;
+    }
+    if (!channel.w || !channel.h) {
+      continue;  // skip empty channels
     }
     if (channel.w > distance_multiplier) {
       distance_multiplier = channel.w;
@@ -631,13 +631,13 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   uint32_t fl_v = 0;
   for (; next_channel < nb_channels; next_channel++) {
     Channel &channel = image.channel[next_channel];
-    if (!channel.w || !channel.h) {
-      continue;  // skip empty channels
-    }
     if (next_channel >= image.nb_meta_channels &&
         (channel.w > options->max_chan_size ||
          channel.h > options->max_chan_size)) {
       break;
+    }
+    if (!channel.w || !channel.h) {
+      continue;  // skip empty channels
     }
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
         br, &reader, *context_map, *tree, header.wp_header, next_channel,

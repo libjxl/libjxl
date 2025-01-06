@@ -214,16 +214,17 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
     }
     for (size_t c = 0; c < channel_data_.size(); c++) {
       size_t next_stage = std::min(stage_id + 1, channel_shifts_.size() - 1);
-      size_t xsize = DivCeil(frame_dimensions_.xsize_upsampled,
-                             1 << channel_shifts_[next_stage][c].first);
-      size_t ysize = DivCeil(frame_dimensions_.ysize_upsampled,
-                             1 << channel_shifts_[next_stage][c].second);
+      size_t c_xsize = DivCeil(frame_dimensions_.xsize_upsampled,
+                               1 << channel_shifts_[next_stage][c].first);
+      size_t c_ysize = DivCeil(frame_dimensions_.ysize_upsampled,
+                               1 << channel_shifts_[next_stage][c].second);
       JXL_RETURN_IF_ERROR(
-          channel_data_[c].ShrinkTo(xsize + 2 * kRenderPipelineXOffset,
-                                    ysize + 2 * kRenderPipelineXOffset));
+          channel_data_[c].ShrinkTo(c_xsize + 2 * kRenderPipelineXOffset,
+                                    c_ysize + 2 * kRenderPipelineXOffset));
       JXL_CHECK_PLANE_INITIALIZED(
           channel_data_[c],
-          Rect(kRenderPipelineXOffset, kRenderPipelineXOffset, xsize, ysize),
+          Rect(kRenderPipelineXOffset, kRenderPipelineXOffset, c_xsize,
+               c_ysize),
           c);
     }
 

@@ -39,7 +39,7 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
   JXL_ASSIGN_OR_RETURN(ANSSymbolReader decoder,
                        ANSSymbolReader::Create(&code, br));
 
-  auto read_num = [&](size_t context) {
+  auto read_num = [&](size_t context) -> size_t {
     size_t r = decoder.ReadHybridUint(context, br, context_map);
     return r;
   };

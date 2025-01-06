@@ -112,7 +112,6 @@ void DequantLane(Vec<D> scaled_dequant_x, Vec<D> scaled_dequant_y,
   Vec<DI> quantized_y_int;
   Vec<DI> quantized_b_int;
   if (ac_type == ACType::k16) {
-    Rebind<int16_t, DI> di16;
     quantized_x_int = PromoteTo(di, Load(di16, qblock[0].ptr16 + k));
     quantized_y_int = PromoteTo(di, Load(di16, qblock[1].ptr16 + k));
     quantized_b_int = PromoteTo(di, Load(di16, qblock[2].ptr16 + k));
@@ -233,13 +232,13 @@ Status DecodeGroupImpl(const FrameHeader& frame_header,
       }
       for (size_t i = 0; i < 64; i++) {
         // Transpose the matrix, as it will be used on the transposed block.
-        int n = qtable[64 + i];
-        int d = qtable[64 * c + i];
-        if (n <= 0 || d <= 0 || n >= 65536 || d >= 65536) {
+        int num = qtable[64 + i];
+        int den = qtable[64 * c + i];
+        if (num <= 0 || den <= 0 || num >= 65536 || den >= 65536) {
           return JXL_FAILURE("Invalid JPEG quantization table");
         }
         scaled_qtable[64 * c + (i % 8) * 8 + (i / 8)] =
-            (1 << kCFLFixedPointPrecision) * n / d;
+            (1 << kCFLFixedPointPrecision) * num / den;
       }
     }
   }
@@ -577,23 +576,23 @@ struct GetBlockFromBitstream : public GetBlock {
   }
 
   Status Init(const FrameHeader& frame_header,
-              BitReader* JXL_RESTRICT* JXL_RESTRICT readers, size_t num_passes,
-              size_t group_idx, size_t histo_selector_bits, const Rect& rect,
-              GroupDecCache* JXL_RESTRICT group_dec_cache,
+              BitReader* JXL_RESTRICT* JXL_RESTRICT readers_,
+              size_t num_passes_, size_t group_idx, size_t histo_selector_bits,
+              const Rect& rect_, GroupDecCache* JXL_RESTRICT group_dec_cache_,
               PassesDecoderState* dec_state, size_t first_pass) {
     for (size_t i = 0; i < 3; i++) {
       hshift[i] = frame_header.chroma_subsampling.HShift(i);
       vshift[i] = frame_header.chroma_subsampling.VShift(i);
     }
-    this->coeff_order_size = dec_state->shared->coeff_order_size;
-    this->coeff_orders =
+    coeff_order_size = dec_state->shared->coeff_order_size;
+    coeff_orders =
         dec_state->shared->coeff_orders.data() + first_pass * coeff_order_size;
-    this->context_map = dec_state->context_map.data() + first_pass;
-    this->readers = readers;
-    this->num_passes = num_passes;
-    this->shift_for_pass = frame_header.passes.shift + first_pass;
-    this->group_dec_cache = group_dec_cache;
-    this->rect = rect;
+    context_map = dec_state->context_map.data() + first_pass;
+    readers = readers_;
+    num_passes = num_passes_;
+    shift_for_pass = frame_header.passes.shift + first_pass;
+    group_dec_cache = group_dec_cache_;
+    rect = rect_;
     block_ctx_map = &dec_state->shared->block_ctx_map;
     qf = &dec_state->shared->raw_quant_field;
     quant_dc = &dec_state->shared->quant_dc;

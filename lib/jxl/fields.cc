@@ -271,55 +271,6 @@ class ReadVisitor : public VisitorBase {
                                         size_t /* bits */);
 };
 
-class MaxBitsVisitor : public VisitorBase {
- public:
-  Status Bits(const size_t bits, const uint32_t /*default_value*/,
-              uint32_t* JXL_RESTRICT /*value*/) override {
-    max_bits_ += BitsCoder::MaxEncodedBits(bits);
-    return true;
-  }
-
-  Status U32(const U32Enc enc, const uint32_t /*default_value*/,
-             uint32_t* JXL_RESTRICT /*value*/) override {
-    max_bits_ += U32Coder::MaxEncodedBits(enc);
-    return true;
-  }
-
-  Status U64(const uint64_t /*default_value*/,
-             uint64_t* JXL_RESTRICT /*value*/) override {
-    max_bits_ += U64Coder::MaxEncodedBits();
-    return true;
-  }
-
-  Status F16(const float /*default_value*/,
-             float* JXL_RESTRICT /*value*/) override {
-    max_bits_ += F16Coder::MaxEncodedBits();
-    return true;
-  }
-
-  Status AllDefault(const Fields& /*fields*/,
-                    bool* JXL_RESTRICT all_default) override {
-    JXL_RETURN_IF_ERROR(Bool(true, all_default));
-    return false;  // For max bits, assume nothing is default
-  }
-
-  // Always visit conditional fields to get a (loose) upper bound.
-  Status Conditional(bool /*condition*/) override { return true; }
-
-  Status BeginExtensions(uint64_t* JXL_RESTRICT /*extensions*/) override {
-    // Skip - extensions are not included in "MaxBits" because their length
-    // is potentially unbounded.
-    return true;
-  }
-
-  Status EndExtensions() override { return true; }
-
-  size_t MaxBits() const { return max_bits_; }
-
- private:
-  size_t max_bits_ = 0;
-};
-
 class CanEncodeVisitor : public VisitorBase {
  public:
   explicit CanEncodeVisitor() = default;
@@ -429,13 +380,6 @@ bool Bundle::AllDefault(const Fields& fields) {
     JXL_DEBUG_ABORT("AllDefault should never fail");
   }
   return visitor.AllDefault();
-}
-size_t Bundle::MaxBits(const Fields& fields) {
-  MaxBitsVisitor visitor;
-  Status ret = visitor.VisitConst(fields);
-  (void)ret;
-  JXL_DASSERT(ret);
-  return visitor.MaxBits();
 }
 Status Bundle::CanEncode(const Fields& fields, size_t* extension_bits,
                          size_t* total_bits) {

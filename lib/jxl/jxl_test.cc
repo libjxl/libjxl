@@ -388,17 +388,25 @@ TEST(JxlTest, RoundtripLargeFast) {
   EXPECT_SLIGHTLY_BELOW(ComputeDistance2(t.ppf(), ppf_out), 78);
 }
 
-JXL_X86_64_TEST(JxlTest, RoundtripLargeEmptyModular) {
+JXL_NOT_X86_32_TEST(JxlTest, RoundtripLargeEmptyModular) {
   ThreadPoolForTests pool(8);
   TestImage t;
-  ASSERT_TRUE(t.SetDimensions(4096, 4096));
+#if !defined(__wasm__)
+  constexpr size_t kDim = 4096;
+#else
+  // On WASM we are limited to 2GiB; current use factor is ~20x, that means
+  // That 6MPx image is about the max available size.
+  constexpr size_t kDim = 2400;
+#endif
+  const size_t kLim = std::min<size_t>(kDim, 1024);
+  ASSERT_TRUE(t.SetDimensions(kDim, kDim));
   t.SetDataType(JXL_TYPE_UINT8);
   ASSERT_TRUE(t.SetChannels(4));
   JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
   frame.ZeroFill();
   for (size_t c = 0; c < 4; ++c) {
-    for (size_t y = 0; y < 1024; y += (c + 1)) {
-      for (size_t x = 0; x < 1024; x += ((y % 4) + 3)) {
+    for (size_t y = 0; y < kLim; y += (c + 1)) {
+      for (size_t x = 0; x < kLim; x += ((y % 4) + 3)) {
         ASSERT_TRUE(frame.SetValue(y, x, c, 0.88));
       }
     }
@@ -1903,7 +1911,7 @@ class JxlStreamingEncodingTest
     : public ::testing::TestWithParam<StreamingEncodingTestParam> {};
 
 // This is broken on mingw32, so we only enable it for x86_64 now.
-JXL_X86_64_TEST_P(JxlStreamingEncodingTest, StreamingSamePixels) {
+JXL_NOT_X86_32_TEST_P(JxlStreamingEncodingTest, StreamingSamePixels) {
   const auto param = GetParam();
 
   const std::vector<uint8_t> orig = ReadTestData(param.file);

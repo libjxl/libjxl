@@ -6,9 +6,12 @@
 #ifndef LIB_JXL_MODULAR_TRANSFORM_ENC_SQUEEZE_H_
 #define LIB_JXL_MODULAR_TRANSFORM_ENC_SQUEEZE_H_
 
-#include "lib/jxl/fields.h"
+#include <vector>
+
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/modular/modular_image.h"
-#include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/modular/transform/squeeze_params.h"
 
 namespace jxl {
 

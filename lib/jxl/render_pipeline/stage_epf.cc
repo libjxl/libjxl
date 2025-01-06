@@ -113,8 +113,8 @@ class EPF0Stage : public RenderPipelineStage {
         continue;
       }
 
-      const auto sm = Load(df, sad_mul + ix);
-      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), sm);
+      const auto vsm = Load(df, sad_mul + ix);
+      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), vsm);
 
       for (auto& sad : sads) *sad = Zero(df);
       constexpr std::array<int, 2> sads_off[12] = {
@@ -248,8 +248,8 @@ class EPF1Stage : public RenderPipelineStage {
         continue;
       }
 
-      const auto sm = Load(df, sad_mul + ix);
-      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), sm);
+      const auto vsm = Load(df, sad_mul + ix);
+      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), vsm);
       auto sad0 = Zero(df);
       auto sad1 = Zero(df);
       auto sad2 = Zero(df);
@@ -434,8 +434,8 @@ class EPF2Stage : public RenderPipelineStage {
         continue;
       }
 
-      const auto sm = Load(df, sad_mul + ix);
-      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), sm);
+      const auto vsm = Load(df, sad_mul + ix);
+      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), vsm);
 
       const auto x_cc = Load(df, rows[0][1 + 0] + x);
       const auto y_cc = Load(df, rows[1][1 + 0] + x);

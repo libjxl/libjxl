@@ -20,6 +20,13 @@ include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag("-fsanitize=fuzzer-no-link" CXX_FUZZERS_SUPPORTED)
 check_cxx_compiler_flag("-fmacro-prefix-map=OLD=NEW" CXX_MACRO_PREFIX_MAP)
 check_cxx_compiler_flag("-fno-rtti" CXX_NO_RTTI_SUPPORTED)
+check_cxx_compiler_flag("-mavx2" CXX_MAVX2_SUPPORTED)
+check_cxx_compiler_flag("-mf16c" CXX_MF16C_SUPPORTED)
+check_cxx_compiler_flag("-mavx512f" CXX_MAVX512F_SUPPORTED)
+check_cxx_compiler_flag("-mavx512dq" CXX_MAVX512DQ_SUPPORTED)
+check_cxx_compiler_flag("-mavx512cd" CXX_MAVX512CD_SUPPORTED)
+check_cxx_compiler_flag("-mavx512bw" CXX_MAVX512BW_SUPPORTED)
+check_cxx_compiler_flag("-mavx512vl" CXX_MAVX512VL_SUPPORTED)
 
 # Add "DebugOpt" CMake build type. Unlike builtin DEBUG it is optimized.
 string(REGEX REPLACE "-DNDEBUG " "" CMAKE_CXX_FLAGS_DEBUGOPT "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -DDEBUG" )
@@ -225,7 +232,9 @@ if(JPEGXL_STATIC)
 
   # https://learn.microsoft.com/en-us/cpp/build/reference/md-mt-ld-use-run-time-library?view=msvc-170
   # https://cmake.org/cmake/help/latest/variable/CMAKE_MSVC_RUNTIME_LIBRARY.html
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "$<$<NOT:$<CONFIG:Debug>>:MultiThreaded>" CACHE STRING "")
+  # For debug builds we intentionally link with shared library to ensure that we don’t accidentally
+  # redistribute such binaries anywhere.
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:DebugDLL>" CACHE STRING "")
 
   # Clang developers say that in case to use "static" we have to build stdlib
   # ourselves; for real use case we don't care about stdlib, as it is "granted",
@@ -372,7 +381,7 @@ else ()
 
   if(JPEGXL_ENABLE_COVERAGE)
     set(JPEGXL_COVERAGE_FLAGS
-        -g -O0 -fprofile-arcs -ftest-coverage
+        -g -O0 -fprofile-arcs -ftest-coverage -fprofile-update=atomic
     )
     set(JPEGXL_COVERAGE_LINK_FLAGS
         --coverage
@@ -402,6 +411,9 @@ endif()
 add_subdirectory(lib)
 
 if(BUILD_TESTING)
+  if (NOT EXISTS "${JPEGXL_TEST_DATA_PATH}/README.md")
+    message(FATAL_ERROR "testdata directory '${JPEGXL_TEST_DATA_PATH}' is not populated")
+  endif()
   # Script to run tests over the source code in bash.
   find_program (BASH_PROGRAM bash)
   if(BASH_PROGRAM)
@@ -460,7 +472,7 @@ if(JPEGXL_ENABLE_MANPAGES)
   find_program(ASCIIDOC a2x)
   if(ASCIIDOC)
     file(STRINGS "${ASCIIDOC}" ASCIIDOC_SHEBANG LIMIT_COUNT 1)
-    if(ASCIIDOC_SHEBANG MATCHES "sh$" OR ASCIIDOC_SHEBANG MATCHES "libexec/bin/python$" OR MINGW)
+    if(ASCIIDOC_SHEBANG MATCHES "sh( -e)?$" OR ASCIIDOC_SHEBANG MATCHES "libexec/bin/python$" OR MINGW)
       set(ASCIIDOC_PY_FOUND ON)
       # Run the program directly and set ASCIIDOC as empty.
       set(ASCIIDOC_PY "${ASCIIDOC}")
@@ -544,4 +556,15 @@ list_test_targets(all_tests_list ${CMAKE_CURRENT_SOURCE_DIR})
 if(all_tests_list)
   add_custom_target(all_tests)
   add_dependencies(all_tests ${all_tests_list})
+endif()
+
+# uninstall target
+if(NOT TARGET uninstall)
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake_uninstall.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+    IMMEDIATE @ONLY)
+
+  add_custom_target(uninstall
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
 endif()

@@ -101,47 +101,47 @@ void DitherRow(j_decompress_ptr cinfo, float* row, int c, size_t y,
 template <typename T>
 void StoreUnsignedRow(float* JXL_RESTRICT input[], size_t x0, size_t len,
                       size_t num_channels, float multiplier, T* output) {
-  const HWY_CAPPED(float, 8) d;
-  auto zero = Zero(d);
-  auto mul = Set(d, multiplier);
-  const Rebind<T, decltype(d)> du;
+  const HWY_CAPPED(float, 8) cd;
+  auto zero = Zero(cd);
+  auto mul = Set(cd, multiplier);
+  const Rebind<T, decltype(cd)> cdu;
 #if JXL_MEMORY_SANITIZER
-  const size_t padding = hwy::RoundUpTo(len, Lanes(d)) - len;
+  const size_t padding = hwy::RoundUpTo(len, Lanes(cd)) - len;
   for (size_t c = 0; c < num_channels; ++c) {
     __msan_unpoison(input[c] + x0 + len, sizeof(input[c][0]) * padding);
   }
 #endif
   if (num_channels == 1) {
-    for (size_t i = 0; i < len; i += Lanes(d)) {
-      auto v0 = Clamp(zero, Mul(LoadU(d, &input[0][x0 + i]), mul), mul);
-      StoreU(DemoteTo(du, NearestInt(v0)), du, &output[i]);
+    for (size_t i = 0; i < len; i += Lanes(cd)) {
+      auto v0 = Clamp(zero, Mul(LoadU(cd, &input[0][x0 + i]), mul), mul);
+      StoreU(DemoteTo(cdu, NearestInt(v0)), cdu, &output[i]);
     }
   } else if (num_channels == 2) {
-    for (size_t i = 0; i < len; i += Lanes(d)) {
-      auto v0 = Clamp(zero, Mul(LoadU(d, &input[0][x0 + i]), mul), mul);
-      auto v1 = Clamp(zero, Mul(LoadU(d, &input[1][x0 + i]), mul), mul);
-      StoreInterleaved2(DemoteTo(du, NearestInt(v0)),
-                        DemoteTo(du, NearestInt(v1)), du, &output[2 * i]);
+    for (size_t i = 0; i < len; i += Lanes(cd)) {
+      auto v0 = Clamp(zero, Mul(LoadU(cd, &input[0][x0 + i]), mul), mul);
+      auto v1 = Clamp(zero, Mul(LoadU(cd, &input[1][x0 + i]), mul), mul);
+      StoreInterleaved2(DemoteTo(cdu, NearestInt(v0)),
+                        DemoteTo(cdu, NearestInt(v1)), cdu, &output[2 * i]);
     }
   } else if (num_channels == 3) {
-    for (size_t i = 0; i < len; i += Lanes(d)) {
-      auto v0 = Clamp(zero, Mul(LoadU(d, &input[0][x0 + i]), mul), mul);
-      auto v1 = Clamp(zero, Mul(LoadU(d, &input[1][x0 + i]), mul), mul);
-      auto v2 = Clamp(zero, Mul(LoadU(d, &input[2][x0 + i]), mul), mul);
-      StoreInterleaved3(DemoteTo(du, NearestInt(v0)),
-                        DemoteTo(du, NearestInt(v1)),
-                        DemoteTo(du, NearestInt(v2)), du, &output[3 * i]);
+    for (size_t i = 0; i < len; i += Lanes(cd)) {
+      auto v0 = Clamp(zero, Mul(LoadU(cd, &input[0][x0 + i]), mul), mul);
+      auto v1 = Clamp(zero, Mul(LoadU(cd, &input[1][x0 + i]), mul), mul);
+      auto v2 = Clamp(zero, Mul(LoadU(cd, &input[2][x0 + i]), mul), mul);
+      StoreInterleaved3(DemoteTo(cdu, NearestInt(v0)),
+                        DemoteTo(cdu, NearestInt(v1)),
+                        DemoteTo(cdu, NearestInt(v2)), cdu, &output[3 * i]);
     }
   } else if (num_channels == 4) {
-    for (size_t i = 0; i < len; i += Lanes(d)) {
-      auto v0 = Clamp(zero, Mul(LoadU(d, &input[0][x0 + i]), mul), mul);
-      auto v1 = Clamp(zero, Mul(LoadU(d, &input[1][x0 + i]), mul), mul);
-      auto v2 = Clamp(zero, Mul(LoadU(d, &input[2][x0 + i]), mul), mul);
-      auto v3 = Clamp(zero, Mul(LoadU(d, &input[3][x0 + i]), mul), mul);
-      StoreInterleaved4(DemoteTo(du, NearestInt(v0)),
-                        DemoteTo(du, NearestInt(v1)),
-                        DemoteTo(du, NearestInt(v2)),
-                        DemoteTo(du, NearestInt(v3)), du, &output[4 * i]);
+    for (size_t i = 0; i < len; i += Lanes(cd)) {
+      auto v0 = Clamp(zero, Mul(LoadU(cd, &input[0][x0 + i]), mul), mul);
+      auto v1 = Clamp(zero, Mul(LoadU(cd, &input[1][x0 + i]), mul), mul);
+      auto v2 = Clamp(zero, Mul(LoadU(cd, &input[2][x0 + i]), mul), mul);
+      auto v3 = Clamp(zero, Mul(LoadU(cd, &input[3][x0 + i]), mul), mul);
+      StoreInterleaved4(DemoteTo(cdu, NearestInt(v0)),
+                        DemoteTo(cdu, NearestInt(v1)),
+                        DemoteTo(cdu, NearestInt(v2)),
+                        DemoteTo(cdu, NearestInt(v3)), cdu, &output[4 * i]);
     }
   }
 #if JXL_MEMORY_SANITIZER
@@ -152,26 +152,26 @@ void StoreUnsignedRow(float* JXL_RESTRICT input[], size_t x0, size_t len,
 
 void StoreFloatRow(float* JXL_RESTRICT input[3], size_t x0, size_t len,
                    size_t num_channels, float* output) {
-  const HWY_CAPPED(float, 8) d;
+  const HWY_CAPPED(float, 8) cd;
   if (num_channels == 1) {
     memcpy(output, input[0] + x0, len * sizeof(output[0]));
   } else if (num_channels == 2) {
-    for (size_t i = 0; i < len; i += Lanes(d)) {
-      StoreInterleaved2(LoadU(d, &input[0][x0 + i]),
-                        LoadU(d, &input[1][x0 + i]), d, &output[2 * i]);
+    for (size_t i = 0; i < len; i += Lanes(cd)) {
+      StoreInterleaved2(LoadU(cd, &input[0][x0 + i]),
+                        LoadU(cd, &input[1][x0 + i]), cd, &output[2 * i]);
     }
   } else if (num_channels == 3) {
-    for (size_t i = 0; i < len; i += Lanes(d)) {
-      StoreInterleaved3(LoadU(d, &input[0][x0 + i]),
-                        LoadU(d, &input[1][x0 + i]),
-                        LoadU(d, &input[2][x0 + i]), d, &output[3 * i]);
+    for (size_t i = 0; i < len; i += Lanes(cd)) {
+      StoreInterleaved3(LoadU(cd, &input[0][x0 + i]),
+                        LoadU(cd, &input[1][x0 + i]),
+                        LoadU(cd, &input[2][x0 + i]), cd, &output[3 * i]);
     }
   } else if (num_channels == 4) {
-    for (size_t i = 0; i < len; i += Lanes(d)) {
-      StoreInterleaved4(LoadU(d, &input[0][x0 + i]),
-                        LoadU(d, &input[1][x0 + i]),
-                        LoadU(d, &input[2][x0 + i]),
-                        LoadU(d, &input[3][x0 + i]), d, &output[4 * i]);
+    for (size_t i = 0; i < len; i += Lanes(cd)) {
+      StoreInterleaved4(LoadU(cd, &input[0][x0 + i]),
+                        LoadU(cd, &input[1][x0 + i]),
+                        LoadU(cd, &input[2][x0 + i]),
+                        LoadU(cd, &input[3][x0 + i]), cd, &output[4 * i]);
     }
   }
 }

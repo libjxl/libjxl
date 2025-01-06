@@ -1127,10 +1127,10 @@ JxlDecoderStatus JxlDecoderProcessSections(JxlDecoder* dec) {
     return JXL_INPUT_ERROR("frame processing failed");
   }
   for (size_t i = 0; i < section_status.size(); ++i) {
-    auto status = section_status[i];
-    if (status == jxl::FrameDecoder::kDone) {
+    auto s_status = section_status[i];
+    if (s_status == jxl::FrameDecoder::kDone) {
       dec->section_processed[section_info[i].index] = 1;
-    } else if (status != jxl::FrameDecoder::kSkipped) {
+    } else if (s_status != jxl::FrameDecoder::kSkipped) {
       return JXL_INPUT_ERROR("unexpected section status");
     }
   }

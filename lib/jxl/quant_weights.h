@@ -77,7 +77,7 @@ struct QuantEncodingInternal {
 
   template <size_t A>
   static constexpr QuantEncodingInternal Library() {
-    static_assert(A < kNumPredefinedTables);
+    static_assert(A < kNumPredefinedTables, "Library index out of bounds");
     return QuantEncodingInternal(Tag<kQuantModeLibrary>(), A);
   }
   constexpr QuantEncodingInternal(Tag<kQuantModeLibrary> /* tag */,

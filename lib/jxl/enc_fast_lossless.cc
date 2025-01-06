@@ -279,7 +279,7 @@ struct BitWriter {
         this->bits_in_buffer += nbits[i];
         // This `if` seems to be faster than using ternaries.
         if (this->bits_in_buffer >= 64) {
-          uint64_t next_buffer = bits[i] >> shift;
+          uint64_t next_buffer = shift >= 64 ? 0 : bits[i] >> shift;
           this->buffer = next_buffer;
           this->bits_in_buffer -= 64;
           this->bytes_written += 8;
@@ -665,8 +665,8 @@ struct PrefixCode {
     }
     // Encode 0s until 224 (start of LZ77 symbols). This is in total 224-19 =
     // 205.
-    static_assert(kLZ77Offset == 224);
-    static_assert(kNumRawSymbols == 19);
+    static_assert(kLZ77Offset == 224, "kLZ77Offset should be 224");
+    static_assert(kNumRawSymbols == 19, "kNumRawSymbols should be 19");
     {
       // Max bits in this block: 24
       writer->Write(code_length_nbits[17], code_length_bits[17]);
@@ -2282,7 +2282,8 @@ FJXL_INLINE void TokenizeSIMD(const uint16_t* residuals, uint16_t* token_out,
 
 FJXL_INLINE void TokenizeSIMD(const uint32_t* residuals, uint16_t* token_out,
                               uint32_t* nbits_out, uint32_t* bits_out) {
-  static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes, "");
+  static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes,
+                "There should be twice more 16-bit lanes than 32-bit lanes");
   SIMDVec32 res_lo = SIMDVec32::Load(residuals);
   SIMDVec32 res_hi = SIMDVec32::Load(residuals + SIMDVec32::kLanes);
   SIMDVec32 token_lo = res_lo.ValToToken();
@@ -2388,7 +2389,8 @@ FJXL_INLINE void StoreSIMDAbove14(const uint32_t* nbits_tok,
                                   const uint16_t* nbits_huff,
                                   const uint16_t* bits_huff, size_t n,
                                   size_t skip, Bits32* bits_out) {
-  static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes, "");
+  static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes,
+                "There should be twice more 16-bit lanes than 32-bit lanes");
   Bits32 bits_low =
       Bits32::FromRaw(SIMDVec32::Load(nbits_tok), SIMDVec32::Load(bits_tok));
   Bits32 bits_hi =
@@ -2522,14 +2524,14 @@ FJXL_INLINE void StoreToWriterAVX512(const Bits32& bits32, BitWriter& output) {
 template <size_t n>
 FJXL_INLINE void StoreToWriter(const Bits32* bits, BitWriter& output) {
 #ifdef FJXL_AVX512
-  static_assert(n <= 2, "");
+  static_assert(n <= 2, "n should be less or 2 for AVX512");
   StoreToWriterAVX512(bits[0], output);
   if (n == 2) {
     StoreToWriterAVX512(bits[1], output);
   }
   return;
 #endif
-  static_assert(n <= 4, "");
+  static_assert(n <= 4, "n should be less or 4");
   alignas(64) uint64_t nbits64[Bits64::kLanes * n];
   alignas(64) uint64_t bits64[Bits64::kLanes * n];
   bits[0].Merge().Store(nbits64, bits64);
@@ -2779,7 +2781,7 @@ void CheckHuffmanBitsSIMD(int bits1, int nbits1, int bits2, int nbits2) {
 }
 
 struct Exactly14Bits {
-  explicit Exactly14Bits(size_t bitdepth) { assert(bitdepth == 14); }
+  explicit Exactly14Bits(size_t bitdepth_) { assert(bitdepth_ == 14); }
   // Force LZ77 symbols to have at least 8 bits, and raw symbols 15 and 16 to
   // have exactly 8, and no other symbol to have 8 or more. This ensures that
   // the representation for 15 and 16 is identical up to one bit.
@@ -2928,7 +2930,7 @@ void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
 
   output->Write(1, 1);     // Enable lz77 for the main bitstream
   output->Write(2, 0b00);  // lz77 offset 224
-  static_assert(kLZ77Offset == 224, "");
+  static_assert(kLZ77Offset == 224, "kLZ77Offset should be 224");
   output->Write(4, 0b1010);  // lz77 min length 7
   // 400 hybrid uint config for lz77
   output->Write(4, 4);
@@ -3033,13 +3035,13 @@ struct ChunkEncoder {
 
 template <typename BitDepth>
 struct ChunkSampleCollector {
-  FJXL_INLINE void Rle(size_t count, uint64_t* lz77_counts) {
+  FJXL_INLINE void Rle(size_t count, uint64_t* lz77_counts_) {
     if (count == 0) return;
     raw_counts[0] += 1;
     count -= kLZ77MinLength + 1;
     unsigned token, nbits, bits;
     EncodeHybridUintLZ77(count, &token, &nbits, &bits);
-    lz77_counts[token]++;
+    lz77_counts_[token]++;
   }
 
   FJXL_INLINE void Chunk(size_t run, typename BitDepth::upixel_t* residuals,
