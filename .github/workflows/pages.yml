@@ -52,10 +52,7 @@ jobs:
           pip3 install -r doc/sphinx/requirements.txt
       - name: Build
         run: |
-          cmake -B build . \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-            -DBUILD_TESTING=OFF
+          cmake -B build doc
           cmake --build build -- rtd-html
       - name: Setup Pages
         uses: actions/configure-pages@v5
