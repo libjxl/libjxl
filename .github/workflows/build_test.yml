@@ -348,4 +348,4 @@ jobs:
     - name: gbench check
       if: env.WILL_BENCH == 'true'
       run: |
-        ./ci.sh gbench --benchmark_min_time=0
+        ./ci.sh gbench --benchmark_min_time=0.5s

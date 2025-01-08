@@ -449,6 +449,7 @@ libjxl_extras_sources = [
 
 libjxl_gbench_sources = [
     "extras/tone_mapping_gbench.cc",
+    "jxl/dct_gbench.cc",
     "jxl/dec_external_image_gbench.cc",
     "jxl/enc_external_image_gbench.cc",
     "jxl/splines_gbench.cc",

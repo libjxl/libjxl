@@ -446,6 +446,7 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
 
 set(JPEGXL_INTERNAL_GBENCH_SOURCES
   extras/tone_mapping_gbench.cc
+  jxl/dct_gbench.cc
   jxl/dec_external_image_gbench.cc
   jxl/enc_external_image_gbench.cc
   jxl/splines_gbench.cc
