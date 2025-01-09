@@ -548,9 +548,9 @@ struct PrefixCode {
       }
     }
     for (size_t i = ni; i < kMaxNumSymbols; ++i) {
-      compact_freqs[ni] = 0;
-      min_limit[ni] = 0;
-      max_limit[ni] = 0;
+      compact_freqs[i] = 0;
+      min_limit[i] = 0;
+      max_limit[i] = 0;
     }
     uint8_t num_bits[kMaxNumSymbols] = {};
     ComputeCodeLengthsNonZero(compact_freqs, ni, min_limit, max_limit,
