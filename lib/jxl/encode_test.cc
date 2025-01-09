@@ -229,8 +229,9 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   EXPECT_LE(compressed.size(), max_compressed_size);
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
   jxl::CodecInOut decoded_io{jxl::test::MemoryManager()};
+  jxl::extras::JXLDecompressParams dparams;
   EXPECT_TRUE(jxl::test::DecodeFile(
-      {}, jxl::Bytes(compressed.data(), compressed.size()), &decoded_io));
+      dparams, jxl::Bytes(compressed.data(), compressed.size()), &decoded_io));
 
   static constexpr double kMaxButteraugli =
 #if JXL_HIGH_PRECISION

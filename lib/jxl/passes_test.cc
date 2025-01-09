@@ -51,9 +51,10 @@ TEST(PassesTest, RoundtripSmallPasses) {
   cparams.butteraugli_distance = 1.0;
   cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
   CodecInOut io2{memory_manager};
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, dparams, &io2, _));
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
@@ -73,9 +74,10 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
   cparams.butteraugli_distance = 2.0;
   cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
   CodecInOut io2{memory_manager};
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, dparams, &io2, _));
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
@@ -99,8 +101,9 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
     cparams.butteraugli_distance = target_distance;
     cparams.progressive_mode = Override::kOn;
     cparams.SetCms(*JxlGetDefaultCms());
+    extras::JXLDecompressParams dparams;
     CodecInOut io2{memory_manager};
-    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _,
+    JXL_EXPECT_OK(Roundtrip(&io, cparams, dparams, &io2, _,
                             /* compressed_size */ nullptr, pool.get()));
     EXPECT_SLIGHTLY_BELOW(
         ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
@@ -124,9 +127,10 @@ TEST(PassesTest, RoundtripLargeFastPasses) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
   CodecInOut io2{memory_manager};
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _,
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, dparams, &io2, _,
                           /* compressed_size */ nullptr, pool.get()));
 }
 
@@ -145,6 +149,7 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
   cparams.progressive_mode = Override::kOn;
   cparams.butteraugli_distance = 2.0;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
   // Try each xsize mod kBlockDim to verify right border handling.
   for (size_t xsize = 48; xsize > 40; --xsize) {
@@ -152,11 +157,13 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
 
     CodecInOut io2{memory_manager};
     size_t size2;
-    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &size2, pool.get()));
+    JXL_EXPECT_OK(
+        Roundtrip(&io, cparams, dparams, &io2, _, &size2, pool.get()));
 
     CodecInOut io3{memory_manager};
     size_t size3;
-    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io3, _, &size3, pool.get()));
+    JXL_EXPECT_OK(
+        Roundtrip(&io, cparams, dparams, &io3, _, &size3, pool.get()));
 
     // Exact same compressed size.
     EXPECT_EQ(size2, size3);
@@ -397,9 +404,10 @@ TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
   cparams.butteraugli_distance = 1.0;
   cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
   CodecInOut io2{memory_manager};
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, dparams, &io2, _));
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),

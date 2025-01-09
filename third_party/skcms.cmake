@@ -19,6 +19,13 @@ function(target_link_skcms TARGET_NAME)
     "${_sources_dir}/src/skcms_TransformBaseline.cc"
   )
 
+  if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    set_source_files_properties("${_sources_dir}/src/skcms_TransformBaseline.cc"
+      PROPERTIES COMPILE_OPTIONS "-Wno-maybe-uninitialized"
+      TARGET_DIRECTORY ${TARGET_NAME}
+    )
+  endif()
+
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64" AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(_use_avx2 ${CXX_MAVX2_SUPPORTED} AND ${CXX_MF16C_SUPPORTED})
     set(_use_avx512 ${CXX_MAVX512F_SUPPORTED} AND ${CXX_MAVX512DQ_SUPPORTED} AND ${CXX_MAVX512CD_SUPPORTED} AND ${CXX_MAVX512BW_SUPPORTED} AND ${CXX_MAVX512VL_SUPPORTED})

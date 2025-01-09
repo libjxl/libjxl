@@ -98,18 +98,19 @@ void SetThreadParallelRunner(Params params, ThreadPool* pool) {
   }
 }
 
-Status DecodeFile(extras::JXLDecompressParams dparams, Span<const uint8_t> file,
-                  CodecInOut* JXL_RESTRICT io, ThreadPool* pool = nullptr);
+Status DecodeFile(const extras::JXLDecompressParams& dparams,
+                  Span<const uint8_t> file, CodecInOut* JXL_RESTRICT io,
+                  ThreadPool* pool = nullptr);
 
 bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
-               extras::JXLDecompressParams dparams,
+               const extras::JXLDecompressParams& dparams,
                CodecInOut* JXL_RESTRICT io2, std::stringstream& failures,
                size_t* compressed_size = nullptr, ThreadPool* pool = nullptr);
 
 // Returns compressed size [bytes].
 size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
                  const extras::JXLCompressParams& cparams,
-                 extras::JXLDecompressParams dparams, ThreadPool* pool,
+                 const extras::JXLDecompressParams& dparams, ThreadPool* pool,
                  extras::PackedPixelFile* ppf_out);
 
 // A POD descriptor of a ColorEncoding. Only used in tests as the return value
