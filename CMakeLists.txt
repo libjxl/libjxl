@@ -266,6 +266,7 @@ else()
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
+message(STATUS "CXX_STANDARD is ${CMAKE_CXX_STANDARD}")
 
 # Atomics
 find_package(Atomics REQUIRED)
