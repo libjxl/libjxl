@@ -33,10 +33,11 @@ TEST(PatchDictionaryTest, GrayscaleModular) {
 
   extras::JXLCompressParams cparams = jxl::test::CompressParamsForLossless();
   cparams.AddOption(JXL_ENC_FRAME_SETTING_PATCHES, 1);
+  extras::JXLDecompressParams dparams;
 
   extras::PackedPixelFile ppf2;
   // Without patches: ~25k
-  size_t compressed_size = Roundtrip(ppf, cparams, {}, nullptr, &ppf2);
+  size_t compressed_size = Roundtrip(ppf, cparams, dparams, nullptr, &ppf2);
   EXPECT_LE(compressed_size, 8000u);
   JXL_TEST_ASSIGN_OR_DIE(ImageF image, GetImage(ppf));
   JXL_TEST_ASSIGN_OR_DIE(ImageF image2, GetImage(ppf2));
@@ -50,10 +51,11 @@ TEST(PatchDictionaryTest, GrayscaleVarDCT) {
 
   extras::JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_PATCHES, 1);
+  extras::JXLDecompressParams dparams;
 
   extras::PackedPixelFile ppf2;
   // Without patches: ~47k
-  size_t compressed_size = Roundtrip(ppf, cparams, {}, nullptr, &ppf2);
+  size_t compressed_size = Roundtrip(ppf, cparams, dparams, nullptr, &ppf2);
   EXPECT_LE(compressed_size, 14000u);
   // Without patches: ~1.2
   EXPECT_LE(ButteraugliDistance(ppf, ppf2), 1.1);
