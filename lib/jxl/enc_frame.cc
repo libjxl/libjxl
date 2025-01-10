@@ -2399,11 +2399,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     size.resize(all_params.size());
 
     const auto process_variant = [&](size_t task, size_t) -> Status {
-      std::vector<uint8_t> output(64);
-      uint8_t* next_out = output.data();
-      size_t avail_out = output.size();
       JxlEncoderOutputProcessorWrapper local_output(memory_manager);
-      JXL_RETURN_IF_ERROR(local_output.SetAvailOut(&next_out, &avail_out));
       JXL_RETURN_IF_ERROR(EncodeFrame(memory_manager, all_params[task],
                                       frame_info, metadata, frame_data, cms,
                                       nullptr, &local_output, aux_out));
@@ -2545,16 +2541,13 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
   fi.duration = ib.duration;
   fi.timecode = ib.timecode;
   fi.name = ib.name;
-  std::vector<uint8_t> output(64);
-  uint8_t* next_out = output.data();
-  size_t avail_out = output.size();
   JxlEncoderOutputProcessorWrapper output_processor(memory_manager);
-  JXL_RETURN_IF_ERROR(output_processor.SetAvailOut(&next_out, &avail_out));
   JXL_RETURN_IF_ERROR(EncodeFrame(memory_manager, cparams_orig, fi, metadata,
                                   frame_data, cms, pool, &output_processor,
                                   aux_out));
   JXL_RETURN_IF_ERROR(output_processor.SetFinalizedPosition());
-  JXL_RETURN_IF_ERROR(output_processor.CopyOutput(output, next_out, avail_out));
+  std::vector<uint8_t> output;
+  JXL_RETURN_IF_ERROR(output_processor.CopyOutput(output));
   JXL_RETURN_IF_ERROR(writer->AppendByteAligned(Bytes(output)));
   return true;
 }

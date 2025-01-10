@@ -460,14 +460,14 @@ class JxlEncoderOutputProcessorWrapper {
     return output_position_ < finalized_position_;
   }
 
-  jxl::Status CopyOutput(std::vector<uint8_t>& output, uint8_t* next_out,
-                         size_t& avail_out);
+  // TODO(eustas): consider extra copy elimination
+  jxl::Status CopyOutput(std::vector<uint8_t>& output);
 
  private:
   jxl::Status ReleaseBuffer(size_t bytes_used);
 
   // Tries to write all the bytes up to the finalized position.
-  jxl::Status FlushOutput();
+  jxl::Status FlushOutput(uint8_t** next_out, size_t* avail_out);
 
   bool AppendBufferToExternalProcessor(void* data, size_t count);
 
