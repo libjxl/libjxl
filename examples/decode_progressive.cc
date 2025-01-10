@@ -56,9 +56,10 @@ bool DecodeJpegXlProgressive(const uint8_t* jxl, size_t size,
   size_t ysize = 0;
 
   // Multi-threaded parallel runner.
-  auto runner = JxlResizableParallelRunnerMake(nullptr);
+  JxlResizableParallelRunnerPtr runner =
+      JxlResizableParallelRunnerMake(nullptr);
 
-  auto dec = JxlDecoderMake(nullptr);
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO |
                                                JXL_DEC_COLOR_ENCODING |
