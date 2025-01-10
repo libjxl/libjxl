@@ -32,8 +32,8 @@ namespace HWY_NAMESPACE {
 
 static constexpr Vector3 rec2020_luminances{0.2627f, 0.6780f, 0.0593f};
 
-Status ToneMapFrame(const std::pair<float, float> display_nits,
-                    ImageBundle* const ib, ThreadPool* const pool) {
+Status ToneMapFrame(const Range& display_nits, ImageBundle* const ib,
+                    ThreadPool* const pool) {
   // Perform tone mapping as described in Report ITU-R BT.2390-8, section 5.4
   // (pp. 23-25).
   // https://www.itu.int/pub/R-REP-BT.2390-8-2020
@@ -125,13 +125,13 @@ HWY_EXPORT(ToneMapFrame);
 HWY_EXPORT(GamutMapFrame);
 }  // namespace
 
-Status ToneMapTo(const std::pair<float, float> display_nits,
-                 CodecInOut* const io, ThreadPool* const pool) {
+Status ToneMapTo(const Range& display_nits, CodecInOut* const io,
+                 ThreadPool* const pool) {
   const auto tone_map_frame = HWY_DYNAMIC_DISPATCH(ToneMapFrame);
   for (ImageBundle& ib : io->frames) {
     JXL_RETURN_IF_ERROR(tone_map_frame(display_nits, &ib, pool));
   }
-  io->metadata.m.SetIntensityTarget(display_nits.second);
+  io->metadata.m.SetIntensityTarget(display_nits[1]);
   return true;
 }
 

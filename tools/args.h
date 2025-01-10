@@ -38,20 +38,6 @@ static inline bool ParseOverride(const char* arg, jxl::Override* out) {
   return JXL_FAILURE("Args");
 }
 
-static inline bool ParseFloatPair(const char* arg,
-                                  std::pair<float, float>* out) {
-  int parsed = sscanf(arg, "%f,%f", &out->first, &out->second);
-  if (parsed == 1) {
-    out->second = out->first;
-  } else if (parsed != 2) {
-    fprintf(stderr,
-            "Unable to interpret as float pair separated by a comma: %s.\n",
-            arg);
-    return JXL_FAILURE("Args");
-  }
-  return true;
-}
-
 template <typename Callback>
 static inline bool ParseAndAppendKeyValue(const char* arg, Callback* cb) {
   const char* eq = strchr(arg, '=');
