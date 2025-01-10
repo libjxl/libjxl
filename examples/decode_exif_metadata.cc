@@ -19,7 +19,7 @@
 
 bool DecodeJpegXlExif(const uint8_t* jxl, size_t size,
                       std::vector<uint8_t>* exif) {
-  auto dec = JxlDecoderMake(nullptr);
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
 
   // We're only interested in the Exif boxes in this example, so don't
   // subscribe to events related to pixel data.
@@ -39,7 +39,7 @@ bool DecodeJpegXlExif(const uint8_t* jxl, size_t size,
   JxlDecoderSetInput(dec.get(), jxl, size);
   JxlDecoderCloseInput(dec.get());
 
-  const constexpr size_t kChunkSize = 65536;
+  const size_t kChunkSize = 65536;
   size_t output_pos = 0;
 
   for (;;) {

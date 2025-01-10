@@ -110,24 +110,40 @@ jobs:
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
           # Builds with gcc in release mode
-          - name: release:gcc8
+          - name: release:gcc
+            os: ubuntu-latest
+            mode: release
+            apt_pkgs: gcc g++
+            cc: gcc
+            cxx: g++
+          - name: release:gcc-old
+            os: ubuntu-22.04
+            mode: release
+            apt_pkgs: gcc g++
+            cc: gcc
+            cxx: g++
+          - name: release:gcc-old-old
             os: ubuntu-20.04
             mode: release
-            apt_pkgs: gcc-8 g++-8
-            cmake_args: >-
-              -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
-          # Builds with clang-7 in release mode
-          - name: release:clang-7
+            apt_pkgs: gcc g++
+            cc: gcc
+            cxx: g++
+          # Builds with old clang in release mode
+          - name: release:clang-old
+            os: ubuntu-22.04
+            mode: release
+            apt_pkgs: clang
+            cc: clang
+            cxx: clang++
+          - name: release:clang-old-old
             os: ubuntu-20.04
             mode: release
-            skip_install: true
-            apt_pkgs: clang-7
-            cc: clang-7
-            cxx: clang++-7
+            apt_pkgs: clang
+            cc: clang
+            cxx: clang++
           - name: release:osx
             os: macos-latest
             mode: release
-            skip_install: true
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
 
@@ -304,6 +320,9 @@ jobs:
       run: |
         set -x
         sudo cmake --build build -- install
+        # GCC does not know how to refer to shared libraries properly
+        export CC=clang
+        export CXX=clang++
         cmake -Bbuild-example -Hexamples -G Ninja
         cmake --build build-example
         # Test that the built binaries run.
