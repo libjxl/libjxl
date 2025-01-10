@@ -145,7 +145,7 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
         return JxlOutputProcessorBuffer(user_buffer, size, 0, this);
       }
     }
-  } else {
+  } else if (avail_out_ != nullptr) {
     if (min_size + additional_size < *avail_out_) {
       internal_buffers_.emplace(position_, InternalBuffer(memory_manager_));
       has_buffer_ = true;
@@ -208,7 +208,7 @@ jxl::Status JxlEncoderOutputProcessorWrapper::CopyOutput(
     JXL_RETURN_IF_ERROR(SetAvailOut(&next_out, &avail_out));
     if (avail_out == 0) {
       size_t offset = next_out - output.data();
-      output.resize(output.size() * 2);
+      output.resize(std::max<size_t>(64, output.size() * 2));
       next_out = output.data() + offset;
       avail_out = output.size() - offset;
     }
