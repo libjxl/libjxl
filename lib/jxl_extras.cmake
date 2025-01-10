@@ -101,14 +101,17 @@ if (OpenEXR_FOUND)
   # OpenEXR generates exceptions, so we need exception support to catch them.
   # Actually those flags counteract the ones set in JPEGXL_INTERNAL_FLAGS.
   if (NOT WIN32)
-    set_source_files_properties(
-      extras/dec/exr.cc extras/enc/exr.cc PROPERTIES COMPILE_FLAGS -fexceptions)
+    set(_exr_flags "-fexceptions")
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-      set_source_files_properties(
-	extras/dec/exr.cc extras/enc/exr.cc PROPERTIES COMPILE_FLAGS
-	-fcxx-exceptions)
+      set(_exr_flags "-fcxx-exceptions")
     endif()
-  endif()
+    if ("${OpenEXR_VERSION}" VERSION_LESS "2.5.7")
+      string(APPEND _exr_flags " -Wno-deprecated-copy")
+    endif()
+    set_source_files_properties(extras/dec/exr.cc extras/enc/exr.cc
+      PROPERTIES COMPILE_FLAGS "${_exr_flags}"
+    )
+  endif() # WIN32
 endif() # OpenEXR_FOUND
 endif() # JPEGXL_ENABLE_OPENEXR
 
