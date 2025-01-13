@@ -421,6 +421,7 @@ struct JxlDecoderStruct {
   size_t box_out_buffer_pos;
 
   // Settings
+  int leniency;
   bool keep_orientation;
   bool unpremul_alpha;
   bool render_spotcolors;
@@ -770,6 +771,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
   JxlDecoderRewindDecodingState(dec);
 
   dec->thread_pool.reset();
+  dec->leniency = 0;
   dec->keep_orientation = false;
   dec->unpremul_alpha = false;
   dec->render_spotcolors = true;
@@ -882,6 +884,14 @@ JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec, int events_wanted) {
   }
   dec->events_wanted = events_wanted;
   dec->orig_events_wanted = events_wanted;
+  return JXL_DEC_SUCCESS;
+}
+
+JxlDecoderStatus JxlDecoderSetLeniency(JxlDecoder* dec, int leniency) {
+  if (leniency < 0 || leniency > 2) {
+    return JXL_API_ERROR("Requested leniency setting not implemented");
+  }
+  dec->leniency = leniency;
   return JXL_DEC_SUCCESS;
 }
 
@@ -1131,7 +1141,7 @@ JxlDecoderStatus JxlDecoderProcessSections(JxlDecoder* dec) {
   if (has_error) {
     return JXL_INPUT_ERROR("internal: bit-reader failed to close");
   }
-  if (out_of_bounds) {
+  if (out_of_bounds && dec->leniency < 1) {
     // If any bit reader indicates out of bounds, it's an error, not just
     // needing more input, since we ensure only bit readers containing
     // a complete section are provided to the FrameDecoder.
@@ -1359,6 +1369,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
     if (dec->frame_stage == FrameStage::kTOC) {
       dec->frame_dec->SetRenderSpotcolors(dec->render_spotcolors);
       dec->frame_dec->SetCoalescing(dec->coalescing);
+      dec->frame_dec->SetLeniency(dec->leniency);
 
       if (!dec->preview_frame &&
           (dec->events_wanted & JXL_DEC_FRAME_PROGRESSION)) {

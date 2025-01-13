@@ -483,7 +483,11 @@ Status ModularFrameDecoder::DecodeAcMetadata(const FrameHeader& frame_header,
   if (!ModularGenericDecompress(
           reader, image, /*header=*/nullptr, stream_id, &options,
           /*undo_transforms=*/true, &tree, &code, &context_map)) {
-    return JXL_FAILURE("Failed to decode AC metadata");
+    if (dec_state->leniency < 2) {
+      return JXL_FAILURE("Failed to decode AC metadata");
+    } else {
+      for (int i = 0; i < 4; i++) ZeroFillImage(&image.channel[i].plane);
+    }
   }
   JXL_RETURN_IF_ERROR(
       ConvertPlaneAndClamp(Rect(image.channel[0].plane), image.channel[0].plane,
@@ -515,7 +519,16 @@ Status ModularFrameDecoder::DecodeAcMetadata(const FrameHeader& frame_header,
         continue;
       }
 
-      if (num >= count) return JXL_FAILURE("Corrupted stream");
+      if (num >= count) {
+        if (dec_state->leniency < 2)
+          return JXL_FAILURE("Corrupted stream");
+        else {
+          JXL_RETURN_IF_ERROR(
+              ac_strategy.SetNoBoundsCheck(x, y, AcStrategyType(0)));
+          row_qf[ix] = 1;
+          continue;
+        }
+      }
 
       if (!AcStrategy::IsRawStrategyValid(row_in_1[num])) {
         return JXL_FAILURE("Invalid AC strategy");

@@ -317,21 +317,61 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
   const size_t gx = dc_group_id % frame_dim_.xsize_dc_groups;
   const size_t gy = dc_group_id / frame_dim_.xsize_dc_groups;
   const LoopFilter& lf = frame_header_.loop_filter;
+  Status status(true);
   if (frame_header_.encoding == FrameEncoding::kVarDCT &&
       !(frame_header_.flags & FrameHeader::kUseDcFrame)) {
-    JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeVarDCTDC(
-        frame_header_, dc_group_id, br, dec_state_));
+    status = modular_frame_decoder_.DecodeVarDCTDC(frame_header_, dc_group_id,
+                                                   br, dec_state_);
+    if (!status) {
+      if (dec_state_->leniency > 1) {
+        fprintf(stderr,
+                "Error in VarDCT LF group %" PRIuS " at position (%" PRIuS
+                ",%" PRIuS ") group_dim: %" PRIuS "\n",
+                dc_group_id, gx * frame_dim_.dc_group_dim,
+                gy * frame_dim_.dc_group_dim, frame_dim_.dc_group_dim);
+      } else {
+        return JXL_FAILURE("Error in ProcessDCGroup/DecodeVarDCTDC");
+      }
+    }
   }
   const Rect mrect(gx * frame_dim_.dc_group_dim, gy * frame_dim_.dc_group_dim,
                    frame_dim_.dc_group_dim, frame_dim_.dc_group_dim);
-  JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
+  bool zerofill, allow_truncated;
+  zerofill = allow_truncated = (dec_state_->leniency > 1);
+
+  status = modular_frame_decoder_.DecodeGroup(
       frame_header_, mrect, br, 3, 1000,
-      ModularStreamId::ModularDC(dc_group_id),
-      /*zerofill=*/false, nullptr, nullptr,
-      /*allow_truncated=*/false));
+      ModularStreamId::ModularDC(dc_group_id), zerofill, nullptr, nullptr,
+      allow_truncated);
+
+  if (!status) {
+    if (dec_state_->leniency > 1) {
+      fprintf(stderr,
+              "Error in Modular LF group %" PRIuS " at position (%" PRIuS
+              ",%" PRIuS ") group_dim: %" PRIuS "\n",
+              dc_group_id, gx * frame_dim_.dc_group_dim,
+              gy * frame_dim_.dc_group_dim, frame_dim_.dc_group_dim);
+    } else {
+      return JXL_FAILURE("Error in ProcessDCGroup/DecodeGroup");
+    }
+  }
+
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
-    JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeAcMetadata(
-        frame_header_, dc_group_id, br, dec_state_));
+    status = modular_frame_decoder_.DecodeAcMetadata(frame_header_, dc_group_id,
+                                                     br, dec_state_);
+
+    if (!status) {
+      if (dec_state_->leniency > 1) {
+        fprintf(stderr,
+                "Error in HF metadata in LF group %" PRIuS
+                " at position (%" PRIuS ",%" PRIuS ") group_dim: %" PRIuS "\n",
+                dc_group_id, gx * frame_dim_.dc_group_dim,
+                gy * frame_dim_.dc_group_dim, frame_dim_.dc_group_dim);
+      } else {
+        return JXL_FAILURE("Error in ProcessDCGroup/DecodeAcMetadata");
+      }
+    }
+
   } else if (lf.epf_iters > 0) {
     FillImage(kInvSigmaNum / lf.epf_sigma_for_modular, &dec_state_->sigma);
   }
@@ -500,11 +540,21 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(group_dec_caches_[thread].InitOnce(
         memory_manager, frame_header_.passes.num_passes, dec_state_->used_acs));
-    JXL_RETURN_IF_ERROR(DecodeGroup(
+    Status status = DecodeGroup(
         frame_header_, br, num_passes, ac_group_id, dec_state_,
         &group_dec_caches_[thread], thread, render_pipeline_input,
         decoded_->jpeg_data.get(), decoded_passes_per_ac_group_[ac_group_id],
-        force_draw, dc_only, &should_run_pipeline));
+        force_draw, dc_only, &should_run_pipeline);
+    if (!status) {
+      if (dec_state_->leniency > 0) {
+        fprintf(stderr,
+                "Error in HF group %" PRIuS " at position (%" PRIuS ",%" PRIuS
+                ") group_dim: %" PRIuS "\n",
+                ac_group_id, x, y, group_dim);
+      } else {
+        return JXL_FAILURE("Error in DecodeGroup");
+      }
+    }
   }
 
   // don't limit to image dimensions here (is done in DecodeGroup)
@@ -520,21 +570,32 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
     bool modular_pass_ready = true;
     JXL_DEBUG_V(2, "Decoding modular in group %d pass %d",
                 static_cast<int>(ac_group_id), static_cast<int>(i));
+    Status status(true);
     if (i < pass0 + num_passes) {
       JXL_DEBUG_V(2, "Bit reader position: %" PRIuS " / %" PRIuS,
                   br[i - pass0]->TotalBitsConsumed(),
                   br[i - pass0]->TotalBytes() * kBitsPerByte);
-      JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
+      status = modular_frame_decoder_.DecodeGroup(
           frame_header_, mrect, br[i - pass0], minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i),
           /*zerofill=*/false, dec_state_, &render_pipeline_input,
-          /*allow_truncated=*/false, &modular_pass_ready));
+          /*allow_truncated=*/false, &modular_pass_ready);
     } else {
-      JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
+      status = modular_frame_decoder_.DecodeGroup(
           frame_header_, mrect, nullptr, minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true,
           dec_state_, &render_pipeline_input,
-          /*allow_truncated=*/false, &modular_pass_ready));
+          /*allow_truncated=*/false, &modular_pass_ready);
+    }
+    if (!status) {
+      if (dec_state_->leniency > 0) {
+        fprintf(stderr,
+                "Error in Modular HF group %" PRIuS " at position (%" PRIuS
+                ",%" PRIuS ") group_dim: %" PRIuS "\n",
+                ac_group_id, x, y, group_dim);
+      } else {
+        return JXL_FAILURE("Error in modular DecodeGroup");
+      }
     }
     if (modular_pass_ready) modular_ready = true;
   }

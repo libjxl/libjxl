@@ -805,10 +805,16 @@ Status DecodeGroup(const FrameHeader& frame_header,
       dec_state->shared->frame_dim.BlockGroupRect(group_idx), group_dec_cache,
       dec_state, first_pass));
 
-  JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(DecodeGroupImpl)(
+  Status status = HWY_DYNAMIC_DISPATCH(DecodeGroupImpl)(
       frame_header, get_block.get(), group_dec_cache, dec_state, thread,
-      group_idx, render_pipeline_input, jpeg_data, draw));
-
+      group_idx, render_pipeline_input, jpeg_data, draw);
+  if (!status && dec_state->leniency > 0) {
+    printf("making it LF\n");
+    status = DecodeGroup(frame_header, readers, 0, group_idx, dec_state,
+                         group_dec_cache, thread, render_pipeline_input,
+                         jpeg_data, 0, true, true, should_run_pipeline);
+  }
+  if (!status) return JXL_FAILURE("Error during DecodeGroup");
   for (size_t pass = 0; pass < num_passes; pass++) {
     if (!get_block->decoders[pass].CheckANSFinalState()) {
       return JXL_FAILURE("ANS checksum failure.");

@@ -54,6 +54,7 @@ class FrameDecoder {
 
   void SetRenderSpotcolors(bool rsc) { render_spotcolors_ = rsc; }
   void SetCoalescing(bool c) { coalescing_ = c; }
+  void SetLeniency(int l) { leniency_ = l; }
 
   // Read FrameHeader and table of contents from the given BitReader.
   Status InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
@@ -195,6 +196,7 @@ class FrameDecoder {
                       bool unpremul_alpha, bool undo_orientation) const {
     dec_state_->width = xsize;
     dec_state_->height = ysize;
+    dec_state_->leniency = leniency_;
     dec_state_->main_output.format = format;
     dec_state_->main_output.bits_per_sample = bits_per_sample;
     dec_state_->main_output.callback = pixel_callback;
@@ -310,6 +312,7 @@ class FrameDecoder {
   ModularFrameDecoder modular_frame_decoder_;
   bool render_spotcolors_ = true;
   bool coalescing_ = true;
+  int leniency_ = 0;
 
   std::vector<uint8_t> processed_section_;
   std::vector<uint8_t> decoded_passes_per_ac_group_;

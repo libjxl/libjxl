@@ -120,6 +120,13 @@ struct DecompressArgs {
                            "Allow decoding of truncated files.",
                            &allow_partial_files, &SetBooleanTrue, 1);
 
+    cmdline->AddOptionValue(
+        '\0', "leniency", "N",
+        "Set decoder leniency/strictness. Default is 0. Lower values are "
+        "stricter, higher values more lenient. Can be used to recover an image "
+        "from a corrupt bitstream.",
+        &leniency, &ParseSigned, 1);
+
     if (jxl::extras::GetJPEGEncoder()) {
       cmdline->AddOptionFlag(
           'j', "pixels_to_jpeg",
@@ -246,6 +253,7 @@ struct DecompressArgs {
   std::string color_space;
   uint32_t downsampling = 0;
   bool allow_partial_files = false;
+  int leniency = 0;
   bool pixels_to_jpeg = false;
   size_t jpeg_quality = 95;
   bool use_sjpeg = false;
@@ -384,6 +392,7 @@ bool DecompressJxlToPackedPixelFile(
   dparams.runner = JxlThreadParallelRunner;
   dparams.runner_opaque = runner;
   dparams.allow_partial_input = args.allow_partial_files;
+  dparams.leniency = args.leniency;
   if (args.bits_per_sample == 0) {
     dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   } else if (args.bits_per_sample > 0) {
