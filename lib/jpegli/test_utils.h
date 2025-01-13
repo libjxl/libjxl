@@ -51,7 +51,6 @@ void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo);
 
 void SetDecompressParams(const DecompressParams& dparams,
                          j_decompress_ptr cinfo);
-
 void SetScanDecompressParams(const DecompressParams& dparams,
                              j_decompress_ptr cinfo, int scan_number);
 
@@ -120,6 +119,8 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
                        double max_rms, double max_diff = 255.0);
+
+void Check(bool ok);
 
 }  // namespace jpegli
 

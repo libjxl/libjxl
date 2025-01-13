@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/memory_manager.h"
 

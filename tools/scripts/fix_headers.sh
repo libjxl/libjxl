@@ -24,6 +24,7 @@ echo "Processing ${SRC}"
   -config="${CLANG_TIDY_CONFIG}" \
   -p build \
   -format-style=file \
+  -quiet \
   -fix-errors \
   --extra-arg=-I${HERE}/lib/include \
   ${SRC}
