@@ -338,7 +338,7 @@ else ()
   # TODO(eustas): JXL currently compiles, but does not pass tests...
   if (NOT JXL_HWY_DISABLED_TARGETS_FORCED)
     if (NOT JPEGXL_ENABLE_SIZELESS_VECTORS)
-      set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_SVE|HWY_SVE2|HWY_SVE_256|HWY_SVE2_128|HWY_RVV")
+      set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_RVV")
     endif()
     add_compile_options($<$<NOT:$<COMPILE_LANGUAGE:RC>>:-DHWY_DISABLED_TARGETS=\(${HWY_DISABLED_TARGETS}\)>)
   endif()
