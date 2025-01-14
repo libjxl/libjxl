@@ -5,7 +5,15 @@
 
 #include <jxl/memory_manager.h>
 
+#include <cstddef>
+#include <cstring>
+#include <limits>
+#include <utility>
+
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/common.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/memory_manager_internal.h"
 
 // Suppress any -Wdeprecated-declarations warning that might be emitted by
@@ -73,7 +81,7 @@ std::pair<uint32_t, uint32_t> ComputeUsedOrders(
   return {ret, ret_customize};
 }
 
-Status ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
+Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
                          const AcStrategyImage& ac_strategy,
                          const FrameDimensions& frame_dim,
                          uint32_t& all_used_orders, uint32_t prev_used_acs,
@@ -119,9 +127,9 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
                       kGroupDimInBlocks, kGroupDimInBlocks,
                       frame_dim.xsize_blocks, frame_dim.ysize_blocks);
       ConstACPtr rows[3];
-      ACType type = acs.Type();
+      ACType type = ac_image.Type();
       for (size_t c = 0; c < 3; c++) {
-        rows[c] = acs.PlaneRow(c, group_index, 0);
+        rows[c] = ac_image.PlaneRow(c, group_index, 0);
       }
       size_t ac_offset = 0;
 

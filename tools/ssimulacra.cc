@@ -10,8 +10,13 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdio>
+#include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
@@ -188,7 +193,8 @@ class Blur {
 
   Status BlurPlane(const ImageF& in, ImageF* JXL_RESTRICT out) {
     JXL_RETURN_IF_ERROR(FastGaussian(
-        rg_, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+        in.memory_manager(), rg_, in.xsize(), in.ysize(),
+        [&](size_t y) { return in.ConstRow(y); },
         [&](size_t y) { return temp_.Row(y); },
         [&](size_t y) { return out->Row(y); }));
     return true;

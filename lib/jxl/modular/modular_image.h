@@ -40,11 +40,7 @@ class Channel {
   Channel& operator=(const Channel& other) = delete;
 
   static StatusOr<Channel> Create(JxlMemoryManager* memory_manager, size_t iw,
-                                  size_t ih, int hsh = 0, int vsh = 0) {
-    JXL_ASSIGN_OR_RETURN(Plane<pixel_type> plane,
-                         Plane<pixel_type>::Create(memory_manager, iw, ih));
-    return Channel(std::move(plane), iw, ih, hsh, vsh);
-  }
+                                  size_t ih, int hsh = 0, int vsh = 0);
 
   // Move assignment
   Channel& operator=(Channel&& other) noexcept {

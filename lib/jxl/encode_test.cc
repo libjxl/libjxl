@@ -27,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-#include "lib/extras/codec.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
@@ -229,8 +229,9 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   EXPECT_LE(compressed.size(), max_compressed_size);
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
   jxl::CodecInOut decoded_io{jxl::test::MemoryManager()};
+  jxl::extras::JXLDecompressParams dparams;
   EXPECT_TRUE(jxl::test::DecodeFile(
-      {}, jxl::Bytes(compressed.data(), compressed.size()), &decoded_io));
+      dparams, jxl::Bytes(compressed.data(), compressed.size()), &decoded_io));
 
   static constexpr double kMaxButteraugli =
 #if JXL_HIGH_PRECISION
@@ -1838,14 +1839,14 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
                   JxlEncoderAddImageFrame(frame_settings, &frame.format,
                                           pixels.data(), pixels.size()));
       }
-      for (size_t i = 0; i < number_extra_channels; i++) {
+      for (size_t ec = 0; ec < number_extra_channels; ec++) {
         // Copy pixel data here because it is only guaranteed to be available
         // during the call to JxlEncoderSetExtraChannelBuffer().
         std::vector<uint8_t> ec_pixels(ec_frame.pixels_size);
         memcpy(ec_pixels.data(), ec_frame.pixels(), ec_pixels.size());
         EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetExtraChannelBuffer(
                                        frame_settings, &ec_frame.format,
-                                       ec_pixels.data(), ec_pixels.size(), i));
+                                       ec_pixels.data(), ec_pixels.size(), ec));
       }
     }
     JxlEncoderCloseInput(frame_settings->enc);
@@ -1859,7 +1860,7 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
     size_t frame_count = static_cast<int>(p.multiple_frames()) + 1;
     for (size_t i = 0; i < frame_count; i++) {
       // Create local copy of pixels and adapter because they are only
-      // guarantted to be available during the JxlEncoderAddChunkedFrame() call.
+      // guaranteed to be available during the JxlEncoderAddChunkedFrame() call.
       JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(frame.Copy(),
                                                               ec_frame.Copy());
       EXPECT_EQ(JXL_ENC_SUCCESS,

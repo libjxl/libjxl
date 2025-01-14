@@ -5,6 +5,11 @@
 
 #include "lib/jxl/enc_huffman_tree.h"
 
+#include <cstddef>
+#include <cstdint>
+
+#include "lib/jxl/base/compiler_specific.h"
+
 // Suppress any -Wdeprecated-declarations warning that might be emitted by
 // GCC or Clang by std::stable_sort in C++17 or later mode
 #ifdef __clang__

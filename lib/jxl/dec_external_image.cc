@@ -9,12 +9,19 @@
 #include <jxl/types.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <memory>
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/image_ops.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_external_image.cc"

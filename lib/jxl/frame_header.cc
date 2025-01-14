@@ -5,6 +5,15 @@
 
 #include "lib/jxl/frame_header.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/field_encodings.h"
+#include "lib/jxl/image_metadata.h"
+
 #if JXL_DEBUG_V_LEVEL >= 1
 #include <sstream>
 #include <string>

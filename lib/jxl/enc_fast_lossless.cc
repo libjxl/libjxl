@@ -7,11 +7,12 @@
 #ifndef FJXL_SELF_INCLUDE
 
 #include <assert.h>
-#include <stdint.h>
-#include <string.h>
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -279,7 +280,7 @@ struct BitWriter {
         this->bits_in_buffer += nbits[i];
         // This `if` seems to be faster than using ternaries.
         if (this->bits_in_buffer >= 64) {
-          uint64_t next_buffer = bits[i] >> shift;
+          uint64_t next_buffer = shift >= 64 ? 0 : bits[i] >> shift;
           this->buffer = next_buffer;
           this->bits_in_buffer -= 64;
           this->bytes_written += 8;
@@ -545,6 +546,11 @@ struct PrefixCode {
         max_limit[ni] = max_limit_in[i];
         ni++;
       }
+    }
+    for (size_t i = ni; i < kMaxNumSymbols; ++i) {
+      compact_freqs[i] = 0;
+      min_limit[i] = 0;
+      max_limit[i] = 0;
     }
     uint8_t num_bits[kMaxNumSymbols] = {};
     ComputeCodeLengthsNonZero(compact_freqs, ni, min_limit, max_limit,
@@ -2781,7 +2787,7 @@ void CheckHuffmanBitsSIMD(int bits1, int nbits1, int bits2, int nbits2) {
 }
 
 struct Exactly14Bits {
-  explicit Exactly14Bits(size_t bitdepth) { assert(bitdepth == 14); }
+  explicit Exactly14Bits(size_t bitdepth_) { assert(bitdepth_ == 14); }
   // Force LZ77 symbols to have at least 8 bits, and raw symbols 15 and 16 to
   // have exactly 8, and no other symbol to have 8 or more. This ensures that
   // the representation for 15 and 16 is identical up to one bit.
@@ -3035,13 +3041,13 @@ struct ChunkEncoder {
 
 template <typename BitDepth>
 struct ChunkSampleCollector {
-  FJXL_INLINE void Rle(size_t count, uint64_t* lz77_counts) {
+  FJXL_INLINE void Rle(size_t count, uint64_t* lz77_counts_) {
     if (count == 0) return;
     raw_counts[0] += 1;
     count -= kLZ77MinLength + 1;
     unsigned token, nbits, bits;
     EncodeHybridUintLZ77(count, &token, &nbits, &bits);
-    lz77_counts[token]++;
+    lz77_counts_[token]++;
   }
 
   FJXL_INLINE void Chunk(size_t run, typename BitDepth::upixel_t* residuals,

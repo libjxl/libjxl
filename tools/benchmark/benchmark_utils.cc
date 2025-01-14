@@ -7,6 +7,7 @@
 
 #include "tools/benchmark/benchmark_utils.h"
 
+#include <cstdlib>
 #include <string>
 #include <vector>
 

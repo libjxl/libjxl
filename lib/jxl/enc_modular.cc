@@ -5,40 +5,61 @@
 
 #include "lib/jxl/enc_modular.h"
 
+#include <jxl/cms_interface.h>
 #include <jxl/memory_manager.h>
+#include <jxl/types.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
+#include <tuple>
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_modular.h"
+#include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_cluster.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_gaborish.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_patch_dictionary.h"
 #include "lib/jxl/enc_quant_weights.h"
+#include "lib/jxl/fields.h"
 #include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
+#include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/enc_transform.h"
+#include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/pack_signed.h"
 #include "lib/jxl/quant_weights.h"
 #include "modular/options.h"
@@ -795,9 +816,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
     int bits = eci.bit_depth.bits_per_sample;
     int exp_bits = eci.bit_depth.exponent_bits_per_sample;
-    bool fp = eci.bit_depth.floating_point_sample;
-    double factor = (fp ? 1 : ((1u << eci.bit_depth.bits_per_sample) - 1));
-    if (bits + (fp ? 0 : 1) > max_bitdepth) max_bitdepth = bits + (fp ? 0 : 1);
+    bool ec_fp = eci.bit_depth.floating_point_sample;
+    double factor = (ec_fp ? 1 : ((1u << eci.bit_depth.bits_per_sample) - 1));
+    if (bits + (ec_fp ? 0 : 1) > max_bitdepth) {
+      max_bitdepth = bits + (ec_fp ? 0 : 1);
+    }
     const auto process_row = [&](const int task, const int thread) -> Status {
       const size_t y = task;
       const float* const JXL_RESTRICT row_in =
@@ -805,7 +828,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       pixel_type* const JXL_RESTRICT row_out = gi.channel[c].Row(y);
       JXL_RETURN_IF_ERROR(float_to_int(row_in, row_out,
                                        gi.channel[c].plane.xsize(), bits,
-                                       exp_bits, fp, factor));
+                                       exp_bits, ec_fp, factor));
       return true;
     };
     JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, gi.channel[c].plane.ysize(),
@@ -1023,13 +1046,14 @@ Status ModularFrameEncoder::ComputeEncodingData(
   {
     // Clear out channels that have been copied to groups.
     Image& full_image = stream_images_[0];
-    size_t c = full_image.nb_meta_channels;
-    for (; c < full_image.channel.size(); c++) {
-      Channel& fc = full_image.channel[c];
+    size_t ch = full_image.nb_meta_channels;
+    for (; ch < full_image.channel.size(); ch++) {
+      Channel& fc = full_image.channel[ch];
       if (fc.w > frame_dim_.group_dim || fc.h > frame_dim_.group_dim) break;
     }
-    for (; c < full_image.channel.size(); c++) {
-      full_image.channel[c].plane = ImageI();
+    for (; ch < full_image.channel.size(); ch++) {
+      // TODO(eustas): shrink / assign channel to keep size consistency
+      full_image.channel[ch].plane = ImageI();
     }
   }
 
@@ -1342,7 +1366,7 @@ size_t ModularFrameEncoder::ComputeStreamingAbsoluteAcGroupId(
 }
 
 Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
-                                                const CompressParams& cparams_,
+                                                const CompressParams& cparams,
                                                 int minShift, int maxShift,
                                                 const ModularStreamId& stream,
                                                 bool do_color, bool groupwise) {
@@ -1395,28 +1419,28 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // Local palette transforms
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
-    if (cparams_.butteraugli_distance == 0.f && !cparams_.lossy_palette &&
-        cparams_.speed_tier < SpeedTier::kCheetah) {
+    if (cparams.butteraugli_distance == 0.f && !cparams.lossy_palette &&
+        cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
-      if (!(cparams_.responsive && cparams_.decoding_speed_tier >= 1)) {
-        channel_color_percent = cparams_.channel_colors_percent;
+      if (!(cparams.responsive && cparams.decoding_speed_tier >= 1)) {
+        channel_color_percent = cparams.channel_colors_percent;
       }
-      try_palettes(gi, max_bitdepth, maxval, cparams_, channel_color_percent);
+      try_palettes(gi, max_bitdepth, maxval, cparams, channel_color_percent);
     }
   }
 
   // lossless and no specific color transform specified: try Nothing, YCoCg,
   // and 17 RCTs
-  if (cparams_.color_transform == ColorTransform::kNone &&
-      cparams_.IsLossless() && cparams_.colorspace < 0 &&
+  if (cparams.color_transform == ColorTransform::kNone &&
+      cparams.IsLossless() && cparams.colorspace < 0 &&
       gi.channel.size() - gi.nb_meta_channels >= 3 &&
-      cparams_.responsive == JXL_FALSE && do_color &&
-      cparams_.speed_tier <= SpeedTier::kHare) {
+      cparams.responsive == JXL_FALSE && do_color &&
+      cparams.speed_tier <= SpeedTier::kHare) {
     Transform sg(TransformId::kRCT);
     sg.begin_c = gi.nb_meta_channels;
     size_t nb_rcts_to_try = 0;
-    switch (cparams_.speed_tier) {
+    switch (cparams.speed_tier) {
       case SpeedTier::kLightning:
       case SpeedTier::kThunder:
       case SpeedTier::kFalcon:
@@ -1472,9 +1496,9 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // No need to try anything, just use the default options.
   }
   size_t nb_wp_modes = 1;
-  if (cparams_.speed_tier <= SpeedTier::kTortoise) {
+  if (cparams.speed_tier <= SpeedTier::kTortoise) {
     nb_wp_modes = 5;
-  } else if (cparams_.speed_tier <= SpeedTier::kKitten) {
+  } else if (cparams.speed_tier <= SpeedTier::kKitten) {
     nb_wp_modes = 2;
   }
   if (nb_wp_modes > 1 &&

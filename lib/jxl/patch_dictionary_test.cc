@@ -3,19 +3,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <jxl/cms.h>
-#include <jxl/memory_manager.h>
+#include <jxl/encode.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
-#include "lib/extras/codec.h"
-#include "lib/jxl/base/override.h"
+#include "lib/extras/dec/decode.h"
+#include "lib/extras/enc/jxl.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/enc_params.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_test_utils.h"
-#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -34,10 +33,11 @@ TEST(PatchDictionaryTest, GrayscaleModular) {
 
   extras::JXLCompressParams cparams = jxl::test::CompressParamsForLossless();
   cparams.AddOption(JXL_ENC_FRAME_SETTING_PATCHES, 1);
+  extras::JXLDecompressParams dparams;
 
   extras::PackedPixelFile ppf2;
   // Without patches: ~25k
-  size_t compressed_size = Roundtrip(ppf, cparams, {}, nullptr, &ppf2);
+  size_t compressed_size = Roundtrip(ppf, cparams, dparams, nullptr, &ppf2);
   EXPECT_LE(compressed_size, 8000u);
   JXL_TEST_ASSIGN_OR_DIE(ImageF image, GetImage(ppf));
   JXL_TEST_ASSIGN_OR_DIE(ImageF image2, GetImage(ppf2));
@@ -51,10 +51,11 @@ TEST(PatchDictionaryTest, GrayscaleVarDCT) {
 
   extras::JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_PATCHES, 1);
+  extras::JXLDecompressParams dparams;
 
   extras::PackedPixelFile ppf2;
   // Without patches: ~47k
-  size_t compressed_size = Roundtrip(ppf, cparams, {}, nullptr, &ppf2);
+  size_t compressed_size = Roundtrip(ppf, cparams, dparams, nullptr, &ppf2);
   EXPECT_LE(compressed_size, 14000u);
   // Without patches: ~1.2
   EXPECT_LE(ButteraugliDistance(ppf, ppf2), 1.1);

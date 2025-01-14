@@ -6,6 +6,10 @@
 #ifndef LIB_EXTRAS_TONE_MAPPING_H_
 #define LIB_EXTRAS_TONE_MAPPING_H_
 
+#include <utility>
+
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 
 namespace jxl {
@@ -13,7 +17,7 @@ namespace jxl {
 // Important: after calling this, the result will contain many out-of-gamut
 // colors. It is very strongly recommended to call GamutMap afterwards to
 // rectify this.
-Status ToneMapTo(std::pair<float, float> display_nits, CodecInOut* io,
+Status ToneMapTo(const Range& display_nits, CodecInOut* io,
                  ThreadPool* pool = nullptr);
 
 // `preserve_saturation` indicates to what extent to favor saturation over

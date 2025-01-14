@@ -7,7 +7,19 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/memory_manager_internal.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -360,8 +372,8 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
   HWY_CAPPED(int32_t, kDCTBlockSize) di;
   const auto inv_qac = Set(df, quantizer.inv_quant_ac(*quant));
   for (size_t k = 0; k < kDCTBlockSize * xsize * ysize; k += Lanes(df)) {
-    const auto quant = Load(di, quantized + size + k);
-    const auto adj_quant = AdjustQuantBias(di, 1, quant, biases);
+    const auto oquant = Load(di, quantized + size + k);
+    const auto adj_quant = AdjustQuantBias(di, 1, oquant, biases);
     const auto dequantm = Load(df, dequant_matrix + k);
     Store(Mul(Mul(adj_quant, dequantm), inv_qac), df, inout + size + k);
   }

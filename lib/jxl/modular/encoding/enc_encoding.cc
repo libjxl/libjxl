@@ -15,19 +15,25 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
+#include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/pack_signed.h"
 
@@ -349,7 +355,6 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   size_t num_props;
   FlatTree tree = FilterTree(global_tree, static_props, &num_props, &use_wp,
                              &is_wp_only, &is_gradient_only);
-  Properties properties(num_props);
   MATreeLookup tree_lookup(tree);
   JXL_DEBUG_V(3, "Encoding using a MA tree with %" PRIuS " nodes", tree.size());
 
@@ -473,6 +478,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
 
   } else if (!use_wp && !skip_encoder_fast_path) {
     const intptr_t onerow = channel.plane.PixelsPerRow();
+    Properties properties(num_props);
     JXL_ASSIGN_OR_RETURN(
         Channel references,
         Channel::Create(memory_manager,
@@ -503,6 +509,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     }
   } else {
     const intptr_t onerow = channel.plane.PixelsPerRow();
+    Properties properties(num_props);
     JXL_ASSIGN_OR_RETURN(
         Channel references,
         Channel::Create(memory_manager,
@@ -616,13 +623,13 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
           options.max_property_values);
     }
     for (size_t i = 0; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
       if (i >= image.nb_meta_channels &&
           (image.channel[i].w > options.max_chan_size ||
            image.channel[i].h > options.max_chan_size)) {
         break;
+      }
+      if (!image.channel[i].w || !image.channel[i].h) {
+        continue;  // skip empty channels
       }
       JXL_RETURN_IF_ERROR(GatherTreeData(
           image, i, group_id, header->wp_header, options,
@@ -693,13 +700,13 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     tokens->resize(pos + total_tokens);
     Token *tokenp = tokens->data() + pos;
     for (size_t i = 0; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
       if (i >= image.nb_meta_channels &&
           (image.channel[i].w > options.max_chan_size ||
            image.channel[i].h > options.max_chan_size)) {
         break;
+      }
+      if (!image.channel[i].w || !image.channel[i].h) {
+        continue;  // skip empty channels
       }
       JXL_RETURN_IF_ERROR(EncodeModularChannelMAANS(
           image, i, header->wp_header, *tree, &tokenp, aux_out, group_id,

@@ -4,12 +4,27 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/types.h>
+#include <stdio.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <utility>
+#include <vector>
 
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 #include "tools/file_io.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -115,7 +130,7 @@ StatusOr<ImageF> Upsample(const ImageF& image, ThreadPool* pool) {
     }
     return true;
   };
-  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
+  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), ThreadPool::NoInit,
                                process_row_h, "UpsampleHorizontally"));
 
   HWY_FULL(float) df;
@@ -150,7 +165,7 @@ StatusOr<ImageF> Upsample(const ImageF& image, ThreadPool* pool) {
     }
     return true;
   };
-  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
+  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), ThreadPool::NoInit,
                                process_row_v, "UpsampleVertically"));
   return upsampled;
 }
@@ -199,7 +214,7 @@ Status ApplyLocalToneMapping(const ImageF& blurred_luminances,
     }
     return true;
   };
-  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, color->ysize(), &ThreadPool::NoInit,
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, color->ysize(), ThreadPool::NoInit,
                                 process_row, "ApplyLocalToneMapping"));
 
   return true;

@@ -8,11 +8,15 @@
 #include <jxl/memory_manager.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>  // abs
 #include <limits>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 
 namespace jxl {

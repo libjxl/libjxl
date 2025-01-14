@@ -151,6 +151,7 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   if (fast_mode) {
     cparams.speed_tier = SpeedTier::kSquirrel;
   }
+  extras::JXLDecompressParams dparams;
   Image3F gradient = GenerateTestGradient(color0, color1, angle, xsize, ysize);
 
   CodecInOut io{memory_manager};
@@ -163,7 +164,7 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
 
   std::vector<uint8_t> compressed;
   EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed, pool));
-  EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2, pool));
+  EXPECT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &io2, pool));
   EXPECT_TRUE(io2.Main().TransformTo(io2.metadata.m.color_encoding,
                                      *JxlGetDefaultCms(), pool));
 

@@ -5,10 +5,12 @@
 
 #include "lib/jxl/dec_group_border.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
@@ -151,17 +153,17 @@ void GroupBorderAssigner::GroupDone(size_t group_id, size_t padx, size_t pady,
   std::pair<size_t, size_t> horizontal_segments[3] = {{kNoSegment, kNoSegment},
                                                       {kNoSegment, kNoSegment},
                                                       {kNoSegment, kNoSegment}};
-  for (size_t y = 0; y < 3; y++) {
-    for (size_t x = 0; x < 3; x++) {
-      if (!available_parts_mask[x][y]) continue;
-      JXL_DASSERT(horizontal_segments[y].second == kNoSegment ||
-                  horizontal_segments[y].second == x);
-      JXL_DASSERT((horizontal_segments[y].first == kNoSegment) ==
-                  (horizontal_segments[y].second == kNoSegment));
-      if (horizontal_segments[y].first == kNoSegment) {
-        horizontal_segments[y].first = x;
+  for (size_t py = 0; py < 3; py++) {
+    for (size_t px = 0; px < 3; px++) {
+      if (!available_parts_mask[px][py]) continue;
+      JXL_DASSERT(horizontal_segments[py].second == kNoSegment ||
+                  horizontal_segments[py].second == px);
+      JXL_DASSERT((horizontal_segments[py].first == kNoSegment) ==
+                  (horizontal_segments[py].second == kNoSegment));
+      if (horizontal_segments[py].first == kNoSegment) {
+        horizontal_segments[py].first = px;
       }
-      horizontal_segments[y].second = x + 1;
+      horizontal_segments[py].second = px + 1;
     }
   }
   if (horizontal_segments[0] == horizontal_segments[1] &&

@@ -522,10 +522,10 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
 
   std::vector<uint8_t> preview;
   if (status == JXL_DEC_NEED_PREVIEW_OUT_BUFFER) {
-    size_t buffer_size;
-    EXPECT_EQ(JXL_DEC_SUCCESS,
-              JxlDecoderPreviewOutBufferSize(dec, &format, &buffer_size));
-    preview.resize(buffer_size);
+    size_t preview_buffer_size;
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderPreviewOutBufferSize(
+                                   dec, &format, &preview_buffer_size));
+    preview.resize(preview_buffer_size);
     EXPECT_EQ(JXL_DEC_SUCCESS,
               JxlDecoderSetPreviewOutBuffer(dec, &format, preview.data(),
                                             preview.size()));
@@ -4795,20 +4795,20 @@ TEST_P(DecodeProgressiveTest, ProgressiveEventTest) {
         jxl::Bytes(pixels.data(), pixels.size()), xsize, ysize, color_encoding,
         /*bits_per_sample=*/16, format,
         /*pool=*/nullptr, &io.Main()));
-    jxl::TestCodestreamParams params;
+    jxl::TestCodestreamParams tc_params;
     if (lossless) {
-      params.cparams.SetLossless();
+      tc_params.cparams.SetLossless();
     } else {
-      params.cparams.butteraugli_distance = 0.5f;
+      tc_params.cparams.butteraugli_distance = 0.5f;
     }
-    jxl::PassDefinition passes[] = {
+    const jxl::PassDefinition kPasses[] = {
         {2, 0, 4}, {4, 0, 4}, {8, 2, 2}, {8, 1, 2}, {8, 0, 1}};
     const int kNumPasses = 5;
-    jxl::ProgressiveMode progressive_mode{passes};
-    params.cparams.custom_progressive_mode = &progressive_mode;
+    jxl::ProgressiveMode progressive_mode{kPasses};
+    tc_params.cparams.custom_progressive_mode = &progressive_mode;
     std::vector<uint8_t> data =
         jxl::CreateTestJXLCodestream(jxl::Bytes(pixels.data(), pixels.size()),
-                                     xsize, ysize, num_channels, params);
+                                     xsize, ysize, num_channels, tc_params);
 
     for (size_t increment : {static_cast<size_t>(1), data.size()}) {
       printf(

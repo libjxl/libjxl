@@ -7,17 +7,28 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
 #include <map>
 #include <set>
+#include <utility>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/enc_transform.h"
 #include "lib/jxl/modular/transform/palette.h"
+#include "lib/jxl/modular/transform/transform.h"
 
 namespace jxl {
 
@@ -408,7 +419,7 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
   // rare colors.
   // Within each bucket, the colors are sorted on luma (times alpha).
   float freq_threshold = 4;  // arbitrary threshold
-  int x = 0;
+  int clr = 0;
   if (ordered && nb >= 3) {
     JXL_DEBUG_V(7, "Palette of %i colors, using luma order", nb_colors);
     // sort on luma (multiplied by alpha if available)
@@ -432,13 +443,13 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
   }
 
   for (auto pcol : candidate_palette_imageorder) {
-    JXL_DEBUG_V(9, "  Color %i :  ", x);
+    JXL_DEBUG_V(9, "  Color %i :  ", clr);
     for (size_t i = 0; i < nb; i++) {
-      p_palette[nb_deltas + i * onerow + x] = pcol[i];
+      p_palette[nb_deltas + i * onerow + clr] = pcol[i];
       JXL_DEBUG_V(9, "%i ", pcol[i]);
     }
-    inv_palette[pcol] = x;
-    x++;
+    inv_palette[pcol] = clr;
+    clr++;
   }
   std::vector<weighted::State> wp_states;
   for (size_t c = 0; c < nb; c++) {

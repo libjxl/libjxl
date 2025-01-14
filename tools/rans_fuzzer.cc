@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"

@@ -5,11 +5,18 @@
 
 #include "lib/extras/dec/pgx.h"
 
-#include <string.h>
+#include <jxl/codestream_header.h>
+#include <jxl/types.h>
 
+#include <cstdint>
+#include <cstring>
+#include <utility>
+
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
-#include "lib/jxl/base/bits.h"
-#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {

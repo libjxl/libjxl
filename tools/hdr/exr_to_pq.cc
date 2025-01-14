@@ -3,15 +3,24 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <vector>
 
 #include "lib/extras/dec/decode.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/matrix_ops.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/cms/jxl_cms_internal.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_ops.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/hdr/image_utils.h"

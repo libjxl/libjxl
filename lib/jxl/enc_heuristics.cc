@@ -9,6 +9,8 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -32,6 +34,7 @@
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/dct_util.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_group.h"
 #include "lib/jxl/dec_noise.h"
@@ -56,6 +59,7 @@
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
 
 namespace jxl {
 

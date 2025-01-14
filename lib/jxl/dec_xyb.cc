@@ -5,7 +5,16 @@
 
 #include "lib/jxl/dec_xyb.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <iterator>
+
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/image_ops.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_xyb.cc"
@@ -20,6 +29,7 @@
 #include "lib/jxl/cms/jxl_cms_internal.h"
 #include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/dec_xyb-inl.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/opsin_params.h"
@@ -30,43 +40,6 @@ namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::MulAdd;
-
-Status OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
-                            const OpsinParams& opsin_params) {
-  JXL_CHECK_IMAGE_INITIALIZED(*inout, Rect(*inout));
-
-  const size_t xsize = inout->xsize();  // not padded
-  const auto process_row = [&](const uint32_t task,
-                               size_t /* thread */) -> Status {
-    const size_t y = task;
-
-    // Faster than adding via ByteOffset at end of loop.
-    float* JXL_RESTRICT row0 = inout->PlaneRow(0, y);
-    float* JXL_RESTRICT row1 = inout->PlaneRow(1, y);
-    float* JXL_RESTRICT row2 = inout->PlaneRow(2, y);
-
-    const HWY_FULL(float) d;
-
-    for (size_t x = 0; x < xsize; x += Lanes(d)) {
-      const auto in_opsin_x = Load(d, row0 + x);
-      const auto in_opsin_y = Load(d, row1 + x);
-      const auto in_opsin_b = Load(d, row2 + x);
-      auto linear_r = Undefined(d);
-      auto linear_g = Undefined(d);
-      auto linear_b = Undefined(d);
-      XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b, opsin_params, &linear_r,
-               &linear_g, &linear_b);
-
-      Store(linear_r, d, row0 + x);
-      Store(linear_g, d, row1 + x);
-      Store(linear_b, d, row2 + x);
-    }
-    return true;
-  };
-  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, inout->ysize(), ThreadPool::NoInit,
-                                process_row, "OpsinToLinear"));
-  return true;
-}
 
 // Same, but not in-place.
 Status OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
@@ -112,47 +85,6 @@ Status OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
   return true;
 }
 
-// Transform YCbCr to RGB.
-// Could be performed in-place (i.e. Y, Cb and Cr could alias R, B and B).
-void YcbcrToRgb(const Image3F& ycbcr, Image3F* rgb, const Rect& rect) {
-  JXL_CHECK_IMAGE_INITIALIZED(ycbcr, rect);
-  const HWY_CAPPED(float, kBlockDim) df;
-  const size_t S = Lanes(df);  // Step.
-
-  const size_t xsize = rect.xsize();
-  const size_t ysize = rect.ysize();
-  if ((xsize == 0) || (ysize == 0)) return;
-
-  // Full-range BT.601 as defined by JFIF Clause 7:
-  // https://www.itu.int/rec/T-REC-T.871-201105-I/en
-  const auto c128 = Set(df, 128.0f / 255);
-  const auto crcr = Set(df, 1.402f);
-  const auto cgcb = Set(df, -0.114f * 1.772f / 0.587f);
-  const auto cgcr = Set(df, -0.299f * 1.402f / 0.587f);
-  const auto cbcb = Set(df, 1.772f);
-
-  for (size_t y = 0; y < ysize; y++) {
-    const float* y_row = rect.ConstPlaneRow(ycbcr, 1, y);
-    const float* cb_row = rect.ConstPlaneRow(ycbcr, 0, y);
-    const float* cr_row = rect.ConstPlaneRow(ycbcr, 2, y);
-    float* r_row = rect.PlaneRow(rgb, 0, y);
-    float* g_row = rect.PlaneRow(rgb, 1, y);
-    float* b_row = rect.PlaneRow(rgb, 2, y);
-    for (size_t x = 0; x < xsize; x += S) {
-      const auto y_vec = Add(Load(df, y_row + x), c128);
-      const auto cb_vec = Load(df, cb_row + x);
-      const auto cr_vec = Load(df, cr_row + x);
-      const auto r_vec = MulAdd(crcr, cr_vec, y_vec);
-      const auto g_vec = MulAdd(cgcr, cr_vec, MulAdd(cgcb, cb_vec, y_vec));
-      const auto b_vec = MulAdd(cbcb, cb_vec, y_vec);
-      Store(r_vec, df, r_row + x);
-      Store(g_vec, df, g_row + x);
-      Store(b_vec, df, b_row + x);
-    }
-  }
-  JXL_CHECK_IMAGE_INITIALIZED(*rgb, rect);
-}
-
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace jxl
@@ -160,12 +92,6 @@ HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-
-HWY_EXPORT(OpsinToLinearInplace);
-Status OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
-                            const OpsinParams& opsin_params) {
-  return HWY_DYNAMIC_DISPATCH(OpsinToLinearInplace)(inout, pool, opsin_params);
-}
 
 HWY_EXPORT(OpsinToLinear);
 Status OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
@@ -175,11 +101,7 @@ Status OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
                                              opsin_params);
 }
 
-HWY_EXPORT(YcbcrToRgb);
-void YcbcrToRgb(const Image3F& ycbcr, Image3F* rgb, const Rect& rect) {
-  HWY_DYNAMIC_DISPATCH(YcbcrToRgb)(ycbcr, rgb, rect);
-}
-
+#if !JXL_HIGH_PRECISION
 HWY_EXPORT(HasFastXYBTosRGB8);
 bool HasFastXYBTosRGB8() { return HWY_DYNAMIC_DISPATCH(HasFastXYBTosRGB8)(); }
 
@@ -188,6 +110,7 @@ Status FastXYBTosRGB8(const float* input[4], uint8_t* output, bool is_rgba,
                       size_t xsize) {
   return HWY_DYNAMIC_DISPATCH(FastXYBTosRGB8)(input, output, is_rgba, xsize);
 }
+#endif  // !JXL_HIGH_PRECISION
 
 void OpsinParams::Init(float intensity_target) {
   InitSIMDInverseMatrix(GetOpsinAbsorbanceInverseMatrix(), inverse_opsin_matrix,

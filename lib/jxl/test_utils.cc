@@ -7,33 +7,53 @@
 
 #include <jxl/cms.h>
 #include <jxl/cms_interface.h>
+#include <jxl/codestream_header.h>
+#include <jxl/encode.h>
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <fstream>
+#include <ios>
+#include <iterator>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/jxl.h"
 #include "lib/extras/metrics.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/float.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_comparator.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image.h"
@@ -104,13 +124,14 @@ void DefaultAcceptedFormats(extras::JXLDecompressParams& dparams) {
   }
 }
 
-Status DecodeFile(extras::JXLDecompressParams dparams,
+Status DecodeFile(const extras::JXLDecompressParams& dparams,
                   const Span<const uint8_t> file, CodecInOut* JXL_RESTRICT io,
                   ThreadPool* pool) {
-  DefaultAcceptedFormats(dparams);
+  extras::JXLDecompressParams local_dparams(dparams);
+  DefaultAcceptedFormats(local_dparams);
   SetThreadParallelRunner(dparams, pool);
   extras::PackedPixelFile ppf;
-  JXL_RETURN_IF_ERROR(DecodeImageJXL(file.data(), file.size(), dparams,
+  JXL_RETURN_IF_ERROR(DecodeImageJXL(file.data(), file.size(), local_dparams,
                                      /*decoded_bytes=*/nullptr, &ppf));
   JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
   return true;
@@ -188,10 +209,11 @@ void CheckSameEncodings(const std::vector<ColorEncoding>& a,
 }  // namespace
 
 bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
-               extras::JXLDecompressParams dparams,
+               const extras::JXLDecompressParams& dparams,
                CodecInOut* JXL_RESTRICT io2, std::stringstream& failures,
                size_t* compressed_size, ThreadPool* pool) {
-  DefaultAcceptedFormats(dparams);
+  extras::JXLDecompressParams local_dparams(dparams);
+  DefaultAcceptedFormats(local_dparams);
   if (compressed_size) {
     *compressed_size = static_cast<size_t>(-1);
   }
@@ -225,7 +247,7 @@ bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
   CheckSameEncodings(metadata_encodings_1, original_metadata_encodings,
                      "original vs after encoding", failures);
 
-  Check(DecodeFile(dparams, Bytes(compressed), io2, pool));
+  Check(DecodeFile(local_dparams, Bytes(compressed), io2, pool));
   Check(io2->frames.size() == io->frames.size());
 
   for (const ImageBundle& ib2 : io2->frames) {
@@ -251,17 +273,18 @@ bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
 
 size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
                  const extras::JXLCompressParams& cparams,
-                 extras::JXLDecompressParams dparams, ThreadPool* pool,
+                 const extras::JXLDecompressParams& dparams, ThreadPool* pool,
                  extras::PackedPixelFile* ppf_out) {
-  DefaultAcceptedFormats(dparams);
+  extras::JXLDecompressParams local_dparams(dparams);
+  DefaultAcceptedFormats(local_dparams);
   SetThreadParallelRunner(cparams, pool);
-  SetThreadParallelRunner(dparams, pool);
+  SetThreadParallelRunner(local_dparams, pool);
   std::vector<uint8_t> compressed;
   Check(extras::EncodeImageJXL(cparams, ppf_in, /*jpeg_bytes=*/nullptr,
                                &compressed));
   size_t decoded_bytes = 0;
-  Check(extras::DecodeImageJXL(compressed.data(), compressed.size(), dparams,
-                               &decoded_bytes, ppf_out));
+  Check(extras::DecodeImageJXL(compressed.data(), compressed.size(),
+                               local_dparams, &decoded_bytes, ppf_out));
   Check(decoded_bytes == compressed.size());
   return compressed.size();
 }
@@ -632,7 +655,9 @@ float Butteraugli3Norm(const extras::PackedPixelFile& a,
   ImageF distmap;
   ButteraugliDistance(io0.frames, io1.frames, butteraugli_params,
                       *JxlGetDefaultCms(), &distmap, pool);
-  return ComputeDistanceP(distmap, butteraugli_params, 3);
+  JXL_TEST_ASSIGN_OR_DIE(double pnorm,
+                         ComputeDistanceP(distmap, butteraugli_params, 3));
+  return pnorm;
 }
 
 float ComputeDistance2(const extras::PackedPixelFile& a,

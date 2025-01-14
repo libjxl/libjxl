@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -19,6 +20,7 @@
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/encoding.h"
+#include "lib/jxl/modular/transform/squeeze_params.h"
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/quantizer.h"
 

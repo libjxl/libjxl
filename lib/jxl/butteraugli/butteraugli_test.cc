@@ -6,7 +6,6 @@
 #include "lib/jxl/butteraugli/butteraugli.h"
 
 #include <jxl/memory_manager.h>
-#include <jxl/types.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -16,8 +15,6 @@
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/random.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/test_image.h"
@@ -99,7 +96,8 @@ TEST(ButteraugliInPlaceTest, LargeImage) {
   double diffval;
   EXPECT_TRUE(
       ButteraugliInterface(rgb0, rgb1, butteraugli_params, diffmap, diffval));
-  double distp = ComputeDistanceP(diffmap, butteraugli_params, 3.0);
+  JXL_TEST_ASSIGN_OR_DIE(double distp,
+                         ComputeDistanceP(diffmap, butteraugli_params, 3.0));
   EXPECT_NEAR(diffval, 4.0, 0.5);
   EXPECT_NEAR(distp, 1.5, 0.5);
   ImageF diffmap2;
@@ -107,7 +105,8 @@ TEST(ButteraugliInPlaceTest, LargeImage) {
   EXPECT_TRUE(ButteraugliInterfaceInPlace(std::move(rgb0), std::move(rgb1),
                                           butteraugli_params, diffmap2,
                                           diffval2));
-  double distp2 = ComputeDistanceP(diffmap2, butteraugli_params, 3.0);
+  JXL_TEST_ASSIGN_OR_DIE(double distp2,
+                         ComputeDistanceP(diffmap2, butteraugli_params, 3.0));
   EXPECT_NEAR(diffval, diffval2, 5e-7);
   EXPECT_NEAR(distp, distp2, 1e-7);
 }

@@ -5,17 +5,27 @@
 
 #include "lib/jxl/enc_adaptive_quantization.h"
 
+#include <jxl/cms_interface.h>
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "lib/jxl/cms/opsin_params.h"
+#include "lib/jxl/common.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/quantizer.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_adaptive_quantization.cc"
@@ -109,9 +119,8 @@ V ComputeMask(const D d, const V out_val) {
 // mul and mul2 represent a scaling difference between jxl and butteraugli.
 const float kSGmul = 226.77216153508914f;
 const float kSGmul2 = 1.0f / 73.377132366608819f;
-const float kLog2 = 0.693147181f;
 // Includes correction factor for std::log -> log2.
-const float kSGRetMul = kSGmul2 * 18.6580932135f * kLog2;
+const float kSGRetMul = kSGmul2 * 18.6580932135f * kInvLog2e;
 const float kSGVOffset = 7.7825991679894591f;
 
 template <bool invert, typename D, typename V>
@@ -125,8 +134,8 @@ V RatioOfDerivativesOfCubicRootToSimpleGamma(const D d, V v) {
   float kEpsilon = 1e-2;
   v = ZeroIfNegative(v);
   const auto kNumMul = Set(d, kSGRetMul * 3 * kSGmul);
-  const auto kVOffset = Set(d, kSGVOffset * kLog2 + kEpsilon);
-  const auto kDenMul = Set(d, kLog2 * kSGmul);
+  const auto kVOffset = Set(d, kSGVOffset * kInvLog2e + kEpsilon);
+  const auto kDenMul = Set(d, kInvLog2e * kSGmul);
 
   const auto v2 = Mul(v, v);
 
@@ -604,10 +613,10 @@ struct AdaptiveQuantizationImpl {
       }
       if (y % 4 == 3) {
         float* row_d_out = pre_erosion[thread].Row((y - y_start) / 4);
-        for (size_t x = 0; x < (x_end - x_start) / 4; x++) {
-          row_d_out[x] = (row_out[x * 4] + row_out[x * 4 + 1] +
-                          row_out[x * 4 + 2] + row_out[x * 4 + 3]) *
-                         0.25f;
+        for (size_t qx = 0; qx < (x_end - x_start) / 4; qx++) {
+          row_d_out[qx] = (row_out[qx * 4] + row_out[qx * 4 + 1] +
+                           row_out[qx * 4 + 2] + row_out[qx * 4 + 3]) *
+                          0.25f;
         }
       }
     }
@@ -662,7 +671,8 @@ Status Blur1x1Masking(JxlMemoryManager* memory_manager, ThreadPool* pool,
                         {HWY_REP4(normalize_mul * kFilterMask1x1[3])}};
   JXL_ASSIGN_OR_RETURN(
       ImageF temp, ImageF::Create(memory_manager, rect.xsize(), rect.ysize()));
-  JXL_RETURN_IF_ERROR(Symmetric5(*mask1x1, rect, weights, pool, &temp));
+  JXL_RETURN_IF_ERROR(
+      Symmetric5(*mask1x1, rect, weights, pool, &temp, Rect(temp)));
   *mask1x1 = std::move(temp);
   return true;
 }

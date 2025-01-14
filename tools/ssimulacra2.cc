@@ -39,6 +39,7 @@ Design:
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_ops.h"
 #include "tools/gauss_blur.h"
 #include "tools/no_memory_manager.h"
 
@@ -105,7 +106,8 @@ class Blur {
 
   Status BlurPlane(const ImageF& in, ImageF* JXL_RESTRICT out) {
     JXL_RETURN_IF_ERROR(FastGaussian(
-        rg_, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+        in.memory_manager(), rg_, in.xsize(), in.ysize(),
+        [&](size_t y) { return in.ConstRow(y); },
         [&](size_t y) { return temp_.Row(y); },
         [&](size_t y) { return out->Row(y); }));
     return true;
@@ -256,6 +258,17 @@ void AlphaBlend(ImageBundle& img, float bg) {
       b[x] = a[x] * b[x] + (1.f - a[x]) * bg;
     }
   }
+}
+
+Status ToXYB(const ImageBundle& in, Image3F* JXL_RESTRICT xyb) {
+  JxlMemoryManager* memory_manager = in.memory_manager();
+  JXL_ASSIGN_OR_RETURN(*xyb,
+                       Image3F::Create(memory_manager, in.xsize(), in.ysize()));
+  JXL_RETURN_IF_ERROR(CopyImageTo(in.color(), xyb));
+  JXL_RETURN_IF_ERROR(ToXYB(in.c_current(), in.metadata()->IntensityTarget(),
+                            in.black(), nullptr, xyb, *JxlGetDefaultCms(),
+                            nullptr));
+  return true;
 }
 
 }  // namespace
@@ -468,10 +481,8 @@ StatusOr<Msssim> ComputeSSIMULACRA2(const ImageBundle& orig,
   JXL_RETURN_IF_ERROR(dist2.TransformTo(
       jxl::ColorEncoding::LinearSRGB(dist2.IsGray()), *JxlGetDefaultCms()));
 
-  JXL_RETURN_IF_ERROR(
-      jxl::ToXYB(orig2, nullptr, &img1, *JxlGetDefaultCms(), nullptr));
-  JXL_RETURN_IF_ERROR(
-      jxl::ToXYB(dist2, nullptr, &img2, *JxlGetDefaultCms(), nullptr));
+  JXL_RETURN_IF_ERROR(ToXYB(orig2, &img1));
+  JXL_RETURN_IF_ERROR(ToXYB(dist2, &img2));
   MakePositiveXYB(img1);
   MakePositiveXYB(img2);
 
@@ -492,10 +503,8 @@ StatusOr<Msssim> ComputeSSIMULACRA2(const ImageBundle& orig,
           std::move(tmp), jxl::ColorEncoding::LinearSRGB(dist2.IsGray())));
       JXL_RETURN_IF_ERROR(img1.ShrinkTo(orig2.xsize(), orig2.ysize()));
       JXL_RETURN_IF_ERROR(img2.ShrinkTo(orig2.xsize(), orig2.ysize()));
-      JXL_RETURN_IF_ERROR(
-          jxl::ToXYB(orig2, nullptr, &img1, *JxlGetDefaultCms(), nullptr));
-      JXL_RETURN_IF_ERROR(
-          jxl::ToXYB(dist2, nullptr, &img2, *JxlGetDefaultCms(), nullptr));
+      JXL_RETURN_IF_ERROR(ToXYB(orig2, &img1));
+      JXL_RETURN_IF_ERROR(ToXYB(dist2, &img2));
       MakePositiveXYB(img1);
       MakePositiveXYB(img2);
     }

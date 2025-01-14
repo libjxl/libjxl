@@ -5,15 +5,17 @@
 
 #include "lib/jxl/enc_ac_strategy.h"
 
-#include <jxl/memory_manager.h>
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
-#include "lib/jxl/base/common.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/common.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/memory_manager_internal.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -917,11 +919,11 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // don't overlap.
   uint8_t priority[64] = {};
   bool enable_32x32 = cparams.decoding_speed_tier < 4;
-  for (auto tx : kTransformsForMerge) {
-    if (tx.decoding_speed_tier_max_limit < cparams.decoding_speed_tier) {
+  for (auto mt : kTransformsForMerge) {
+    if (mt.decoding_speed_tier_max_limit < cparams.decoding_speed_tier) {
       continue;
     }
-    AcStrategy acs = AcStrategy::FromRawStrategy(tx.type);
+    AcStrategy acs = AcStrategy::FromRawStrategy(mt.type);
 
     for (size_t cy = 0; cy + acs.covered_blocks_y() - 1 < rect.ysize();
          cy += acs.covered_blocks_y()) {
@@ -929,16 +931,16 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
            cx += acs.covered_blocks_x()) {
         if (cy + 7 < rect.ysize() && cx + 7 < rect.xsize()) {
           if (cparams.decoding_speed_tier < 4 &&
-              tx.type == AcStrategyType::DCT32X64) {
+              mt.type == AcStrategyType::DCT32X64) {
             // We handle both DCT8X16 and DCT16X8 at the same time.
             if ((cy | cx) % 8 == 0) {
               JXL_RETURN_IF_ERROR(FindBestFirstLevelDivisionForSquare(
                   8, true, bx, by, cx, cy, config, cmap_factors, ac_strategy,
-                  tx.entropy_mul, entropy_mul64X64, entropy_estimate, block,
+                  mt.entropy_mul, entropy_mul64X64, entropy_estimate, block,
                   scratch_space, quantized));
             }
             continue;
-          } else if (tx.type == AcStrategyType::DCT32X16) {
+          } else if (mt.type == AcStrategyType::DCT32X16) {
             // We handled both DCT8X16 and DCT16X8 at the same time,
             // and that is above. The last column and last row,
             // when the last column or last row is odd numbered,
@@ -946,23 +948,23 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
             continue;
           }
         }
-        if ((tx.type == AcStrategyType::DCT16X32 && cy % 4 != 0) ||
-            (tx.type == AcStrategyType::DCT32X16 && cx % 4 != 0)) {
+        if ((mt.type == AcStrategyType::DCT16X32 && cy % 4 != 0) ||
+            (mt.type == AcStrategyType::DCT32X16 && cx % 4 != 0)) {
           // already covered by FindBest32X32
           continue;
         }
 
         if (cy + 3 < rect.ysize() && cx + 3 < rect.xsize()) {
-          if (tx.type == AcStrategyType::DCT16X32) {
+          if (mt.type == AcStrategyType::DCT16X32) {
             // We handle both DCT8X16 and DCT16X8 at the same time.
             if ((cy | cx) % 4 == 0) {
               JXL_RETURN_IF_ERROR(FindBestFirstLevelDivisionForSquare(
                   4, enable_32x32, bx, by, cx, cy, config, cmap_factors,
-                  ac_strategy, tx.entropy_mul, entropy_mul32X32,
+                  ac_strategy, mt.entropy_mul, entropy_mul32X32,
                   entropy_estimate, block, scratch_space, quantized));
             }
             continue;
-          } else if (tx.type == AcStrategyType::DCT32X16) {
+          } else if (mt.type == AcStrategyType::DCT32X16) {
             // We handled both DCT8X16 and DCT16X8 at the same time,
             // and that is above. The last column and last row,
             // when the last column or last row is odd numbered,
@@ -970,22 +972,22 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
             continue;
           }
         }
-        if ((tx.type == AcStrategyType::DCT16X32 && cy % 4 != 0) ||
-            (tx.type == AcStrategyType::DCT32X16 && cx % 4 != 0)) {
+        if ((mt.type == AcStrategyType::DCT16X32 && cy % 4 != 0) ||
+            (mt.type == AcStrategyType::DCT32X16 && cx % 4 != 0)) {
           // already covered by FindBest32X32
           continue;
         }
         if (cy + 1 < rect.ysize() && cx + 1 < rect.xsize()) {
-          if (tx.type == AcStrategyType::DCT8X16) {
+          if (mt.type == AcStrategyType::DCT8X16) {
             // We handle both DCT8X16 and DCT16X8 at the same time.
             if ((cy | cx) % 2 == 0) {
               JXL_RETURN_IF_ERROR(FindBestFirstLevelDivisionForSquare(
                   2, true, bx, by, cx, cy, config, cmap_factors, ac_strategy,
-                  tx.entropy_mul, entropy_mul16X16, entropy_estimate, block,
+                  mt.entropy_mul, entropy_mul16X16, entropy_estimate, block,
                   scratch_space, quantized));
             }
             continue;
-          } else if (tx.type == AcStrategyType::DCT16X8) {
+          } else if (mt.type == AcStrategyType::DCT16X8) {
             // We handled both DCT8X16 and DCT16X8 at the same time,
             // and that is above. The last column and last row,
             // when the last column or last row is odd numbered,
@@ -993,8 +995,8 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
             continue;
           }
         }
-        if ((tx.type == AcStrategyType::DCT8X16 && cy % 2 == 1) ||
-            (tx.type == AcStrategyType::DCT16X8 && cx % 2 == 1)) {
+        if ((mt.type == AcStrategyType::DCT8X16 && cy % 2 == 1) ||
+            (mt.type == AcStrategyType::DCT16X8 && cx % 2 == 1)) {
           // already covered by FindBestFirstLevelDivisionForSquare
           continue;
         }
@@ -1004,8 +1006,8 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
         // and column will get their DCT16X8s and DCT8X16s through the
         // normal integral transform merging process.
         JXL_RETURN_IF_ERROR(
-            TryMergeAcs(tx.type, bx, by, cx, cy, config, cmap_factors,
-                        ac_strategy, tx.entropy_mul, tx.priority, &priority[0],
+            TryMergeAcs(mt.type, bx, by, cx, cy, config, cmap_factors,
+                        ac_strategy, mt.entropy_mul, mt.priority, &priority[0],
                         entropy_estimate, block, scratch_space, quantized));
       }
     }

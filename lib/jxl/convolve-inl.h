@@ -3,6 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstddef>
+#include <cstdint>
+
+#include "lib/jxl/base/compiler_specific.h"
+
 #if defined(LIB_JXL_CONVOLVE_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_CONVOLVE_INL_H_
 #undef LIB_JXL_CONVOLVE_INL_H_
@@ -12,9 +17,14 @@
 
 #include <hwy/highway.h>
 
+#if HWY_TARGET <= (1 << HWY_HIGHEST_TARGET_BIT_X86)
+#include <xmmintrin.h>
+#endif
+
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -23,10 +33,6 @@ namespace HWY_NAMESPACE {
 namespace {
 
 // These templates are not found via ADL.
-using hwy::HWY_NAMESPACE::Broadcast;
-#if HWY_TARGET != HWY_SCALAR
-using hwy::HWY_NAMESPACE::CombineShiftRightBytes;
-#endif
 using hwy::HWY_NAMESPACE::TableLookupLanes;
 using hwy::HWY_NAMESPACE::Vec;
 
@@ -87,79 +93,9 @@ class Neighbors {
 #endif
 #endif
   }
-
-  // Returns l[i] == c[Mirror(i - 3)].
-  HWY_INLINE HWY_MAYBE_UNUSED static V FirstL3(const V c) {
-#if HWY_CAP_GE256
-    const D d;
-    HWY_ALIGN constexpr int32_t lanes[16] = {2, 1, 0, 0, 1, 2,  3,  4,
-                                             5, 6, 7, 8, 9, 10, 11, 12};
-    const auto indices = SetTableIndices(d, lanes);
-    // c = PONM'LKJI
-    return TableLookupLanes(c, indices);  // MLKJ'IIJK
-#elif HWY_TARGET == HWY_SCALAR
-    const D d;
-    JXL_DEBUG_ABORT("Unsipported");
-    return Zero(d);
-#else  // 128 bit
-    // c = LKJI
-#if HWY_TARGET <= (1 << HWY_HIGHEST_TARGET_BIT_X86)
-    return V{_mm_shuffle_ps(c.raw, c.raw, _MM_SHUFFLE(0, 0, 1, 2))};  // IIJK
-#else
-    const D d;
-    HWY_ALIGN constexpr int lanes[4] = {2, 1, 0, 0};  // IIJK
-    const auto indices = SetTableIndices(d, lanes);
-    return TableLookupLanes(c, indices);
-#endif
-#endif
-  }
 };
 
-#if HWY_TARGET != HWY_SCALAR
-
-// Returns indices for SetTableIndices such that TableLookupLanes on the
-// rightmost unaligned vector (rightmost sample in its most-significant lane)
-// returns the mirrored values, with the mirror outside the last valid sample.
-inline const int32_t* MirrorLanes(const size_t mod) {
-  const HWY_CAPPED(float, 16) d;
-  constexpr size_t kN = MaxLanes(d);
-  // typo:off
-  // For mod = `image width mod 16` 0..15:
-  // last full vec     mirrored (mem order)  loadedVec  mirrorVec  idxVec
-  // 0123456789abcdef| fedcba9876543210      fed..210   012..def   012..def
-  // 0123456789abcdef|0 0fedcba98765432      0fe..321   234..f00   123..eff
-  // 0123456789abcdef|01 10fedcba987654      10f..432   456..110   234..ffe
-  // 0123456789abcdef|012 210fedcba9876      210..543   67..2210   34..ffed
-  // 0123456789abcdef|0123 3210fedcba98      321..654   8..33210   4..ffedc
-  // 0123456789abcdef|01234 43210fedcba
-  // 0123456789abcdef|012345 543210fedc
-  // 0123456789abcdef|0123456 6543210fe
-  // 0123456789abcdef|01234567 76543210
-  // 0123456789abcdef|012345678 8765432
-  // 0123456789abcdef|0123456789 987654
-  // 0123456789abcdef|0123456789A A9876
-  // 0123456789abcdef|0123456789AB BA98
-  // 0123456789abcdef|0123456789ABC CBA
-  // 0123456789abcdef|0123456789ABCD DC
-  // 0123456789abcdef|0123456789ABCDE E      EDC..10f   EED..210   ffe..321
-  // typo:on
-#if HWY_CAP_GE512
-  HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {
-      1,  2,  3,  4,  5,  6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 15,  //
-      14, 13, 12, 11, 10, 9, 8, 7, 6, 5,  4,  3,  2,  1,  0};
-#elif HWY_CAP_GE256
-  HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {
-      1, 2, 3, 4, 5, 6, 7, 7,  //
-      6, 5, 4, 3, 2, 1, 0};
-#else  // 128-bit
-  HWY_ALIGN static constexpr int32_t idx_lanes[2 * kN - 1] = {1, 2, 3, 3,  //
-                                                              2, 1, 0};
-#endif
-  return idx_lanes + kN - 1 - mod;
-}
-
-#endif  // HWY_TARGET != HWY_SCALAR
-
+// TODO(eustas): move into convolve_separable5.cc
 // Single entry point for convolution.
 // "Strategy" (Direct*/Separable*) decides kernel size and how to evaluate it.
 template <class Strategy>
@@ -177,10 +113,9 @@ class ConvolveT {
 #endif
   }
 
-  // "Image" is ImageF or Image3F.
-  template <class Image, class Weights>
-  static void Run(const Image& in, const Rect& rect, const Weights& weights,
-                  ThreadPool* pool, Image* out) {
+  template <class Weights>
+  static void Run(const ImageF& in, const Rect& rect, const Weights& weights,
+                  ThreadPool* pool, ImageF* out) {
     JXL_DASSERT(SameSize(rect, *out));
     JXL_DASSERT(rect.xsize() >= MinWidth());
 
@@ -220,21 +155,6 @@ class ConvolveT {
     }
   }
 
-  // Image3F.
-  template <size_t kSizeModN, class Weights>
-  static JXL_INLINE void RunBorderRows(const Image3F& in, const Rect& rect,
-                                       const int64_t ybegin, const int64_t yend,
-                                       const Weights& weights, Image3F* out) {
-    const int64_t stride = in.PixelsPerRow();
-    for (int64_t y = ybegin; y < yend; ++y) {
-      for (size_t c = 0; c < 3; ++c) {
-        const WrapRowMirror wrap_row(in.Plane(c), rect.ysize());
-        RunRow<kSizeModN>(rect.ConstPlaneRow(in, c, y), rect.xsize(), stride,
-                          wrap_row, weights, out->PlaneRow(c, y));
-      }
-    }
-  }
-
   template <size_t kSizeModN, class Weights>
   static JXL_INLINE void RunInteriorRows(const ImageF& in, const Rect& rect,
                                          const int64_t ybegin,
@@ -253,43 +173,18 @@ class ConvolveT {
     JXL_DASSERT(status);
   }
 
-  // Image3F.
   template <size_t kSizeModN, class Weights>
-  static JXL_INLINE void RunInteriorRows(const Image3F& in, const Rect& rect,
-                                         const int64_t ybegin,
-                                         const int64_t yend,
-                                         const Weights& weights,
-                                         ThreadPool* pool, Image3F* out) {
-    const int64_t stride = in.PixelsPerRow();
-    const auto process_row = [&](const uint32_t y, size_t /*thread*/) HWY_ATTR {
-      for (size_t c = 0; c < 3; ++c) {
-        RunRow<kSizeModN>(rect.ConstPlaneRow(in, c, y), rect.xsize(), stride,
-                          WrapRowUnchanged(), weights, out->PlaneRow(c, y));
-      }
-      return true;
-    };
-    Status status = RunOnPool(pool, ybegin, yend, ThreadPool::NoInit,
-                              process_row, "Convolve3");
-    (void)status;
-    JXL_DASSERT(status);
-  }
-
-  template <size_t kSizeModN, class Image, class Weights>
-  static JXL_INLINE void RunRows(const Image& in, const Rect& rect,
+  static JXL_INLINE void RunRows(const ImageF& in, const Rect& rect,
                                  const Weights& weights, ThreadPool* pool,
-                                 Image* out) {
+                                 ImageF* out) {
+    constexpr int64_t r = static_cast<int64_t>(kRadius);
     const int64_t ysize = rect.ysize();
-    RunBorderRows<kSizeModN>(in, rect, 0,
-                             std::min(static_cast<int64_t>(kRadius), ysize),
-                             weights, out);
-    if (ysize > 2 * static_cast<int64_t>(kRadius)) {
-      RunInteriorRows<kSizeModN>(in, rect, static_cast<int64_t>(kRadius),
-                                 ysize - static_cast<int64_t>(kRadius), weights,
-                                 pool, out);
-    }
-    if (ysize > static_cast<int64_t>(kRadius)) {
-      RunBorderRows<kSizeModN>(in, rect, ysize - static_cast<int64_t>(kRadius),
-                               ysize, weights, out);
+    if (ysize <= 2 * r) {
+      RunBorderRows<kSizeModN>(in, rect, 0, ysize, weights, out);
+    } else {
+      RunBorderRows<kSizeModN>(in, rect, 0, r, weights, out);
+      RunInteriorRows<kSizeModN>(in, rect, r, ysize - r, weights, pool, out);
+      RunBorderRows<kSizeModN>(in, rect, ysize - r, ysize, weights, out);
     }
   }
 };

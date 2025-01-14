@@ -110,24 +110,40 @@ jobs:
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
           # Builds with gcc in release mode
-          - name: release:gcc8
+          - name: release:gcc
+            os: ubuntu-latest
+            mode: release
+            apt_pkgs: gcc g++
+            cc: gcc
+            cxx: g++
+          - name: release:gcc-old
+            os: ubuntu-22.04
+            mode: release
+            apt_pkgs: gcc g++
+            cc: gcc
+            cxx: g++
+          - name: release:gcc-old-old
             os: ubuntu-20.04
             mode: release
-            apt_pkgs: gcc-8 g++-8
-            cmake_args: >-
-              -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
-          # Builds with clang-7 in release mode
-          - name: release:clang-7
+            apt_pkgs: gcc g++
+            cc: gcc
+            cxx: g++
+          # Builds with old clang in release mode
+          - name: release:clang-old
+            os: ubuntu-22.04
+            mode: release
+            apt_pkgs: clang
+            cc: clang
+            cxx: clang++
+          - name: release:clang-old-old
             os: ubuntu-20.04
             mode: release
-            skip_install: true
-            apt_pkgs: clang-7
-            cc: clang-7
-            cxx: clang++-7
+            apt_pkgs: clang
+            cc: clang
+            cxx: clang++
           - name: release:osx
             os: macos-latest
             mode: release
-            skip_install: true
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
 
@@ -163,8 +179,6 @@ jobs:
           cmake \
           graphviz \
           imagemagick \
-          libbenchmark-dev \
-          libbenchmark-tools \
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
           libgif-dev \
@@ -180,16 +194,23 @@ jobs:
           xvfb \
           ${{ matrix.apt_pkgs }} \
         #
+        if [[ "${WILL_BENCH}" == "true" ]]; then
+          sudo apt install -y libbenchmark-dev libbenchmark-tools
+        fi
         echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
+
     - name: Install build deps MacOS
       if: startsWith(matrix.os, 'macos-')
       run: |
         # Should be already installed:
         #  brew install brotli giflib jpeg-turbo libpng zlib
         # Not required, since we skip building documentation
-        #  brew install doxygen
-        brew install binutils ccache coreutils google-benchmark googletest ninja sdl2
+        #  brew install doxygen graphviz
+        brew install binutils ccache coreutils googletest libavif ninja openexr sdl2 webp
+        if [[ "${WILL_BENCH}" == "true" ]]; then
+          brew install google-benchmark
+        fi
 
     - name: Checkout the source
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -217,7 +238,7 @@ jobs:
 
     - name: Cache LLVM sources
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a # v4.1.2
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
@@ -248,7 +269,7 @@ jobs:
       shell: bash
 
     - name: ccache
-      uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a # v4.1.2
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -299,6 +320,9 @@ jobs:
       run: |
         set -x
         sudo cmake --build build -- install
+        # GCC does not know how to refer to shared libraries properly
+        export CC=clang
+        export CXX=clang++
         cmake -Bbuild-example -Hexamples -G Ninja
         cmake --build build-example
         # Test that the built binaries run.
@@ -330,7 +354,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@5c47607acb93fed5485fdbf7232e8a31425f672a # v5.0.2
+      uses: codecov/codecov-action@7f8b4b4bde536c465e797be725718b88c5d95e0e # v5.1.1
       with:
         flags: unittests
         files: build/coverage.xml
@@ -348,4 +372,4 @@ jobs:
     - name: gbench check
       if: env.WILL_BENCH == 'true'
       run: |
-        ./ci.sh gbench --benchmark_min_time=0
+        ./ci.sh gbench --benchmark_min_time=0.5s

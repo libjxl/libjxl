@@ -58,9 +58,9 @@ class AcStrategyRoundtrip : public ::hwy::TestWithParamTargetAndT<int> {
           << " i = " << i;
       TransformToPixels(type, coeffs, idct, acs.covered_blocks_x() * 8,
                         scratch_space);
-      for (size_t j = 0; j < 64u << acs.log2_covered_blocks(); j++) {
-        ASSERT_NEAR(idct[j], j == i ? 0.2f : 0, 2e-6)
-            << "j = " << j << " i = " << i << " acs " << static_cast<int>(type);
+      for (size_t k = 0; k < 64u << acs.log2_covered_blocks(); k++) {
+        ASSERT_NEAR(idct[k], k == i ? 0.2f : 0, 2e-6)
+            << "k = " << k << " i = " << i << " acs " << static_cast<int>(type);
       }
     }
     // Test DC.
@@ -172,9 +172,9 @@ class AcStrategyDownsample : public ::hwy::TestWithParamTargetAndT<int> {
         (4 * AcStrategy::kMaxCoeffArea + dct_scratch_size) * sizeof(float);
     JXL_TEST_ASSIGN_OR_DIE(AlignedMemory mem,
                            AlignedMemory::Create(memory_manager, mem_bytes));
-    float* idct = mem.address<float>();
+    float* const idct = mem.address<float>();
     float* idct_acs_downsampled = idct + AcStrategy::kMaxCoeffArea;
-    float* coeffs = idct + AcStrategy::kMaxCoeffArea;
+    float* const coeffs = idct + AcStrategy::kMaxCoeffArea;
     float* scratch_space = coeffs + AcStrategy::kMaxCoeffArea;
 
     Rng rng(static_cast<uint64_t>(type) * 65537 + 13);
@@ -184,7 +184,6 @@ class AcStrategyDownsample : public ::hwy::TestWithParamTargetAndT<int> {
         if (x > 4 || y > 4) {
           if (rng.Bernoulli(0.9f)) continue;
         }
-        float* coeffs = idct + AcStrategy::kMaxCoeffArea;
         std::fill_n(coeffs, AcStrategy::kMaxCoeffArea, 0);
         coeffs[y * cx * 8 + x] = 0.2f;
         TransformToPixels(type, coeffs, idct, acs.covered_blocks_x() * 8,

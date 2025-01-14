@@ -10,10 +10,12 @@
 #define __STDC_FORMAT_MACROS
 #endif
 
+#include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/resizable_parallel_runner.h>
 #include <jxl/resizable_parallel_runner_cxx.h>
+#include <jxl/types.h>
 #include <limits.h>
 
 #include <cinttypes>  // PRIu64
@@ -54,9 +56,10 @@ bool DecodeJpegXlProgressive(const uint8_t* jxl, size_t size,
   size_t ysize = 0;
 
   // Multi-threaded parallel runner.
-  auto runner = JxlResizableParallelRunnerMake(nullptr);
+  JxlResizableParallelRunnerPtr runner =
+      JxlResizableParallelRunnerMake(nullptr);
 
-  auto dec = JxlDecoderMake(nullptr);
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO |
                                                JXL_DEC_COLOR_ENCODING |

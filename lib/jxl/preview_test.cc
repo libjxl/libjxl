@@ -48,9 +48,10 @@ TEST(PreviewTest, RoundtripGivenPreview) {
   cparams.butteraugli_distance = 2.0;
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
   CodecInOut io2{memory_manager};
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, dparams, &io2, _));
   EXPECT_EQ(preview_xsize, io2.metadata.m.preview_size.xsize());
   EXPECT_EQ(preview_ysize, io2.metadata.m.preview_size.ysize());
   EXPECT_EQ(preview_xsize, io2.preview_frame.xsize());

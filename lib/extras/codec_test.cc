@@ -267,15 +267,19 @@ void TestRoundTrip(const TestImageParams& params, ThreadPool* pool) {
       params.codec, params.is_gray, params.add_alpha, params.bits_per_sample);
   printf("Codec %s %s\n", extension.c_str(), params.DebugString().c_str());
 
-  PackedPixelFile ppf_in;
-  CreateTestImage(params, &ppf_in);
-
-  EncodedImage encoded;
-  auto encoder = Encoder::FromExtension(extension);
-  if (!encoder) {
-    fprintf(stderr, "Skipping test because of missing codec support.\n");
+  if (!CanDecode(params.codec)) {
+    fprintf(stderr, "Skipping test because of missing decoding support.\n");
     return;
   }
+  auto encoder = Encoder::FromExtension(extension);
+  if (!encoder) {
+    fprintf(stderr, "Skipping test because of missing encoding support.\n");
+    return;
+  }
+
+  PackedPixelFile ppf_in;
+  CreateTestImage(params, &ppf_in);
+  EncodedImage encoded;
   ASSERT_TRUE(encoder->Encode(ppf_in, &encoded, pool));
   ASSERT_EQ(encoded.bitstreams.size(), 1);
 

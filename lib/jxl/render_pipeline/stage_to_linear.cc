@@ -5,7 +5,17 @@
 
 #include "lib/jxl/render_pipeline/stage_to_linear.h"
 
+#include <cstddef>
+#include <cstdio>
+#include <memory>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/sanitizers.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_xyb.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_to_linear.cc"
@@ -71,12 +81,7 @@ struct OpHlg {
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
-      HWY_ALIGN float vals[MaxLanes(d)];
-      Store(*val, d, vals);
-      for (size_t i = 0; i < Lanes(d); ++i) {
-        vals[i] = TF_HLG_Base::DisplayFromEncoded(vals[i]);
-      }
-      *val = Load(d, vals);
+      *val = TF_HLG().DisplayFromEncoded(d, *val);
     }
     hlg_ootf_.Apply(r, g, b);
   }
