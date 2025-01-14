@@ -14,6 +14,7 @@
 #include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/huffman.h"
 #include "lib/jpegli/types.h"
+#include "lib/jxl/base/compiler_specific.h"
 
 namespace jpegli {
 

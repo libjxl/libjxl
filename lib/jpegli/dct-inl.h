@@ -3,8 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+
+#include "lib/jpegli/common.h"
 
 #if defined(LIB_JPEGLI_DCT_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JPEGLI_DCT_INL_H_
@@ -12,6 +15,8 @@
 #else
 #define LIB_JPEGLI_DCT_INL_H_
 #endif
+
+#include <hwy/highway.h>
 
 #include "lib/jpegli/transpose-inl.h"
 #include "lib/jxl/base/compiler_specific.h"
