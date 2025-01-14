@@ -336,8 +336,8 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
   }
   const Rect mrect(gx * frame_dim_.dc_group_dim, gy * frame_dim_.dc_group_dim,
                    frame_dim_.dc_group_dim, frame_dim_.dc_group_dim);
-  bool zerofill = dec_state_->leniency > 1;
-  bool allow_truncated = zerofill;
+  bool zerofill = !status;
+  bool allow_truncated = dec_state_->leniency > 1;
 
   status = modular_frame_decoder_.DecodeGroup(
       frame_header_, mrect, br, 3, 1000,
