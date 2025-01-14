@@ -28,5 +28,5 @@ echo "Processing ${SRC}"
   -fix-errors \
   --extra-arg=-I${HERE}/lib/include \
   ${SRC}
-sed -i -r 's/#include "jxl\/(.+)"/#include <jxl\/\1>/g' ${SRC}
+sed -i -r 's/#include "(hwy|jxl)\/(.+)"/#include <\1\/\2>/g' ${SRC}
 clang-format -i ${SRC}

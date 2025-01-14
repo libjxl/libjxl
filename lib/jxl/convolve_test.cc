@@ -12,8 +12,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
+#include <hwy/timer.h>
 
-#include "hwy/timer.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
 

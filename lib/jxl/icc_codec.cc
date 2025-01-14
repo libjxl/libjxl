@@ -371,7 +371,7 @@ Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
     saved_i = i_;
   };
   save();
-  auto check_and_restore = [&]() {
+  auto check_and_restore = [&]() -> Status {
     Status status = CheckEOI(reader);
     if (!status) {
       // not enough bytes.
@@ -379,7 +379,7 @@ Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
       i_ = saved_i;
       return status;
     }
-    return Status(true);
+    return true;
   };
   for (; i_ < enc_size_; i_++) {
     if (i_ % ANSSymbolReader::kMaxCheckpointInterval == 0 && i_ > 0) {
