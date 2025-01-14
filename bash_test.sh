@@ -25,6 +25,11 @@ test_includes() {
       echo "Don't add \"include/\" to the include path of public headers." >&2
       ret=1
     fi
+    # Check that jxl and hwy includes are system-styled.
+    if grep -i -H -n -E '#include\s*"(hwy|jxl)' "$f" >&2; then
+      echo "Use system includes for hwy/ and jxl/ public headers." >&2
+      ret=1
+    fi
 
     if [[ "${f#third_party/}" == "$f" ]]; then
       # $f is not in third_party/

@@ -11,9 +11,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <hwy/base.h>
 #include <vector>
 
-#include "hwy/base.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
