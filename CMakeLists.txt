@@ -28,6 +28,21 @@ check_cxx_compiler_flag("-mavx512cd" CXX_MAVX512CD_SUPPORTED)
 check_cxx_compiler_flag("-mavx512bw" CXX_MAVX512BW_SUPPORTED)
 check_cxx_compiler_flag("-mavx512vl" CXX_MAVX512VL_SUPPORTED)
 
+check_cxx_source_compiles("
+#include <arm_sve.h>
+__attribute__((target(\"+sve\")))
+svuint32_t add(svuint32_t a, svuint32_t b) {
+  svuint32_t c = svadd_u32_z(svptrue_b32(), a, b);
+  return c;
+}
+
+int main() {
+  return 0;
+}
+"
+  CXX_SVE_SUPPORTED
+)
+
 # Add "DebugOpt" CMake build type. Unlike builtin DEBUG it is optimized.
 string(REGEX REPLACE "-DNDEBUG " "" CMAKE_CXX_FLAGS_DEBUGOPT "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -DDEBUG" )
 string(REGEX REPLACE "-DNDEBUG " "" CMAKE_C_FLAGS_DEBUGOPT "${CMAKE_C_FLAGS_RELWITHDEBINFO} -DDEBUG" )
@@ -337,6 +352,10 @@ else ()
 
   # TODO(eustas): JXL currently compiles, but does not pass tests...
   if (NOT JXL_HWY_DISABLED_TARGETS_FORCED)
+    # For AppleClang ("Scalable vectors function return values not yet supported")
+    if (NOT CXX_SVE_SUPPORTED)
+      set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_SVE|HWY_SVE2|HWY_SVE_256|HWY_SVE2_128")
+    endif()
     if (NOT JPEGXL_ENABLE_SIZELESS_VECTORS)
       set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_RVV")
     endif()
