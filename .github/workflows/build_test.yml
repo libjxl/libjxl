@@ -146,7 +146,11 @@ jobs:
             mode: release
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
-
+          - name: release:osx-15
+            os: macos-15
+            mode: release
+            cmake_args: >-
+              -DCMAKE_FIND_FRAMEWORK=NEVER
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
