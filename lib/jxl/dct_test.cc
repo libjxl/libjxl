@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/test_memory_manager.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dct_test.cc"
@@ -33,8 +34,17 @@ namespace HWY_NAMESPACE {
 // obtain "vanilla" DCT.
 template <size_t N>
 void ComputeDCT(float block[N * N]) {
-  HWY_ALIGN float tmp_block[N * N];
-  HWY_ALIGN float scratch_space[4 * N * N];
+  constexpr size_t kBlockSize = N * N;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory tmp_block_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* tmp_block = tmp_block_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory scratch_space_mem,
+      AlignedMemory::Create(memory_manager, 4 * kBlockSize * sizeof(float)));
+  float* scratch_space = scratch_space_mem.address<float>();
+
   ComputeScaledDCT<N, N>()(DCTFrom(block, N), tmp_block, scratch_space);
 
   // Untranspose.
@@ -45,8 +55,16 @@ void ComputeDCT(float block[N * N]) {
 // Requires that block is HWY_ALIGN'ed.
 template <int N>
 void ComputeIDCT(float block[N * N]) {
-  HWY_ALIGN float tmp_block[N * N];
-  HWY_ALIGN float scratch_space[4 * N * N];
+  constexpr size_t kBlockSize = N * N;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory tmp_block_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* tmp_block = tmp_block_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory scratch_space_mem,
+      AlignedMemory::Create(memory_manager, 4 * kBlockSize * sizeof(float)));
+  float* scratch_space = scratch_space_mem.address<float>();
   // Untranspose.
   Transpose<N, N>::Run(DCTFrom(block, N), DCTTo(tmp_block, N));
 
@@ -56,14 +74,22 @@ void ComputeIDCT(float block[N * N]) {
 template <size_t N>
 void TransposeTestT(float accuracy) {
   constexpr size_t kBlockSize = N * N;
-  HWY_ALIGN float src[kBlockSize];
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory src_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* src = src_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory dst_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* dst = dst_mem.address<float>();
+
   DCTTo to_src(src, N);
   for (size_t y = 0; y < N; ++y) {
     for (size_t x = 0; x < N; ++x) {
       to_src.Write(y * N + x, y, x);
     }
   }
-  HWY_ALIGN float dst[kBlockSize];
   Transpose<N, N>::Run(DCTFrom(src, N), DCTTo(dst, N));
   DCTFrom from_dst(dst, N);
   for (size_t y = 0; y < N; ++y) {
@@ -84,12 +110,24 @@ void TransposeTest() {
 template <size_t N>
 void ColumnDctRoundtripT(float accuracy) {
   constexpr size_t kBlockSize = N * N;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   // Though we are only interested in single column result, dct.h has built-in
   // limit on minimal number of columns processed. So, to be safe, we do
   // regular 8x8 block transformation. On the bright side - we could check all
   // 8 basis vectors at once.
-  HWY_ALIGN float block[kBlockSize];
-  HWY_ALIGN float scratch[3 * kBlockSize];
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory block_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* block = block_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory tmp_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* tmp = tmp_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory scratch_mem,
+      AlignedMemory::Create(memory_manager, 3 * kBlockSize * sizeof(float)));
+  float* scratch = scratch_mem.address<float>();
+
   DCTTo to(block, N);
   DCTFrom from(block, N);
   for (size_t i = 0; i < N; ++i) {
@@ -100,7 +138,6 @@ void ColumnDctRoundtripT(float accuracy) {
 
   // Running (I)DCT on the same memory block seems to trigger a compiler bug on
   // ARMv7 with clang6.
-  HWY_ALIGN float tmp[kBlockSize];
   DCTTo to_tmp(tmp, N);
   DCTFrom from_tmp(tmp, N);
 
@@ -266,13 +303,34 @@ void TestRectInverse() {
 template <size_t ROWS, size_t COLS>
 void TestRectTransposeT(float accuracy) {
   constexpr size_t kBlockSize = ROWS * COLS;
-  HWY_ALIGN float scratch_space[kBlockSize * 5];
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory scratch_space_mem,
+      AlignedMemory::Create(memory_manager, 5 * kBlockSize * sizeof(float)));
+  float* scratch_space = scratch_space_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory x1_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* x1 = x1_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory x2_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* x2 = x2_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory coeffs1_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* coeffs1 = coeffs1_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory coeffs2_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* coeffs2 = coeffs2_mem.address<float>();
+
   for (size_t px = 0; px < COLS; ++px) {
     for (size_t py = 0; py < ROWS; ++py) {
-      HWY_ALIGN float x1[kBlockSize] = {0.0f};
-      HWY_ALIGN float x2[kBlockSize] = {0.0f};
-      HWY_ALIGN float coeffs1[kBlockSize] = {0.0f};
-      HWY_ALIGN float coeffs2[kBlockSize] = {0.0f};
+      memset(x1, 0, sizeof(float) * kBlockSize);
+      memset(x2, 0, sizeof(float) * kBlockSize);
+      memset(coeffs1, 0, sizeof(float) * kBlockSize);
+      memset(coeffs2, 0, sizeof(float) * kBlockSize);
       x1[py * COLS + px] = 1;
       x2[px * ROWS + py] = 1;
 
