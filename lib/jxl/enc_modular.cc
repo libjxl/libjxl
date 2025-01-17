@@ -1071,9 +1071,8 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
       const Image& image = stream_images_[stream_id];
       const ModularOptions& options = stream_options_[stream_id];
       for (uint32_t i = image.nb_meta_channels; i < image.channel.size(); i++) {
-        if (i >= image.nb_meta_channels &&
-            (image.channel[i].w > options.max_chan_size ||
-             image.channel[i].h > options.max_chan_size)) {
+        if (image.channel[i].w > options.max_chan_size ||
+            image.channel[i].h > options.max_chan_size) {
           continue;
         }
         if (stream_id > 0 && gi_channel_[stream_id].empty()) continue;
