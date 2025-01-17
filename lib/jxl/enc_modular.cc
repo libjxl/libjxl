@@ -1089,7 +1089,7 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
           StaticPropRange range;
           range[0] = {{i, i + 1}};
           range[1] = {{stream_id, stream_id + 1}};
-          multiplier_info.push_back({range, static_cast<uint32_t>(q)});
+          multiplier_info.push_back({range, q});
         } else {
           // Previous channel in the same group had the same quantization
           // factor. Don't provide two different ranges, as that creates
