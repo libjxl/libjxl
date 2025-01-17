@@ -227,6 +227,10 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       fprintf(stderr, "JxlDecoderSetDecompressBoxes failed\n");
       return false;
     }
+    if (JXL_DEC_SUCCESS != JxlDecoderSetLeniency(dec, dparams.leniency)) {
+      fprintf(stderr, "JxlDecoderSetLeniency failed\n");
+      return false;
+    }
   }
   if (JXL_DEC_SUCCESS != JxlDecoderSetInput(dec, bytes, bytes_size)) {
     fprintf(stderr, "Decoder failed to set input\n");

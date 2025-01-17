@@ -46,6 +46,9 @@ struct JXLDecompressParams {
   // Whether truncated input should be treated as an error.
   bool allow_partial_input = false;
 
+  // How lenient to be when input is corrupt.
+  int leniency = 0;
+
   // How many passes to decode at most. By default, decode everything.
   uint32_t max_passes = std::numeric_limits<uint32_t>::max();
 
