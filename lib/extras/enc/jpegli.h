@@ -13,12 +13,13 @@
 #include <string>
 #include <vector>
 
-#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {
+
+class PackedPixelFile;
 
 struct JpegSettings {
   bool xyb = false;

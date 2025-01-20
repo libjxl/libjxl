@@ -18,10 +18,10 @@
 #include <string>
 #include <vector>
 
-#include "lib/extras/packed_image.h"
-
 namespace jxl {
 namespace extras {
+
+class PackedPixelFile;
 
 struct JXLDecompressParams {
   // If empty, little endian float formats will be accepted.

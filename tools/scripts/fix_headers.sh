@@ -29,4 +29,5 @@ echo "Processing ${SRC}"
   --extra-arg=-I${HERE}/lib/include \
   ${SRC}
 sed -i -r 's/#include "(hwy|jxl)\/(.+)"/#include <\1\/\2>/g' ${SRC}
+# TODO(eustas): add post-fixup for unsupported 'no_include' pragmas
 clang-format -i ${SRC}
