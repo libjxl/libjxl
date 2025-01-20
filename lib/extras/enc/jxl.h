@@ -16,10 +16,10 @@
 #include <cstdint>
 #include <vector>
 
-#include "lib/extras/packed_image.h"
-
 namespace jxl {
 namespace extras {
+
+class PackedPixelFile;
 
 struct JXLOption {
   JXLOption(JxlEncoderFrameSettingId id, int64_t val, size_t frame_index)

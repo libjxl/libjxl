@@ -8,9 +8,9 @@
 
 // GTest specific macros / wrappers.
 
-#include "gtest/gtest.h"
+#include "gtest/gtest.h"  // IWYU pragma: export
 // JPEGXL_ENABLE_BOXES, JPEGXL_ENABLE_TRANSCODE_JPEG
-#include "lib/jxl/common.h"
+#include "lib/jxl/common.h"  // IWYU pragma: keep
 
 #ifdef JXL_DISABLE_SLOW_TESTS
 #define JXL_SLOW_TEST(T, C) TEST(T, DISABLED_##C)
