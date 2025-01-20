@@ -31,6 +31,7 @@ TARGETS="${TARGETS:-all doc}"
 TEST_SELECTOR="${TEST_SELECTOR:-}"
 BUILD_TARGET="${BUILD_TARGET:-}"
 ENABLE_WASM_SIMD="${ENABLE_WASM_SIMD:-0}"
+CORPUS_DIR="${CORPUS_DIR:-}"
 if [[ -n "${BUILD_TARGET}" ]]; then
   BUILD_DIR="${BUILD_DIR:-${MYDIR}/build-${BUILD_TARGET%%-*}}"
 else
@@ -841,11 +842,17 @@ cmd_fast_benchmark() {
     curl --show-error -o "${small_corpus_tar}" "${small_corpus_url}"
   fi
 
-  local tmpdir=$(mktemp -d)
-  CLEANUP_FILES+=("${tmpdir}")
-  tar -xf "${small_corpus_tar}" -C "${tmpdir}"
+  local corpus_dir="${CORPUS_DIR}"
+  if [[ -z "${CORPUS_DIR}" ]]; then
+    corpus_dir=$(mktemp -d)
+    CLEANUP_FILES+=("${corpus_dir}")
+  else
+    mkdir -p "${corpus_dir}"
+  fi
 
-  run_benchmark "${tmpdir}" 1048576
+  tar -xf "${small_corpus_tar}" -C "${corpus_dir}"
+
+  run_benchmark "${corpus_dir}" 1048576
 }
 
 cmd_benchmark() {
@@ -854,9 +861,15 @@ cmd_benchmark() {
   curl --show-error -o "${nikon_corpus_tar}" -z "${nikon_corpus_tar}" \
     "https://storage.googleapis.com/artifacts.jpegxl.appspot.com/corpora/nikon-subset.tar"
 
-  local tmpdir=$(mktemp -d)
-  CLEANUP_FILES+=("${tmpdir}")
-  tar -xvf "${nikon_corpus_tar}" -C "${tmpdir}"
+  local corpus_dir="${CORPUS_DIR}"
+  if [[ -z "${CORPUS_DIR}" ]]; then
+    corpus_dir=$(mktemp -d)
+    CLEANUP_FILES+=("${corpus_dir}")
+  else
+    mkdir -p "${corpus_dir}"
+  fi
+
+  tar -xvf "${nikon_corpus_tar}" -C "${corpus_dir}"
 
   local sem_id="jpegxl_benchmark-$$"
   local nprocs=$(nproc --all || echo 1)
@@ -878,13 +891,13 @@ cmd_benchmark() {
     png_filename=$(echo "${png_filename}" | tr '/' '_')
     sem --bg --id "${sem_id}" -j"${nprocs}" -- \
       "${TOOLS_DIR}/decode_and_encode" \
-        "${tmpdir}/${filename}" "${mode}" "${tmpdir}/${png_filename}"
+        "${corpus_dir}/${filename}" "${mode}" "${corpus_dir}/${png_filename}"
     images+=( "${png_filename}" )
-  done < <(cd "${tmpdir}"; ${FIND_BIN} . -name '*.ppm' -type f)
+  done < <(cd "${corpus_dir}"; ${FIND_BIN} . -name '*.ppm' -type f)
   sem --id "${sem_id}" --wait
 
   # We need about 10 GiB per thread on these images.
-  run_benchmark "${tmpdir}" 10485760
+  run_benchmark "${corpus_dir}" 10485760
 }
 
 get_mem_available() {
