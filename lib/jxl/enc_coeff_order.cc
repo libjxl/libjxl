@@ -5,47 +5,28 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <utility>
-
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
-#include "lib/jxl/frame_dimensions.h"
-#include "lib/jxl/memory_manager_internal.h"
-
-// Suppress any -Wdeprecated-declarations warning that might be emitted by
-// GCC or Clang by std::stable_sort in C++17 or later mode
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#elif defined(__GNUC__)
-#pragma GCC push_options
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-
-#include <algorithm>
-
-#ifdef __clang__
-#pragma clang diagnostic pop
-#elif defined(__GNUC__)
-#pragma GCC pop_options
-#endif
-
-#include <cmath>
-#include <cstdint>
 #include <vector>
 
 #include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/lehmer_code.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 namespace jxl {
 
@@ -172,7 +153,8 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
   }
   struct PosAndCount {
     uint32_t pos;
-    uint32_t count;
+    // Saving index breaks the ties for non-stable sort
+    uint32_t count_and_idx;
   };
   size_t mem_bytes = AcStrategy::kMaxCoeffArea * sizeof(PosAndCount);
   JXL_ASSIGN_OR_RETURN(auto mem,
@@ -187,6 +169,8 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
     computed |= 1 << ord;
     AcStrategy acs = AcStrategy::FromRawStrategy(o);
     size_t sz = kDCTBlockSize * acs.covered_blocks_x() * acs.covered_blocks_y();
+    // Expected maximal size is 256 x 256.
+    JXL_DASSERT(sz <= (1 << 16));
 
     // Do nothing for transforms that don't appear.
     if ((1 << ord) & ~current_used_acs) continue;
@@ -222,15 +206,18 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
         pos_and_val[i].pos = pos;
         // We don't care for the exact number -> quantize number of zeros,
         // to get less permuted order.
-        pos_and_val[i].count = num_zeros[offset + pos] * inv_sqrt_sz + 0.1f;
+        uint32_t count = num_zeros[offset + pos] * inv_sqrt_sz + 0.1f;
+        // Actually, limit is sqrt(1<<16), but we don't care
+        JXL_DASSERT(count < (1u << 16));
+        pos_and_val[i].count_and_idx = (count << 16) | i;
       }
 
       // Stable-sort -> elements with same number of zeros will preserve their
       // order.
       auto comparator = [](const PosAndCount& a, const PosAndCount& b) -> bool {
-        return a.count < b.count;
+        return a.count_and_idx < b.count_and_idx;
       };
-      std::stable_sort(pos_and_val, pos_and_val + sz, comparator);
+      std::sort(pos_and_val, pos_and_val + sz, comparator);
 
       // Grab indices.
       for (size_t i = 0; i < sz; ++i) {
