@@ -7,6 +7,7 @@
 
 #include <jxl/codestream_header.h>
 #include <jxl/encode.h>
+#include <jxl/types.h>
 
 #include <algorithm>
 #include <cmath>

@@ -1712,19 +1712,19 @@ double ButteraugliDistance(size_t xsize, size_t ysize,
   in.metadata.m.SetIntensityTarget(intensity_in);
   JxlPixelFormat format_in = {static_cast<uint32_t>(color_in.Channels()),
                               JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  EXPECT_TRUE(jxl::ConvertFromExternal(
-      jxl::Bytes(pixels_in.data(), pixels_in.size()), xsize, ysize, color_in,
-      /*bits_per_sample=*/16, format_in,
-      /*pool=*/nullptr, &in.Main()));
+  EXPECT_TRUE(jxl::ConvertFromExternal(jxl::Bytes(pixels_in), xsize, ysize,
+                                       color_in,
+                                       /*bits_per_sample=*/16, format_in,
+                                       /*pool=*/nullptr, &in.Main()));
   jxl::CodecInOut out{memory_manager};
   out.metadata.m.color_encoding = color_out;
   out.metadata.m.SetIntensityTarget(intensity_out);
   JxlPixelFormat format_out = {static_cast<uint32_t>(color_out.Channels()),
                                JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  EXPECT_TRUE(jxl::ConvertFromExternal(
-      jxl::Bytes(pixels_out.data(), pixels_out.size()), xsize, ysize, color_out,
-      /*bits_per_sample=*/16, format_out,
-      /*pool=*/nullptr, &out.Main()));
+  EXPECT_TRUE(jxl::ConvertFromExternal(jxl::Bytes(pixels_out), xsize, ysize,
+                                       color_out,
+                                       /*bits_per_sample=*/16, format_out,
+                                       /*pool=*/nullptr, &out.Main()));
   return ButteraugliDistance(in.frames, out.frames, jxl::ButteraugliParams(),
                              *JxlGetDefaultCms(), nullptr, nullptr);
 }

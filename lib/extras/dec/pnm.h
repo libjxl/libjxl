@@ -16,9 +16,7 @@
 #include <hwy/highway.h>
 #include <vector>
 
-#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/mmap.h"
-#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
@@ -27,6 +25,9 @@ namespace jxl {
 struct SizeConstraints;
 
 namespace extras {
+
+class ColorHints;
+class PackedPixelFile;
 
 // Decodes `bytes` into `ppf`. color_hints may specify "color_space", which
 // defaults to sRGB.

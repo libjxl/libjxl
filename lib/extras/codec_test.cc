@@ -377,8 +377,7 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
       ColorHints color_hints;
       color_hints.Add("color_space",
                       channels < 3 ? "Gra_D65_Rel_SRG" : "RGB_D65_SRG_Rel_SRG");
-      ASSERT_TRUE(
-          DecodeBytes(Bytes(orig.data(), orig.size()), color_hints, &ppf));
+      ASSERT_TRUE(DecodeBytes(Bytes(orig), color_hints, &ppf));
 
       EncodedImage encoded;
       auto encoder = Encoder::FromExtension(extension);

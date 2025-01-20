@@ -14,7 +14,7 @@ HERE=`pwd`
 CLANG_TIDY_CONFIG="{\
   Checks: '-*,misc-include-cleaner,readability-avoid-const-params-in-decls,misc-unused-using-decls,readability-container-size-empty',\
   CheckOptions: {\
-    'misc-include-cleaner.IgnoreHeaders': 'gtest/.*;testing.h'\
+    'misc-include-cleaner.IgnoreHeaders': 'gtest/.*;testing.h;ImathConfig.h;OpenEXRConfig.h;ImfHeader.h;ImfChromaticities.h'\
   }\
 }"
 
@@ -29,4 +29,5 @@ echo "Processing ${SRC}"
   --extra-arg=-I${HERE}/lib/include \
   ${SRC}
 sed -i -r 's/#include "(hwy|jxl)\/(.+)"/#include <\1\/\2>/g' ${SRC}
+# TODO(eustas): add post-fixup for unsupported 'no_include' pragmas
 clang-format -i ${SRC}
