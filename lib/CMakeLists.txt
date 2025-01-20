@@ -49,6 +49,7 @@ else ()
     -Wnon-virtual-dtor
     -Woverloaded-virtual
     -Wvla
+    -Wframe-larger-than=22528  # TODO(eustas): tighten
   )
 
   # Warning flags supported by clang.
