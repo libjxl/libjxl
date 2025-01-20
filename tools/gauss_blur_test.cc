@@ -262,10 +262,16 @@ TEST(GaussBlurTest, DISABLED_SlowTestDirac1D) {
                          ImageF::Create(memory_manager, length, 1));
   ZeroFillImage(&inputs);
 
-  HWY_ALIGN_MAX float outputs[length];
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory outputs_mem,
+      AlignedMemory::Create(memory_manager, length * sizeof(float)));
+  float* outputs = outputs_mem.address<float>();
 
   // One per center position
-  HWY_ALIGN_MAX double sum_abs_err[length];
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory sum_abs_err_mem,
+      AlignedMemory::Create(memory_manager, length * sizeof(double)));
+  double* sum_abs_err = sum_abs_err_mem.address<double>();
   std::fill(sum_abs_err, sum_abs_err + length, 0.0);
 
   for (size_t center = radius; center < length - radius; ++center) {
