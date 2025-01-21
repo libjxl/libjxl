@@ -101,9 +101,12 @@ struct HistogramParams {
 };
 
 struct Histogram {
-  Histogram(size_t length = 0) {
+  Histogram() = default;
+
+  explicit Histogram(size_t length) {
     counts.resize(DivCeil(length, kRounding) * kRounding);
   }
+
   // Create flat histogram
   static Histogram Flat(int length, int total_count) {
     Histogram flat;

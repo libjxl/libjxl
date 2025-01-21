@@ -56,8 +56,8 @@ Image3F GenerateTestGradient(uint32_t color0, uint32_t color1, double angle,
   double y1 = y0 + std::cos(angle / 360.0 * 2.0 * kPi);
 
   double maxdist =
-      std::max<double>(fabs(PointLineDist(x0, y0, x1, y1, 0, 0)),
-                       fabs(PointLineDist(x0, y0, x1, y1, xsize, 0)));
+      std::max<double>(std::fabs(PointLineDist(x0, y0, x1, y1, 0, 0)),
+                       std::fabs(PointLineDist(x0, y0, x1, y1, xsize, 0)));
 
   for (size_t c = 0; c < 3; ++c) {
     float c0 = ((color0 >> (8 * (2 - c))) & 255);
@@ -96,7 +96,7 @@ Image3F Gradient2(const Image3F& image) {
       for (size_t x = 1; x + 1 < xsize; x++) {
         float ddx = (row1[x] - row1[x - 1]) - (row1[x + 1] - row1[x]);
         float ddy = (row1[x] - row0[x]) - (row2[x] - row1[x]);
-        row_out[x] = std::max(fabsf(ddx), fabsf(ddy));
+        row_out[x] = std::max(std::abs(ddx), std::abs(ddy));
       }
     }
     // Copy to the borders
@@ -116,7 +116,7 @@ Image3F Gradient2(const Image3F& image) {
       auto* row1_out = image2.PlaneRow(c, ysize - 1);
       for (size_t x = 1; x + 1 < xsize; x++) {
         // Image too narrow, take first derivative instead
-        row0_out[x] = row1_out[x] = fabsf(row0_in[x] - row1_in[x]);
+        row0_out[x] = row1_out[x] = std::abs(row0_in[x] - row1_in[x]);
       }
     }
     if (xsize > 2) {
@@ -130,7 +130,8 @@ Image3F Gradient2(const Image3F& image) {
         const auto* JXL_RESTRICT row_in = image.ConstPlaneRow(c, y);
         auto* row_out = image2.PlaneRow(c, y);
         // Image too narrow, take first derivative instead
-        row_out[0] = row_out[xsize - 1] = fabsf(row_in[0] - row_in[xsize - 1]);
+        row_out[0] = row_out[xsize - 1] =
+            std::abs(row_in[0] - row_in[xsize - 1]);
       }
     }
   }

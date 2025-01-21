@@ -378,14 +378,14 @@ StatusOr<QuantizedSpline> QuantizedSpline::Create(
   QuantizedSpline result;
   result.control_points_.reserve(original.control_points.size() - 1);
   const Spline::Point& starting_point = original.control_points.front();
-  int previous_x = static_cast<int>(std::roundf(starting_point.x));
-  int previous_y = static_cast<int>(std::roundf(starting_point.y));
+  int previous_x = static_cast<int>(std::round(starting_point.x));
+  int previous_y = static_cast<int>(std::round(starting_point.y));
   int previous_delta_x = 0;
   int previous_delta_y = 0;
   for (auto it = original.control_points.begin() + 1;
        it != original.control_points.end(); ++it) {
-    const int new_x = static_cast<int>(std::roundf(it->x));
-    const int new_y = static_cast<int>(std::roundf(it->y));
+    const int new_x = static_cast<int>(std::round(it->x));
+    const int new_y = static_cast<int>(std::round(it->y));
     const int new_delta_x = new_x - previous_x;
     const int new_delta_y = new_y - previous_y;
     result.control_points_.emplace_back(new_delta_x - previous_delta_x,
@@ -400,7 +400,7 @@ StatusOr<QuantizedSpline> QuantizedSpline::Create(
     // Maximal int representable with float.
     constexpr float kMax = std::numeric_limits<int>::max() - 127;
     constexpr float kMin = -kMax;
-    return static_cast<int>(std::roundf(Clamp1(v, kMin, kMax)));
+    return static_cast<int>(std::round(Clamp1(v, kMin, kMax)));
   };
 
   const auto quant = AdjustedQuant(quantization_adjustment);
@@ -437,8 +437,8 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
 
   result.control_points.clear();
   result.control_points.reserve(control_points_.size() + 1);
-  float px = std::roundf(starting_point.x);
-  float py = std::roundf(starting_point.y);
+  float px = std::round(starting_point.x);
+  float py = std::round(starting_point.y);
   JXL_RETURN_IF_ERROR(ValidateSplinePointPos(px, py));
   int current_x = static_cast<int>(px);
   int current_y = static_cast<int>(py);

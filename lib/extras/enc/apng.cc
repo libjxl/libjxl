@@ -363,7 +363,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
       if (bits_per_sample < 8) {
         float mul = 255.0 / ((1u << bits_per_sample) - 1);
         for (size_t i = 0; i < num_samples; ++i) {
-          out[i] = static_cast<uint8_t>(std::lroundf(in[i] * mul));
+          out[i] = static_cast<uint8_t>(std::lround(in[i] * mul));
         }
       } else {
         memcpy(out.data(), in, out_size);
@@ -376,7 +376,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
         for (size_t i = 0; i < num_samples; ++i, p_in += 2, p_out += 2) {
           uint32_t val = (format.endianness == JXL_BIG_ENDIAN ? LoadBE16(p_in)
                                                               : LoadLE16(p_in));
-          StoreBE16(static_cast<uint32_t>(std::lroundf(val * mul)), p_out);
+          StoreBE16(static_cast<uint32_t>(std::lround(val * mul)), p_out);
         }
       } else {
         memcpy(out.data(), in, out_size);
@@ -393,7 +393,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
                        ? LoadLEFloat(p_in)
                        : *reinterpret_cast<const float*>(p_in),
                    0.f, 1.f);
-        StoreBE16(static_cast<uint32_t>(std::lroundf(val * kMul)), p_out);
+        StoreBE16(static_cast<uint32_t>(std::lround(val * kMul)), p_out);
       }
     }
     png_structp png_ptr;

@@ -375,8 +375,8 @@ TEST_P(ModularTestParam, RoundtripLossless) {
       const float* in = io->Main().color()->PlaneRow(c, y);
       const float* out = io2->Main().color()->PlaneRow(c, y);
       for (size_t x = 0; x < xsize; x++) {
-        uint32_t uin = std::lroundf(in[x] * factor);
-        uint32_t uout = std::lroundf(out[x] * factor);
+        uint32_t uin = std::lround(in[x] * factor);
+        uint32_t uout = std::lround(out[x] * factor);
         // check that the integer values are identical
         if (uin != uout) different++;
       }

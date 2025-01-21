@@ -371,7 +371,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
                                                               : "";
         char *temp_frame_name = nullptr;
         bool must_free_frame_name = false;
-        if (frame_name.size() == 0) {
+        if (frame_name.empty()) {
           temp_frame_name = g_strdup_printf("Frame %lu", layer_idx + 1);
           must_free_frame_name = true;
         } else {
@@ -393,7 +393,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       GeglBuffer *buffer = gimp_drawable_get_buffer(layer);
       const Babl *destination_format = gegl_buffer_set_format(buffer, nullptr);
 
-      std::string babl_format_str = "";
+      std::string babl_format_str;
       if (is_gray) {
         babl_format_str += "Y'";
       } else {

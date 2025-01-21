@@ -181,7 +181,7 @@ int32_t FindBestMultiplier(const float* values_m, const float* values_s,
   } else {
     x = 0;
   }
-  return std::max(-128.0f, std::min(127.0f, roundf(x)));
+  return jxl::Clamp1(std::round(x), -128.0f, 127.0f);
 }
 
 Status InitDCStorage(JxlMemoryManager* memory_manager, size_t num_blocks,
