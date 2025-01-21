@@ -222,17 +222,21 @@ class WrapRowMirror {
 
   const float* operator()(const float* const JXL_RESTRICT row,
                           const int64_t stride) const {
+    const float* result;
     if (row < first_row_) {
       const int64_t num_before = first_row_ - row;
       // Mirrored; one row before => row 0, two before = row 1, ...
-      return first_row_ + num_before - stride;
-    }
-    if (row > last_row_) {
+      result = first_row_ + num_before - stride;
+    } else if (row > last_row_) {
       const int64_t num_after = row - last_row_;
       // Mirrored; one row after => last row, two after = last - 1, ...
-      return last_row_ - num_after + stride;
+      result = last_row_ - num_after + stride;
+    } else {
+      result = row;
     }
-    return row;
+    JXL_DASSERT(result >= first_row_);
+    JXL_DASSERT(result <= last_row_);
+    return result;
   }
 
  private:
