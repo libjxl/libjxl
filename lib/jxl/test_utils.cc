@@ -334,7 +334,7 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
   JxlPixelFormat format = {static_cast<uint32_t>(num_channels), JXL_TYPE_UINT16,
                            JXL_BIG_ENDIAN, 0};
   Check(ConvertFromExternal(
-      jxl::Bytes(buf.data(), buf.size()), xsize, ysize,
+      jxl::Bytes(buf), xsize, ysize,
       jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels < 3),
       /*bits_per_sample=*/16, format,
       /*pool=*/nullptr,
