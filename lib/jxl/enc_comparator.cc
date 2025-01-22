@@ -100,27 +100,31 @@ Status ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
 
   // Blend on black and white backgrounds
 
-  const float black = 0.0f;
-  JXL_ASSIGN_OR_RETURN(ImageBundle blended_black0, linear_srgb0->Copy());
-  JXL_ASSIGN_OR_RETURN(ImageBundle blended_black1, linear_srgb1->Copy());
-  AlphaBlend(black, &blended_black0);
-  AlphaBlend(black, &blended_black1);
-
-  const float white = 1.0f;
-  JXL_ASSIGN_OR_RETURN(ImageBundle blended_white0, linear_srgb0->Copy());
-  JXL_ASSIGN_OR_RETURN(ImageBundle blended_white1, linear_srgb1->Copy());
-
-  AlphaBlend(white, &blended_white0);
-  AlphaBlend(white, &blended_white1);
-
   ImageF diffmap_black;
-  ImageF diffmap_white;
   float dist_black;
-  JXL_RETURN_IF_ERROR(ComputeScoreImpl(blended_black0, blended_black1,
-                                       comparator, &diffmap_black, dist_black));
+  {
+    const float black = 0.0f;
+    JXL_ASSIGN_OR_RETURN(ImageBundle blended_black0, linear_srgb0->Copy());
+    JXL_ASSIGN_OR_RETURN(ImageBundle blended_black1, linear_srgb1->Copy());
+    AlphaBlend(black, &blended_black0);
+    AlphaBlend(black, &blended_black1);
+    JXL_RETURN_IF_ERROR(ComputeScoreImpl(blended_black0, blended_black1,
+                                         comparator, &diffmap_black,
+                                         dist_black));
+  }
+
+  ImageF diffmap_white;
   float dist_white;
-  JXL_RETURN_IF_ERROR(ComputeScoreImpl(blended_white0, blended_white1,
-                                       comparator, &diffmap_white, dist_white));
+  {
+    const float white = 1.0f;
+    JXL_ASSIGN_OR_RETURN(ImageBundle blended_white0, linear_srgb0->Copy());
+    JXL_ASSIGN_OR_RETURN(ImageBundle blended_white1, linear_srgb1->Copy());
+    AlphaBlend(white, &blended_white0);
+    AlphaBlend(white, &blended_white1);
+    JXL_RETURN_IF_ERROR(ComputeScoreImpl(blended_white0, blended_white1,
+                                         comparator, &diffmap_white,
+                                         dist_white));
+  }
 
   // diffmap and return values are the max of diffmap_black/white.
   if (diffmap != nullptr) {

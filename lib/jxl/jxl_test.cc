@@ -28,6 +28,7 @@
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/alpha.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
@@ -338,9 +339,9 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   ThreadPoolForTests pool(4);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, pool.get()));
-  ASSERT_TRUE(io.ShrinkTo(600, 1024));
+  auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get(), pool.get()));
+  ASSERT_TRUE(io->ShrinkTo(600, 1024));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0f;
@@ -349,19 +350,19 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
   JXLDecompressParams dparams;
   dparams.color_space = "Gra_D65_Rel_SRG";
 
-  CodecInOut io2{memory_manager};
-  EXPECT_FALSE(io.Main().IsGray());
+  auto io2 = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  EXPECT_FALSE(io->Main().IsGray());
   size_t compressed_size;
-  JXL_EXPECT_OK(
-      Roundtrip(&io, cparams, dparams, &io2, _, &compressed_size, pool.get()));
+  JXL_EXPECT_OK(Roundtrip(io.get(), cparams, dparams, io2.get(), _,
+                          &compressed_size, pool.get()));
   EXPECT_LE(compressed_size, 65000u);
-  EXPECT_TRUE(io2.Main().IsGray());
+  EXPECT_TRUE(io2->Main().IsGray());
 
   // Convert original to grayscale here, because TransformTo refuses to
   // convert between grayscale and RGB.
   ColorEncoding srgb_lin = ColorEncoding::LinearSRGB(/*is_gray=*/false);
-  ASSERT_TRUE(io.frames[0].TransformTo(srgb_lin, *JxlGetDefaultCms()));
-  Image3F* color = io.Main().color();
+  ASSERT_TRUE(io->frames[0].TransformTo(srgb_lin, *JxlGetDefaultCms()));
+  Image3F* color = io->Main().color();
   for (size_t y = 0; y < color->ysize(); ++y) {
     float* row_r = color->PlaneRow(0, y);
     float* row_g = color->PlaneRow(1, y);
@@ -372,11 +373,11 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
     }
   }
   ColorEncoding srgb_gamma = ColorEncoding::SRGB(/*is_gray=*/false);
-  ASSERT_TRUE(io.frames[0].TransformTo(srgb_gamma, *JxlGetDefaultCms()));
-  io.metadata.m.color_encoding = io2.Main().c_current();
-  io.Main().OverrideProfile(io2.Main().c_current());
+  ASSERT_TRUE(io->frames[0].TransformTo(srgb_gamma, *JxlGetDefaultCms()));
+  io->metadata.m.color_encoding = io2->Main().c_current();
+  io->Main().OverrideProfile(io2->Main().c_current());
   EXPECT_SLIGHTLY_BELOW(
-      ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+      ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr, pool.get()),
       1.4);
@@ -659,9 +660,10 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
   // Image does not matter, only io.metadata.m and io2.metadata.m are tested.
   JXL_TEST_ASSIGN_OR_DIE(Image3F image, Image3F::Create(memory_manager, 1, 1));
   ZeroFillImage(&image);
-  CodecInOut io{memory_manager};
-  io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
-  io.SetFromImage(std::move(image), ColorEncoding::LinearSRGB());
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  io->metadata.m.color_encoding = ColorEncoding::LinearSRGB();
+  JXL_EXPECT_OK(
+      io->SetFromImage(std::move(image), ColorEncoding::LinearSRGB()));
 
   CompressParams cparams;
   extras::JXLDecompressParams dparams;
@@ -675,14 +677,14 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
       break;
     }
 
-    io.metadata.m.SetUintSamples(bit_depth);
-    CodecInOut io2{memory_manager};
-    JXL_EXPECT_OK(Roundtrip(&io, cparams, dparams, &io2, _));
+    io->metadata.m.SetUintSamples(bit_depth);
+    auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
+    JXL_EXPECT_OK(Roundtrip(io.get(), cparams, dparams, io2.get(), _));
 
-    EXPECT_EQ(bit_depth, io2.metadata.m.bit_depth.bits_per_sample);
-    EXPECT_FALSE(io2.metadata.m.bit_depth.floating_point_sample);
-    EXPECT_EQ(0u, io2.metadata.m.bit_depth.exponent_bits_per_sample);
-    EXPECT_EQ(0u, io2.metadata.m.GetAlphaBits());
+    EXPECT_EQ(bit_depth, io2->metadata.m.bit_depth.bits_per_sample);
+    EXPECT_FALSE(io2->metadata.m.bit_depth.floating_point_sample);
+    EXPECT_EQ(0u, io2->metadata.m.bit_depth.exponent_bits_per_sample);
+    EXPECT_EQ(0u, io2->metadata.m.GetAlphaBits());
   }
 
   // Test various existing and non-existing floating point formats
@@ -709,18 +711,18 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
       exponent_bit_depth = 8;
     }
 
-    io.metadata.m.bit_depth.bits_per_sample = bit_depth;
-    io.metadata.m.bit_depth.floating_point_sample = true;
-    io.metadata.m.bit_depth.exponent_bits_per_sample = exponent_bit_depth;
+    io->metadata.m.bit_depth.bits_per_sample = bit_depth;
+    io->metadata.m.bit_depth.floating_point_sample = true;
+    io->metadata.m.bit_depth.exponent_bits_per_sample = exponent_bit_depth;
 
-    CodecInOut io2{memory_manager};
-    JXL_EXPECT_OK(Roundtrip(&io, cparams, dparams, &io2));
+    auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
+    JXL_EXPECT_OK(Roundtrip(io.get(), cparams, dparams, io2.get()));
 
-    EXPECT_EQ(bit_depth, io2.metadata.m.bit_depth.bits_per_sample);
-    EXPECT_TRUE(io2.metadata.m.bit_depth.floating_point_sample);
+    EXPECT_EQ(bit_depth, io2->metadata.m.bit_depth.bits_per_sample);
+    EXPECT_TRUE(io2->metadata.m.bit_depth.floating_point_sample);
     EXPECT_EQ(exponent_bit_depth,
-              io2.metadata.m.bit_depth.exponent_bits_per_sample);
-    EXPECT_EQ(0u, io2.metadata.m.GetAlphaBits());
+              io2->metadata.m.bit_depth.exponent_bits_per_sample);
+    EXPECT_EQ(0u, io2->metadata.m.GetAlphaBits());
   }
 }
 #endif
@@ -729,29 +731,29 @@ TEST(JxlTest, RoundtripGrayscale) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig = ReadTestData(
       "external/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  ASSERT_NE(io.xsize(), 0u);
-  ASSERT_TRUE(io.ShrinkTo(128, 128));
-  EXPECT_TRUE(io.Main().IsGray());
-  EXPECT_EQ(8u, io.metadata.m.bit_depth.bits_per_sample);
-  EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
-  EXPECT_EQ(0u, io.metadata.m.bit_depth.exponent_bits_per_sample);
-  EXPECT_TRUE(io.metadata.m.color_encoding.Tf().IsSRGB());
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get()));
+  ASSERT_NE(io->xsize(), 0u);
+  ASSERT_TRUE(io->ShrinkTo(128, 128));
+  EXPECT_TRUE(io->Main().IsGray());
+  EXPECT_EQ(8u, io->metadata.m.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io->metadata.m.bit_depth.floating_point_sample);
+  EXPECT_EQ(0u, io->metadata.m.bit_depth.exponent_bits_per_sample);
+  EXPECT_TRUE(io->metadata.m.color_encoding.Tf().IsSRGB());
 
   {
     CompressParams cparams;
     cparams.butteraugli_distance = 1.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
-    CodecInOut io2{memory_manager};
-    EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2));
-    EXPECT_TRUE(io2.Main().IsGray());
+    EXPECT_TRUE(test::EncodeFile(cparams, io.get(), &compressed));
+    auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
+    EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), io2.get()));
+    EXPECT_TRUE(io2->Main().IsGray());
 
     EXPECT_LE(compressed.size(), 7000u);
     EXPECT_SLIGHTLY_BELOW(
-        ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+        ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                             *JxlGetDefaultCms(),
                             /*distmap=*/nullptr),
         1.6);
@@ -764,14 +766,14 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 8.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
-    CodecInOut io2{memory_manager};
-    EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2));
-    EXPECT_TRUE(io2.Main().IsGray());
+    EXPECT_TRUE(test::EncodeFile(cparams, io.get(), &compressed));
+    auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
+    EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), io2.get()));
+    EXPECT_TRUE(io2->Main().IsGray());
 
     EXPECT_LE(compressed.size(), 1300u);
     EXPECT_SLIGHTLY_BELOW(
-        ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+        ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                             *JxlGetDefaultCms(),
                             /*distmap=*/nullptr),
         6.7);
@@ -782,17 +784,17 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 1.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
+    EXPECT_TRUE(test::EncodeFile(cparams, io.get(), &compressed));
 
-    CodecInOut io2{memory_manager};
+    auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
     JXLDecompressParams dparams;
     dparams.color_space = "RGB_D65_SRG_Rel_SRG";
-    EXPECT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &io2));
-    EXPECT_FALSE(io2.Main().IsGray());
+    EXPECT_TRUE(test::DecodeFile(dparams, Bytes(compressed), io2.get()));
+    EXPECT_FALSE(io2->Main().IsGray());
 
     EXPECT_LE(compressed.size(), 7000u);
     EXPECT_SLIGHTLY_BELOW(
-        ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+        ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                             *JxlGetDefaultCms(),
                             /*distmap=*/nullptr),
         1.6);
@@ -803,35 +805,35 @@ TEST(JxlTest, RoundtripAlpha) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get()));
 
-  ASSERT_NE(io.xsize(), 0u);
-  ASSERT_TRUE(io.metadata.m.HasAlpha());
-  ASSERT_TRUE(io.Main().HasAlpha());
-  ASSERT_TRUE(io.ShrinkTo(300, 300));
+  ASSERT_NE(io->xsize(), 0u);
+  ASSERT_TRUE(io->metadata.m.HasAlpha());
+  ASSERT_TRUE(io->Main().HasAlpha());
+  ASSERT_TRUE(io->ShrinkTo(300, 300));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
 
-  EXPECT_EQ(8u, io.metadata.m.bit_depth.bits_per_sample);
-  EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
-  EXPECT_EQ(0u, io.metadata.m.bit_depth.exponent_bits_per_sample);
-  EXPECT_TRUE(io.metadata.m.color_encoding.Tf().IsSRGB());
+  EXPECT_EQ(8u, io->metadata.m.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io->metadata.m.bit_depth.floating_point_sample);
+  EXPECT_EQ(0u, io->metadata.m.bit_depth.exponent_bits_per_sample);
+  EXPECT_TRUE(io->metadata.m.color_encoding.Tf().IsSRGB());
   std::vector<uint8_t> compressed;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
+  EXPECT_TRUE(test::EncodeFile(cparams, io.get(), &compressed));
 
   EXPECT_LE(compressed.size(), 20000u);
 
   for (bool use_image_callback : {false, true}) {
     for (bool unpremul_alpha : {false, true}) {
-      CodecInOut io2{memory_manager};
+      auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
       JXLDecompressParams dparams;
       dparams.use_image_callback = use_image_callback;
       dparams.unpremultiply_alpha = unpremul_alpha;
-      EXPECT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &io2));
+      EXPECT_TRUE(test::DecodeFile(dparams, Bytes(compressed), io2.get()));
       EXPECT_SLIGHTLY_BELOW(
-          ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+          ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                               *JxlGetDefaultCms(),
                               /*distmap=*/nullptr),
           1.15);
@@ -900,29 +902,29 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
-  CodecInOut io{memory_manager};
-  CodecInOut io_nopremul{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_nopremul));
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  auto io_nopremul = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get()));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io_nopremul.get()));
 
-  ASSERT_NE(io.xsize(), 0u);
-  ASSERT_TRUE(io.metadata.m.HasAlpha());
-  ASSERT_TRUE(io.Main().HasAlpha());
-  ASSERT_TRUE(io.ShrinkTo(300, 300));
-  ASSERT_TRUE(io_nopremul.ShrinkTo(300, 300));
+  ASSERT_NE(io->xsize(), 0u);
+  ASSERT_TRUE(io->metadata.m.HasAlpha());
+  ASSERT_TRUE(io->Main().HasAlpha());
+  ASSERT_TRUE(io->ShrinkTo(300, 300));
+  ASSERT_TRUE(io_nopremul->ShrinkTo(300, 300));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
   cparams.SetCms(*JxlGetDefaultCms());
 
-  EXPECT_FALSE(io.Main().AlphaIsPremultiplied());
-  EXPECT_TRUE(PremultiplyAlpha(io));
-  EXPECT_TRUE(io.Main().AlphaIsPremultiplied());
+  EXPECT_FALSE(io->Main().AlphaIsPremultiplied());
+  EXPECT_TRUE(PremultiplyAlpha(*io));
+  EXPECT_TRUE(io->Main().AlphaIsPremultiplied());
 
-  EXPECT_FALSE(io_nopremul.Main().AlphaIsPremultiplied());
+  EXPECT_FALSE(io_nopremul->Main().AlphaIsPremultiplied());
 
   std::vector<uint8_t> compressed;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
+  EXPECT_TRUE(test::EncodeFile(cparams, io.get(), &compressed));
   EXPECT_LE(compressed.size(), 18000u);
 
   for (bool use_image_callback : {false, true}) {
@@ -934,7 +936,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
             use_uint8 ? "uint8" : "float",
             use_image_callback ? "image callback" : "image_buffer",
             unpremul_alpha ? "un" : "");
-        CodecInOut io2{memory_manager};
+        auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
         JXLDecompressParams dparams;
         dparams.use_image_callback = use_image_callback;
         dparams.unpremultiply_alpha = unpremul_alpha;
@@ -942,20 +944,20 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
           dparams.accepted_formats.push_back(
               {4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0});
         }
-        EXPECT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &io2));
+        EXPECT_TRUE(test::DecodeFile(dparams, Bytes(compressed), io2.get()));
 
-        EXPECT_EQ(unpremul_alpha, !io2.Main().AlphaIsPremultiplied());
+        EXPECT_EQ(unpremul_alpha, !io2->Main().AlphaIsPremultiplied());
         if (!unpremul_alpha) {
           EXPECT_SLIGHTLY_BELOW(
-              ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+              ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                                   *JxlGetDefaultCms(),
                                   /*distmap=*/nullptr),
               1.111);
-          EXPECT_TRUE(UnpremultiplyAlpha(io2));
-          EXPECT_FALSE(io2.Main().AlphaIsPremultiplied());
+          EXPECT_TRUE(UnpremultiplyAlpha(*io2));
+          EXPECT_FALSE(io2->Main().AlphaIsPremultiplied());
         }
         EXPECT_SLIGHTLY_BELOW(
-            ButteraugliDistance(io_nopremul.frames, io2.frames,
+            ButteraugliDistance(io_nopremul->frames, io2->frames,
                                 ButteraugliParams(), *JxlGetDefaultCms(),
                                 /*distmap=*/nullptr),
             1.1);

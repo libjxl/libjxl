@@ -74,9 +74,6 @@ TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
 
-  jxl::CodecInOut input_io =
-      jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
-
   JxlBasicInfo basic_info;
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
@@ -120,9 +117,6 @@ TEST(EncodeTest, AddFrameBeforeBasicInfoTest) {
   size_t ysize = 64;
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
-
-  jxl::CodecInOut input_io =
-      jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
 
   JxlColorEncoding color_encoding;
   JXL_BOOL is_gray = TO_JXL_BOOL(pixel_format.num_channels < 3);
@@ -179,11 +173,11 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
                          const JxlEncoderFrameSettings* frame_settings,
                          size_t max_compressed_size,
                          bool lossy_use_original_profile) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
 
-  jxl::CodecInOut input_io =
-      jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
+  auto input_io = jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
 
   JxlBasicInfo basic_info;
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
@@ -228,10 +222,12 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   compressed.resize(next_out - compressed.data());
   EXPECT_LE(compressed.size(), max_compressed_size);
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
-  jxl::CodecInOut decoded_io{jxl::test::MemoryManager()};
+
+  auto decoded_io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
   jxl::extras::JXLDecompressParams dparams;
   EXPECT_TRUE(jxl::test::DecodeFile(
-      dparams, jxl::Bytes(compressed.data(), compressed.size()), &decoded_io));
+      dparams, jxl::Bytes(compressed.data(), compressed.size()),
+      decoded_io.get()));
 
   static constexpr double kMaxButteraugli =
 #if JXL_HIGH_PRECISION
@@ -239,9 +235,9 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
 #else
       8.7;
 #endif
-  EXPECT_LE(
-      ComputeDistance2(input_io.Main(), decoded_io.Main(), *JxlGetDefaultCms()),
-      kMaxButteraugli);
+  EXPECT_LE(ComputeDistance2(input_io->Main(), decoded_io->Main(),
+                             *JxlGetDefaultCms()),
+            kMaxButteraugli);
 }
 
 void VerifyFrameEncoding(JxlEncoder* enc,
@@ -863,9 +859,6 @@ TEST(EncodeTest, CodestreamLevelTest) {
   size_t ysize = 64;
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
-
-  jxl::CodecInOut input_io =
-      jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
 
   JxlBasicInfo basic_info;
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
@@ -1716,6 +1709,7 @@ struct StreamingTestParam {
 
   static std::vector<StreamingTestParam> All() {
     std::vector<StreamingTestParam> params;
+    params.reserve(256);
     for (size_t bitmask = 0; bitmask < 256; bitmask++) {
       params.push_back(StreamingTestParam{bitmask});
     }

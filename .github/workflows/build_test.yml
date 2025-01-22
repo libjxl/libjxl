@@ -43,7 +43,7 @@ jobs:
               -DJPEGLI_LIBJPEG_LIBRARY_VERSION="8.2.2"
               -DJPEGLI_LIBJPEG_LIBRARY_SOVERSION="8"
             # Track static stack size on build and check it doesn't exceed 3 kB.
-            env_stack_size: 1
+            emit_stack_sizes: 1
             max_stack: 2400
             # Conformance tooling test requires numpy.
             apt_pkgs: doxygen graphviz python3-numpy
@@ -53,9 +53,6 @@ jobs:
             test_in_pr: true
             cmake_args: -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
           - name: debug
-            # Runs on AVX3 CPUs require more stack than others. Make sure to
-            # test on AVX3-enabled CPUs when changing this value.
-            env_test_stack_size: 4000
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
@@ -75,7 +72,6 @@ jobs:
           - name: tsan
             skip_install: true
           - name: coverage
-            env_test_stack_size: 2048
             skip_install: true
             # TODO: understand why this does not work
             ctest_args: -E 'test_jpegli_jni_wrapper'
@@ -149,13 +145,14 @@ jobs:
           - name: release:osx-15
             os: macos-15
             mode: release
+            test_stack_limit: 128
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
-      STACK_SIZE: ${{ matrix.env_stack_size }}
-      TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
+      EMIT_STACK_SIZES: ${{ matrix.emit_stack_sizes }}
+      TEST_STACK_LIMIT: ${{ matrix.test_stack_limit }}
       WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
       WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
