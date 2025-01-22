@@ -986,8 +986,7 @@ Status WriteJpegInternal(const JPEGData& jpg, const JPEGOutput& out,
         auto& chunk = ss->output_queue.front();
         size_t num_written = out(chunk.next, chunk.len);
         if (num_written == 0 && chunk.len > 0) {
-          return StatusMessage(Status(StatusCode::kNotEnoughBytes),
-                               "Failed to write output");
+          return JXL_NOT_ENOUGH_BYTES("Failed to write output");
         }
         chunk.len -= num_written;
         if (chunk.len == 0) {

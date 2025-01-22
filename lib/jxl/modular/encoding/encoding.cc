@@ -552,7 +552,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     for (auto &ch : image.channel) {
       ZeroFillImage(&ch.plane);
     }
-    return Status(StatusCode::kNotEnoughBytes);
+    return JXL_NOT_ENOUGH_BYTES("Read overrun before ModularDecode");
   }
 
   JXL_DEBUG_V(3, "Image data underwent %" PRIuS " transformations: ",
@@ -652,7 +652,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     // Truncated group.
     if (!br->AllReadsWithinBounds()) {
       if (!allow_truncated_group) return JXL_FAILURE("Truncated input");
-      return Status(StatusCode::kNotEnoughBytes);
+      return JXL_NOT_ENOUGH_BYTES("Read overrun in ModularDecode");
     }
   }
 
