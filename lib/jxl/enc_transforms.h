@@ -24,7 +24,7 @@ void TransformFromPixels(AcStrategyType strategy,
 
 // Equivalent of the above for DC image.
 void DCFromLowestFrequencies(AcStrategyType strategy, const float* block,
-                             float* dc, size_t dc_stride);
+                             float* dc, size_t dc_stride, float* scratch_space);
 
 void AFVDCT4x4(const float* JXL_RESTRICT pixels, float* JXL_RESTRICT coeffs);
 

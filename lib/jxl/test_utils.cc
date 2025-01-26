@@ -322,14 +322,14 @@ std::vector<ColorEncodingDescriptor> AllEncodings() {
   return all_encodings;
 }
 
-jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
-                                          size_t num_channels, size_t xsize,
-                                          size_t ysize) {
+std::unique_ptr<jxl::CodecInOut> SomeTestImageToCodecInOut(
+    const std::vector<uint8_t>& buf, size_t num_channels, size_t xsize,
+    size_t ysize) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  jxl::CodecInOut io{memory_manager};
-  Check(io.SetSize(xsize, ysize));
-  io.metadata.m.SetAlphaBits(16);
-  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(
+  auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  Check(io->SetSize(xsize, ysize));
+  io->metadata.m.SetAlphaBits(16);
+  io->metadata.m.color_encoding = jxl::ColorEncoding::SRGB(
       /*is_gray=*/num_channels == 1 || num_channels == 2);
   JxlPixelFormat format = {static_cast<uint32_t>(num_channels), JXL_TYPE_UINT16,
                            JXL_BIG_ENDIAN, 0};
@@ -338,7 +338,7 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
       jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels < 3),
       /*bits_per_sample=*/16, format,
       /*pool=*/nullptr,
-      /*ib=*/&io.Main()));
+      /*ib=*/&io->Main()));
   return io;
 }
 
@@ -606,12 +606,12 @@ double DistanceRMS(const uint8_t* a, const uint8_t* b, size_t xsize,
 float ButteraugliDistance(const extras::PackedPixelFile& a,
                           const extras::PackedPixelFile& b, ThreadPool* pool) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecInOut io0{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(a, pool, &io0));
-  CodecInOut io1{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(b, pool, &io1));
+  auto io0 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(a, pool, io0.get()));
+  auto io1 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(b, pool, io1.get()));
   // TODO(eustas): simplify?
-  return ButteraugliDistance(io0.frames, io1.frames, ButteraugliParams(),
+  return ButteraugliDistance(io0->frames, io1->frames, ButteraugliParams(),
                              *JxlGetDefaultCms(),
                              /*distmap=*/nullptr, pool);
 }
@@ -647,13 +647,13 @@ float ButteraugliDistance(const std::vector<ImageBundle>& frames0,
 float Butteraugli3Norm(const extras::PackedPixelFile& a,
                        const extras::PackedPixelFile& b, ThreadPool* pool) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecInOut io0{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(a, pool, &io0));
-  CodecInOut io1{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(b, pool, &io1));
+  auto io0 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(a, pool, io0.get()));
+  auto io1 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(b, pool, io1.get()));
   ButteraugliParams butteraugli_params;
   ImageF distmap;
-  ButteraugliDistance(io0.frames, io1.frames, butteraugli_params,
+  ButteraugliDistance(io0->frames, io1->frames, butteraugli_params,
                       *JxlGetDefaultCms(), &distmap, pool);
   JXL_TEST_ASSIGN_OR_DIE(double pnorm,
                          ComputeDistanceP(distmap, butteraugli_params, 3));
@@ -663,21 +663,21 @@ float Butteraugli3Norm(const extras::PackedPixelFile& a,
 float ComputeDistance2(const extras::PackedPixelFile& a,
                        const extras::PackedPixelFile& b) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecInOut io0{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(a, nullptr, &io0));
-  CodecInOut io1{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
-  return ComputeDistance2(io0.Main(), io1.Main(), *JxlGetDefaultCms());
+  auto io0 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(a, nullptr, io0.get()));
+  auto io1 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(b, nullptr, io1.get()));
+  return ComputeDistance2(io0->Main(), io1->Main(), *JxlGetDefaultCms());
 }
 
 float ComputePSNR(const extras::PackedPixelFile& a,
                   const extras::PackedPixelFile& b) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecInOut io0{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(a, nullptr, &io0));
-  CodecInOut io1{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
-  return ComputePSNR(io0.Main(), io1.Main(), *JxlGetDefaultCms());
+  auto io0 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(a, nullptr, io0.get()));
+  auto io1 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(b, nullptr, io1.get()));
+  return ComputePSNR(io0->Main(), io1->Main(), *JxlGetDefaultCms());
 }
 
 bool SameAlpha(const extras::PackedPixelFile& a,

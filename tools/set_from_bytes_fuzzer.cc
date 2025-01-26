@@ -11,6 +11,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/size_constraints.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -37,10 +38,11 @@ void Check(bool ok) {
 
 Status Run(const uint8_t* data, size_t size, JxlMemoryManager* memory_manager,
            const SizeConstraints& constraints) {
-  CodecInOut io{memory_manager};
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
   ThreadPoolInternal pool(0);
 
-  (void)jxl::SetFromBytes(Bytes(data, size), &io, pool.get(), &constraints);
+  (void)jxl::SetFromBytes(Bytes(data, size), io.get(), pool.get(),
+                          &constraints);
   return true;
 }
 

@@ -72,7 +72,8 @@ class AcStrategyRoundtrip : public ::hwy::TestWithParamTargetAndT<int> {
         dc[y * acs.covered_blocks_x() * 8 + x] = 0.2;
         LowestFrequenciesFromDC(type, dc, acs.covered_blocks_x() * 8, coeffs,
                                 scratch_space);
-        DCFromLowestFrequencies(type, coeffs, idct, acs.covered_blocks_x() * 8);
+        DCFromLowestFrequencies(type, coeffs, idct, acs.covered_blocks_x() * 8,
+                                scratch_space);
         std::fill_n(dc, AcStrategy::kMaxCoeffArea, 0);
         dc[y * acs.covered_blocks_x() * 8 + x] = 0.2;
         for (size_t j = 0; j < 64u << acs.log2_covered_blocks(); j++) {
@@ -191,7 +192,7 @@ class AcStrategyDownsample : public ::hwy::TestWithParamTargetAndT<int> {
         std::fill_n(coeffs, AcStrategy::kMaxCoeffArea, 0);
         coeffs[y * cx * 8 + x] = 0.2f;
         DCFromLowestFrequencies(type, coeffs, idct_acs_downsampled,
-                                acs.covered_blocks_x() * 8);
+                                acs.covered_blocks_x() * 8, scratch_space);
         // Downsample
         for (size_t dy = 0; dy < acs.covered_blocks_y(); dy++) {
           for (size_t dx = 0; dx < acs.covered_blocks_x(); dx++) {

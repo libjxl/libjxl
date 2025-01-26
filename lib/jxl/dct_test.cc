@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/test_memory_manager.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -162,9 +163,18 @@ void ColumnDctRoundtrip() {
 template <size_t N>
 void TestDctAccuracy(float accuracy, size_t start = 0, size_t end = N * N) {
   constexpr size_t kBlockSize = N * N;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory fast_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* fast = fast_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory slow_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(double)));
+  double* slow = slow_mem.address<double>();
   for (size_t i = start; i < end; i++) {
-    HWY_ALIGN float fast[kBlockSize] = {0.0f};
-    double slow[kBlockSize] = {0.0};
+    memset(fast, 0, kBlockSize * sizeof(float));
+    memset(slow, 0, kBlockSize * sizeof(double));
     fast[i] = 1.0;
     slow[i] = 1.0;
     DCTSlow<N>(slow);
@@ -179,9 +189,18 @@ void TestDctAccuracy(float accuracy, size_t start = 0, size_t end = N * N) {
 template <size_t N>
 void TestIdctAccuracy(float accuracy, size_t start = 0, size_t end = N * N) {
   constexpr size_t kBlockSize = N * N;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory fast_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* fast = fast_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory slow_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(double)));
+  double* slow = slow_mem.address<double>();
   for (size_t i = start; i < end; i++) {
-    HWY_ALIGN float fast[kBlockSize] = {0.0f};
-    double slow[kBlockSize] = {0.0};
+    memset(fast, 0, kBlockSize * sizeof(float));
+    memset(slow, 0, kBlockSize * sizeof(double));
     fast[i] = 1.0;
     slow[i] = 1.0;
     IDCTSlow<N>(slow);
@@ -195,12 +214,17 @@ void TestIdctAccuracy(float accuracy, size_t start = 0, size_t end = N * N) {
 
 template <size_t N>
 void TestInverseT(float accuracy) {
+  constexpr size_t kBlockSize = N * N;
   test::ThreadPoolForTests pool(N < 32 ? 0 : 8);
-  enum { kBlockSize = N * N };
   const auto process_block = [accuracy](const uint32_t task,
                                         size_t /*thread*/) -> Status {
+    JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+    JXL_TEST_ASSIGN_OR_DIE(
+        AlignedMemory mem,
+        AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+    float* x = mem.address<float>();
     const size_t i = static_cast<size_t>(task);
-    HWY_ALIGN float x[kBlockSize] = {0.0f};
+    memset(x, 0, kBlockSize * sizeof(float));
     x[i] = 1.0;
 
     ComputeIDCT<N>(x);
@@ -225,17 +249,24 @@ void InverseTest() {
 template <size_t N>
 void TestDctTranspose(float accuracy, size_t start = 0, size_t end = N * N) {
   constexpr size_t kBlockSize = N * N;
+  static_assert(kBlockSize >= 64, "Unsupported block size");  // for alignment
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory mem,
+      AlignedMemory::Create(memory_manager, 2 * kBlockSize * sizeof(float)));
+  float* x = mem.address<float>();
+  float* y = x + kBlockSize;
   for (size_t i = start; i < end; i++) {
     for (size_t j = 0; j < kBlockSize; ++j) {
       // We check that <e_i, Me_j> = <M^\dagger{}e_i, e_j>.
       // That means (Me_j)_i = (M^\dagger{}e_i)_j
 
       // x := Me_j
-      HWY_ALIGN float x[kBlockSize] = {0.0f};
+      memset(x, 0, kBlockSize * sizeof(float));
       x[j] = 1.0;
       ComputeIDCT<N>(x);
       // y := M^\dagger{}e_i
-      HWY_ALIGN float y[kBlockSize] = {0.0f};
+      memset(y, 0, kBlockSize * sizeof(float));
       y[i] = 1.0;
       ComputeDCT<N>(y);
 
@@ -247,8 +278,13 @@ void TestDctTranspose(float accuracy, size_t start = 0, size_t end = N * N) {
 template <size_t N>
 void TestSlowInverse(float accuracy, size_t start = 0, size_t end = N * N) {
   constexpr size_t kBlockSize = N * N;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory x_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(double)));
+  double* x = x_mem.address<double>();
   for (size_t i = start; i < end; i++) {
-    double x[kBlockSize] = {0.0f};
+    memset(x, 0, kBlockSize * sizeof(double));
     x[i] = 1.0;
 
     DCTSlow<N>(x);
@@ -264,12 +300,29 @@ void TestSlowInverse(float accuracy, size_t start = 0, size_t end = N * N) {
 template <size_t ROWS, size_t COLS>
 void TestRectInverseT(float accuracy) {
   constexpr size_t kBlockSize = ROWS * COLS;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory x_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* x = x_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory out_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* out = out_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory coeffs_mem,
+      AlignedMemory::Create(memory_manager, kBlockSize * sizeof(float)));
+  float* coeffs = coeffs_mem.address<float>();
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory scratch_space_mem,
+      AlignedMemory::Create(memory_manager, 5 * kBlockSize * sizeof(float)));
+  float* scratch_space = scratch_space_mem.address<float>();
   for (size_t i = 0; i < kBlockSize; ++i) {
-    HWY_ALIGN float x[kBlockSize] = {0.0f};
-    HWY_ALIGN float out[kBlockSize] = {0.0f};
+    memset(x, 0, kBlockSize * sizeof(float));
+    memset(out, 0, kBlockSize * sizeof(float));
     x[i] = 1.0;
-    HWY_ALIGN float coeffs[kBlockSize] = {0.0f};
-    HWY_ALIGN float scratch_space[kBlockSize * 5];
+    memset(coeffs, 0, kBlockSize * sizeof(float));
+    memset(scratch_space, 0, 5 * kBlockSize * sizeof(float));
 
     ComputeScaledDCT<ROWS, COLS>()(DCTFrom(x, COLS), coeffs, scratch_space);
     ComputeScaledIDCT<ROWS, COLS>()(coeffs, DCTTo(out, COLS), scratch_space);

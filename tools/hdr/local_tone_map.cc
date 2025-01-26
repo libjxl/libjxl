@@ -331,22 +331,23 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
-  jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
+  auto image =
+      jxl::make_unique<jxl::CodecInOut>(jpegxl::tools::NoMemoryManager());
   jxl::extras::ColorHints color_hints;
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;
   JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JPEGXL_TOOLS_CHECK(
-      jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, pool.get()));
+  JPEGXL_TOOLS_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints,
+                                       image.get(), pool.get()));
 
   JPEGXL_TOOLS_CHECK(
-      jxl::ProcessFrame(&image, preserve_saturation, pool.get()));
+      jxl::ProcessFrame(image.get(), preserve_saturation, pool.get()));
 
   JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   JXL_ASSIGN_OR_QUIT(jxl::extras::PackedPixelFile ppf,
                      jxl::extras::ConvertImage3FToPackedPixelFile(
-                         *image.Main().color(), image.metadata.m.color_encoding,
-                         format, pool.get()),
+                         *image->Main().color(),
+                         image->metadata.m.color_encoding, format, pool.get()),
                      "ConvertImage3FToPackedPixelFile failed.");
   JPEGXL_TOOLS_CHECK(jxl::Encode(ppf, output_filename, &encoded, pool.get()));
   JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));

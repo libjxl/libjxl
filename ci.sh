@@ -16,7 +16,8 @@ SELF=$(realpath "$0")
 MYDIR=$(dirname "${SELF}")
 
 ### Environment parameters:
-TEST_STACK_LIMIT="${TEST_STACK_LIMIT:-256}"
+# TODO(eustas): tighten; only several items need more than 48KiB
+TEST_STACK_LIMIT="${TEST_STACK_LIMIT:-96}"
 BENCHMARK_NUM_THREADS="${BENCHMARK_NUM_THREADS:-0}"
 BUILD_CONFIG=${BUILD_CONFIG:-}
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-RelWithDebInfo}
@@ -298,7 +299,7 @@ export_env() {
 cmake_configure() {
   export_env
 
-  if [[ "${STACK_SIZE:-0}" == 1 ]]; then
+  if [[ "${EMIT_STACK_SIZES:-0}" == 1 ]]; then
     # Dump the stack size of each function in the .stack_sizes section for
     # analysis.
     CMAKE_C_FLAGS+=" -fstack-size-section"
@@ -1537,7 +1538,7 @@ You can pass some optional environment variables as well:
  - STORE_IMAGES=0: Makes the benchmark discard the computed images.
  - TEST_STACK_LIMIT: Stack size limit (ulimit -s) during tests, in KiB.
  - TEST_SELECTOR: pass additional arguments to ctest, e.g. "-R .Resample.".
- - STACK_SIZE=1: Generate binaries with the .stack_sizes sections.
+ - EMIT_STACK_SIZES=1: Generate binaries with the .stack_sizes sections.
 
 These optional environment variables are forwarded to the cmake call as
 parameters:
