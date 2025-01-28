@@ -40,14 +40,16 @@ using hwy::HWY_NAMESPACE::Min;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
 using hwy::HWY_NAMESPACE::Or;
+using hwy::HWY_NAMESPACE::Rebind;
+using hwy::HWY_NAMESPACE::Repartition;
 using hwy::HWY_NAMESPACE::Sub;
 using hwy::HWY_NAMESPACE::TableLookupBytes;
 using hwy::HWY_NAMESPACE::Vec;
 using hwy::HWY_NAMESPACE::ZeroIfNegative;
 
 using D = HWY_CAPPED(float, kBlockDim);
-using DI = hwy::HWY_NAMESPACE::Rebind<int32_t, D>;
-using DI8 = hwy::HWY_NAMESPACE::Repartition<uint8_t, D>;
+using DI = Rebind<int32_t, D>;
+using DI8 = Repartition<uint8_t, D>;
 
 // [0, max_value]
 template <class D, class V>
@@ -77,6 +79,7 @@ class StrengthEvalLut {
     uint32_t lut[NoiseParams::kNumNoisePoints];
     memcpy(lut, noise_params.lut.data(),
            NoiseParams::kNumNoisePoints * sizeof(uint32_t));
+    // TODO(eustas): make sure it works on big-endian
     for (size_t i = 0; i < NoiseParams::kNumNoisePoints; i++) {
       low16_lut[2 * i] = (lut[i] >> 0) & 0xFF;
       low16_lut[2 * i + 1] = (lut[i] >> 8) & 0xFF;
