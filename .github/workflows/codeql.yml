@@ -92,6 +92,7 @@ jobs:
             libwebp-dev \
             ninja-build \
             pkg-config \
+            xdg-utils \
             xvfb \
             ${{ matrix.apt_pkgs }} \
           #

@@ -66,6 +66,7 @@ jobs:
           libwebp-dev \
           ninja-build \
           pkg-config \
+          xdg-utils \
         #
         echo "CC=clang" >> $GITHUB_ENV
         echo "CXX=clang++" >> $GITHUB_ENV
