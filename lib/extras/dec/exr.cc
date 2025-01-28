@@ -93,7 +93,7 @@ class InMemoryIStream : public OpenEXR::IStream {
     pos_ += n;
     return result;
   }
-  bool read(char c[], const int n) override {
+  bool read(char c[/*n*/], int n) override {
     // That is not stated in documentation, but the OpenEXR code expects that
     // when requested amount is not accessible and exception is thrown, all
     // the accessible data is read.

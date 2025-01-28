@@ -35,11 +35,13 @@ namespace {
 using hwy::HWY_NAMESPACE::IfThenZeroElse;
 
 struct OpLinear {
+  explicit OpLinear(const OutputEncodingInfo&) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {}
 };
 
 struct OpRgb {
+  explicit OpRgb(const OutputEncodingInfo&) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
@@ -53,7 +55,8 @@ struct OpRgb {
 };
 
 struct OpPq {
-  explicit OpPq(const float intensity_target) : tf_pq_(intensity_target) {}
+  explicit OpPq(const OutputEncodingInfo& output_encoding_info)
+      : tf_pq_(output_encoding_info.orig_intensity_target) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
@@ -64,9 +67,10 @@ struct OpPq {
 };
 
 struct OpHlg {
-  explicit OpHlg(const Vector3& luminances, const float intensity_target)
-      : hlg_ootf_(HlgOOTF::ToSceneLight(/*display_luminance=*/intensity_target,
-                                        luminances)) {}
+  explicit OpHlg(const OutputEncodingInfo& output_encoding_info)
+      : hlg_ootf_(
+            HlgOOTF::ToSceneLight(output_encoding_info.desired_intensity_target,
+                                  output_encoding_info.luminances)) {}
 
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
@@ -79,6 +83,7 @@ struct OpHlg {
 };
 
 struct Op709 {
+  explicit Op709(const OutputEncodingInfo&) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
@@ -88,6 +93,8 @@ struct Op709 {
 };
 
 struct OpGamma {
+  explicit OpGamma(const OutputEncodingInfo& output_encoding_info)
+      : inverse_gamma(output_encoding_info.inverse_gamma) {}
   const float inverse_gamma;
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
@@ -101,9 +108,9 @@ struct OpGamma {
 template <typename Op>
 class FromLinearStage : public RenderPipelineStage {
  public:
-  explicit FromLinearStage(Op&& op)
+  explicit FromLinearStage(const OutputEncodingInfo& output_encoding_info)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
-        op_(std::move(op)) {}
+        op_(output_encoding_info) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
@@ -147,28 +154,26 @@ class FromLinearStage : public RenderPipelineStage {
 };
 
 template <typename Op>
-std::unique_ptr<FromLinearStage<Op>> MakeFromLinearStage(Op&& op) {
-  return jxl::make_unique<FromLinearStage<Op>>(std::forward<Op>(op));
+std::unique_ptr<FromLinearStage<Op>> MakeFromLinearStage(
+    const OutputEncodingInfo& output_encoding_info) {
+  return jxl::make_unique<FromLinearStage<Op>>(output_encoding_info);
 }
 
 std::unique_ptr<RenderPipelineStage> GetFromLinearStage(
     const OutputEncodingInfo& output_encoding_info) {
   const auto& tf = output_encoding_info.color_encoding.Tf();
   if (tf.IsLinear()) {
-    return MakeFromLinearStage(OpLinear());
+    return MakeFromLinearStage<OpLinear>(output_encoding_info);
   } else if (tf.IsSRGB()) {
-    return MakeFromLinearStage(OpRgb());
+    return MakeFromLinearStage<OpRgb>(output_encoding_info);
   } else if (tf.IsPQ()) {
-    return MakeFromLinearStage(
-        OpPq(output_encoding_info.orig_intensity_target));
+    return MakeFromLinearStage<OpPq>(output_encoding_info);
   } else if (tf.IsHLG()) {
-    return MakeFromLinearStage(
-        OpHlg(output_encoding_info.luminances,
-              output_encoding_info.desired_intensity_target));
+    return MakeFromLinearStage<OpHlg>(output_encoding_info);
   } else if (tf.Is709()) {
-    return MakeFromLinearStage(Op709());
+    return MakeFromLinearStage<Op709>(output_encoding_info);
   } else if (tf.have_gamma || tf.IsDCI()) {
-    return MakeFromLinearStage(OpGamma{output_encoding_info.inverse_gamma});
+    return MakeFromLinearStage<OpGamma>(output_encoding_info);
   } else {
     // This is a programming error.
     JXL_DEBUG_ABORT("Invalid target encoding");
