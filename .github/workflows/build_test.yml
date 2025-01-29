@@ -73,8 +73,8 @@ jobs:
             skip_install: true
           - name: coverage
             skip_install: true
-            # TODO: understand why this does not work
-            ctest_args: -E 'test_jpegli_jni_wrapper'
+            disable_tests:
+              - test_jpegli_jni_wrapper # TODO: why this does not work?
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
@@ -336,7 +336,13 @@ jobs:
     - name: Test ${{ matrix.mode }}
       if: env.WILL_TEST == 'true'
       run: |
-        ./ci.sh test ${{ matrix.ctest_args }}
+        disabled_tests="${{ join(matrix.disable_tests, '|') }}"
+        if [[ -z "${disabled_tests}" ]]; then
+          disabled_tests="bash_test";
+        else
+          disabled_tests="bash_test|${disabled_tests}";
+        fi
+        ./ci.sh test -E "${disabled_tests}"
 
     # Print the running time summary for the slowest tests.
     - name: Test runtime stats
