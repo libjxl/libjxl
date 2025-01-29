@@ -26,46 +26,23 @@ jobs:
   compile:
     name: Cross-compiling ${{ matrix.identifier }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
-    runs-on: [ubuntu-latest]
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     container:
       image: debian:bookworm
     strategy:
       fail-fast: false
       matrix:
-        identifier: [arm64, arm64-sve, arm64-lowprecision, armhf, i386]
+        identifier: [armhf, i386]
         include:
-          - arch: arm64
-            identifier: arm64
-            build_target: aarch64-linux-gnu
-            cmake_args:
-             - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
-
-          - arch: arm64
-            identifier: arm64-sve
-            build_target: aarch64-linux-gnu
-            cmake_args:
-             - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
-             - -DJPEGXL_ENABLE_OPENEXR=off
-             - -DJPEGXL_ENABLE_SIZELESS_VECTORS=on
-             - -DJPEGXL_WARNINGS_AS_ERRORS=off
-            cmake_flags: -march=armv8-a+sve
-            c_compiler: aarch64-linux-gnu-gcc
-            cxx_compiler: aarch64-linux-gnu-g++
-            disable_tests: true
-
-          - arch: arm64
-            identifier: arm64-lowprecision
-            build_target: aarch64-linux-gnu
-            cmake_args:
-             - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
-             - -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
-
           - arch: armhf
+            host_arch: arm64
+            os: ubuntu-24.04-arm
             identifier: armhf
+            test_in_pr: true
             build_target: arm-linux-gnueabihf
-            cmake_args: [-DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-arm-static]
 
           - arch: i386
+            host_arch: amd64
             identifier: i386
             test_in_pr: true
             build_target: i686-linux-gnu
@@ -76,6 +53,7 @@ jobs:
 
     steps:
     - name: Harden Runner
+      if: false # running in container
       uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
       with:
         egress-policy: audit
@@ -100,7 +78,7 @@ jobs:
         set -x
         dpkg --add-architecture "${{ matrix.arch }}"
 
-        python3 ./tools/scripts/transform_sources_list.py "amd64,${{ matrix.arch }}"
+        python3 ./tools/scripts/transform_sources_list.py "${{ matrix.host_arch }},${{ matrix.arch }}"
 
     - name: Install build deps
       shell: bash
@@ -114,7 +92,6 @@ jobs:
           graphviz
           ninja-build
           pkg-config
-          qemu-user-static
           unzip
           xdg-utils
           xvfb
@@ -207,35 +184,25 @@ jobs:
     name: Testing ${{ matrix.identifier }} shard ${{ matrix.shard_number }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     needs: compile
-    runs-on: [ubuntu-latest]
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     container:
       image: debian:bookworm
     strategy:
       fail-fast: false
       matrix:
-        shard_number: [0, 1, 2, 3, 4, 5, 6, 7]
-        identifier: [arm64, arm64-lowprecision, armhf, i386]
+        shard_number: [0, 1]
+        identifier: [armhf, i386]
         include:
-          - arch: arm64
-          - identifier: arm64
-            last_shard: 8
-
-          #- arch: arm64
-          #- identifier: arm64-sve
-          #  last_shard: 8
-
-          - arch: arm64
-            identifier: arm64-lowprecision
-            last_shard: 8
-
           - arch: armhf
+            os: ubuntu-24.04-arm
             identifier: armhf
-            last_shard: 8
+            test_in_pr: true
+            last_shard: 2
 
           - arch: i386
             identifier: i386
             test_in_pr: true
-            last_shard: 4
+            last_shard: 2
 
     env:
       BUILD_DIR: build
@@ -246,6 +213,7 @@ jobs:
 
     steps:
     - name: Harden Runner
+      if: false # running in container
       uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
       with:
         egress-policy: audit
@@ -277,7 +245,6 @@ jobs:
         pkgs=(
           # Build dependencies
           cmake
-          qemu-user-static
 
           # Dependencies
           libbrotli-dev:${{ matrix.arch }}

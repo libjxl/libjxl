@@ -96,6 +96,18 @@ jobs:
             apt_pkgs: liblcms2-dev
             # static build is impossible
             skip_install: true
+          # Build/test on arm64 CPU
+          - name: release:arm64
+            os: ubuntu-24.04-arm
+            mode: release
+            run_bench: true
+            test_in_pr: true
+          - name: release:arm64-lowprecision
+            os: ubuntu-24.04-arm
+            mode: release
+            run_bench: true
+            test_in_pr: true
+            cmake_args: -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
           # Build optimized for binary size, all features not needed for
           # reconstructing pixels is disabled.
           - name: release:minimal
@@ -197,7 +209,11 @@ jobs:
           ${{ matrix.apt_pkgs }} \
         #
         if [[ "${WILL_BENCH}" == "true" ]]; then
-          sudo apt install -y libbenchmark-dev libbenchmark-tools
+          if [[ "${WILL_TEST}" == "true" ]]; then
+            sudo apt install -y libbenchmark-dev libbenchmark-tools
+          else
+            exit 1
+          fi
         fi
         echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV

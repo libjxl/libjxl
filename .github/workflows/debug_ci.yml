@@ -79,7 +79,6 @@ jobs:
           graphviz
           ninja-build
           pkg-config
-          qemu-user-static
           xdg-utils
           xvfb
 

@@ -32,6 +32,7 @@ namespace {
 using hwy::HWY_NAMESPACE::AbsDiff;
 using hwy::HWY_NAMESPACE::Add;
 using hwy::HWY_NAMESPACE::And;
+using hwy::HWY_NAMESPACE::ApproximateReciprocal;
 using hwy::HWY_NAMESPACE::Div;
 using hwy::HWY_NAMESPACE::Floor;
 using hwy::HWY_NAMESPACE::GetLane;
