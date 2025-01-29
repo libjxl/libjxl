@@ -17,7 +17,7 @@ MYDIR=$(dirname "${SELF}")
 
 ### Environment parameters:
 # TODO(eustas): tighten; only several items need more than 48KiB
-TEST_STACK_LIMIT="${TEST_STACK_LIMIT:-96}"
+TEST_STACK_LIMIT="${TEST_STACK_LIMIT:-128}"
 BENCHMARK_NUM_THREADS="${BENCHMARK_NUM_THREADS:-0}"
 BUILD_CONFIG=${BUILD_CONFIG:-}
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-RelWithDebInfo}

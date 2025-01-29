@@ -138,6 +138,11 @@ else ()
   endif()  # WIN32
 endif()  #!MSVC
 
+# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109740
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  list(APPEND JPEGXL_INTERNAL_FLAGS -Wno-overloaded-virtual)
+endif()
+
 if (JPEGXL_ENABLE_SKCMS)
   list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_ENABLE_SKCMS=1)
 endif ()
@@ -201,7 +206,7 @@ endif()
 # Tests for the jxl library.
 include(jxl_tests.cmake)
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND JPEGXL_ENABLE_BENCHMARK)
   # Google benchmark for the jxl library
   include(jxl_benchmark.cmake)
 endif()
