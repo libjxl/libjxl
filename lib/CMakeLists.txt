@@ -23,7 +23,6 @@ else()
   set(JPEGXL_LIBRARY_SOVERSION "${JPEGXL_MAJOR_VERSION}")
 endif()
 
-
 # List of warning and feature flags for our library and tests.
 if (MSVC)
   set(JPEGXL_INTERNAL_FLAGS
@@ -49,8 +48,17 @@ else ()
     -Wnon-virtual-dtor
     -Woverloaded-virtual
     -Wvla
-    -Wframe-larger-than=22528  # TODO(eustas): tighten
   )
+
+  if (NOT JPEGXL_ENABLE_COVERAGE AND NOT SANITIZER MATCHES ".san")
+    # NB: use `-Rpass-analysis=stack-frame-layout -g` for investigation.
+    # TODO(eustas): tighten
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      list(APPEND JPEGXL_INTERNAL_FLAGS -Wframe-larger-than=4352)
+    elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14.0)
+      list(APPEND JPEGXL_INTERNAL_FLAGS -Wframe-larger-than=5120)
+    endif()
+  endif()
 
   # Warning flags supported by clang.
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")

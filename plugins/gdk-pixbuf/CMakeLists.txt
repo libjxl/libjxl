@@ -44,9 +44,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(pixbufloader_test pixbufloader_test.cc)
     target_link_libraries(pixbufloader_test PkgConfig::Gdk)
 
-    find_program (XDG_MIME_PROGRAM xdg-mime)
+    find_program(XDG_MIME_PROGRAM xdg-mime)
     if (NOT XDG_MIME_PROGRAM)
-      message(FATAL "xdg-mime is required for testing pixbufloader")
+      message(WARNING "xdg-mime is required for testing pixbufloader; consider installing xdg-utils package")
+      return()
     endif()
 
     # Create a mime cache for test.

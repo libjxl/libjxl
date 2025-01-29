@@ -30,8 +30,10 @@ void TransformFromPixels(const AcStrategyType strategy,
 
 HWY_EXPORT(DCFromLowestFrequencies);
 void DCFromLowestFrequencies(AcStrategyType strategy, const float* block,
-                             float* dc, size_t dc_stride) {
-  HWY_DYNAMIC_DISPATCH(DCFromLowestFrequencies)(strategy, block, dc, dc_stride);
+                             float* dc, size_t dc_stride,
+                             float* scratch_space) {
+  HWY_DYNAMIC_DISPATCH(DCFromLowestFrequencies)
+  (strategy, block, dc, dc_stride, scratch_space);
 }
 
 HWY_EXPORT(AFVDCT4x4);

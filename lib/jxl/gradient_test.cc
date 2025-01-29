@@ -154,19 +154,19 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   extras::JXLDecompressParams dparams;
   Image3F gradient = GenerateTestGradient(color0, color1, angle, xsize, ysize);
 
-  CodecInOut io{memory_manager};
-  io.metadata.m.SetUintSamples(8);
-  io.metadata.m.color_encoding = ColorEncoding::SRGB();
+  auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  io->metadata.m.SetUintSamples(8);
+  io->metadata.m.color_encoding = ColorEncoding::SRGB();
   ASSERT_TRUE(
-      io.SetFromImage(std::move(gradient), io.metadata.m.color_encoding));
+      io->SetFromImage(std::move(gradient), io->metadata.m.color_encoding));
 
-  CodecInOut io2{memory_manager};
+  auto io2 = jxl::make_unique<jxl::CodecInOut>(memory_manager);
 
   std::vector<uint8_t> compressed;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed, pool));
-  EXPECT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &io2, pool));
-  EXPECT_TRUE(io2.Main().TransformTo(io2.metadata.m.color_encoding,
-                                     *JxlGetDefaultCms(), pool));
+  EXPECT_TRUE(test::EncodeFile(cparams, io.get(), &compressed, pool));
+  EXPECT_TRUE(test::DecodeFile(dparams, Bytes(compressed), io2.get(), pool));
+  EXPECT_TRUE(io2->Main().TransformTo(io2->metadata.m.color_encoding,
+                                      *JxlGetDefaultCms(), pool));
 
   if (use_gradient) {
     // Test that the gradient map worked. For that, we take a second derivative
@@ -175,7 +175,7 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
     // 0.1, while if there is noticeable banding, which means the gradient map
     // failed, the values are around 0.5-1.0 (regardless of
     // butteraugli_distance).
-    Image3F gradient2 = Gradient2(*io2.Main().color());
+    Image3F gradient2 = Gradient2(*io2->Main().color());
 
     // TODO(jyrki): These values used to work with 0.2, 0.2, 0.2.
     float image_min;

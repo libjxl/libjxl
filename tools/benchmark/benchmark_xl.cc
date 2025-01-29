@@ -101,14 +101,14 @@ void PrintStats(const TrackingMemoryManager& memory_manager) {
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
   JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
-  CodecInOut io{memory_manager};
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
   std::vector<uint8_t> encoded;
   JXL_RETURN_IF_ERROR(ReadFile(filename, &encoded));
   JXL_RETURN_IF_ERROR(
-      jxl::SetFromBytes(Bytes(encoded), jxl::extras::ColorHints(), &io));
-  JXL_ASSIGN_OR_RETURN(*image,
-                       Image3F::Create(memory_manager, io.xsize(), io.ysize()));
-  JXL_RETURN_IF_ERROR(CopyImageTo(*io.Main().color(), image));
+      jxl::SetFromBytes(Bytes(encoded), jxl::extras::ColorHints(), io.get()));
+  JXL_ASSIGN_OR_RETURN(
+      *image, Image3F::Create(memory_manager, io->xsize(), io->ysize()));
+  JXL_RETURN_IF_ERROR(CopyImageTo(*io->Main().color(), image));
   return true;
 }
 
@@ -258,14 +258,14 @@ Status DoCompress(const std::string& filename, const PackedPixelFile& ppf,
   float distance = 1.0f;
 
   if (valid && !skip_butteraugli) {
-    CodecInOut ppf_io{memory_manager};
+    auto ppf_io = jxl::make_unique<CodecInOut>(memory_manager);
     JXL_RETURN_IF_ERROR(
-        ConvertPackedPixelFileToCodecInOut(ppf, inner_pool, &ppf_io));
-    CodecInOut ppf2_io{memory_manager};
+        ConvertPackedPixelFileToCodecInOut(ppf, inner_pool, ppf_io.get()));
+    auto ppf2_io = jxl::make_unique<CodecInOut>(memory_manager);
     JXL_RETURN_IF_ERROR(
-        ConvertPackedPixelFileToCodecInOut(ppf2, inner_pool, &ppf2_io));
-    const ImageBundle& ib1 = ppf_io.Main();
-    const ImageBundle& ib2 = ppf2_io.Main();
+        ConvertPackedPixelFileToCodecInOut(ppf2, inner_pool, ppf2_io.get()));
+    const ImageBundle& ib1 = ppf_io->Main();
+    const ImageBundle& ib2 = ppf2_io->Main();
     if (jxl::SameSize(ppf, ppf2)) {
       ButteraugliParams params;
       // Hack the default intensity target value for SDR images to be 80.0, the

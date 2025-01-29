@@ -135,6 +135,8 @@ elseif (JPEGXL_BUNDLE_LIBPNG)
     message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
             "build dependencies.")
   endif()
+  file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/libpng/scripts/pnglibconf.h.prebuilt" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/libpng")
+  file(RENAME "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h.prebuilt" "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h")
   add_subdirectory(zlib)
   set(PNG_STATIC ON CACHE BOOL "")
   set(PNG_EXECUTABLES OFF CACHE BOOL "")

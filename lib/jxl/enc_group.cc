@@ -482,7 +482,7 @@ Status ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                                 scratch_space);
           }
           DCFromLowestFrequencies(acs.Strategy(), coeffs_in + size,
-                                  dc_rows[1] + bx, dc_stride);
+                                  dc_rows[1] + bx, dc_stride, scratch_space);
 
           QuantizeRoundtripYBlockAC(
               enc_state, size, enc_state->shared.quantizer, error_diffusion,
@@ -510,7 +510,7 @@ Status ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                             coeffs_in + c * size, &quant_ac,
                             quantized + c * size);
             DCFromLowestFrequencies(acs.Strategy(), coeffs_in + c * size,
-                                    dc_rows[c] + bx, dc_stride);
+                                    dc_rows[c] + bx, dc_stride, scratch_space);
           }
           row_quant_ac[bx] = quant_ac;
           for (size_t c = 0; c < 3; c++) {

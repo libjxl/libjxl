@@ -848,27 +848,27 @@ Status RoundtripPatchFrame(Image3F* reference_frame,
   state->special_frames.emplace_back(std::move(special_frame));
   if (subtract) {
     ImageBundle decoded(memory_manager, &state->shared.metadata->m);
-    PassesDecoderState dec_state(memory_manager);
-    JXL_RETURN_IF_ERROR(dec_state.output_encoding_info.SetFromMetadata(
+    auto dec_state = jxl::make_unique<PassesDecoderState>(memory_manager);
+    JXL_RETURN_IF_ERROR(dec_state->output_encoding_info.SetFromMetadata(
         *state->shared.metadata));
     const uint8_t* frame_start = encoded.data();
     size_t encoded_size = encoded.size();
-    JXL_RETURN_IF_ERROR(DecodeFrame(&dec_state, pool, frame_start, encoded_size,
-                                    /*frame_header=*/nullptr, &decoded,
-                                    *state->shared.metadata));
+    JXL_RETURN_IF_ERROR(DecodeFrame(
+        dec_state.get(), pool, frame_start, encoded_size,
+        /*frame_header=*/nullptr, &decoded, *state->shared.metadata));
     frame_start += decoded.decoded_bytes();
     encoded_size -= decoded.decoded_bytes();
     size_t ref_xsize =
-        dec_state.shared_storage.reference_frames[idx].frame->color()->xsize();
+        dec_state->shared_storage.reference_frames[idx].frame->color()->xsize();
     // if the frame itself uses patches, we need to decode another frame
     if (!ref_xsize) {
       JXL_RETURN_IF_ERROR(DecodeFrame(
-          &dec_state, pool, frame_start, encoded_size,
+          dec_state.get(), pool, frame_start, encoded_size,
           /*frame_header=*/nullptr, &decoded, *state->shared.metadata));
     }
     JXL_ENSURE(encoded_size == 0);
     state->shared.reference_frames[idx] =
-        std::move(dec_state.shared_storage.reference_frames[idx]);
+        std::move(dec_state->shared_storage.reference_frames[idx]);
   } else {
     *state->shared.reference_frames[idx].frame = std::move(ib);
   }
