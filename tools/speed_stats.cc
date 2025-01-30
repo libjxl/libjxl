@@ -51,7 +51,7 @@ bool SpeedStats::GetSummary(SpeedStats::Summary* s) {
 
     s->central_tendency = pow(product, 1.0 / (elapsed_.size() - 1));
     s->variability = 0.0;
-    s->type = " geomean:";
+    s->type = "geomean:";
     if (std::isnormal(s->central_tendency)) return true;
   }
 
