@@ -133,7 +133,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/blending.h
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
-  jxl/codec_in_out.h
   jxl/coeff_order.cc
   jxl/coeff_order.h
   jxl/coeff_order_fwd.h
@@ -409,6 +408,7 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
 set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES
   extras/codec.cc
   extras/codec.h
+  extras/codec_in_out.h
   extras/hlg.cc
   extras/hlg.h
   extras/metrics.cc
