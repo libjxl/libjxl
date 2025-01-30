@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -22,7 +23,6 @@
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"

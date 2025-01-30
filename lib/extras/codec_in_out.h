@@ -11,7 +11,6 @@
 #include <jxl/memory_manager.h>
 
 #include <cstddef>
-#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -20,18 +19,10 @@
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/luminance.h"
 
 namespace jxl {
-
-// Optional text/EXIF metadata.
-struct Blobs {
-  std::vector<uint8_t> exif;
-  std::vector<uint8_t> iptc;
-  std::vector<uint8_t> jhgm;
-  std::vector<uint8_t> jumbf;
-  std::vector<uint8_t> xmp;
-};
 
 // Holds a preview, a main image or one or more frames, plus the inputs/outputs
 // to/from decoding/encoding.
@@ -106,8 +97,6 @@ class CodecInOut {
   // Metadata stored into / retrieved from bitstreams.
 
   JxlMemoryManager* memory_manager;
-
-  Blobs blobs;
 
   CodecMetadata metadata;  // applies to preview and all frames
 
