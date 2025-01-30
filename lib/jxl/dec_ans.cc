@@ -213,8 +213,7 @@ Status DecodeANSCodes(JxlMemoryManager* memory_manager,
       if (alphabet_sizes[c] > 1) {
         if (!result->huffman_data[c].ReadFromBitStream(alphabet_sizes[c], in)) {
           if (!in->AllReadsWithinBounds()) {
-            return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                              "Not enough bytes for huffman code");
+            return JXL_NOT_ENOUGH_BYTES("Not enough bytes for huffman code");
           }
           return JXL_FAILURE("Invalid huffman tree number %" PRIuS
                              ", alphabet size %u",

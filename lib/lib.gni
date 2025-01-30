@@ -606,6 +606,7 @@ libjxl_tests = [
     "jxl/data_parallel_test.cc",
     "jxl/dct_test.cc",
     "jxl/decode_test.cc",
+    "jxl/enc_bit_writer_test.cc",
     "jxl/enc_external_image_test.cc",
     "jxl/enc_gaborish_test.cc",
     "jxl/enc_linalg_test.cc",
