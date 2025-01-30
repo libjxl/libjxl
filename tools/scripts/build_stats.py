@@ -63,7 +63,16 @@ RAM_SIZE = 'dbs'
 IGNORE_SYMBOLS = 'uaci-'
 
 SIMD_NAMESPACES = [
-    'N_SCALAR', 'N_WASM', 'N_NEON', 'N_PPC8', 'N_SSE4', 'N_AVX2', 'N_AVX3']
+    'N_SCALAR', 'N_EMU128',
+    'N_RVV',
+    'N_WASM', 'N_WASM_EMU256',
+    'N_NEON', 'N_NEON_BF16', 'N_NEON_WITHOUT_AES',
+    'N_SVE', 'N_SVE2', 'N_SVE_256', 'N_SVE2_128',
+    'N_PPC8', 'N_PPC9', 'N_PPC10',
+    'N_Z14', 'N_Z15',
+    'N_SSE2', 'N_SSSE3', 'N_SSE4',
+    'N_AVX2', 'N_AVX3', 'N_AVX3_DL', 'N_AVX3_ZEN4', 'N_AVX3_SPR'
+]
 
 
 def LoadSymbols(filename):

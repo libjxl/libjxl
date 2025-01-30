@@ -36,6 +36,7 @@ using DF = HWY_CAPPED(float, 8);
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::AbsDiff;
 using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::ApproximateReciprocal;
 using hwy::HWY_NAMESPACE::Div;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
