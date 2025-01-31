@@ -54,7 +54,7 @@ else ()
     # NB: use `-Rpass-analysis=stack-frame-layout -g` for investigation.
     # TODO(eustas): tighten
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-      list(APPEND JPEGXL_INTERNAL_FLAGS -Wframe-larger-than=4608)
+      list(APPEND JPEGXL_INTERNAL_FLAGS -Wframe-larger-than=5632)
     elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14.0)
       list(APPEND JPEGXL_INTERNAL_FLAGS -Wframe-larger-than=5120)
     endif()
