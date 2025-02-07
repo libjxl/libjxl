@@ -50,22 +50,10 @@ jobs:
       with:
         submodules: true
         fetch-depth: 1
+
     - name: Install build deps
-      shell: bash
       run: |
-        set -x
-        sudo rm -f /var/lib/man-db/auto-update
-        sudo apt update
-        pkgs=(
-          # Build dependencies
-          ccache
-          cmake
-          doxygen
-          graphviz
-          ninja-build
-          pkg-config
-        )
-        DEBIAN_FRONTEND=noninteractive sudo apt install -y "${pkgs[@]}"
+        sudo ./tools/scripts/install_deps.sh build
 
     - name: Git environment
       id: git-env
@@ -113,6 +101,7 @@ jobs:
         if [[ "${{ matrix.variant }}" == "simd-256" ]]; then
           export ENABLE_WASM_SIMD=2
         fi
+        SKIP_TEST=1 TARGETS=all \
         ./ci.sh release \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -125,9 +114,6 @@ jobs:
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TOOLS=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF
-      env:
-        SKIP_TEST: 1
-        TARGETS: all
     - name: ccache stats
       run: ccache --show-stats
 

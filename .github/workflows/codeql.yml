@@ -67,50 +67,23 @@ jobs:
           # By default, queries listed here will override any specified in a config file.
           # Prefix the list here with "+" to use these queries and those in the config file.
 
-      - name: Install build deps
-        run: |
-          sudo rm -f /var/lib/man-db/auto-update
-          sudo apt update
-          sudo apt install -y \
-            ccache \
-            clang \
-            cmake \
-            doxygen \
-            graphviz \
-            imagemagick \
-            libbenchmark-dev \
-            libbenchmark-tools \
-            libbrotli-dev \
-            libgdk-pixbuf2.0-dev \
-            libgif-dev \
-            libgtest-dev \
-            libgtk2.0-dev  \
-            libjpeg-dev \
-            libjpeg-turbo-progs \
-            libopenexr-dev \
-            libpng-dev \
-            libwebp-dev \
-            ninja-build \
-            pkg-config \
-            xdg-utils \
-            xvfb \
-            ${{ matrix.apt_pkgs }} \
-          #
-          echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
-          echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
       - name: Checkout the source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: true
           fetch-depth: 2
 
-
+      - name: Install build deps
+        run: |
+          sudo ./tools/scripts/install_deps.sh build extras plugins
+  
       - name: Build
         run: |
-          ./ci.sh opt -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+          CC=clang CXX=clang++ \
+          SKIP_TEST=1 TARGETS=all \
+          ./ci.sh opt \
+            -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
             -DBUILD_TESTING=OFF
-        env:
-          SKIP_TEST: 1
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@f6091c0113d1dcf9b98e269ee48e8a7e51b7bdd4 # v3.28.5
