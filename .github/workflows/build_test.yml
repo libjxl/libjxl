@@ -46,7 +46,8 @@ jobs:
             emit_stack_sizes: 1
             max_stack: 2400
             # Conformance tooling test requires numpy.
-            apt_pkgs: doxygen graphviz python3-numpy
+            # jpegli tests require imagemagick and libjpeg-turbo-progs
+            apt_pkgs: imagemagick libjpeg-turbo-progs python3-numpy
           - name: lowprecision
             mode: release
             run_bench: true
@@ -64,7 +65,6 @@ jobs:
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
-            apt_pkgs: clang-18
             cc: clang-18
             cxx: clang++-18
           - name: asan
@@ -121,32 +121,27 @@ jobs:
           - name: release:gcc
             os: ubuntu-latest
             mode: release
-            apt_pkgs: gcc g++
             cc: gcc
             cxx: g++
           - name: release:gcc-old
             os: ubuntu-22.04
             mode: release
-            apt_pkgs: gcc g++
             cc: gcc
             cxx: g++
           - name: release:gcc-old-old
             os: ubuntu-20.04
             mode: release
-            apt_pkgs: gcc g++
             cc: gcc
             cxx: g++
           # Builds with old clang in release mode
           - name: release:clang-old
             os: ubuntu-22.04
             mode: release
-            apt_pkgs: clang
             cc: clang
             cxx: clang++
           - name: release:clang-old-old
             os: ubuntu-20.04
             mode: release
-            apt_pkgs: clang
             cc: clang
             cxx: clang++
           - name: release:osx
@@ -168,11 +163,7 @@ jobs:
       WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
       WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
-      # Temporarily disable doc-building, re-enable when sphinx is working again.
-      # WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
-      WILL_DOC: false
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
-      JPEGXL_OPT_DBG: true
       FASTER_MSAN_BUILD: 1
 
     steps:
@@ -180,43 +171,6 @@ jobs:
       uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
       with:
         egress-policy: audit
-
-    - name: Install build deps Ubuntu
-      if: startsWith(matrix.os, 'macos-') == false
-      run: |
-        sudo rm -f /var/lib/man-db/auto-update
-        sudo apt update
-        sudo apt install -y \
-          ccache \
-          clang \
-          cmake \
-          graphviz \
-          imagemagick \
-          libbrotli-dev \
-          libgdk-pixbuf2.0-dev \
-          libgif-dev \
-          libgtest-dev \
-          libgtk2.0-dev  \
-          libjpeg-dev \
-          libjpeg-turbo-progs \
-          libopenexr-dev \
-          libpng-dev \
-          libwebp-dev \
-          ninja-build \
-          pkg-config \
-          xdg-utils \
-          xvfb \
-          ${{ matrix.apt_pkgs }} \
-        #
-        if [[ "${WILL_BENCH}" == "true" ]]; then
-          if [[ "${WILL_TEST}" == "true" ]]; then
-            sudo apt install -y libbenchmark-dev libbenchmark-tools
-          else
-            exit 1
-          fi
-        fi
-        echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
-        echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
 
     - name: Install build deps MacOS
       if: startsWith(matrix.os, 'macos-')
@@ -236,16 +190,26 @@ jobs:
         submodules: true
         fetch-depth: 2
 
+    - name: Install build deps Ubuntu
+      if: startsWith(matrix.os, 'macos-') == false
+      run: |
+        INSTALL_BENCHMARK=''
+        if [[ "${WILL_BENCH}" == "true" ]]; then
+          if [[ "${WILL_TEST}" == "true" ]]; then
+            INSTALL_BENCHMARK=benchmark
+          else
+            exit 1
+          fi
+        fi
+        sudo ./tools/scripts/install_deps.sh build extras plugins ${INSTALL_BENCHMARK} -- ${{ matrix.apt_pkgs }}
+        echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
+        echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
+  
     - name: Setup the Homebrew prefixes
       if: startsWith(matrix.os, 'macos-')
       run: |
           CMAKE_PREFIX_PATH=`brew --prefix brotli`:`brew --prefix giflib`:`brew --prefix google-benchmark`:`brew --prefix jpeg-turbo`:`brew --prefix libpng`:`brew --prefix sdl2`:`brew --prefix zlib`
           echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
-
-    - name: Suppress doxygen target
-      if: matrix.name != 'release'
-      run: |
-        echo "TARGETS=all" >> $GITHUB_ENV
 
     - name: Setup the LLVM source path
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
@@ -270,16 +234,6 @@ jobs:
         ref: llvmorg-18.1.3 # NB: 15.0.0 does not build ¯\_(ツ)_/¯
         path: llvm_root
 
-    - name: Sphinx dependencies
-      # Dependencies for sphinx HTML documentation
-      if: env.WILL_DOC == 'true'
-      run: |
-        pip3 install -r doc/sphinx/requirements.txt
-
-    - name: Install gcovr
-      if: env.WILL_COV == 'true'
-      run: pip install gcovr
-
     - name: Git environment
       id: git-env
       run: |
@@ -303,17 +257,16 @@ jobs:
       run: |
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
-        mode="${{ matrix.mode }}"
-        build_tests=$([ "$WILL_TEST" == "true" ] && echo "ON" || echo "OFF")
-        [[ -n "${mode}" ]] || mode="${{ matrix.name }}"
-        ./ci.sh ${mode} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+        MODE="${{ matrix.mode }}"
+        BUILD_TESTS=$([ "${WILL_TEST}" == "true" ] && echo "ON" || echo "OFF")
+        [[ -n "${MODE}" ]] || MODE="${{ matrix.name }}"
+        SKIP_TEST=1 TARGETS=all CMAKE_CXX_FLAGS='${{ matrix.cxxflags }}' \
+        ./ci.sh ${MODE} \
+          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-          -DBUILD_TESTING=${build_tests} \
+          -DBUILD_TESTING=${BUILD_TESTS} \
           ${{ matrix.cmake_args }}
-      env:
-        SKIP_TEST: 1
-        CMAKE_CXX_FLAGS: ${{ matrix.cxxflags }}
 
     - name: Build stats
       if: env.WILL_BUILD == 'true'
@@ -366,10 +319,9 @@ jobs:
       run: |
         sort build/Testing/Temporary/CTestCostData.txt -k 3 -n | tail -n 20 || true
 
-    - name: Build HTML documentation (sphinx/readthetdocs)
-      if: env.WILL_DOC == 'true'
-      run: |
-        cmake --build build -- rtd-html
+    - name: Install gcovr
+      if: env.WILL_COV == 'true'
+      run: pip install gcovr
 
     - name: Coverage report
       if: env.WILL_COV == 'true'

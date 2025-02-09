@@ -84,40 +84,16 @@ jobs:
       with:
         egress-policy: audit
 
-    - name: Install build deps
-      run: |
-        sudo rm -f /var/lib/man-db/auto-update
-        sudo apt update
-        sudo apt install -y \
-          ccache \
-          clang \
-          cmake \
-          doxygen \
-          graphviz \
-          libbenchmark-dev \
-          libbenchmark-tools \
-          libbrotli-dev \
-          libgdk-pixbuf2.0-dev \
-          libgif-dev \
-          libgtest-dev \
-          libgtk2.0-dev  \
-          libjpeg-dev \
-          libopenexr-dev \
-          libpng-dev \
-          libwebp-dev \
-          ninja-build \
-          pkg-config \
-          xdg-utils \
-          xvfb \
-          ${{ matrix.apt_pkgs }} \
-        #
-        echo "CC=clang" >> $GITHUB_ENV
-        echo "CXX=clang++" >> $GITHUB_ENV
     - name: Checkout the jxl source
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: true
         fetch-depth: 2
+
+    - name: Install build deps
+      run: |
+        sudo ./tools/scripts/install_deps.sh build
+
     - name: Git environment
       id: git-env
       run: |
@@ -138,9 +114,10 @@ jobs:
       run: |
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
-        CMAKE_FLAGS="${{ matrix.cflags }}" \
-        TARGETS="tools/djxl" \
-        ./ci.sh ${{ matrix.build_type || 'release' }} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+        CC=clang CXX=clang++ CMAKE_FLAGS="${{ matrix.cflags }}" \
+        SKIP_TEST=1 TARGETS=tools/djxl \
+        ./ci.sh ${{ matrix.build_type || 'release' }} \
+          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
           -DBUILD_TESTING=OFF
@@ -151,8 +128,6 @@ jobs:
         cp build/lib/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
         cp build/lib/libjxl_cms.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
         cp build/lib/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-      env:
-        SKIP_TEST: 1
     - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
       with:
         name: conformance_binary-${{ matrix.name }}
@@ -182,14 +157,17 @@ jobs:
       with:
         egress-policy: audit
 
+    - name: Checkout install_deps.sh
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        sparse-checkout: tools/scripts/install_deps.sh
+        sparse-checkout-cone-mode: false
+        fetch-depth: 1
+  
     - name: Install deps
       run: |
-        sudo rm -f /var/lib/man-db/auto-update
-        sudo apt update
-        sudo apt install -y \
-          libopenexr-3-1-30 \
-          libgif7
-        pip install numpy
+        sudo ./tools/scripts/install_deps.sh conformance
+
     - name: Checkout the conformance source
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:

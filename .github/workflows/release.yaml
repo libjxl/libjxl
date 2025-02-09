@@ -78,9 +78,8 @@ jobs:
         fetch-depth: 1
 
     - name: Build
-      env:
-        SKIP_TEST: 1
       run: |
+        SKIP_TEST=1 \
         ./ci.sh release \
           -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc \
           -DJPEGXL_STATIC=ON \
@@ -145,11 +144,10 @@ jobs:
       shell: 'bash'
       id: 'env'
       run: |
+        matrix_os=${{ matrix.os }}
         artifact_name="jxl-debs-amd64-${matrix_os/:/-}"
         echo ${artifact_name}
         echo "artifact_name=${artifact_name}" >> $GITHUB_OUTPUT
-      env:
-        matrix_os: ${{ matrix.os }}
 
     - name: Install build deps
       run: |
