@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include "lib/jpegli/common.h"
@@ -585,13 +586,21 @@ void ClusterJpegHistograms(j_compress_ptr cinfo, const Histogram* histograms,
   clusters->histogram_indexes.resize(num);
   std::vector<uint32_t> slot_histograms;
   std::vector<float> slot_costs;
+  // Since not all jpeg decoders support the extended sequential mode, i.e. the
+  // 0xff 0xc1 SOF marker, we will limit the number of clusters to 2 in
+  // sequential mode, unless the quantization tables already require the
+  // extended sequential mode.
+  const bool force_baseline =
+      !cinfo->progressive_mode && cinfo->master->force_baseline;
   for (size_t i = 0; i < num; ++i) {
     const Histogram& cur = histograms[i];
     if (IsEmptyHistogram(cur)) {
       continue;
     }
-    float best_cost = HistogramCost(cur);
     size_t best_slot = slot_histograms.size();
+    float best_cost = force_baseline && best_slot > 1
+                          ? std::numeric_limits<float>::max()
+                          : HistogramCost(cur);
     for (size_t j = 0; j < slot_histograms.size(); ++j) {
       size_t prev_idx = slot_histograms[j];
       const Histogram& prev = clusters->histograms[prev_idx];
