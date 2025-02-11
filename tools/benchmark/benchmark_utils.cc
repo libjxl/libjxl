@@ -25,7 +25,6 @@
 #include <unistd.h>
 
 #include <cstdio>
-#include <cstdlib>
 #include <utility>
 
 #ifdef __APPLE__
