@@ -9,6 +9,7 @@
 #include <jxl/memory_manager.h>
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "lib/jxl/base/span.h"
@@ -20,9 +21,17 @@
 
 namespace jxl {
 
-class CodecInOut;
-
 namespace jpeg {
+
+// Optional text/EXIF metadata.
+struct Blobs {
+  std::vector<uint8_t> exif;
+  std::vector<uint8_t> iptc;
+  std::vector<uint8_t> jhgm;
+  std::vector<uint8_t> jumbf;
+  std::vector<uint8_t> xmp;
+};
+
 Status EncodeJPEGData(JxlMemoryManager* memory_manager, JPEGData& jpeg_data,
                       std::vector<uint8_t>* bytes,
                       const CompressParams& cparams);
@@ -35,10 +44,12 @@ Status SetColorTransformFromJpegData(const JPEGData& jpg,
                                      ColorTransform* color_transform);
 
 /**
- * Decodes bytes containing JPEG codestream into a CodecInOut as coefficients
- * only, for lossless JPEG transcoding.
+ * Decodes bytes containing JPEG codestream as coefficients only,
+ * for lossless JPEG transcoding.
  */
-Status DecodeImageJPG(Span<const uint8_t> bytes, CodecInOut* io);
+StatusOr<std::unique_ptr<JPEGData>> ParseJPG(JxlMemoryManager* memory_manager,
+                                             Bytes bytes);
+Status SetBlobsFromJpegData(const jpeg::JPEGData& jpeg_data, Blobs* blobs);
 
 }  // namespace jpeg
 }  // namespace jxl
