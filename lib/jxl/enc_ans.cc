@@ -294,7 +294,7 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
       if (counts[i] != counts[last] || i + 1 == alphabet_size ||
           (i - last) >= 255 || i == omit_pos || i == omit_pos + 1) {
         same[last] = (i - last);
-        last = i + 1;
+        last = i;
       }
     }
 
