@@ -735,7 +735,7 @@ bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
 struct RunnerTicket {
   explicit RunnerTicket(jxl::ThreadPool* pool) : pool(pool) {}
   jxl::ThreadPool* pool;
-  std::atomic<bool> has_error{false};
+  std::atomic<uint32_t> has_error{0};
 };
 
 void FastLosslessRunnerAdapter(void* void_ticket, void* opaque,
@@ -748,7 +748,7 @@ void FastLosslessRunnerAdapter(void* void_ticket, void* opaque,
             return true;
           },
           "Encode fast lossless")) {
-    ticket->has_error = true;
+    ticket->has_error = 1;
   }
 }
 
