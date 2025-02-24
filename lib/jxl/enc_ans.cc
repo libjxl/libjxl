@@ -44,7 +44,7 @@ constexpr
 #endif
     bool ans_fuzzer_friendly_ = false;
 
-const int kMaxNumSymbolsForSmallCode = 4;
+const int kMaxNumSymbolsForSmallCode = 2;
 
 void ANSBuildInfoTable(const ANSHistBin* counts, const AliasTable::Entry* table,
                        size_t alphabet_size, size_t log_alpha_size,
@@ -285,14 +285,14 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     // element of the series.
     std::vector<uint32_t> same(alphabet_size, 0);
     int last = 0;
-    for (int i = 1; i < alphabet_size; i++) {
+    for (int i = 1; i <= alphabet_size; i++) {
       // Store the sequence length once different symbol reached, or we're at
       // the end, or the length is longer than we can encode, or we are at
       // the omit_pos. We don't support including the omit_pos in an RLE
       // sequence because this value may use a different amount of log2 bits
       // than standard, it is too complex to handle in the decoder.
-      if (counts[i] != counts[last] || i + 1 == alphabet_size ||
-          (i - last) >= 255 || i == omit_pos || i == omit_pos + 1) {
+      if (i == alphabet_size || (i - last) >= 255 || i == omit_pos ||
+          i == omit_pos + 1 || counts[i] != counts[last]) {
         same[last] = (i - last);
         last = i;
       }
@@ -338,8 +338,8 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     }
 
     // The logcount values are encoded with a static Huffman code.
-    static const size_t kMinReps = 4;
-    size_t rep = ANS_LOG_TAB_SIZE + 1;
+    constexpr size_t kMinReps = 4;
+    constexpr size_t rep = ANS_LOG_TAB_SIZE + 1;
     for (int i = 0; i < length; ++i) {
       if (i > 0 && same[i - 1] > kMinReps) {
         // Encode the RLE symbol and skip the repeated ones.
@@ -645,8 +645,9 @@ Status ChooseUintConfigs(const HistogramParams& params,
                            std::numeric_limits<float>::max());
   std::vector<uint32_t> extra_bits(clustered_histograms->size());
   std::vector<uint8_t> is_valid(clustered_histograms->size());
-  size_t max_alpha =
-      codes->use_prefix_code ? PREFIX_MAX_ALPHABET_SIZE : ANS_MAX_ALPHABET_SIZE;
+  // Wider histograms are assigned max cost in PopulationCost anyway
+  // and therefore will not be used
+  size_t max_alpha = ANS_MAX_ALPHABET_SIZE;
   for (HybridUintConfig cfg : configs) {
     std::fill(is_valid.begin(), is_valid.end(), true);
     std::fill(extra_bits.begin(), extra_bits.end(), 0);
@@ -690,7 +691,7 @@ Status ChooseUintConfigs(const HistogramParams& params,
   for (auto& histo : *clustered_histograms) {
     histo.Clear();
   }
-  *log_alpha_size = 4;
+  *log_alpha_size = 5;
   for (const auto& stream : tokens) {
     for (const auto& token : stream) {
       uint32_t tok, nbits, bits;
@@ -797,7 +798,6 @@ class HistogramBuilder {
                                             &clustered_histograms, codes,
                                             &log_alpha_size));
     }
-    if (log_alpha_size < 5) log_alpha_size = 5;
     if (params.streaming_mode) {
       // TODO(szabadka) Figure out if we can use lower values here.
       log_alpha_size = 8;
