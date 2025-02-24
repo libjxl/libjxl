@@ -316,7 +316,10 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
         }
       }
     }
-    logcounts[omit_pos] = omit_log;
+    // Use shortest possible Huffman code to encode `omit_pos` (see `kLogCountBitLengths`).
+    // `logcounts` value at `omit_pos` should be the first of maximal values
+    // in the whole `logcounts` array, so it can be increased without changing that property
+    logcounts[omit_pos] = std::max(omit_log, 6);
 
     // Elias gamma-like code for shift. Only difference is that if the number
     // of bits to be encoded is equal to FloorLog2(ANS_LOG_TAB_SIZE+1), we skip
@@ -341,27 +344,27 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     constexpr size_t kMinReps = 4;
     constexpr size_t rep = ANS_LOG_TAB_SIZE + 1;
     for (int i = 0; i < length; ++i) {
-      if (i > 0 && same[i - 1] > kMinReps) {
-        // Encode the RLE symbol and skip the repeated ones.
-        writer->Write(kLogCountBitLengths[rep], kLogCountSymbols[rep]);
-        StoreVarLenUint8(same[i - 1] - kMinReps - 1, writer);
-        i += same[i - 1] - 2;
-        continue;
-      }
       writer->Write(kLogCountBitLengths[logcounts[i]],
                     kLogCountSymbols[logcounts[i]]);
-    }
-    for (int i = 0; i < length; ++i) {
-      if (i > 0 && same[i - 1] > kMinReps) {
-        // Skip symbols encoded by RLE.
-        i += same[i - 1] - 2;
-        continue;
+      if (same[i] > kMinReps) {
+        // Encode the RLE symbol and skip the repeated ones.
+        writer->Write(kLogCountBitLengths[rep], kLogCountSymbols[rep]);
+        StoreVarLenUint8(same[i] - kMinReps - 1, writer);
+        i += same[i] - 1;
       }
-      if (logcounts[i] > 1 && i != omit_pos) {
-        int bitcount = GetPopulationCountPrecision(logcounts[i] - 1, shift);
-        int drop_bits = logcounts[i] - 1 - bitcount;
-        JXL_ENSURE((counts[i] & ((1 << drop_bits) - 1)) == 0);
-        writer->Write(bitcount, (counts[i] >> drop_bits) - (1 << bitcount));
+    }
+    if (shift != 0) { // otherwise `bitcount = 0`
+      for (int i = 0; i < length; ++i) {
+        if (logcounts[i] > 1 && i != omit_pos) {
+          int bitcount = GetPopulationCountPrecision(logcounts[i] - 1, shift);
+          int drop_bits = logcounts[i] - 1 - bitcount;
+          JXL_ENSURE((counts[i] & ((1 << drop_bits) - 1)) == 0);
+          writer->Write(bitcount, (counts[i] >> drop_bits) - (1 << bitcount));
+        }
+        if (same[i] > kMinReps) {
+          // Skip symbols encoded by RLE.
+          i += same[i] - 1;
+        }
       }
     }
   }
@@ -647,7 +650,7 @@ Status ChooseUintConfigs(const HistogramParams& params,
   std::vector<uint8_t> is_valid(clustered_histograms->size());
   // Wider histograms are assigned max cost in PopulationCost anyway
   // and therefore will not be used
-  size_t max_alpha = ANS_MAX_ALPHABET_SIZE;
+  constexpr size_t max_alpha = ANS_MAX_ALPHABET_SIZE;
   for (HybridUintConfig cfg : configs) {
     std::fill(is_valid.begin(), is_valid.end(), true);
     std::fill(extra_bits.begin(), extra_bits.end(), 0);
