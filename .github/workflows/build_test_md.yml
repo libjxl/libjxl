@@ -25,6 +25,7 @@ jobs:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     # Include all names of required jobs here
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: release
@@ -48,6 +49,7 @@ jobs:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     # Include all msystem of required jobs here
     strategy:
+      fail-fast: false
       matrix:
           include:
            - msystem: clang64
