@@ -464,7 +464,7 @@ struct Pixels {
   std::unique_ptr<uint8_t[]> pixels;
   size_t pixels_size = 0;
   std::vector<uint8_t*> rows;
-  std::atomic<bool> has_error{false};
+  std::atomic<uint32_t> has_error{0};
 
   Status Resize(size_t row_bytes, size_t num_rows) {
     size_t new_size = row_bytes * num_rows;  // it is assumed size is sane
@@ -543,7 +543,7 @@ void ProgressiveRead_OnRow(png_structp png_ptr, png_bytep new_row,
     return;
   }
   if (row_num >= frame->rows.size()) {
-    frame->has_error = true;
+    frame->has_error = 1;
     return;
   }
   png_progressive_combine_row(png_ptr, frame->rows[row_num], new_row);

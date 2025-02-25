@@ -66,7 +66,7 @@ TEST(ThreadParallelRunnerTest, TestSmallAssignments) {
 
     // (Avoid mutex because it may perturb the worker thread scheduling)
     std::atomic<uint64_t> id_bits{0};
-    std::atomic<int> num_calls{0};
+    std::atomic<uint32_t> num_calls{0};
     const auto do_task = [&num_calls, num_threads, &id_bits](
                              const int task, const int thread) -> jxl::Status {
       num_calls.fetch_add(1, std::memory_order_relaxed);
