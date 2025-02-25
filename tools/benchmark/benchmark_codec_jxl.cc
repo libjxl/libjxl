@@ -346,7 +346,7 @@ class JxlCodec : public ImageCodec {
  private:
   struct DebugTicket {
     std::string debug_prefix;
-    std::atomic<bool> has_error{false};
+    std::atomic<uint32_t> has_error{0};
   };
 
   static void DebugCallback(void* opaque, const char* label, size_t xsize,
@@ -355,7 +355,7 @@ class JxlCodec : public ImageCodec {
     DebugTicket* ticket = reinterpret_cast<DebugTicket*>(opaque);
     if (ticket->has_error) return;
     if (!DebugCallbackImpl(ticket, label, xsize, ysize, color, pixels)) {
-      ticket->has_error = true;
+      ticket->has_error = 1;
     }
   }
 
