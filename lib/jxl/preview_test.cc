@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/dec/jxl.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
