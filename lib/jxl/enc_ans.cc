@@ -321,16 +321,16 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     }
     StoreVarLenUint8(length - 3, writer);
 
-    std::vector<int> logcounts(length);
+    std::vector<int> logcounts(length, -1);
     // Use shortest possible Huffman code to encode `omit_pos` (see `kLogCountBitLengths`).
     // `logcounts` value at `omit_pos` should be the first of maximal values
     // in the whole `logcounts` array, so it can be increased without changing that property
-    int omit_log = 10;
+    int omit_log = 9;
     for (int i = 0; i < length; ++i) {
-      JXL_ENSURE(counts[i] <= ANS_TAB_SIZE);
-      JXL_ENSURE(counts[i] >= 0);
+      JXL_DASSERT(counts[i] <= ANS_TAB_SIZE);
+      JXL_DASSERT(counts[i] >= 0);
       if (i != omit_pos && counts[i] > 0) {
-        logcounts[i] = FloorLog2Nonzero(static_cast<uint32_t>(counts[i])) + 1;
+        logcounts[i] = FloorLog2Nonzero(static_cast<uint32_t>(counts[i]));
         omit_log = std::max(omit_log, logcounts[i] + (i < omit_pos));
       }
     }
@@ -340,8 +340,8 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     constexpr size_t kMinReps = 4;
     constexpr size_t rep = ANS_LOG_TAB_SIZE + 1;
     for (int i = 0; i < length; ++i) {
-      writer->Write(kLogCountBitLengths[logcounts[i]],
-                    kLogCountSymbols[logcounts[i]]);
+      writer->Write(kLogCountBitLengths[logcounts[i] + 1],
+                    kLogCountSymbols[logcounts[i] + 1]);
       if (same[i] > kMinReps) {
         // Encode the RLE symbol and skip the repeated ones.
         writer->Write(kLogCountBitLengths[rep], kLogCountSymbols[rep]);
@@ -351,10 +351,10 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     }
     if (shift != 0) { // otherwise `bitcount = 0`
       for (int i = 0; i < length; ++i) {
-        if (logcounts[i] > 1 && i != omit_pos) {
-          int bitcount = GetPopulationCountPrecision(logcounts[i] - 1, shift);
-          int drop_bits = logcounts[i] - 1 - bitcount;
-          JXL_ENSURE((counts[i] & ((1 << drop_bits) - 1)) == 0);
+        if (logcounts[i] > 0 && i != omit_pos) {
+          int bitcount = GetPopulationCountPrecision(logcounts[i], shift);
+          int drop_bits = logcounts[i] - bitcount;
+          JXL_DASSERT((counts[i] & ((1 << drop_bits) - 1)) == 0);
           writer->Write(bitcount, (counts[i] >> drop_bits) - (1 << bitcount));
         }
         if (same[i] > kMinReps) {
