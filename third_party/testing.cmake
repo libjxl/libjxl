@@ -25,27 +25,26 @@ if(BUILD_TESTING)
 # using GTest and calling find_package(GTest) actually work.
 if (EXISTS "${SOURCE_DIR}/googletest/CMakeLists.txt" AND
     NOT JPEGXL_FORCE_SYSTEM_GTEST)
+  set(BUILD_GMOCK OFF CACHE INTERNAL "")
   add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
   include(GoogleTest)
 
   set(GTEST_ROOT "${SOURCE_DIR}/googletest/googletest")
   set(GTEST_INCLUDE_DIR "$<TARGET_PROPERTY:INCLUDE_DIRECTORIES,gtest>"
       CACHE STRING "")
-  set(GMOCK_INCLUDE_DIR "$<TARGET_PROPERTY:INCLUDE_DIRECTORIES,gmock>")
   set(GTEST_LIBRARY "$<TARGET_FILE:gtest>")
   set(GTEST_MAIN_LIBRARY "$<TARGET_FILE:gtest_main>")
 
   set_target_properties(gtest PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
-  set_target_properties(gmock PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
   set_target_properties(gtest_main PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
-  set_target_properties(gmock_main PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
+  get_target_property(GOOGLETEST_VERSION gtest VERSION)
+  message(STATUS "Using GTest from submodule: ${GOOGLETEST_VERSION}")
 
   # googletest doesn't compile clean with clang-cl (-Wundef)
   if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set_target_properties(gtest PROPERTIES COMPILE_FLAGS "-Wno-error")
-    set_target_properties(gmock PROPERTIES COMPILE_FLAGS "-Wno-error")
     set_target_properties(gtest_main PROPERTIES COMPILE_FLAGS "-Wno-error")
-    set_target_properties(gmock_main PROPERTIES COMPILE_FLAGS "-Wno-error")
   endif ()
   configure_file("${SOURCE_DIR}/googletest/LICENSE"
                  ${PROJECT_BINARY_DIR}/LICENSE.googletest COPYONLY)
@@ -55,6 +54,11 @@ else()
                    ${PROJECT_BINARY_DIR}/LICENSE.googletest COPYONLY)
   endif()  # JPEGXL_DEP_LICENSE_DIR
   find_package(GTest REQUIRED)
+  include(GoogleTest)
+  set_target_properties(GTest::GTest PROPERTIES IMPORTED_GLOBAL TRUE)
+  set_target_properties(GTest::Main PROPERTIES IMPORTED_GLOBAL TRUE)
+  add_library(gtest ALIAS GTest::GTest)
+  add_library(gtest_main ALIAS GTest::Main)
 endif()
 
 endif()  # BUILD_TESTING

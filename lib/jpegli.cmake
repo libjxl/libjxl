@@ -88,8 +88,8 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_JPEGLI_TESTS)
   target_link_libraries(${TESTNAME}
     hwy
     jpegli-static
-    GTest::GTest
-    GTest::Main
+    gtest
+    gtest_main
     ${JPEG_LIBRARIES}
   )
   set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "${JPEGXL_COVERAGE_LINK_FLAGS}")
