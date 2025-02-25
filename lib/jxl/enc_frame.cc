@@ -928,10 +928,8 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
     }
   }
   // JPEG DC is from -1024 to 1023.
-  std::vector<size_t> dc_counts[3] = {};
-  dc_counts[0].resize(2048);
-  dc_counts[1].resize(2048);
-  dc_counts[2].resize(2048);
+  std::vector<size_t> dc_counts;
+  dc_counts.resize(2048);
   size_t total_dc[3] = {};
   for (size_t c : {1, 0, 2}) {
     if (jpeg_data.components.size() == 1 && c != 1) {
@@ -940,7 +938,6 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
       }
       ZeroFillImage(&dc.Plane(c));
       // Ensure no division by 0.
-      dc_counts[c][1024] = 1;
       total_dc[c] = 1;
       continue;
     }
@@ -974,8 +971,9 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
           } else {
             idc = inputjpeg[base] + 1024 / qt_dc[c];
           }
-          dc_counts[c][std::min(static_cast<uint32_t>(idc + 1024),
-                                static_cast<uint32_t>(2047))]++;
+          if (c == 1)
+            dc_counts[std::min(static_cast<uint32_t>(idc + 1024),
+                               static_cast<uint32_t>(2047))]++;
           total_dc[c]++;
           fdc[bx >> hshift] = idc * dcquantization_r[c];
           if (c == 1 || !enc_state->cparams.force_cfl_jpeg_recompression ||
@@ -1022,37 +1020,37 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
   num_dc_ctxs = 1;
   for (size_t i = 0; i < 3; i++) {
     dct[i].clear();
-    int num_thresholds = (CeilLog2Nonzero(total_dc[i]) - 12) / 2;
-    // up to 3 buckets per channel:
-    // dark/medium/bright, yellow/unsat/blue, green/unsat/red
-    num_thresholds = std::min(std::max(num_thresholds, 0), 2);
-    size_t cumsum = 0;
-    size_t cut = total_dc[i] / (num_thresholds + 1);
-    for (int j = 0; j < 2048; j++) {
-      cumsum += dc_counts[i][j];
-      if (cumsum > cut) {
-        dct[i].push_back(j - 1025);
-        cut = total_dc[i] * (dct[i].size() + 1) / (num_thresholds + 1);
-      }
-    }
-    num_dc_ctxs *= dct[i].size() + 1;
   }
+  // use more contexts for larger and higher quality images
+  int num_thresholds = CeilLog2Nonzero(total_dc[1]) -
+                       CeilLog2Nonzero(static_cast<unsigned>(qt_dc[1])) - 12;
+  // up to 4 buckets, based on luma only
+  num_thresholds = std::min(std::max(num_thresholds, 0), 3);
+  size_t cumsum = 0;
+  size_t cut = total_dc[1] / (num_thresholds + 1);
+  for (int j = 0; j < 2048; j++) {
+    cumsum += dc_counts[j];
+    if (cumsum > cut) {
+      dct[1].push_back(j - 1025);
+      cut = total_dc[1] * (dct[1].size() + 1) / (num_thresholds + 1);
+    }
+  }
+  num_dc_ctxs *= dct[1].size() + 1;
 
   auto& ctx_map = enc_state->shared.block_ctx_map.ctx_map;
   ctx_map.clear();
   ctx_map.resize(3 * kNumOrders * num_dc_ctxs, 0);
 
-  int lbuckets = (dct[1].size() + 1);
   for (size_t i = 0; i < num_dc_ctxs; i++) {
-    // up to 9 contexts for luma
-    ctx_map[i] = i / lbuckets;
-    // up to 3 contexts for chroma
-    ctx_map[kNumOrders * num_dc_ctxs + i] =
-        ctx_map[2 * kNumOrders * num_dc_ctxs + i] =
-            num_dc_ctxs / lbuckets + (i % lbuckets);
+    // up to 4 contexts per component, based on just the luma bucket
+    ctx_map[i] = i;
+    ctx_map[kNumOrders * num_dc_ctxs + i] = num_dc_ctxs + i;
+    ctx_map[2 * kNumOrders * num_dc_ctxs + i] = 2 * num_dc_ctxs + i;
   }
   enc_state->shared.block_ctx_map.num_ctxs =
       *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
+
+  JXL_ENSURE(enc_state->shared.block_ctx_map.num_ctxs <= 16);
 
   // disable DC frame for now
   auto compute_dc_coeffs = [&](const uint32_t group_index,
