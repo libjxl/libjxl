@@ -6,7 +6,6 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_GABORISH_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_GABORISH_H_
 
-#include <cmath>
 #include <memory>
 
 #include "lib/jxl/loop_filter.h"
