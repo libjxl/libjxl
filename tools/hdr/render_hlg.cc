@@ -9,13 +9,13 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"

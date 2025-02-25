@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/apng.h"
@@ -24,7 +25,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 
 namespace jxl {
 namespace {

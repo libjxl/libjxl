@@ -12,10 +12,10 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/codec_in_out.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 #include "tools/file_io.h"
 #include "tools/no_memory_manager.h"
 #include "tools/ssimulacra2.h"

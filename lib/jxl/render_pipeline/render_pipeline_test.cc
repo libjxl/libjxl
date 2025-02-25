@@ -12,6 +12,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -41,6 +42,7 @@
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/test_memory_manager.h"
@@ -230,7 +232,10 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 
   auto io = jxl::make_unique<CodecInOut>(memory_manager);
   if (config.jpeg_transcode) {
-    ASSERT_TRUE(jpeg::DecodeImageJPG(Bytes(orig), io.get()));
+    JXL_TEST_ASSIGN_OR_DIE(std::unique_ptr<jxl::jpeg::JPEGData> jpeg_data,
+                           jpeg::ParseJPG(memory_manager, Bytes(orig)));
+    ASSERT_TRUE(
+        jxl::test::JpegDataToCodecInOut(std::move(jpeg_data), io.get()));
   } else {
     ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get(), &pool));
   }
