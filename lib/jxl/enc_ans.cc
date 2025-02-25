@@ -258,7 +258,6 @@ template <typename Writer>
 bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
                   const int omit_pos, const int num_symbols, uint32_t shift,
                   const int* symbols, Writer* writer) {
-  bool ok = true;
   if (num_symbols <= 2) {
     // Small tree marker to encode 1-2 symbols.
     writer->Write(1, 1);
@@ -280,47 +279,6 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     // Mark non-flat histogram.
     writer->Write(1, 0);
 
-    // Precompute sequences for RLE encoding. Contains the number of identical
-    // values starting at a given index. Only contains the value at the first
-    // element of the series.
-    std::vector<uint32_t> same(alphabet_size, 0);
-    int last = 0;
-    for (int i = 1; i <= alphabet_size; i++) {
-      // Store the sequence length once different symbol reached, or we're at
-      // the end, or the length is longer than we can encode, or we are at
-      // the omit_pos. We don't support including the omit_pos in an RLE
-      // sequence because this value may use a different amount of log2 bits
-      // than standard, it is too complex to handle in the decoder.
-      if (i == alphabet_size || (i - last) >= 255 || i == omit_pos ||
-          i == omit_pos + 1 || counts[i] != counts[last]) {
-        same[last] = (i - last);
-        last = i;
-      }
-    }
-
-    int length = 0;
-    std::vector<int> logcounts(alphabet_size);
-    int omit_log = 0;
-    for (int i = 0; i < alphabet_size; ++i) {
-      JXL_ENSURE(counts[i] <= ANS_TAB_SIZE);
-      JXL_ENSURE(counts[i] >= 0);
-      if (i == omit_pos) {
-        length = i + 1;
-      } else if (counts[i] > 0) {
-        logcounts[i] = FloorLog2Nonzero(static_cast<uint32_t>(counts[i])) + 1;
-        length = i + 1;
-        if (i < omit_pos) {
-          omit_log = std::max(omit_log, logcounts[i] + 1);
-        } else {
-          omit_log = std::max(omit_log, logcounts[i]);
-        }
-      }
-    }
-    // Use shortest possible Huffman code to encode `omit_pos` (see `kLogCountBitLengths`).
-    // `logcounts` value at `omit_pos` should be the first of maximal values
-    // in the whole `logcounts` array, so it can be increased without changing that property
-    logcounts[omit_pos] = std::max(omit_log, 6);
-
     // Elias gamma-like code for shift. Only difference is that if the number
     // of bits to be encoded is equal to FloorLog2(ANS_LOG_TAB_SIZE+1), we skip
     // the terminating 0 in unary coding.
@@ -330,15 +288,53 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     if (log != upper_bound_log) writer->Write(1, 0);
     writer->Write(log, ((1 << log) - 1) & (shift + 1));
 
-    // Since num_symbols >= 3, we know that length >= 3, therefore we encode
-    // length - 3.
-    if (length - 3 > 255) {
-      // Pretend that everything is OK, but complain about correctness later.
-      StoreVarLenUint8(255, writer);
-      ok = false;
-    } else {
-      StoreVarLenUint8(length - 3, writer);
+    // Precompute sequences for RLE encoding. Contains the number of identical
+    // values starting at a given index. Only contains the value at the first
+    // element of the series.
+    std::vector<uint32_t> same(alphabet_size, 0);
+    int last = 0;
+    int length = 0;
+    // Store the sequence length once different symbol reached, or we are
+    // near the omit_pos. We don't support including the omit_pos in an RLE
+    // sequence because this value may use a different amount of log2 bits
+    // than standard, it is too complex to handle in the decoder.
+    for (int i = 1; i < alphabet_size; i++) {
+      if (i == omit_pos || i == omit_pos + 1 || counts[i] != counts[last]) {
+        same[last] = i - last;
+        last = i;
+      }
     }
+    if (counts[last] != 0) {
+      // Store the last sequence length if it is a non-zero sequence
+      same[last] = alphabet_size - last;
+      length = alphabet_size;
+    } else {
+      // else exclude last zero run
+      length = last;
+    }
+
+    // Since `num_symbols >= 3`, we know that `length >= 3`, therefore we encode
+    // `length - 3`. The check also ensures that all `same[i] <= 255` and can be encoded
+    // further after RLE symbols by `StoreVarLenUint8`
+    if (length - 3 > 255) {
+      return false;
+    }
+    StoreVarLenUint8(length - 3, writer);
+
+    std::vector<int> logcounts(length);
+    // Use shortest possible Huffman code to encode `omit_pos` (see `kLogCountBitLengths`).
+    // `logcounts` value at `omit_pos` should be the first of maximal values
+    // in the whole `logcounts` array, so it can be increased without changing that property
+    int omit_log = 10;
+    for (int i = 0; i < length; ++i) {
+      JXL_ENSURE(counts[i] <= ANS_TAB_SIZE);
+      JXL_ENSURE(counts[i] >= 0);
+      if (i != omit_pos && counts[i] > 0) {
+        logcounts[i] = FloorLog2Nonzero(static_cast<uint32_t>(counts[i])) + 1;
+        omit_log = std::max(omit_log, logcounts[i] + (i < omit_pos));
+      }
+    }
+    logcounts[omit_pos] = omit_log;
 
     // The logcount values are encoded with a static Huffman code.
     constexpr size_t kMinReps = 4;
@@ -368,7 +364,7 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
       }
     }
   }
-  return ok;
+  return true;
 }
 
 void EncodeFlatHistogram(const int alphabet_size, BitWriter* writer) {
@@ -397,11 +393,13 @@ StatusOr<float> ComputeHistoAndDataCost(const ANSHistBin* histogram,
                                       ANS_LOG_TAB_SIZE, shift, &num_symbols,
                                       symbols));
   SizeWriter writer;
-  // Ignore the correctness, no real encoding happens at this stage.
-  (void)EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols, shift,
-                     symbols, &writer);
-  return writer.size +
-         EstimateDataBits(histogram, counts.data(), alphabet_size);
+  if(EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols, shift,
+                  symbols, &writer)) {
+    return writer.size +
+           EstimateDataBits(histogram, counts.data(), alphabet_size);
+  } else { // not possible to encode
+    return std::numeric_limits<float>::max();
+  }
 }
 
 StatusOr<uint32_t> ComputeBestMethod(
@@ -410,7 +408,7 @@ StatusOr<uint32_t> ComputeBestMethod(
   uint32_t method = 0;
   JXL_ASSIGN_OR_RETURN(float fcost,
                        ComputeHistoAndDataCost(histogram, alphabet_size, 0));
-  auto try_shift = [&](size_t shift) -> Status {
+  auto try_shift = [&](uint32_t shift) -> Status {
     JXL_ASSIGN_OR_RETURN(
         float c, ComputeHistoAndDataCost(histogram, alphabet_size, shift + 1));
     if (c < fcost) {
