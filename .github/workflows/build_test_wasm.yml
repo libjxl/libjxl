@@ -34,6 +34,7 @@ jobs:
       NODE_VERSION: 21
 
     strategy:
+      fail-fast: false
       matrix:
         include:
           - variant: scalar

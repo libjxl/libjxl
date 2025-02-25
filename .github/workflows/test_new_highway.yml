@@ -20,6 +20,7 @@ jobs:
     if: github.repository_owner == 'libjxl'
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - branch: 'test_highway'
