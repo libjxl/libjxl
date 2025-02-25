@@ -161,6 +161,7 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
                                     runner.get()) == JXL_ENC_SUCCESS);
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
+  Check(frame_settings != nullptr);
 
   Check(JxlEncoderSetFrameDistance(frame_settings, spec.distance) ==
         JXL_ENC_SUCCESS);
