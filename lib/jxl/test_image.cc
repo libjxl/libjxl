@@ -96,7 +96,7 @@ void FillPackedImage(size_t bits_per_sample, uint16_t seed,
   size_t rect_y0 = rngu(ysize);
   size_t rect_x1 = rngu(xsize);
   size_t rect_y1 = rngu(ysize);
-  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_y1);
+  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_x1);
   if (rect_y1 < rect_y0) std::swap(rect_y0, rect_y1);
 
   // Create pixel content to test, actual content does not matter as long as it
@@ -174,7 +174,7 @@ std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
   size_t rect_y0 = rng(ysize);
   size_t rect_x1 = rng(xsize);
   size_t rect_y1 = rng(ysize);
-  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_y1);
+  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_x1);
   if (rect_y1 < rect_y0) std::swap(rect_y0, rect_y1);
 
   size_t num_pixels = xsize * ysize;

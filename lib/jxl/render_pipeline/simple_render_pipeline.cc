@@ -274,7 +274,7 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       }
       if (y0 < 0) {
         ysize += y0;
-        y0_fg -= x0;
+        y0_fg -= y0;
         y0 = 0;
       }
       if (y0 + ysize > image_ysize) {

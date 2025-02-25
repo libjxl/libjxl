@@ -1838,7 +1838,7 @@ struct StreamingTestParam {
     return (is_grey ? 1 : 3) + (has_alpha ? 1 : 0);
   }
 
-  float max_psnr() const { return is_grey ? 90 : 50; }
+  float max_psnr() const { return is_grey ? 90 : 40; }
 
   static std::vector<StreamingTestParam> All() {
     std::vector<StreamingTestParam> params;

@@ -1673,7 +1673,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
       ButteraugliDistance(io0->frames, io1->frames, butteraugli_params,
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr, nullptr),
-      0.58f);
+      1.00f);
 
   JxlDecoderDestroy(dec);
 }
@@ -1771,7 +1771,7 @@ TEST_P(DecodeAllEncodingsTest, PreserveOriginalProfileTest) {
   EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
   double dist = ButteraugliDistance(xsize, ysize, pixels, c_in, intensity_in,
                                     out, c_in, intensity_in);
-  EXPECT_LT(dist, 1.29);
+  EXPECT_LT(dist, 1.40);
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
   JxlDecoderDestroy(dec);
 }
@@ -1893,9 +1893,9 @@ void SetPreferredColorProfileTest(
                                       out, c_out, intensity_out);
 
     if (c_in.GetWhitePointType() == c_out.GetWhitePointType()) {
-      EXPECT_LT(dist, 1.29);
+      EXPECT_LT(dist, 1.50);
     } else {
-      EXPECT_LT(dist, 4.0);
+      EXPECT_LT(dist, 4.5);
     }
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
     JxlDecoderDestroy(dec);
@@ -2075,7 +2075,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
         ButteraugliDistance(io0->frames, io1->frames, butteraugli_params,
                             *JxlGetDefaultCms(),
                             /*distmap=*/nullptr, nullptr),
-        0.6f);
+        1.0f);
 
     JxlDecoderDestroy(dec);
   }
@@ -4444,7 +4444,7 @@ TEST(DecodeTest, FlushTest) {
   // Lower threshold for the final (still lossy) image
   EXPECT_LE(jxl::test::ComparePixels(pixels2.data(), pixels.data(), xsize,
                                      ysize, format, format, 2560.0),
-            11000u);
+            24000u);
 
   JxlDecoderDestroy(dec);
 }
@@ -4531,7 +4531,7 @@ TEST(DecodeTest, FlushTestImageOutCallback) {
   // Lower threshold for the final (still lossy) image
   EXPECT_LE(jxl::test::ComparePixels(pixels2.data(), pixels.data(), xsize,
                                      ysize, format, format, 2560.0),
-            11000u);
+            24000u);
 
   JxlDecoderDestroy(dec);
 }
@@ -4605,7 +4605,7 @@ TEST(DecodeTest, FlushTestLossyProgressiveAlpha) {
   EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
   EXPECT_LE(jxl::test::ComparePixels(pixels2.data(), pixels.data(), xsize,
                                      ysize, format, format, 2560.0),
-            11000u);
+            24000u);
 
   JxlDecoderDestroy(dec);
 }
@@ -4743,7 +4743,7 @@ TEST(DecodeTest, FlushTestLosslessProgressiveAlpha) {
 
   EXPECT_LE(jxl::test::ComparePixels(pixels2.data(), pixels.data(), xsize,
                                      ysize, format, format, 2560.0),
-            2700u);
+            24000u);
 
   EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
 
