@@ -30,7 +30,7 @@ done
 ##########
 BUNDLE_BENCHMARK=(libbenchmark-dev libbenchmark-tools)
 BUNDLE_BUILD=(ccache ninja-build)
-BUNDLE_CONFORMANCE=(python3-numpy)
+BUNDLE_CONFORMANCE=(python3-numpy qemu-user-static)
 BUNDLE_DOCS=(doxygen graphviz)
 BUNDLE_EXTRAS=(libgif-dev libjpeg-dev libpng-dev libwebp-dev libilmbase-dev libopenexr-dev)
 BUNDLE_EXTRAS_RUNTIME=(libgif7 libjpeg-turbo8 libpng16-16t64 libwebp7 libopenexr-3-1-30)
