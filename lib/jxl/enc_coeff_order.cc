@@ -70,7 +70,7 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
                          uint32_t current_used_orders,
                          coeff_order_t* JXL_RESTRICT order) {
   JxlMemoryManager* memory_manager = ac_strategy.memory_manager();
-  std::vector<int32_t> num_zeros(kCoeffOrderMaxSize);
+  std::vector<int64_t> num_zeros(kCoeffOrderMaxSize);
   // If compressing at high speed and only using 8x8 DCTs, only consider a
   // subset of blocks.
   double block_fraction = 1.0f;
@@ -154,7 +154,7 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
   struct PosAndCount {
     uint32_t pos;
     // Saving index breaks the ties for non-stable sort
-    uint32_t count_and_idx;
+    uint64_t count_and_idx;
   };
   size_t mem_bytes = AcStrategy::kMaxCoeffArea * sizeof(PosAndCount);
   JXL_ASSIGN_OR_RETURN(auto mem,
@@ -200,24 +200,18 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
       PosAndCount* pos_and_val = mem.address<PosAndCount>();
       size_t offset = CoeffOrderOffset(ord, c);
       JXL_ENSURE(CoeffOrderOffset(ord, c + 1) - offset == sz);
-      float inv_sqrt_sz = 1.f / std::sqrt(sz);
-
-      // for huge JPEG images the counts can get large
-      int32_t maxcount = 0;
-      for (size_t i = 0; i < sz; ++i) {
-        size_t pos = natural_order_buffer[i];
-        maxcount = std::max(num_zeros[offset + pos], maxcount);
-      }
-      if (inv_sqrt_sz * maxcount >= (1u << 15)) inv_sqrt_sz /= 2;
-      if (inv_sqrt_sz * maxcount >= (1u << 15)) inv_sqrt_sz /= 2;
+      float inv_sqrt_sz = 1.0f / std::sqrt(sz);
 
       for (size_t i = 0; i < sz; ++i) {
         size_t pos = natural_order_buffer[i];
         pos_and_val[i].pos = pos;
         // We don't care for the exact number -> quantize number of zeros,
         // to get less permuted order.
-        uint32_t count = num_zeros[offset + pos] * inv_sqrt_sz + 0.1f;
-        if (count >= (1u << 16)) count = (1u << 16) - 1;
+        uint64_t count = num_zeros[offset + pos] * inv_sqrt_sz + 0.1f;
+        // Worst case: all dct8x8, all zeroes: count <= nb_pixels/64/8
+        // nb_pixels is limited to 2^40 (Level 10 limit)
+        // so count is limited to 2^31
+        JXL_DASSERT(count < (1lu << 48));
         pos_and_val[i].count_and_idx = (count << 16) | i;
       }
 
