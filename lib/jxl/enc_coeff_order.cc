@@ -200,15 +200,24 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
       PosAndCount* pos_and_val = mem.address<PosAndCount>();
       size_t offset = CoeffOrderOffset(ord, c);
       JXL_ENSURE(CoeffOrderOffset(ord, c + 1) - offset == sz);
-      float inv_sqrt_sz = 1.0f / std::sqrt(sz);
+      float inv_sqrt_sz = 1.f / std::sqrt(sz);
+
+      // for huge JPEG images the counts can get large
+      int32_t maxcount = 0;
+      for (size_t i = 0; i < sz; ++i) {
+        size_t pos = natural_order_buffer[i];
+        maxcount = std::max(num_zeros[offset + pos], maxcount);
+      }
+      if (inv_sqrt_sz * maxcount >= (1u << 15)) inv_sqrt_sz /= 2;
+      if (inv_sqrt_sz * maxcount >= (1u << 15)) inv_sqrt_sz /= 2;
+
       for (size_t i = 0; i < sz; ++i) {
         size_t pos = natural_order_buffer[i];
         pos_and_val[i].pos = pos;
         // We don't care for the exact number -> quantize number of zeros,
         // to get less permuted order.
         uint32_t count = num_zeros[offset + pos] * inv_sqrt_sz + 0.1f;
-        // Actually, limit is sqrt(1<<16), but we don't care
-        JXL_DASSERT(count < (1u << 16));
+        if (count >= (1u << 16)) count = (1u << 16) - 1;
         pos_and_val[i].count_and_idx = (count << 16) | i;
       }
 
