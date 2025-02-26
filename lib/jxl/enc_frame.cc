@@ -1017,15 +1017,16 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
 
   auto& dct = enc_state->shared.block_ctx_map.dc_thresholds;
   auto& num_dc_ctxs = enc_state->shared.block_ctx_map.num_dc_ctxs;
-  num_dc_ctxs = 1;
   for (size_t i = 0; i < 3; i++) {
     dct[i].clear();
   }
   // use more contexts for larger and higher quality images
   int num_thresholds = CeilLog2Nonzero(total_dc[1]) -
-                       CeilLog2Nonzero(static_cast<unsigned>(qt_dc[1])) - 12;
-  // up to 4 buckets, based on luma only
-  num_thresholds = std::min(std::max(num_thresholds, 0), 3);
+                       CeilLog2Nonzero(static_cast<unsigned>(
+                           qt[1] + qt[2] + qt[3] + qt[4] + qt[5])) -
+                       8;
+  // up to 6 buckets, based on luma only
+  num_thresholds = std::min(std::max(num_thresholds, 1), 5);
   size_t cumsum = 0;
   size_t cut = total_dc[1] / (num_thresholds + 1);
   for (int j = 0; j < 2048; j++) {
@@ -1035,17 +1036,26 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
       cut = total_dc[1] * (dct[1].size() + 1) / (num_thresholds + 1);
     }
   }
-  num_dc_ctxs *= dct[1].size() + 1;
+  num_dc_ctxs = dct[1].size() + 1;
 
   auto& ctx_map = enc_state->shared.block_ctx_map.ctx_map;
   ctx_map.clear();
   ctx_map.resize(3 * kNumOrders * num_dc_ctxs, 0);
 
   for (size_t i = 0; i < num_dc_ctxs; i++) {
-    // up to 4 contexts per component, based on just the luma bucket
+    // luma: one context per luma DC bucket
     ctx_map[i] = i;
-    ctx_map[kNumOrders * num_dc_ctxs + i] = num_dc_ctxs + i;
-    ctx_map[2 * kNumOrders * num_dc_ctxs + i] = 2 * num_dc_ctxs + i;
+    if (jpeg_data.components.size() == 1) {
+      // grayscale: one context for all chroma
+      ctx_map[kNumOrders * num_dc_ctxs + i] =
+          ctx_map[2 * kNumOrders * num_dc_ctxs + i] = num_dc_ctxs;
+    } else {
+      // color: one or two contexts per chroma component (distinguish dark and
+      // bright)
+      ctx_map[kNumOrders * num_dc_ctxs + i] = num_dc_ctxs + (i > 2 ? 1 : 0);
+      ctx_map[2 * kNumOrders * num_dc_ctxs + i] =
+          num_dc_ctxs + 1 + (num_dc_ctxs > 3 ? 1 : 0) + (i > 2 ? 1 : 0);
+    }
   }
   enc_state->shared.block_ctx_map.num_ctxs =
       *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
