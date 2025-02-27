@@ -292,6 +292,7 @@ void VerifyRoundtripCompression(
             JxlEncoderSetUpsamplingMode(enc, resampling, upsampling_mode));
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
+  ASSERT_NE(nullptr, frame_settings);
   JxlEncoderSetFrameLossless(frame_settings, lossless);
   if (resampling > 1) {
     EXPECT_EQ(
@@ -606,6 +607,7 @@ TEST(RoundtripTest, ExtraBoxesTest) {
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(enc, &color_encoding));
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
+  ASSERT_NE(nullptr, frame_settings);
   JxlEncoderSetFrameLossless(frame_settings, JXL_FALSE);
   EXPECT_EQ(
       JXL_ENC_SUCCESS,
@@ -721,6 +723,7 @@ TEST(RoundtripTest, MultiFrameTest) {
               JxlEncoderSetColorEncoding(enc, &color_encoding));
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc, nullptr);
+    ASSERT_NE(nullptr, frame_settings);
     JxlEncoderSetFrameLossless(frame_settings, JXL_FALSE);
     if (index_frames == 1) {
       EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -884,6 +887,7 @@ TEST(RoundtripTest, TestICCProfile) {
             JxlEncoderSetICCProfile(enc, icc.data(), icc.size()));
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
+  ASSERT_NE(nullptr, frame_settings);
   EXPECT_EQ(
       JXL_ENC_SUCCESS,
       JxlEncoderAddImageFrame(frame_settings, &format,
@@ -953,6 +957,7 @@ JXL_TRANSCODE_JPEG_TEST(RoundtripTest, TestJPEGReconstruction) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  ASSERT_NE(nullptr, frame_settings);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
@@ -1059,6 +1064,7 @@ JXL_TRANSCODE_JPEG_TEST(RoundtripTest,
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  ASSERT_NE(nullptr, frame_settings);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
