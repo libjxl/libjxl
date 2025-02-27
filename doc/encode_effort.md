@@ -21,8 +21,8 @@ The following table describes what the various effort settings do:
 | e1 | fast-lossless, fixed YCoCg RCT, fixed ClampedGradient predictor, simple palette detection, no MA tree (one context for everything), Huffman, simple rle-only lz77 | only 8x8, basically XYB jpeg with ANS |
 | e2 | global channel palette, fixed MA tree (context based on Gradient-error), ANS, otherwise same as e1 | same as e1 |
 | e3 | same as e2 but fixed Weighted predictor and fixed MA tree with context based on WP-error | e2 + better ANS |
-| e4 | try both ClampedGradient and Weighted predictor, learned MA tree, global palette | simple variable blocks heuristics, adaptive quantization, coefficient reordering |
-| e5 | e4 + patches, local palette / local channel palette, different local RCTs | e4 + gabor-like transform, chroma from luma |
+| e4 | try both ClampedGradient and Weighted predictor, learned MA tree, global palette | coefficient reordering |
+| e5 | e4 + patches, local palette / local channel palette, different local RCTs | e4 + simple variable blocks heuristics, adaptive quantization, gabor-like transform, chroma from luma |
 | e6 | e5 + more RCTs and MA tree properties | e5 + error diffusion, full variable blocks heuristics |
 | e7 | e6 + more RCTs and MA tree properties | e6 + patches (including dots) |
 | e8 | e7 + more RCTs, MA tree properties, and Weighted predictor parameters | e7 + Butteraugli iterations for adaptive quantization |
