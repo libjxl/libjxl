@@ -1081,7 +1081,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 223053);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 223052);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1100,7 +1100,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8ThunderGradient) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 261683);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 261681);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1138,7 +1138,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8Falcon) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 230762);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 230761);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1158,7 +1158,7 @@ TEST(JxlTest, RoundtripLossless8Alpha) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 251465);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 251463);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.alpha_bits, 8);
   EXPECT_TRUE(test::SameAlpha(t.ppf(), ppf_out));
