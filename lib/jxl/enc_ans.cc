@@ -115,16 +115,18 @@ const uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
 
 // Returns the difference between largest count that can be represented and is
 // smaller than "count" and smallest representable count larger than "count".
-int SmallestIncrement(uint32_t count, uint32_t shift) {
-  int bits = count == 0 ? -1 : FloorLog2Nonzero(count);
-  int drop_bits = bits - GetPopulationCountPrecision(bits, shift);
-  return drop_bits < 0 ? 1 : (1 << drop_bits);
+// Should be invoked with `count > 0` only
+uint32_t SmallestIncrement(uint32_t count, uint32_t shift) {
+  uint32_t bits = FloorLog2Nonzero(count);
+  uint32_t drop_bits = bits - GetPopulationCountPrecision(bits, shift);
+  return 1u << drop_bits;
 }
 
 template <bool minimize_error_of_sum>
-bool RebalanceHistogram(const float* targets, int max_symbol, int table_size,
-                        uint32_t shift, int* omit_pos, ANSHistBin* counts) {
-  int sum = 0;
+bool RebalanceHistogram(const float* targets, int max_symbol,
+                        uint32_t table_size, uint32_t shift, int* omit_pos,
+                        ANSHistBin* counts) {
+  uint32_t sum = 0;
   float sum_nonrounded = 0.0;
   int remainder_pos = 0;  // if all of them are handled in first loop
   int remainder_log = -1;
@@ -132,7 +134,7 @@ bool RebalanceHistogram(const float* targets, int max_symbol, int table_size,
     if (targets[n] > 0 && targets[n] < 1.0f) {
       counts[n] = 1;
       sum_nonrounded += targets[n];
-      sum += counts[n];
+      sum += 1;
     }
   }
   const float discount_ratio =
@@ -145,25 +147,22 @@ bool RebalanceHistogram(const float* targets, int max_symbol, int table_size,
   for (int n = 0; n < max_symbol; ++n) {
     if (targets[n] >= 1.0f) {
       sum_nonrounded += targets[n];
-      counts[n] =
-          static_cast<ANSHistBin>(targets[n] * discount_ratio);  // truncate
-      if (counts[n] == 0) counts[n] = 1;
-      if (counts[n] == table_size) counts[n] = table_size - 1;
+      uint32_t count = targets[n] * discount_ratio + 0.5f;  // rounding
+      if (count == 0) count = 1;
+      if (count >= table_size) count = table_size - 1;
       // Round the count to the closest nonzero multiple of SmallestIncrement
       // (when minimize_error_of_sum is false) or one of two closest so as to
       // keep the sum as close as possible to sum_nonrounded.
-      int inc = SmallestIncrement(counts[n], shift);
-      counts[n] -= counts[n] & (inc - 1);
-      // TODO(robryk): Should we rescale targets[n]?
-      const int target = minimize_error_of_sum
-                             ? (static_cast<int>(sum_nonrounded) - sum)
-                             : static_cast<int>(targets[n]);
-      if (counts[n] == 0 ||
-          (target >= counts[n] + inc / 2 && counts[n] + inc < table_size)) {
-        counts[n] += inc;
+      uint32_t inc = SmallestIncrement(count, shift);
+      count &= ~(inc - 1);
+      const float target = minimize_error_of_sum ? sum_nonrounded - sum
+                                                 : discount_ratio * targets[n];
+      if (target >= count + 0.5f * inc && count + inc < table_size) {
+        count += inc;
       }
-      sum += counts[n];
-      const int count_log = FloorLog2Nonzero(static_cast<uint32_t>(counts[n]));
+      sum += count;
+      counts[n] = count;
+      const int count_log = FloorLog2Nonzero(count);
       if (count_log > remainder_log) {
         remainder_pos = n;
         remainder_log = count_log;
@@ -173,7 +172,7 @@ bool RebalanceHistogram(const float* targets, int max_symbol, int table_size,
   JXL_ENSURE(remainder_pos != -1);
   // NOTE: This is the only place where counts could go negative. We could
   // detect that, return false and make ANSHistBin uint32_t.
-  counts[remainder_pos] -= sum - table_size;
+  counts[remainder_pos] -= static_cast<int>(sum) - static_cast<int>(table_size);
   *omit_pos = remainder_pos;
   return counts[remainder_pos] > 0;
 }
