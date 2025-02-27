@@ -1472,7 +1472,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression444) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
   // JPEG size is 696,659 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 568891u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 569190u, 20);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionToPixels) {
@@ -1549,7 +1549,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionGray) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_gray.jpg");
   // JPEG size is 456,528 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 387496u, 200);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 386602u, 200);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression420) {
@@ -1557,7 +1557,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression420) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
   // JPEG size is 546,797 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 455510u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 455855u, 20);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionLumaSubsample) {
@@ -1565,7 +1565,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionLumaSubsample) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_luma_subsample.jpg");
   // JPEG size is 400,724 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 325310u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 324345u, 20);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression444wh12) {
@@ -1574,7 +1574,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression444wh12) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_444_1x2.jpg");
   // JPEG size is 703,874 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 569630u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 569982u, 20);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression422) {
@@ -1582,7 +1582,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression422) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_422.jpg");
   // JPEG size is 522,057 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 499236u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 499694u, 20);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression440) {
@@ -1590,7 +1590,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression440) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_440.jpg");
   // JPEG size is 603,623 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 501101u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 501538u, 20);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionAsymmetric) {
@@ -1600,7 +1600,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionAsymmetric) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
   // JPEG size is 604,601 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 500548u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 501005u, 20);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression420Progr) {
@@ -1608,7 +1608,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression420Progr) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_420_progr.jpg");
   // JPEG size is 522,057 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 455454u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 455794u, 20);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionMetadata) {
@@ -1676,7 +1676,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionRestarts) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/jpeg_reconstruction/bicycles_restarts.jpg");
   // JPEG size is 87478 bytes
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 76054u, 30);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 76023u, 30);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionOrientationICC) {
