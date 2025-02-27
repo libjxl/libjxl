@@ -30,7 +30,6 @@ Checks: >-
   -bugprone-implicit-widening-of-multiplication-result,
   -bugprone-infinite-loop,
   -bugprone-narrowing-conversions,
-  -bugprone-unused-local-non-trivial-variable,
   -modernize-avoid-c-arrays,
   -modernize-concat-nested-namespaces,
   -modernize-deprecated-headers,

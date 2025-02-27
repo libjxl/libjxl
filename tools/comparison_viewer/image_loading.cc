@@ -97,7 +97,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
     targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
   Image3F converted;
-  if (!ib.CopyTo(Rect(ib), targetColorSpace, *JxlGetDefaultCms(), &converted,
+  if (!ib.CopyTo(Rect{ib}, targetColorSpace, *JxlGetDefaultCms(), &converted,
                  pool.get())) {
     return QImage();
   }

@@ -589,7 +589,7 @@ struct PixelStatsForChromacityAdjustment {
         xmax = std::max(xmax, std::abs(diff_b - diff_prev));
         ymax = std::max(ymax, std::abs(diff_b - diff_prev_row));
         if (exposed_b >= 0) {
-          exposed_b *= fabs(cur_b - prev) + fabs(cur_b - prev_row);
+          exposed_b *= std::fabsf(cur_b - prev) + std::fabsf(cur_b - prev_row);
           eb = std::max(eb, exposed_b);
         }
       }
