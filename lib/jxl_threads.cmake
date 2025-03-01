@@ -46,9 +46,11 @@ if(APPLE)
 elseif(WIN32)
 # Nothing needed here, we use __declspec(dllexport) (jxl_threads_export.h)
 else()
+  if(LINKER_VERSION_SCRIPT)
   set_property(TARGET jxl_threads APPEND_STRING PROPERTY
       LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl.version")
-endif()  # APPLE
+  endif(LINKER_VERSION_SCRIPT)
+endif(APPLE)
 
 # Compile the shared library such that the JXL_THREADS_EXPORT symbols are
 # exported. Users of the library will not set this flag and therefore import
