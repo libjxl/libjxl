@@ -251,7 +251,7 @@ TEST(ModularTest, RoundtripExtraProperties) {
   }
   ZeroFillImage(&image.channel[1].plane);
   BitWriter writer{memory_manager};
-  ASSERT_TRUE(ModularGenericCompress(image, options, &writer));
+  ASSERT_TRUE(ModularGenericCompress(image, options, writer));
   writer.ZeroPadToByte();
   JXL_TEST_ASSIGN_OR_DIE(Image decoded,
                          Image::Create(memory_manager, kSize, kSize,
