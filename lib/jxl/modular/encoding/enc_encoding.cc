@@ -654,8 +654,6 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
   header.transforms = image.transform;
   header.use_global_tree = true;
 
-  std::vector<std::vector<Token>> tokens_storage(1);
-
   size_t image_width = 0;
   size_t total_tokens = 0;
   for (size_t i = 0; i < nb_channels; i++) {
