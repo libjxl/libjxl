@@ -661,6 +661,7 @@ Status ChooseUintConfigs(const HistogramParams& params,
         // TODO(veluca): do not ignore lz77 commands.
         if (token.is_lz77_length) continue;
         size_t histo = context_map[token.context];
+        if (!is_valid[histo]) continue;
         uint32_t tok, nbits, bits;
         cfg.Encode(token.value, &tok, &nbits, &bits);
         if (tok >= max_alpha ||
