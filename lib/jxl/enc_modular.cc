@@ -1226,7 +1226,6 @@ Status ModularFrameEncoder::ComputeTokens(ThreadPool* pool) {
   image_widths_.resize(num_streams);
   const auto process_stream = [&](const uint32_t stream_id,
                                   size_t /* thread */) -> Status {
-    AuxOut my_aux_out;
     tokens_[stream_id].clear();
     JXL_RETURN_IF_ERROR(
         ModularCompress(stream_images_[stream_id], stream_options_[stream_id],
