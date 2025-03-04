@@ -115,8 +115,8 @@ const uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
 
 // Returns the difference between largest count that can be represented and is
 // smaller than "count" and smallest representable count larger than "count".
-// Should be invoked with `count > 0` only
-uint32_t SmallestIncrement(uint32_t count, uint32_t shift) {
+uint32_t SmallestIncrementNonzero(uint32_t count, uint32_t shift) {
+  JXL_DASSERT(count > 0);
   uint32_t bits = FloorLog2Nonzero(count);
   uint32_t drop_bits = bits - GetPopulationCountPrecision(bits, shift);
   return 1u << drop_bits;
@@ -143,17 +143,17 @@ bool RebalanceHistogram(const float* targets, int max_symbol,
   JXL_ENSURE(discount_ratio <= 1.0f);
   // Invariant for minimize_error_of_sum == true:
   // abs(sum - sum_nonrounded)
-  //   <= SmallestIncrement(max(targets[])) + max_symbol
+  //   <= SmallestIncrementNonzero(max(targets[])) + max_symbol
   for (int n = 0; n < max_symbol; ++n) {
     if (targets[n] >= 1.0f) {
       sum_nonrounded += targets[n];
       uint32_t count = targets[n] * discount_ratio + 0.5f;  // rounding
       if (count == 0) count = 1;
       if (count >= table_size) count = table_size - 1;
-      // Round the count to the closest nonzero multiple of SmallestIncrement
+      // Round the count to the closest nonzero multiple of SmallestIncrementNonzero
       // (when minimize_error_of_sum is false) or one of two closest so as to
       // keep the sum as close as possible to sum_nonrounded.
-      uint32_t inc = SmallestIncrement(count, shift);
+      uint32_t inc = SmallestIncrementNonzero(count, shift);
       count &= ~(inc - 1);
       const float target = minimize_error_of_sum ? sum_nonrounded - sum
                                                  : discount_ratio * targets[n];
