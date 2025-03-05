@@ -95,7 +95,7 @@ class ModularFrameDecoder {
  public:
   explicit ModularFrameDecoder(JxlMemoryManager* memory_manager)
       : memory_manager_(memory_manager), full_image(memory_manager) {}
-  void Init(const FrameDimensions& frame_dim) { this->frame_dim = frame_dim; }
+  void Init(const FrameDimensions& new_frame_dim) { frame_dim = new_frame_dim; }
   Status DecodeGlobalInfo(BitReader* reader, const FrameHeader& frame_header,
                           bool allow_truncated_group);
   Status DecodeGroup(const FrameHeader& frame_header, const Rect& rect,

@@ -16,11 +16,13 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
@@ -43,19 +45,20 @@ TEST(PassesTest, RoundtripSmallPasses) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  ASSERT_TRUE(io.ShrinkTo(io.xsize() / 8, io.ysize() / 8));
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get()));
+  ASSERT_TRUE(io->ShrinkTo(io->xsize() / 8, io->ysize() / 8));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
   cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
-  CodecInOut io2{memory_manager};
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
+  JXL_EXPECT_OK(Roundtrip(io.get(), cparams, dparams, io2.get(), _));
   EXPECT_SLIGHTLY_BELOW(
-      ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+      ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
       1.0);
@@ -65,19 +68,20 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  ASSERT_TRUE(io.ShrinkTo(io.xsize() / 12, io.ysize() / 7));
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get()));
+  ASSERT_TRUE(io->ShrinkTo(io->xsize() / 12, io->ysize() / 7));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 2.0;
   cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
-  CodecInOut io2{memory_manager};
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
+  JXL_EXPECT_OK(Roundtrip(io.get(), cparams, dparams, io2.get(), _));
   EXPECT_SLIGHTLY_BELOW(
-      ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+      ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
       1.72);
@@ -86,12 +90,12 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
 TEST(PassesTest, RoundtripMultiGroupPasses) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
-  CodecInOut io{memory_manager};
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
   {
     ThreadPoolForTests pool(4);
-    ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, pool.get()));
+    ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get(), pool.get()));
   }
-  ASSERT_TRUE(io.ShrinkTo(600, 1024));  // partial X, full Y group
+  ASSERT_TRUE(io->ShrinkTo(600, 1024));  // partial X, full Y group
 
   auto test = [&](float target_distance, float threshold) {
     ThreadPoolForTests pool(4);
@@ -99,11 +103,12 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
     cparams.butteraugli_distance = target_distance;
     cparams.progressive_mode = Override::kOn;
     cparams.SetCms(*JxlGetDefaultCms());
-    CodecInOut io2{memory_manager};
-    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _,
+    extras::JXLDecompressParams dparams;
+    auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
+    JXL_EXPECT_OK(Roundtrip(io.get(), cparams, dparams, io2.get(), _,
                             /* compressed_size */ nullptr, pool.get()));
     EXPECT_SLIGHTLY_BELOW(
-        ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+        ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                             *JxlGetDefaultCms(),
                             /*distmap=*/nullptr, pool.get()),
         target_distance + threshold);
@@ -117,16 +122,17 @@ TEST(PassesTest, RoundtripLargeFastPasses) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, pool.get()));
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get(), pool.get()));
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
-  CodecInOut io2{memory_manager};
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _,
+  auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
+  JXL_EXPECT_OK(Roundtrip(io.get(), cparams, dparams, io2.get(), _,
                           /* compressed_size */ nullptr, pool.get()));
 }
 
@@ -137,36 +143,39 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, pool.get()));
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get(), pool.get()));
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = Override::kOn;
   cparams.butteraugli_distance = 2.0;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
   // Try each xsize mod kBlockDim to verify right border handling.
   for (size_t xsize = 48; xsize > 40; --xsize) {
-    ASSERT_TRUE(io.ShrinkTo(xsize, 15));
+    ASSERT_TRUE(io->ShrinkTo(xsize, 15));
 
-    CodecInOut io2{memory_manager};
+    auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
     size_t size2;
-    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &size2, pool.get()));
+    JXL_EXPECT_OK(Roundtrip(io.get(), cparams, dparams, io2.get(), _, &size2,
+                            pool.get()));
 
-    CodecInOut io3{memory_manager};
+    auto io3 = jxl::make_unique<CodecInOut>(memory_manager);
     size_t size3;
-    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io3, _, &size3, pool.get()));
+    JXL_EXPECT_OK(Roundtrip(io.get(), cparams, dparams, io3.get(), _, &size3,
+                            pool.get()));
 
     // Exact same compressed size.
     EXPECT_EQ(size2, size3);
 
     // Exact same distance.
     const float dist2 = ButteraugliDistance(
-        io.frames, io2.frames, ButteraugliParams(), *JxlGetDefaultCms(),
+        io->frames, io2->frames, ButteraugliParams(), *JxlGetDefaultCms(),
         /*distmap=*/nullptr, pool.get());
     const float dist3 = ButteraugliDistance(
-        io.frames, io3.frames, ButteraugliParams(), *JxlGetDefaultCms(),
+        io->frames, io3->frames, ButteraugliParams(), *JxlGetDefaultCms(),
         /*distmap=*/nullptr, pool.get());
     EXPECT_EQ(dist2, dist3);
   }
@@ -177,8 +186,8 @@ TEST(PassesTest, AllDownsampleFeasible) {
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, pool.get()));
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get(), pool.get()));
 
   std::vector<uint8_t> compressed;
 
@@ -186,7 +195,7 @@ TEST(PassesTest, AllDownsampleFeasible) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = Override::kOn;
   cparams.butteraugli_distance = 1.0;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, pool.get()));
+  ASSERT_TRUE(test::EncodeFile(cparams, io.get(), &compressed, pool.get()));
 
   EXPECT_LE(compressed.size(), 240000u);
   float target_butteraugli[9] = {};
@@ -204,12 +213,15 @@ TEST(PassesTest, AllDownsampleFeasible) {
     const size_t downsampling = downsamplings[task];
     extras::JXLDecompressParams dparams;
     dparams.max_downsampling = downsampling;
-    CodecInOut output{memory_manager};
-    JXL_RETURN_IF_ERROR(test::DecodeFile(dparams, Bytes(compressed), &output));
-    EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
-    EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
-    EXPECT_LE(ButteraugliDistance(io.frames, output.frames, ButteraugliParams(),
-                                  *JxlGetDefaultCms(),
+    auto output = jxl::make_unique<CodecInOut>(memory_manager);
+    JXL_RETURN_IF_ERROR(
+        test::DecodeFile(dparams, Bytes(compressed), output.get()));
+    EXPECT_EQ(output->xsize(), io->xsize())
+        << "downsampling = " << downsampling;
+    EXPECT_EQ(output->ysize(), io->ysize())
+        << "downsampling = " << downsampling;
+    EXPECT_LE(ButteraugliDistance(io->frames, output->frames,
+                                  ButteraugliParams(), *JxlGetDefaultCms(),
                                   /*distmap=*/nullptr, nullptr),
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
@@ -224,8 +236,8 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, pool.get()));
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get(), pool.get()));
 
   std::vector<uint8_t> compressed;
 
@@ -233,7 +245,7 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.qprogressive_mode = Override::kOn;
   cparams.butteraugli_distance = 1.0;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, pool.get()));
+  ASSERT_TRUE(test::EncodeFile(cparams, io.get(), &compressed, pool.get()));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -251,12 +263,15 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
     const size_t downsampling = downsamplings[task];
     extras::JXLDecompressParams dparams;
     dparams.max_downsampling = downsampling;
-    CodecInOut output{memory_manager};
-    JXL_RETURN_IF_ERROR(test::DecodeFile(dparams, Bytes(compressed), &output));
-    EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
-    EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
-    EXPECT_LE(ButteraugliDistance(io.frames, output.frames, ButteraugliParams(),
-                                  *JxlGetDefaultCms(),
+    auto output = jxl::make_unique<CodecInOut>(memory_manager);
+    JXL_RETURN_IF_ERROR(
+        test::DecodeFile(dparams, Bytes(compressed), output.get()));
+    EXPECT_EQ(output->xsize(), io->xsize())
+        << "downsampling = " << downsampling;
+    EXPECT_EQ(output->ysize(), io->ysize())
+        << "downsampling = " << downsampling;
+    EXPECT_LE(ButteraugliDistance(io->frames, output->frames,
+                                  ButteraugliParams(), *JxlGetDefaultCms(),
                                   /*distmap=*/nullptr),
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
@@ -269,45 +284,48 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
 TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   ThreadPoolForTests pool(8);
-  const std::vector<uint8_t> orig = ReadTestData(
-      "external/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
-  CodecInOut io_orig{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_orig, pool.get()));
-  Rect rect(0, 0, io_orig.xsize(), 128);
-  // need 2 DC groups for the DC frame to actually be progressive.
-  JXL_TEST_ASSIGN_OR_DIE(Image3F large,
-                         Image3F::Create(memory_manager, 4242, rect.ysize()));
-  ZeroFillImage(&large);
-  ASSERT_TRUE(CopyImageTo(rect, *io_orig.Main().color(), rect, &large));
-  CodecInOut io{memory_manager};
-  io.metadata = io_orig.metadata;
-  ASSERT_TRUE(io.SetFromImage(std::move(large), io_orig.Main().c_current()));
-
   std::vector<uint8_t> compressed;
+  {
+    const std::vector<uint8_t> orig = ReadTestData(
+        "external/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
+    auto io_orig = jxl::make_unique<CodecInOut>(memory_manager);
+    ASSERT_TRUE(SetFromBytes(Bytes(orig), io_orig.get(), pool.get()));
+    Rect rect(0, 0, io_orig->xsize(), 128);
+    // need 2 DC groups for the DC frame to actually be progressive.
+    JXL_TEST_ASSIGN_OR_DIE(Image3F large,
+                           Image3F::Create(memory_manager, 4242, rect.ysize()));
+    ZeroFillImage(&large);
+    ASSERT_TRUE(CopyImageTo(rect, *io_orig->Main().color(), rect, &large));
+    auto io = jxl::make_unique<CodecInOut>(memory_manager);
+    io->metadata = io_orig->metadata;
+    ASSERT_TRUE(
+        io->SetFromImage(std::move(large), io_orig->Main().c_current()));
 
-  CompressParams cparams;
-  cparams.speed_tier = SpeedTier::kSquirrel;
-  cparams.progressive_dc = 1;
-  cparams.responsive = JXL_TRUE;
-  cparams.qprogressive_mode = Override::kOn;
-  cparams.butteraugli_distance = 1.0;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, pool.get()));
+    CompressParams cparams;
+    cparams.speed_tier = SpeedTier::kSquirrel;
+    cparams.progressive_dc = 1;
+    cparams.responsive = JXL_TRUE;
+    cparams.qprogressive_mode = Override::kOn;
+    cparams.butteraugli_distance = 1.0;
+    ASSERT_TRUE(test::EncodeFile(cparams, io.get(), &compressed, pool.get()));
+  }
 
   EXPECT_LE(compressed.size(), 10000u);
 
   extras::JXLDecompressParams dparams;
   dparams.max_downsampling = 1;
-  CodecInOut output{memory_manager};
-  ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &output));
+  auto output = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), output.get()));
 
   dparams.max_downsampling = 2;
-  CodecInOut output_d2{memory_manager};
-  ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &output_d2));
+  auto output_d2 = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), output_d2.get()));
 
   // 0 if reading all the passes, ~15 if skipping the 8x pass.
-  float butteraugli_distance_down2_full = ButteraugliDistance(
-      output.frames, output_d2.frames, ButteraugliParams(), *JxlGetDefaultCms(),
-      /*distmap=*/nullptr);
+  float butteraugli_distance_down2_full =
+      ButteraugliDistance(output->frames, output_d2->frames,
+                          ButteraugliParams(), *JxlGetDefaultCms(),
+                          /*distmap=*/nullptr);
 
   EXPECT_LE(butteraugli_distance_down2_full, 3.2f);
   EXPECT_GE(butteraugli_distance_down2_full, 1.0f);
@@ -317,42 +335,45 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
-  CodecInOut io_orig{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_orig, pool.get()));
-  Rect rect(0, 0, io_orig.xsize(), 128);
-  // need 2 DC groups for the DC frame to actually be progressive.
-  JXL_TEST_ASSIGN_OR_DIE(Image3F large,
-                         Image3F::Create(memory_manager, 4242, rect.ysize()));
-  ZeroFillImage(&large);
-  ASSERT_TRUE(CopyImageTo(rect, *io_orig.Main().color(), rect, &large));
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(io.SetFromImage(std::move(large), io_orig.Main().c_current()));
-
   std::vector<uint8_t> compressed;
+  {
+    auto io_orig = jxl::make_unique<CodecInOut>(memory_manager);
+    ASSERT_TRUE(SetFromBytes(Bytes(orig), io_orig.get(), pool.get()));
+    Rect rect(0, 0, io_orig->xsize(), 128);
+    // need 2 DC groups for the DC frame to actually be progressive.
+    JXL_TEST_ASSIGN_OR_DIE(Image3F large,
+                           Image3F::Create(memory_manager, 4242, rect.ysize()));
+    ZeroFillImage(&large);
+    ASSERT_TRUE(CopyImageTo(rect, *io_orig->Main().color(), rect, &large));
+    auto io = jxl::make_unique<CodecInOut>(memory_manager);
+    ASSERT_TRUE(
+        io->SetFromImage(std::move(large), io_orig->Main().c_current()));
 
-  CompressParams cparams;
-  cparams.speed_tier = SpeedTier::kSquirrel;
-  cparams.progressive_dc = 1;
-  cparams.responsive = JXL_TRUE;
-  cparams.qprogressive_mode = Override::kOn;
-  cparams.butteraugli_distance = 1.0;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, pool.get()));
+    CompressParams cparams;
+    cparams.speed_tier = SpeedTier::kSquirrel;
+    cparams.progressive_dc = 1;
+    cparams.responsive = JXL_TRUE;
+    cparams.qprogressive_mode = Override::kOn;
+    cparams.butteraugli_distance = 1.0;
+    ASSERT_TRUE(test::EncodeFile(cparams, io.get(), &compressed, pool.get()));
 
-  EXPECT_LE(compressed.size(), 220000u);
+    EXPECT_LE(compressed.size(), 220000u);
+  }
 
   extras::JXLDecompressParams dparams;
   dparams.max_downsampling = 1;
-  CodecInOut output{memory_manager};
-  ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &output));
+  auto output = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), output.get()));
 
   dparams.max_downsampling = 2;
-  CodecInOut output_d2{memory_manager};
-  ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), &output_d2));
+  auto output_d2 = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(test::DecodeFile(dparams, Bytes(compressed), output_d2.get()));
 
   // 0 if reading all the passes, ~15 if skipping the 8x pass.
-  float butteraugli_distance_down2_full = ButteraugliDistance(
-      output.frames, output_d2.frames, ButteraugliParams(), *JxlGetDefaultCms(),
-      /*distmap=*/nullptr);
+  float butteraugli_distance_down2_full =
+      ButteraugliDistance(output->frames, output_d2->frames,
+                          ButteraugliParams(), *JxlGetDefaultCms(),
+                          /*distmap=*/nullptr);
 
   EXPECT_LE(butteraugli_distance_down2_full, 3.0f);
   EXPECT_GE(butteraugli_distance_down2_full, 1.0f);
@@ -362,8 +383,8 @@ TEST(PassesTest, NonProgressiveDCImage) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, pool.get()));
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get(), pool.get()));
 
   std::vector<uint8_t> compressed;
 
@@ -371,37 +392,38 @@ TEST(PassesTest, NonProgressiveDCImage) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = Override::kOff;
   cparams.butteraugli_distance = 2.0;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, pool.get()));
+  ASSERT_TRUE(test::EncodeFile(cparams, io.get(), &compressed, pool.get()));
 
   // Even in non-progressive mode, it should be possible to return a DC-only
   // image.
   extras::JXLDecompressParams dparams;
   dparams.max_downsampling = 100;
-  CodecInOut output{memory_manager};
+  auto output = jxl::make_unique<CodecInOut>(memory_manager);
   ASSERT_TRUE(
-      test::DecodeFile(dparams, Bytes(compressed), &output, pool.get()));
-  EXPECT_EQ(output.xsize(), io.xsize());
-  EXPECT_EQ(output.ysize(), io.ysize());
+      test::DecodeFile(dparams, Bytes(compressed), output.get(), pool.get()));
+  EXPECT_EQ(output->xsize(), io->xsize());
+  EXPECT_EQ(output->ysize(), io->ysize());
 }
 
 TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  ASSERT_TRUE(io.ShrinkTo(io.xsize() / 8, io.ysize() / 8));
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get()));
+  ASSERT_TRUE(io->ShrinkTo(io->xsize() / 8, io->ysize() / 8));
 
   CompressParams cparams;
   cparams.gaborish = Override::kOff;
   cparams.butteraugli_distance = 1.0;
   cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
+  extras::JXLDecompressParams dparams;
 
-  CodecInOut io2{memory_manager};
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  auto io2 = jxl::make_unique<CodecInOut>(memory_manager);
+  JXL_EXPECT_OK(Roundtrip(io.get(), cparams, dparams, io2.get(), _));
   EXPECT_SLIGHTLY_BELOW(
-      ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+      ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
       1.0);

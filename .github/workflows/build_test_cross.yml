@@ -26,150 +26,53 @@ jobs:
   compile:
     name: Cross-compiling ${{ matrix.identifier }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
-    runs-on: [ubuntu-latest]
-    container:
-      image: debian:bookworm
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        identifier: [arm64, arm64-sve, arm64-lowprecision, armhf, i386]
+        identifier: [armhf, i386]
         include:
-          - arch: arm64
-            identifier: arm64
-            build_target: aarch64-linux-gnu
-            cmake_args:
-             - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
-
-          - arch: arm64
-            identifier: arm64-sve
-            build_target: aarch64-linux-gnu
-            cmake_args:
-             - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
-             - -DJPEGXL_ENABLE_OPENEXR=off
-             - -DJPEGXL_ENABLE_SIZELESS_VECTORS=on
-             - -DJPEGXL_WARNINGS_AS_ERRORS=off
-            cmake_flags: -march=armv8-a+sve
-            c_compiler: aarch64-linux-gnu-gcc
-            cxx_compiler: aarch64-linux-gnu-g++
-            disable_tests: true
-
-          - arch: arm64
-            identifier: arm64-lowprecision
-            build_target: aarch64-linux-gnu
-            cmake_args:
-             - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
-             - -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
-
           - arch: armhf
+            os: ubuntu-24.04-arm
             identifier: armhf
+            test_in_pr: true
             build_target: arm-linux-gnueabihf
-            cmake_args: [-DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-arm-static]
 
           - arch: i386
             identifier: i386
             test_in_pr: true
             build_target: i686-linux-gnu
+            cflags: -m32
 
     env:
-      BUILD_DIR: build
       WILL_RUN_TESTS: ${{ (github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
+      uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
       with:
         egress-policy: audit
 
-    - name: Warmup apt
-      shell: bash
-      run: |
-        set -x
-        rm -f /var/lib/man-db/auto-update
-        apt-get update -y
-        apt-get install -y ca-certificates debian-ports-archive-keyring git python3
-
     - name: Checkout the source
-      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: true
         fetch-depth: 1
 
-    - name: Setup apt
-      shell: bash
-      run: |
-        set -x
-        dpkg --add-architecture "${{ matrix.arch }}"
-
-        python3 ./tools/scripts/transform_sources_list.py "amd64,${{ matrix.arch }}"
-
     - name: Install build deps
-      shell: bash
       run: |
-        set -x
-        apt update
-        pkgs=(
-          # Build dependencies
-          cmake
-          doxygen
-          graphviz
-          ninja-build
-          pkg-config
-          qemu-user-static
-          unzip
-          xdg-utils
-          xvfb
-
-          # Toolchain for cross-compiling.
-          clang-14
-          g++-aarch64-linux-gnu
-          libc6-dev-${{ matrix.arch }}-cross
-          libstdc++-12-dev-${{ matrix.arch }}-cross
-          libstdc++-12-dev:${{ matrix.arch }}
-
-          # Dependencies
-          libbrotli-dev:${{ matrix.arch }}
-          libgif-dev:${{ matrix.arch }}
-          libjpeg-dev:${{ matrix.arch }}
-          libpng-dev:${{ matrix.arch }}
-          libwebp-dev:${{ matrix.arch }}
-
-          # For OpenEXR:
-          libilmbase-dev:${{ matrix.arch }}
-          libopenexr-dev:${{ matrix.arch }}
-
-          # GTK plugins
-          libgdk-pixbuf2.0-dev:${{ matrix.arch }}
-          libgtk2.0-dev:${{ matrix.arch }}
-        )
-        if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
-          pkgs+=(
-            binutils-${{ matrix.build_target }}
-            gcc-${{ matrix.build_target }}
-          )
-        fi
-        if [[ "${{ matrix.arch }}" != "i386" ]]; then
-          pkgs+=(
-            # TCMalloc
-            libgoogle-perftools-dev:${{ matrix.arch }}
-            libgoogle-perftools4:${{ matrix.arch }}
-            libtcmalloc-minimal4:${{ matrix.arch }}
-            libunwind-dev:${{ matrix.arch }}
-          )
-        fi
-        DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
-        echo "CC=${{ matrix.c_compiler || 'clang-14' }}" >> $GITHUB_ENV
-        echo "CXX=${{ matrix.cxx_compiler || 'clang++-14' }}" >> $GITHUB_ENV
+        sudo ARCH=${{ matrix.arch }} BUILD_TARGET=${{ matrix.build_target }} \
+          ./tools/scripts/install_deps.sh --cross build extras
 
     - name: Build
       run: |
-        CMAKE_FLAGS="${{ matrix.cmake_flags }}" ./ci.sh release \
+        CC=clang CXX=clang++ \
+        CFLAGS='${{ matrix.cflags }}' CXXFLAGS='${{ matrix.cflags }}' \
+        BUILD_DIR=build BUILD_TARGET=${{ matrix.build_target }} \
+        SKIP_TEST=1 TARGETS='all_tests cjxl djxl hwy_list_targets libjxl.so libjxl_dec.so' \
+        ./ci.sh release \
           -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-          -DJPEGXL_ENABLE_JNI=OFF \
-          ${{ join(matrix.cmake_args, ' ') }}
-      env:
-        SKIP_TEST: 1
-        BUILD_TARGET: ${{ matrix.build_target }}
-        TARGETS: ${{ env.WILL_RUN_TESTS == 'true' && 'all_tests cjxl djxl libjxl.so libjxl_dec.so' || 'all' }}
+          -DJPEGXL_ENABLE_JNI=OFF
 
     - name: Build stats
       run: |
@@ -181,64 +84,41 @@ jobs:
     - name: Prepare artefacts
       if: env.WILL_RUN_TESTS == 'true'
       run: |
-        find ./build -regextype egrep -type f -regex '.*\.(a|h|jar|log|o)'
+        find ./build -regextype egrep -type f -regex '.*\.(a|h|jar|json|log|o)' -delete
         find ./build -type f -executable > executable.lst
-        cp /etc/apt/sources.list.d/debian.sources ./
 
-    - name: Test ranging
-      if: ${{ !matrix.disable_tests }}
-      run: |
-          mkdir -p ./build/Testing/Temporary
-          unzip ./tools/scripts/test_cost-${{ matrix.identifier }}.zip -d ./build/Testing/Temporary
-
-    - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
+    - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
       if: env.WILL_RUN_TESTS == 'true'
       with:
         name: cross_binary-${{ matrix.identifier }}
         path: |
           build/
-          ci.sh
-          debian.sources
           executable.lst
-          testdata/
         retention-days: 1
 
   test:
     name: Testing ${{ matrix.identifier }} shard ${{ matrix.shard_number }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     needs: compile
-    runs-on: [ubuntu-latest]
-    container:
-      image: debian:bookworm
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        shard_number: [0, 1, 2, 3, 4, 5, 6, 7]
-        identifier: [arm64, arm64-lowprecision, armhf, i386]
+        shard_number: [0, 1]
+        identifier: [armhf, i386]
         include:
-          - arch: arm64
-          - identifier: arm64
-            last_shard: 8
-
-          #- arch: arm64
-          #- identifier: arm64-sve
-          #  last_shard: 8
-
-          - arch: arm64
-            identifier: arm64-lowprecision
-            last_shard: 8
-
           - arch: armhf
+            os: ubuntu-24.04-arm
             identifier: armhf
-            last_shard: 8
+            test_in_pr: true
+            last_shard: 2
 
           - arch: i386
             identifier: i386
             test_in_pr: true
-            last_shard: 4
+            last_shard: 2
 
     env:
-      BUILD_DIR: build
       UPLOAD_TEST_COST: false
       LAST_SHARD: ${{ false && 1 || matrix.last_shard}}
       # Run the tests on push and when requested in pull_request.
@@ -246,52 +126,33 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
+      uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
       with:
         egress-policy: audit
 
+    - name: Checkout the source
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        submodules: true
+        fetch-depth: 1
+    
     - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       with:
         name: cross_binary-${{ matrix.identifier }}
 
-    - name: Setup apt
-      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
-      shell: bash
-      run: |
-        set -x
-        rm -f /var/lib/man-db/auto-update
-        apt-get update -y
-        apt-get install -y ca-certificates debian-ports-archive-keyring
-
-        dpkg --add-architecture "${{ matrix.arch }}"
-
-        cp ./debian.sources /etc/apt/sources.list.d/
-
     - name: Install build deps
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
-      shell: bash
       run: |
-        set -x
-        apt update
-        pkgs=(
-          # Build dependencies
-          cmake
-          qemu-user-static
+        sudo ARCH=${{ matrix.arch }} \
+          ./tools/scripts/install_deps.sh --cross extras_runtime runtime
 
-          # Dependencies
-          libbrotli-dev:${{ matrix.arch }}
-          libgif-dev:${{ matrix.arch }}
-          libjpeg-dev:${{ matrix.arch }}
-          libpng-dev:${{ matrix.arch }}
-          libwebp-dev:${{ matrix.arch }}
-
-          # For OpenEXR:
-          libilmbase-dev:${{ matrix.arch }}
-          libopenexr-dev:${{ matrix.arch }}
-        )
-        DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
-
+    - name: Test ranging
+      if: ${{ !matrix.disable_tests }}
+      run: |
+        mkdir -p ./build/Testing/Temporary
+        unzip ./tools/scripts/test_cost-${{ matrix.identifier }}.zip -d ./build/Testing/Temporary
+    
     - name: Prepare
       if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
       run: |
@@ -300,13 +161,13 @@ jobs:
     - name: Test
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       run: |
-        chmod +x ./ci.sh
         chmod +x `cat executable.lst`
+        BUILD_DIR=build \
         ./ci.sh test \
           -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
           -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper|test_jpegli_jni_wrapper)'
 
-    - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
+    - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
       name: Upload test cost
       if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
       with:

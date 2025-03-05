@@ -6,8 +6,12 @@
 #include <brotli/encode.h>
 #include <jxl/cms.h>
 #include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
+#include <jxl/jxl_export.h>
 #include <jxl/memory_manager.h>
+#include <jxl/parallel_runner.h>
+#include <jxl/stats.h>
 #include <jxl/types.h>
 #include <jxl/version.h>
 
@@ -16,18 +20,24 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/exif.h"
+#include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
@@ -37,9 +47,12 @@
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/encode_internal.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/luminance.h"
 #include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/padded_bytes.h"
 
 struct JxlErrorOrStatus {
@@ -132,7 +145,7 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
         return JxlOutputProcessorBuffer(user_buffer, size, 0, this);
       }
     }
-  } else {
+  } else if (avail_out_ != nullptr) {
     if (min_size + additional_size < *avail_out_) {
       internal_buffers_.emplace(position_, InternalBuffer(memory_manager_));
       has_buffer_ = true;
@@ -152,7 +165,7 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
     alloc_size = std::min(alloc_size, it->first - position_);
     JXL_ENSURE(alloc_size >= min_size);
   }
-  JXL_ENSURE(buffer.owned_data.resize(alloc_size));
+  JXL_RETURN_IF_ERROR(buffer.owned_data.resize(alloc_size));
   has_buffer_ = true;
   return JxlOutputProcessorBuffer(buffer.owned_data.data(), alloc_size, 0,
                                   this);
@@ -176,7 +189,7 @@ jxl::Status JxlEncoderOutputProcessorWrapper::SetFinalizedPosition() {
         external_output_processor_->opaque, position_);
   }
   finalized_position_ = position_;
-  JXL_RETURN_IF_ERROR(FlushOutput());
+  JXL_RETURN_IF_ERROR(FlushOutput(next_out_, avail_out_));
   return true;
 }
 
@@ -185,14 +198,17 @@ jxl::Status JxlEncoderOutputProcessorWrapper::SetAvailOut(uint8_t** next_out,
   JXL_ENSURE(!external_output_processor_);
   avail_out_ = avail_out;
   next_out_ = next_out;
-  JXL_RETURN_IF_ERROR(FlushOutput());
+  JXL_RETURN_IF_ERROR(FlushOutput(next_out_, avail_out_));
   return true;
 }
 
 jxl::Status JxlEncoderOutputProcessorWrapper::CopyOutput(
-    std::vector<uint8_t>& output, uint8_t* next_out, size_t& avail_out) {
+    std::vector<uint8_t>& output) {
+  output.resize(64);
+  size_t avail_out = output.size();
+  uint8_t* next_out = output.data();
   while (HasOutputToWrite()) {
-    JXL_RETURN_IF_ERROR(SetAvailOut(&next_out, &avail_out));
+    JXL_RETURN_IF_ERROR(FlushOutput(&next_out, &avail_out));
     if (avail_out == 0) {
       size_t offset = next_out - output.data();
       output.resize(output.size() * 2);
@@ -267,10 +283,14 @@ jxl::Status JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
 }
 
 // Tries to write all the bytes up to the finalized position.
-jxl::Status JxlEncoderOutputProcessorWrapper::FlushOutput() {
+jxl::Status JxlEncoderOutputProcessorWrapper::FlushOutput(uint8_t** next_out,
+                                                          size_t* avail_out) {
   JXL_ENSURE(!has_buffer_);
+  if (!external_output_processor_ && !avail_out) {
+    return true;
+  }
   while (output_position_ < finalized_position_ &&
-         (avail_out_ == nullptr || *avail_out_ > 0)) {
+         (avail_out == nullptr || *avail_out > 0)) {
     JXL_ENSURE(!internal_buffers_.empty());
     auto it = internal_buffers_.begin();
     // If this fails, we are trying to move the finalized position past data
@@ -284,11 +304,11 @@ jxl::Status JxlEncoderOutputProcessorWrapper::FlushOutput() {
       JXL_ENSURE(buffer_last_byte > output_position_);
       size_t num_to_write =
           std::min(buffer_last_byte, finalized_position_) - output_position_;
-      if (avail_out_ != nullptr) {
-        size_t n = std::min(num_to_write, *avail_out_);
-        memcpy(*next_out_, it->second.owned_data.data() + start_in_buffer, n);
-        *avail_out_ -= n;
-        *next_out_ += n;
+      if (avail_out != nullptr) {
+        size_t n = std::min(num_to_write, *avail_out);
+        memcpy(*next_out, it->second.owned_data.data() + start_in_buffer, n);
+        *avail_out -= n;
+        *next_out += n;
         output_position_ += n;
       } else {
         JXL_ENSURE(external_output_processor_);
@@ -301,9 +321,9 @@ jxl::Status JxlEncoderOutputProcessorWrapper::FlushOutput() {
       size_t advance =
           std::min(buffer_last_byte, finalized_position_) - output_position_;
       output_position_ += advance;
-      if (avail_out_ != nullptr) {
-        *next_out_ += advance;
-        *avail_out_ -= advance;
+      if (avail_out != nullptr) {
+        *next_out += advance;
+        *avail_out -= advance;
       }
     }
     if (buffer_last_byte == output_position_) {
@@ -715,7 +735,7 @@ bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
 struct RunnerTicket {
   explicit RunnerTicket(jxl::ThreadPool* pool) : pool(pool) {}
   jxl::ThreadPool* pool;
-  std::atomic<bool> has_error{false};
+  std::atomic<uint32_t> has_error{0};
 };
 
 void FastLosslessRunnerAdapter(void* void_ticket, void* opaque,
@@ -728,7 +748,7 @@ void FastLosslessRunnerAdapter(void* void_ticket, void* opaque,
             return true;
           },
           "Encode fast lossless")) {
-    ticket->has_error = true;
+    ticket->has_error = 1;
   }
 }
 
@@ -2097,8 +2117,13 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
   }
 
   if (!frame_settings->enc->color_encoding_set) {
-    SetColorEncodingFromJpegData(
-        *io.Main().jpeg_data, &frame_settings->enc->metadata.m.color_encoding);
+    if (!SetColorEncodingFromJpegData(
+            *io.Main().jpeg_data,
+            &frame_settings->enc->metadata.m.color_encoding)) {
+      return JXL_API_ERROR(
+          frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
+          "Error decoding the ICC profile embedded in the input JPEG");
+    }
     frame_settings->enc->color_encoding_set = true;
   }
 

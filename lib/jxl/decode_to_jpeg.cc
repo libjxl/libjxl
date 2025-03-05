@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG

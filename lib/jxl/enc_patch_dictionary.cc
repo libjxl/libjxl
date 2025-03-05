@@ -5,12 +5,13 @@
 
 #include "lib/jxl/enc_patch_dictionary.h"
 
+#include <jxl/cms_interface.h>
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
-#include <sys/types.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <utility>
@@ -18,23 +19,30 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_frame.h"
+#include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_debug_image.h"
 #include "lib/jxl/enc_dot_dictionary.h"
 #include "lib/jxl/enc_frame.h"
+#include "lib/jxl/enc_params.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/pack_signed.h"
 #include "lib/jxl/patch_dictionary_internal.h"
 
@@ -94,7 +102,7 @@ Status PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
         add_num(kPatchOffsetContext,
                 PackSigned(pos.y - pdic.positions_[j - 1].y));
       }
-      for (size_t j = 0; j < blending_stride; ++j, ++blend_pos) {
+      for (size_t k = 0; k < blending_stride; ++k, ++blend_pos) {
         const PatchBlending& info = pdic.blendings_[blend_pos];
         add_num(kPatchBlendModeContext, static_cast<uint32_t>(info.mode));
         if (UsesAlpha(info.mode) && choose_alpha) {
@@ -240,7 +248,7 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
     return pci.is_similar_v(v1, v2, threshold);
   };
 
-  std::atomic<bool> has_screenshot_areas{false};
+  std::atomic<uint32_t> has_screenshot_areas{0};
   const size_t opsin_stride = opsin.PixelsPerRow();
   const float* JXL_RESTRICT opsin_rows[3] = {opsin.ConstPlaneRow(0, 0),
                                              opsin.ConstPlaneRow(1, 0),
@@ -307,7 +315,7 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
       // Too few equal pixels nearby.
       if (num_same * 8 < num * 7) continue;
       screenshot_row[y * screenshot_stride + x] = 1;
-      has_screenshot_areas = true;
+      has_screenshot_areas = 1;
     }
     return true;
   };
@@ -760,6 +768,16 @@ Status FindBestPatchDictionary(const Image3F& opsin,
   // Recursive application of patches could create very weird issues.
   cparams.patches = Override::kOff;
 
+  if (WantDebugOutput(cparams)) {
+    if (is_xyb) {
+      JXL_RETURN_IF_ERROR(
+          DumpXybImage(cparams, "patch_reference", reference_frame));
+    } else {
+      JXL_RETURN_IF_ERROR(
+          DumpImage(cparams, "patch_reference", reference_frame));
+    }
+  }
+
   JXL_RETURN_IF_ERROR(RoundtripPatchFrame(&reference_frame, state,
                                           kPatchFrameReferenceId, cparams, cms,
                                           pool, aux_out, /*subtract=*/true));
@@ -830,27 +848,27 @@ Status RoundtripPatchFrame(Image3F* reference_frame,
   state->special_frames.emplace_back(std::move(special_frame));
   if (subtract) {
     ImageBundle decoded(memory_manager, &state->shared.metadata->m);
-    PassesDecoderState dec_state(memory_manager);
-    JXL_RETURN_IF_ERROR(dec_state.output_encoding_info.SetFromMetadata(
+    auto dec_state = jxl::make_unique<PassesDecoderState>(memory_manager);
+    JXL_RETURN_IF_ERROR(dec_state->output_encoding_info.SetFromMetadata(
         *state->shared.metadata));
     const uint8_t* frame_start = encoded.data();
     size_t encoded_size = encoded.size();
-    JXL_RETURN_IF_ERROR(DecodeFrame(&dec_state, pool, frame_start, encoded_size,
-                                    /*frame_header=*/nullptr, &decoded,
-                                    *state->shared.metadata));
+    JXL_RETURN_IF_ERROR(DecodeFrame(
+        dec_state.get(), pool, frame_start, encoded_size,
+        /*frame_header=*/nullptr, &decoded, *state->shared.metadata));
     frame_start += decoded.decoded_bytes();
     encoded_size -= decoded.decoded_bytes();
     size_t ref_xsize =
-        dec_state.shared_storage.reference_frames[idx].frame->color()->xsize();
+        dec_state->shared_storage.reference_frames[idx].frame->color()->xsize();
     // if the frame itself uses patches, we need to decode another frame
     if (!ref_xsize) {
       JXL_RETURN_IF_ERROR(DecodeFrame(
-          &dec_state, pool, frame_start, encoded_size,
+          dec_state.get(), pool, frame_start, encoded_size,
           /*frame_header=*/nullptr, &decoded, *state->shared.metadata));
     }
     JXL_ENSURE(encoded_size == 0);
     state->shared.reference_frames[idx] =
-        std::move(dec_state.shared_storage.reference_frames[idx]);
+        std::move(dec_state->shared_storage.reference_frames[idx]);
   } else {
     *state->shared.reference_frames[idx].frame = std::move(ib);
   }

@@ -41,11 +41,11 @@ struct Header : public Fields {
       visitor->SetDefault(this);
       return true;
     }
-    auto visit_p = [visitor](pixel_type val, pixel_type *p) {
+    auto visit_p = [visitor](pixel_type val, pixel_type *p) -> Status {
       uint32_t up = *p;
       JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(5, val, &up));
       *p = up;
-      return Status(true);
+      return true;
     };
     JXL_QUIET_RETURN_IF_ERROR(visit_p(16, &p1C));
     JXL_QUIET_RETURN_IF_ERROR(visit_p(10, &p2C));

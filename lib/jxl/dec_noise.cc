@@ -9,6 +9,13 @@
 #include <cstdlib>
 #include <utility>
 
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/dec_cache.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/noise.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_noise.cc"
 #include <hwy/foreach_target.h>
@@ -26,12 +33,12 @@ namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::Or;
+using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::ShiftRight;
 using hwy::HWY_NAMESPACE::Vec;
 
 using D = HWY_CAPPED(float, kBlockDim);
-using DI = hwy::HWY_NAMESPACE::Rebind<int, D>;
-using DI8 = hwy::HWY_NAMESPACE::Repartition<uint8_t, D>;
+using DI = Rebind<int, D>;
 
 // Converts one vector's worth of random bits to floats in [1, 2).
 // NOTE: as the convolution kernel sums to 0, it doesn't matter if inputs are in

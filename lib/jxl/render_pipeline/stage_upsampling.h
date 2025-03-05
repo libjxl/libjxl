@@ -5,13 +5,9 @@
 
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_UPSAMPLING_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_UPSAMPLING_H_
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
 
-#include <algorithm>
-#include <utility>
-#include <vector>
+#include <cstddef>
+#include <memory>
 
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"

@@ -77,7 +77,7 @@ Status DecodeLehmerCode(const LehmerT* JXL_RESTRICT code,
     // Extract i-th unused element via implicit order-statistics tree.
     size_t bit = padded_n;
     size_t next = 0;
-    for (size_t i = 0; i <= log2n; i++) {
+    for (size_t b = 0; b <= log2n; b++) {
       const size_t cand = next + bit;
       JXL_ENSURE(cand >= 1);
       bit >>= 1;

@@ -5,7 +5,11 @@
 
 #include "tools/codec_config.h"
 
+#include <cstdint>
+#include <cstdio>
+#include <hwy/per_target.h>
 #include <hwy/targets.h>
+#include <string>
 
 #include "tools/tool_version.h"
 
@@ -29,23 +33,36 @@ std::string CodecConfigString(uint32_t lib_version) {
   }
 
 #if defined(ADDRESS_SANITIZER)
-  config += " asan ";
+  config += " ASAN ";
 #elif defined(MEMORY_SANITIZER)
-  config += " msan ";
+  config += " MSAN ";
 #elif defined(THREAD_SANITIZER)
-  config += " tsan ";
+  config += " TSAN ";
 #else
 #endif
 
-  bool saw_target = false;
+  int64_t current = hwy::DispatchedTarget();
+  bool seen_current = false;
+  bool seen_target = false;
   config += "[";
-  for (const uint32_t target : hwy::SupportedAndGeneratedTargets()) {
-    config += hwy::TargetName(target);
+  for (const int64_t target : hwy::SupportedAndGeneratedTargets()) {
+    if (target == current) {
+      config += '_';
+      config += hwy::TargetName(target);
+      config += '_';
+      seen_current = true;
+    } else {
+      config += hwy::TargetName(target);
+    }
     config += ',';
-    saw_target = true;
+    seen_target = true;
   }
-  if (!saw_target) {
+  if (!seen_target) {
     config += "no targets found,";
+  } else if (!seen_current) {
+    config += "unsupported but chosen: ";
+    config += hwy::TargetName(current);
+    config += ',';
   }
   config.resize(config.size() - 1);  // remove trailing comma
   config += "]";

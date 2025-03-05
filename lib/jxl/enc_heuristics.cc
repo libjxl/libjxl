@@ -9,6 +9,8 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -32,6 +34,7 @@
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/dct_util.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_group.h"
 #include "lib/jxl/dec_noise.h"
@@ -56,6 +59,7 @@
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
 
 namespace jxl {
 
@@ -790,13 +794,13 @@ StatusOr<Image3F> ReconstructImage(
   frame_header.extra_channel_upsampling.clear();
 
   const bool is_gray = shared.metadata->m.color_encoding.IsGray();
-  PassesDecoderState dec_state(memory_manager);
+  auto dec_state = jxl::make_unique<PassesDecoderState>(memory_manager);
   JXL_RETURN_IF_ERROR(
-      dec_state.output_encoding_info.SetFromMetadata(*shared.metadata));
-  JXL_RETURN_IF_ERROR(dec_state.output_encoding_info.MaybeSetColorEncoding(
+      dec_state->output_encoding_info.SetFromMetadata(*shared.metadata));
+  JXL_RETURN_IF_ERROR(dec_state->output_encoding_info.MaybeSetColorEncoding(
       ColorEncoding::LinearSRGB(is_gray)));
-  dec_state.shared = &shared;
-  JXL_RETURN_IF_ERROR(dec_state.Init(frame_header));
+  dec_state->shared = &shared;
+  JXL_RETURN_IF_ERROR(dec_state->Init(frame_header));
 
   ImageBundle decoded(memory_manager, &shared.metadata->m);
   decoded.origin = frame_header.frame_origin;
@@ -804,7 +808,7 @@ StatusOr<Image3F> ReconstructImage(
       Image3F tmp,
       Image3F::Create(memory_manager, frame_dim.xsize, frame_dim.ysize));
   JXL_RETURN_IF_ERROR(decoded.SetFromImage(
-      std::move(tmp), dec_state.output_encoding_info.color_encoding));
+      std::move(tmp), dec_state->output_encoding_info.color_encoding));
 
   PassesDecoderState::PipelineOptions options;
   options.use_slow_render_pipeline = false;
@@ -812,14 +816,14 @@ StatusOr<Image3F> ReconstructImage(
   options.render_spotcolors = false;
   options.render_noise = true;
 
-  JXL_RETURN_IF_ERROR(dec_state.PreparePipeline(
+  JXL_RETURN_IF_ERROR(dec_state->PreparePipeline(
       frame_header, &shared.metadata->m, &decoded, options));
 
   AlignedArray<GroupDecCache> group_dec_caches;
   const auto allocate_storage = [&](const size_t num_threads) -> Status {
     JXL_RETURN_IF_ERROR(
-        dec_state.render_pipeline->PrepareForThreads(num_threads,
-                                                     /*use_group_ids=*/false));
+        dec_state->render_pipeline->PrepareForThreads(num_threads,
+                                                      /*use_group_ids=*/false));
     JXL_ASSIGN_OR_RETURN(group_dec_caches, AlignedArray<GroupDecCache>::Create(
                                                memory_manager, num_threads));
     return true;
@@ -829,15 +833,15 @@ StatusOr<Image3F> ReconstructImage(
     if (frame_header.loop_filter.epf_iters > 0) {
       JXL_RETURN_IF_ERROR(ComputeSigma(frame_header.loop_filter,
                                        frame_dim.BlockGroupRect(group_index),
-                                       &dec_state));
+                                       dec_state.get()));
     }
     RenderPipelineInput input =
-        dec_state.render_pipeline->GetInputBuffers(group_index, thread);
+        dec_state->render_pipeline->GetInputBuffers(group_index, thread);
     JXL_RETURN_IF_ERROR(DecodeGroupForRoundtrip(
-        frame_header, coeffs, group_index, &dec_state,
+        frame_header, coeffs, group_index, dec_state.get(),
         &group_dec_caches[thread], thread, input, nullptr, nullptr));
     if ((frame_header.flags & FrameHeader::kNoise) != 0) {
-      PrepareNoiseInput(dec_state, shared.frame_dim, frame_header, group_index,
+      PrepareNoiseInput(*dec_state, shared.frame_dim, frame_header, group_index,
                         thread);
     }
     JXL_RETURN_IF_ERROR(input.Done());

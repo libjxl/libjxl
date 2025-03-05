@@ -10,6 +10,7 @@
 // the common format used by other libraries and in the libjxl API.
 
 #include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
 #include <jxl/types.h>
 
@@ -22,6 +23,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"

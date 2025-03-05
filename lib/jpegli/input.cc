@@ -5,6 +5,13 @@
 
 #include "lib/jpegli/input.h"
 
+#include <cstddef>
+#include <cstdint>
+
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
+#include "lib/jpegli/types.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jpegli/input.cc"
 #include <hwy/foreach_target.h>

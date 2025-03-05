@@ -5,17 +5,25 @@
 
 #include "lib/extras/dec/pnm.h"
 
+#include <jxl/codestream_header.h>
 #include <jxl/encode.h>
+#include <jxl/types.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
+#include <vector>
 
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/c_callback_support.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 

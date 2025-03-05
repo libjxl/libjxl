@@ -3,6 +3,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cmath>
+
+#include "lib/jxl/base/matrix_ops.h"
+
 #if defined(LIB_JXL_CMS_TONE_MAPPING_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_CMS_TONE_MAPPING_INL_H_
 #undef LIB_JXL_CMS_TONE_MAPPING_INL_H_
@@ -34,7 +38,7 @@ class Rec2408ToneMapper : Rec2408ToneMapperBase {
   using Rec2408ToneMapperBase::Rec2408ToneMapperBase;
 
   void ToneMap(V* red, V* green, V* blue) const {
-    const V luminance = Mul(Set(df_, source_range_.second),
+    const V luminance = Mul(Set(df_, source_range_[1]),
                             (MulAdd(Set(df_, red_Y_), *red,
                                     MulAdd(Set(df_, green_Y_), *green,
                                            Mul(Set(df_, blue_Y_), *blue)))));
@@ -54,7 +58,7 @@ class Rec2408ToneMapper : Rec2408ToneMapperBase {
     const V pq_mastering_range = Set(df_, pq_mastering_range_);
     const V e4 = MulAdd(e3, pq_mastering_range, pq_mastering_min);
     const V new_luminance =
-        Min(Set(df_, target_range_.second),
+        Min(Set(df_, target_range_[1]),
             ZeroIfNegative(tf_pq_.DisplayFromEncoded(df_, e4)));
     const V min_luminance = Set(df_, 1e-6f);
     const auto use_cap = Le(luminance, min_luminance);

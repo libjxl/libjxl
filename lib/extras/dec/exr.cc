@@ -9,7 +9,7 @@
 
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/packed_image.h"
-#include "lib/jxl/base/common.h"
+#include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
@@ -33,18 +33,29 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
 
 #else  // JPEGXL_ENABLE_EXR
 
-#include <ImfChromaticitiesAttribute.h>
 #include <ImfIO.h>
+#include <ImfRgba.h>
 #include <ImfRgbaFile.h>
 #include <ImfStandardAttributes.h>
+#include <OpenEXRConfig.h>
+#include <jxl/color_encoding.h>
+#include <jxl/types.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
+#include <memory>
+#include <utility>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+
 #ifdef __EXCEPTIONS
-#include <stdexcept>
-#define JXL_EXR_THROW_LENGTH_ERROR() throw std::length_error("");
+#include <IexBaseExc.h>
+#define JXL_EXR_THROW_LENGTH_ERROR(M) throw Iex::InputExc(M);
 #else  // __EXCEPTIONS
-#define JXL_EXR_THROW_LENGTH_ERROR() JXL_CRASH()
+#define JXL_EXR_THROW_LENGTH_ERROR(M) JXL_CRASH()
 #endif  // __EXCEPTIONS
 
 namespace jxl {
@@ -71,23 +82,38 @@ class InMemoryIStream : public OpenEXR::IStream {
 
   bool isMemoryMapped() const override { return true; }
   char* readMemoryMapped(const int n) override {
-    if (pos_ + n < pos_ || pos_ + n > bytes_.size()) {
-      JXL_EXR_THROW_LENGTH_ERROR();
+    if (pos_ + n < pos_) {
+      JXL_EXR_THROW_LENGTH_ERROR("Overflow");
+    }
+    if (pos_ + n > bytes_.size()) {
+      JXL_EXR_THROW_LENGTH_ERROR("Read past end of file");
     }
     char* const result =
         const_cast<char*>(reinterpret_cast<const char*>(bytes_.data() + pos_));
     pos_ += n;
     return result;
   }
-  bool read(char c[], const int n) override {
-    std::copy_n(readMemoryMapped(n), n, c);
+  bool read(char c[/*n*/], int n) override {
+    // That is not stated in documentation, but the OpenEXR code expects that
+    // when requested amount is not accessible and exception is thrown, all
+    // the accessible data is read.
+    if (pos_ + n < pos_) {
+      JXL_EXR_THROW_LENGTH_ERROR("Overflow");
+    }
+    if (pos_ + n > bytes_.size()) {
+      int can_read = static_cast<int>(bytes_.size() - pos_);
+      std::copy_n(readMemoryMapped(can_read), can_read, c);
+      JXL_EXR_THROW_LENGTH_ERROR("Read past end of file");
+    } else {
+      std::copy_n(readMemoryMapped(n), n, c);
+    }
     return pos_ < bytes_.size();
   }
 
   ExrInt64 tellg() override { return pos_; }
   void seekg(const ExrInt64 pos) override {
     if (pos >= bytes_.size()) {
-      JXL_EXR_THROW_LENGTH_ERROR();
+      JXL_EXR_THROW_LENGTH_ERROR("Seeks past end of file");
     }
     pos_ = pos;
   }

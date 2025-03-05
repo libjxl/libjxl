@@ -6,28 +6,10 @@
 #ifndef LIB_JPEGLI_COMMON_INTERNAL_H_
 #define LIB_JPEGLI_COMMON_INTERNAL_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-
-// Suppress any -Wdeprecated-declarations warning that might be emitted by
-// GCC or Clang by std::stable_sort in C++17 or later mode
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#elif defined(__GNUC__)
-#pragma GCC push_options
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-
-#include <algorithm>
-
-#ifdef __clang__
-#pragma clang diagnostic pop
-#elif defined(__GNUC__)
-#pragma GCC pop_options
-#endif
-
 #include <hwy/aligned_allocator.h>
 
 #include "lib/jpegli/memory_manager.h"
@@ -110,7 +92,7 @@ class RowBuffer {
  public:
   template <typename CInfoType>
   void Allocate(CInfoType cinfo, size_t num_rows, size_t rowsize) {
-    static_assert(sizeof(T) == 4);
+    static_assert(sizeof(T) == 4, "4-byte T is assumed");
     size_t vec_size = std::max(VectorSize(), sizeof(T));
     size_t alignment = std::max<size_t>(HWY_ALIGNMENT, vec_size);
     size_t min_memstride = alignment + rowsize * sizeof(T) + vec_size;

@@ -5,6 +5,8 @@
 
 #include "lib/jxl/icc_codec_common.h"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <tuple>
 
@@ -70,7 +72,7 @@ void EncodeKeyword(const Tag& keyword, uint8_t* data, size_t size, size_t pos) {
 }
 
 Status AppendKeyword(const Tag& keyword, PaddedBytes* data) {
-  static_assert(std::tuple_size<Tag>{} == 4);
+  static_assert(std::tuple_size<Tag>{} == 4, "Tag should be 4-bytes");
   return data->append(keyword);
 }
 

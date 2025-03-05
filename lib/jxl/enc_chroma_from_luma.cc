@@ -12,6 +12,17 @@
 #include <cmath>
 #include <cstdlib>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
+#include <limits>
+
+#include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/quant_weights.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_chroma_from_luma.cc"
@@ -148,10 +159,10 @@ int32_t FindBestMultiplier(const float* values_m, const float* values_s,
     for (size_t i = 0; i < 20; i++) {
       float dfpeps;
       float dfmeps;
-      float df = fn.Compute(x, eps, &dfpeps, &dfmeps);
+      float d_f = fn.Compute(x, eps, &dfpeps, &dfmeps);
       float ddf = (dfpeps - dfmeps) / (2 * eps);
       float kExperimentalInsignificantStabilizer = 0.85;
-      float step = df / (ddf + kExperimentalInsignificantStabilizer);
+      float step = d_f / (ddf + kExperimentalInsignificantStabilizer);
       x -= std::min(kClamp, std::max(-kClamp, step));
       if (std::abs(step) < 3e-3) break;
     }
@@ -199,7 +210,7 @@ Status ComputeTile(const Image3F& opsin, const Rect& opsin_rect,
                    const AcStrategyImage* ac_strategy,
                    const ImageI* raw_quant_field, const Quantizer* quantizer,
                    const Rect& rect, bool fast, bool use_dct8, ImageSB* map_x,
-                   ImageSB* map_b, ImageF* dc_values, float* mem) {
+                   ImageSB* map_b, ImageF* dc_values, Span<float> mem) {
   static_assert(kEncTileDimInBlocks == kColorTileDimInBlocks,
                 "Invalid color tile dim");
   size_t xsize_blocks = opsin_rect.xsize() / kBlockDim;
@@ -224,26 +235,24 @@ Status ComputeTile(const Image3F& opsin, const Rect& opsin_rect,
   float* JXL_RESTRICT dc_values_b = dc_values->Row(3);
 
   // All are aligned.
-  float* HWY_RESTRICT block_y = mem;
+  float* HWY_RESTRICT block_y = mem.begin();
   float* HWY_RESTRICT block_x = block_y + AcStrategy::kMaxCoeffArea;
   float* HWY_RESTRICT block_b = block_x + AcStrategy::kMaxCoeffArea;
-  float* HWY_RESTRICT coeffs_yx = block_b + AcStrategy::kMaxCoeffArea;
+  JXL_ENSURE(mem.remove_prefix(3 * AcStrategy::kMaxCoeffArea));
+  float* HWY_RESTRICT coeffs_yx = mem.begin();
   float* HWY_RESTRICT coeffs_x = coeffs_yx + kColorTileDim * kColorTileDim;
   float* HWY_RESTRICT coeffs_yb = coeffs_x + kColorTileDim * kColorTileDim;
   float* HWY_RESTRICT coeffs_b = coeffs_yb + kColorTileDim * kColorTileDim;
-  float* HWY_RESTRICT scratch_space = coeffs_b + kColorTileDim * kColorTileDim;
-  float* scratch_space_end =
-      scratch_space + 2 * AcStrategy::kMaxCoeffArea + dct_scratch_size;
-  JXL_ENSURE(scratch_space_end == block_y + CfLHeuristics::ItemsPerThread());
-  (void)scratch_space_end;
+  JXL_ENSURE(mem.remove_prefix(4 * kColorTileDim * kColorTileDim));
+  constexpr size_t dc_size =
+      AcStrategy::kMaxCoeffBlocks * AcStrategy::kMaxCoeffBlocks;
+  float* HWY_RESTRICT dc_y = mem.begin();
+  float* HWY_RESTRICT dc_x = dc_y + dc_size;
+  float* HWY_RESTRICT dc_b = dc_x + dc_size;
+  JXL_ENSURE(mem.remove_prefix(3 * dc_size));
+  float* HWY_RESTRICT scratch_space = mem.begin();
+  JXL_ENSURE(mem.size() == 2 * AcStrategy::kMaxCoeffArea + dct_scratch_size);
 
-  // Small (~256 bytes each)
-  HWY_ALIGN_MAX float
-      dc_y[AcStrategy::kMaxCoeffBlocks * AcStrategy::kMaxCoeffBlocks] = {};
-  HWY_ALIGN_MAX float
-      dc_x[AcStrategy::kMaxCoeffBlocks * AcStrategy::kMaxCoeffBlocks] = {};
-  HWY_ALIGN_MAX float
-      dc_b[AcStrategy::kMaxCoeffBlocks * AcStrategy::kMaxCoeffBlocks] = {};
   size_t num_ac = 0;
 
   for (size_t y = y0; y < y1; ++y) {
@@ -263,13 +272,13 @@ Status ComputeTile(const Image3F& opsin, const Rect& opsin_rect,
       size_t xs = acs.covered_blocks_x();
       TransformFromPixels(acs.Strategy(), row_y + x * kBlockDim, stride,
                           block_y, scratch_space);
-      DCFromLowestFrequencies(acs.Strategy(), block_y, dc_y, xs);
+      DCFromLowestFrequencies(acs.Strategy(), block_y, dc_y, xs, scratch_space);
       TransformFromPixels(acs.Strategy(), row_x + x * kBlockDim, stride,
                           block_x, scratch_space);
-      DCFromLowestFrequencies(acs.Strategy(), block_x, dc_x, xs);
+      DCFromLowestFrequencies(acs.Strategy(), block_x, dc_x, xs, scratch_space);
       TransformFromPixels(acs.Strategy(), row_b + x * kBlockDim, stride,
                           block_b, scratch_space);
-      DCFromLowestFrequencies(acs.Strategy(), block_b, dc_b, xs);
+      DCFromLowestFrequencies(acs.Strategy(), block_b, dc_b, xs, scratch_space);
       const float* const JXL_RESTRICT qm_x =
           dequant.InvMatrix(acs.Strategy(), 0);
       const float* const JXL_RESTRICT qm_b =
@@ -370,10 +379,11 @@ Status CfLHeuristics::ComputeTile(const Rect& r, const Image3F& opsin,
                                   const Quantizer* quantizer, bool fast,
                                   size_t thread, ColorCorrelationMap* cmap) {
   bool use_dct8 = ac_strategy == nullptr;
+  Span<float> scratch(mem.address<float>() + thread * ItemsPerThread(),
+                      ItemsPerThread());
   return HWY_DYNAMIC_DISPATCH(ComputeTile)(
       opsin, opsin_rect, dequant, ac_strategy, raw_quant_field, quantizer, r,
-      fast, use_dct8, &cmap->ytox_map, &cmap->ytob_map, &dc_values,
-      mem.address<float>() + thread * ItemsPerThread());
+      fast, use_dct8, &cmap->ytox_map, &cmap->ytob_map, &dc_values, scratch);
 }
 
 Status ColorCorrelationEncodeDC(const ColorCorrelation& color_correlation,

@@ -5,11 +5,17 @@
 
 #include "lib/extras/dec/color_description.h"
 
-#include <errno.h>
+#include <jxl/color_encoding.h>
 
+#include <array>
+#include <cerrno>
 #include <cmath>
+#include <cstddef>
+#include <cstdlib>
+#include <string>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 
@@ -39,6 +45,13 @@ constexpr auto kJxlPrimariesNames =
                                       {"202", JXL_PRIMARIES_2100},
                                       {"DCI", JXL_PRIMARIES_P3}});
 
+constexpr auto kJxlRenderingIntentNames =
+    to_array<EnumName<JxlRenderingIntent>>(
+        {{"Per", JXL_RENDERING_INTENT_PERCEPTUAL},
+         {"Rel", JXL_RENDERING_INTENT_RELATIVE},
+         {"Sat", JXL_RENDERING_INTENT_SATURATION},
+         {"Abs", JXL_RENDERING_INTENT_ABSOLUTE}});
+
 constexpr auto kJxlTransferFunctionNames =
     to_array<EnumName<JxlTransferFunction>>(
         {{"709", JXL_TRANSFER_FUNCTION_709},
@@ -49,13 +62,6 @@ constexpr auto kJxlTransferFunctionNames =
          {"DCI", JXL_TRANSFER_FUNCTION_DCI},
          {"HLG", JXL_TRANSFER_FUNCTION_HLG},
          {"", JXL_TRANSFER_FUNCTION_GAMMA}});
-
-constexpr auto kJxlRenderingIntentNames =
-    to_array<EnumName<JxlRenderingIntent>>(
-        {{"Per", JXL_RENDERING_INTENT_PERCEPTUAL},
-         {"Rel", JXL_RENDERING_INTENT_RELATIVE},
-         {"Sat", JXL_RENDERING_INTENT_SATURATION},
-         {"Abs", JXL_RENDERING_INTENT_ABSOLUTE}});
 
 template <typename T, size_t N>
 Status ParseEnum(const std::string& token,

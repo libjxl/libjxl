@@ -5,8 +5,19 @@
 
 #include "plugins/gimp/file-jxl-load.h"
 
+#include <jxl/cms_interface.h>
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
+#include <jxl/types.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <fstream>
+#include <memory>
+#include <string>
 
 #define _PROFILE_ORIGIN_ JXL_COLOR_PROFILE_TARGET_ORIGINAL
 #define _PROFILE_TARGET_ JXL_COLOR_PROFILE_TARGET_DATA

@@ -5,11 +5,11 @@
 
 #include "lib/jxl/huffman_table.h"
 
+#include <cstdint>
 #include <cstring> /* for memcpy */
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
-#include "lib/jxl/dec_huffman.h"
 
 namespace jxl {
 

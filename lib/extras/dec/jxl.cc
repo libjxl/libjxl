@@ -7,6 +7,7 @@
 
 #include <jxl/cms.h>
 #include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/types.h>
@@ -15,11 +16,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <limits>
+#include <utility>
 #include <vector>
 
 #include "lib/extras/common.h"
 #include "lib/extras/dec/color_description.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/exif.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -387,7 +392,6 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
       }
       if (icc_size != 0) {
-        ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
         ppf->icc.resize(icc_size);
         if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
                                    dec, target, ppf->icc.data(), icc_size)) {
@@ -395,13 +399,12 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           return false;
         }
       }
-      if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsEncodedProfile(
+      if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsEncodedProfile(
                                  dec, target, &ppf->color_encoding)) {
-        ppf->primary_color_representation =
-            PackedPixelFile::kColorEncodingIsPrimary;
-      } else {
         ppf->color_encoding.color_space = JXL_COLOR_SPACE_UNKNOWN;
       }
+      ppf->primary_color_representation =
+          PackedPixelFile::kColorEncodingIsPrimary;
       icc_size = 0;
       target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
       if (JXL_DEC_SUCCESS !=
@@ -416,6 +419,7 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
           return false;
         }
+        ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
       }
     } else if (status == JXL_DEC_FRAME) {
       auto frame_or = jxl::extras::PackedFrame::Create(ppf->info.xsize,
@@ -541,22 +545,23 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
                            "Failed to create extra channel image.");
         frame.extra_channels.emplace_back(std::move(image));
         auto& ec = frame.extra_channels.back();
-        size_t buffer_size;
-        if (JXL_DEC_SUCCESS != JxlDecoderExtraChannelBufferSize(
-                                   dec, &ec_format, &buffer_size, eci.index)) {
+        size_t ec_buffer_size;
+        if (JXL_DEC_SUCCESS != JxlDecoderExtraChannelBufferSize(dec, &ec_format,
+                                                                &ec_buffer_size,
+                                                                eci.index)) {
           fprintf(stderr, "JxlDecoderExtraChannelBufferSize failed\n");
           return false;
         }
-        if (buffer_size != ec.pixels_size) {
+        if (ec_buffer_size != ec.pixels_size) {
           fprintf(stderr,
                   "Invalid extra channel buffer size"
                   " %" PRIuS " %" PRIuS "\n",
-                  buffer_size, ec.pixels_size);
+                  ec_buffer_size, ec.pixels_size);
           return false;
         }
         if (JXL_DEC_SUCCESS !=
             JxlDecoderSetExtraChannelBuffer(dec, &ec_format, ec.pixels(),
-                                            buffer_size, eci.index)) {
+                                            ec_buffer_size, eci.index)) {
           fprintf(stderr, "JxlDecoderSetExtraChannelBuffer failed\n");
           return false;
         }

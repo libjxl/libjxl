@@ -6,12 +6,15 @@
 #include "lib/jpegli/decode_marker.h"
 
 #include <jxl/types.h>
-#include <string.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
 
 #include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
-#include "lib/jpegli/huffman.h"
 #include "lib/jpegli/memory_manager.h"
 #include "lib/jxl/base/printf_macros.h"
 
@@ -212,9 +215,9 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   cinfo->Se = ReadUint8(data, &pos);
   JPEG_VERIFY_INPUT(cinfo->Ss, 0, 63);
   JPEG_VERIFY_INPUT(cinfo->Se, cinfo->Ss, 63);
-  int c = ReadUint8(data, &pos);
-  cinfo->Ah = c >> 4;
-  cinfo->Al = c & 0xf;
+  int bit_span = ReadUint8(data, &pos);
+  cinfo->Ah = bit_span >> 4;
+  cinfo->Al = bit_span & 0xf;
   JPEG_VERIFY_MARKER_END();
 
   if (cinfo->input_scan_number == 0) {

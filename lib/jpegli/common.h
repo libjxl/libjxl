@@ -20,7 +20,7 @@
 #ifndef LIB_JPEGLI_COMMON_H_
 #define LIB_JPEGLI_COMMON_H_
 
-#include "lib/jxl/base/include_jpeglib.h"  // NOLINT
+#include "lib/jxl/base/include_jpeglib.h"  // IWYU pragma: export
 
 #ifdef __cplusplus
 extern "C" {

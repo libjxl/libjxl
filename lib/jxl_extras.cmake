@@ -12,13 +12,12 @@ list(APPEND JPEGXL_EXTRAS_CORE_SOURCES
   "${JPEGXL_INTERNAL_EXTRAS_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_APNG_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_EXR_SOURCES}"
+  "${JPEGXL_INTERNAL_CODEC_GIF_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_JPG_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_JXL_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_PGX_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_PNM_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_NPY_SOURCES}"
-  extras/dec/gif.cc
-  extras/dec/gif.h
 )
 foreach(LIB jxl_extras_core-obj jxl_extras_core_nocodec-obj)
   add_library("${LIB}" OBJECT "${JPEGXL_EXTRAS_CORE_SOURCES}")
@@ -102,14 +101,17 @@ if (OpenEXR_FOUND)
   # OpenEXR generates exceptions, so we need exception support to catch them.
   # Actually those flags counteract the ones set in JPEGXL_INTERNAL_FLAGS.
   if (NOT WIN32)
-    set_source_files_properties(
-      extras/dec/exr.cc extras/enc/exr.cc PROPERTIES COMPILE_FLAGS -fexceptions)
+    set(_exr_flags "-fexceptions")
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-      set_source_files_properties(
-	extras/dec/exr.cc extras/enc/exr.cc PROPERTIES COMPILE_FLAGS
-	-fcxx-exceptions)
+      set(_exr_flags "-fcxx-exceptions")
     endif()
-  endif()
+    if ("${OpenEXR_VERSION}" VERSION_LESS "2.5.7")
+      string(APPEND _exr_flags " -Wno-deprecated-copy")
+    endif()
+    set_source_files_properties(extras/dec/exr.cc extras/enc/exr.cc
+      PROPERTIES COMPILE_FLAGS "${_exr_flags}"
+    )
+  endif() # WIN32
 endif() # OpenEXR_FOUND
 endif() # JPEGXL_ENABLE_OPENEXR
 

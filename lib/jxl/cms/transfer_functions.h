@@ -43,7 +43,7 @@ class TF_HLG_Base {
     const double original_sign = s;
     s = std::abs(s);
 
-    if (s <= kDiv12) return copysignf(std::sqrt(3.0 * s), original_sign);
+    if (s <= kInv12) return copysignf(std::sqrt(3.0 * s), original_sign);
 
     const double e = kA * std::log(12 * s - kB) + kC;
     JXL_DASSERT(e > 0.0);
@@ -58,7 +58,7 @@ class TF_HLG_Base {
 
     if (e <= 0.5) return copysignf(e * e * (1.0 / 3), original_sign);
 
-    const double s = (std::exp((e - kC) * kRA) + kB) * kDiv12;
+    const double s = (std::exp((e - kC) * kRA) + kB) * kInv12;
     JXL_DASSERT(s >= 0);
     return copysignf(s, original_sign);
   }
@@ -83,7 +83,7 @@ class TF_HLG_Base {
   static constexpr double kRA = 1.0 / kA;
   static constexpr double kB = 1 - 4 * kA;
   static constexpr double kC = 0.5599107295;
-  static constexpr double kDiv12 = 1.0 / 12;
+  static constexpr double kInv12 = 1.0 / 12.0;
 };
 
 // Perceptual Quantization

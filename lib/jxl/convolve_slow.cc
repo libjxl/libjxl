@@ -3,71 +3,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/convolve-inl.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 
 namespace jxl {
-
-//------------------------------------------------------------------------------
-// Kernels
-
-// 4 instances of a given literal value, useful as input to LoadDup128.
-#define JXL_REP4(literal) literal, literal, literal, literal
-
-// Concentrates energy in low-frequency components (e.g. for antialiasing).
-const WeightsSymmetric3& WeightsSymmetric3Lowpass() {
-  // Computed by research/convolve_weights.py's cubic spline approximations of
-  // prolate spheroidal wave functions.
-  constexpr float w0 = 0.36208932f;
-  constexpr float w1 = 0.12820096f;
-  constexpr float w2 = 0.03127668f;
-  static constexpr WeightsSymmetric3 weights = {
-      {JXL_REP4(w0)}, {JXL_REP4(w1)}, {JXL_REP4(w2)}};
-  return weights;
-}
-
-const WeightsSeparable5& WeightsSeparable5Lowpass() {
-  constexpr float w0 = 0.41714928f;
-  constexpr float w1 = 0.25539268f;
-  constexpr float w2 = 0.03603267f;
-  static constexpr WeightsSeparable5 weights = {
-      {JXL_REP4(w0), JXL_REP4(w1), JXL_REP4(w2)},
-      {JXL_REP4(w0), JXL_REP4(w1), JXL_REP4(w2)}};
-  return weights;
-}
-
-const WeightsSymmetric5& WeightsSymmetric5Lowpass() {
-  static constexpr WeightsSymmetric5 weights = {
-      {JXL_REP4(0.1740135f)}, {JXL_REP4(0.1065369f)}, {JXL_REP4(0.0150310f)},
-      {JXL_REP4(0.0652254f)}, {JXL_REP4(0.0012984f)}, {JXL_REP4(0.0092025f)}};
-  return weights;
-}
-
-const WeightsSeparable5& WeightsSeparable5Gaussian1() {
-  constexpr float w0 = 0.38774f;
-  constexpr float w1 = 0.24477f;
-  constexpr float w2 = 0.06136f;
-  static constexpr WeightsSeparable5 weights = {
-      {JXL_REP4(w0), JXL_REP4(w1), JXL_REP4(w2)},
-      {JXL_REP4(w0), JXL_REP4(w1), JXL_REP4(w2)}};
-  return weights;
-}
-
-const WeightsSeparable5& WeightsSeparable5Gaussian2() {
-  constexpr float w0 = 0.250301f;
-  constexpr float w1 = 0.221461f;
-  constexpr float w2 = 0.153388f;
-  static constexpr WeightsSeparable5 weights = {
-      {JXL_REP4(w0), JXL_REP4(w1), JXL_REP4(w2)},
-      {JXL_REP4(w0), JXL_REP4(w1), JXL_REP4(w2)}};
-  return weights;
-}
-
-#undef JXL_REP4
 
 //------------------------------------------------------------------------------
 // Slow

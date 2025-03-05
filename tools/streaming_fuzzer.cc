@@ -13,9 +13,11 @@
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
 
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
@@ -45,33 +47,39 @@ struct FuzzSpec {
 
   struct IntOptionSpec {
     JxlEncoderFrameSettingId flag;
+    std::string name;
     int min;
     int max;
     int value;
   };
 
+#define INT_OPTION(FLAG, MIN_V, MAX_V, V) \
+  IntOptionSpec{FLAG, #FLAG, MIN_V, MAX_V, V}
+
   std::vector<IntOptionSpec> int_options = {
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_EFFORT, 1, 9, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_DECODING_SPEED, 0, 4, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_NOISE, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_DOTS, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_PATCHES, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_EPF, -1, 3, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_GABORISH, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_MODULAR, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_KEEP_INVISIBLE, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_RESPONSIVE, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_PALETTE_COLORS, -1, 255, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_LOSSY_PALETTE, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM, -1, 2, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE, -1, 41, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, -1, 3, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, -1, 15, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS, -1, 11, 0},
+      INT_OPTION(JXL_ENC_FRAME_SETTING_EFFORT, 1, 9, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_DECODING_SPEED, 0, 4, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_NOISE, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_DOTS, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_PATCHES, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_EPF, -1, 3, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_GABORISH, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_MODULAR, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_KEEP_INVISIBLE, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_RESPONSIVE, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_PALETTE_COLORS, -1, 255, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_LOSSY_PALETTE, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM, -1, 2, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE, -1, 41, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, -1, 3, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, -1, 15, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS, -1, 11, 0),
   };
+
+#undef INT_OPTION
 
   struct FloatOptionSpec {
     JxlEncoderFrameSettingId flag;
@@ -109,6 +117,7 @@ struct FuzzSpec {
     auto b1 = [&]() -> bool { return static_cast<bool>(u8() % 2); };
     auto u16 = [&]() -> uint16_t { return (uint16_t{u8()} << 8) | u8(); };
     FuzzSpec spec;
+    // TODO(eustas): allow dimensions to be 130k
     spec.xsize = uint32_t{u16()} + 1;
     spec.ysize = uint32_t{u16()} + 1;
     constexpr uint64_t kMaxSize = 1 << 24;
@@ -142,6 +151,13 @@ struct FuzzSpec {
         for (auto& p : y) {
           p = u16();
         }
+      }
+    }
+
+    if (false) {
+      fprintf(stderr, "Image size: %d X %d\n", spec.xsize, spec.ysize);
+      for (auto& int_opt : spec.int_options) {
+        fprintf(stderr, "%s = %d\n", int_opt.name.c_str(), int_opt.value);
       }
     }
 
@@ -224,6 +240,7 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
   for (size_t y = 0; y < spec.ysize; y++) {
     for (size_t x = 0; x < spec.xsize; x++) {
       for (size_t c = 0; c < nchan; c++) {
+        // TODO(eustas): make it less regular for tiles except (0, 0)
         pixels[(y * spec.xsize + x) * nchan + c] =
             spec.pixel_data[c][y % 64][x % 64];
       }
@@ -310,7 +327,7 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   std::vector<uint8_t> enc_streaming;
 
   const auto encode = [&]() -> Status {
-    // It is not clear, which approach eatc more memory.
+    // It is not clear, which approach eats more memory.
     JXL_ASSIGN_OR_RETURN(enc_default, Encode(spec, memory_manager, false));
     Check(memory_manager.Reset());
     JXL_ASSIGN_OR_RETURN(enc_streaming, Encode(spec, memory_manager, true));
@@ -320,26 +337,27 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   // It is fine, if encoder OOMs.
   if (!encode()) return true;
 
-  // It is NOT OK, it decoder OOMs - it should not consume more than encoder.
+  // It is NOT OK, if decoder OOMs - it should not consume more than encoder.
   JXL_ASSIGN_OR_RETURN(auto dec_default, Decode(enc_default, memory_manager));
   Check(memory_manager.Reset());
   JXL_ASSIGN_OR_RETURN(auto dec_streaming,
                        Decode(enc_streaming, memory_manager));
   Check(memory_manager.Reset());
 
-  if (spec.int_options[0].value <= 7) {
-    Check(dec_default == dec_streaming);
-  } else {
-    Check(dec_default.size() == dec_streaming.size());
-    float max_abs_diff = 0.0f;
-    for (size_t i = 0; i < dec_default.size(); ++i) {
-      float abs_diff = std::abs(dec_default[i] - dec_streaming[i]);
-      if (abs_diff > max_abs_diff) {
-        max_abs_diff = abs_diff;
-      }
+  Check(dec_default.size() == dec_streaming.size());
+  float max_abs_diff = 0.0f;
+  for (size_t i = 0; i < dec_default.size(); ++i) {
+    float abs_diff = std::abs(dec_default[i] - dec_streaming[i]);
+    if (abs_diff > max_abs_diff) {
+      max_abs_diff = abs_diff;
     }
-    Check(max_abs_diff <= 0.1f);
   }
+
+  Check(spec.int_options[0].flag == JXL_ENC_FRAME_SETTING_EFFORT);
+  int effort = spec.int_options[0].value;
+  std::array<float, 10> kThreshold = {0.00f, 0.05f, 0.05f, 0.05f, 0.05f,
+                                      0.05f, 0.05f, 0.05f, 0.10f, 0.10f};
+  Check(max_abs_diff <= kThreshold[effort]);
 
   return true;
 }

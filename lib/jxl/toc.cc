@@ -6,9 +6,15 @@
 #include "lib/jxl/toc.h"
 
 #include <jxl/memory_manager.h>
-#include <stdint.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/fields.h"
@@ -34,7 +40,7 @@ Status ReadToc(JxlMemoryManager* memory_manager, size_t toc_entries,
   sizes->clear();
   sizes->resize(toc_entries);
   if (reader->TotalBitsConsumed() >= reader->TotalBytes() * kBitsPerByte) {
-    return JXL_STATUS(StatusCode::kNotEnoughBytes, "Not enough bytes for TOC");
+    return JXL_NOT_ENOUGH_BYTES("Not enough bytes for TOC");
   }
   const auto check_bit_budget = [&](size_t num_entries) -> Status {
     // U32Coder reads 2 bits to recognize variant and kTocDist cheapest variant
@@ -46,7 +52,7 @@ Status ReadToc(JxlMemoryManager* memory_manager, size_t toc_entries,
         (minimal_bit_cost <= bit_budget - expenses)) {
       return true;
     }
-    return JXL_STATUS(StatusCode::kNotEnoughBytes, "Not enough bytes for TOC");
+    return JXL_NOT_ENOUGH_BYTES("Not enough bytes for TOC");
   };
 
   JXL_ENSURE(toc_entries > 0);

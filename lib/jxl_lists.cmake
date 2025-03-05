@@ -146,7 +146,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/convolve.h
   jxl/convolve_separable5.cc
   jxl/convolve_slow.cc
-  jxl/convolve_symmetric3.cc
   jxl/convolve_symmetric5.cc
   jxl/dct-inl.h
   jxl/dct_block-inl.h
@@ -155,6 +154,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/dct_util.h
   jxl/dec_ans.cc
   jxl/dec_ans.h
+  jxl/dec_bit_reader.cc
   jxl/dec_bit_reader.h
   jxl/dec_cache.cc
   jxl/dec_cache.h
@@ -230,6 +230,8 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/modular/transform/rct.h
   jxl/modular/transform/squeeze.cc
   jxl/modular/transform/squeeze.h
+  jxl/modular/transform/squeeze_params.cc
+  jxl/modular/transform/squeeze_params.h
   jxl/modular/transform/transform.cc
   jxl/modular/transform/transform.h
   jxl/noise.h
@@ -249,6 +251,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/render_pipeline/low_memory_render_pipeline.h
   jxl/render_pipeline/render_pipeline.cc
   jxl/render_pipeline/render_pipeline.h
+  jxl/render_pipeline/render_pipeline_stage.cc
   jxl/render_pipeline/render_pipeline_stage.h
   jxl/render_pipeline/simple_render_pipeline.cc
   jxl/render_pipeline/simple_render_pipeline.h
@@ -443,6 +446,7 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
 
 set(JPEGXL_INTERNAL_GBENCH_SOURCES
   extras/tone_mapping_gbench.cc
+  jxl/dct_gbench.cc
   jxl/dec_external_image_gbench.cc
   jxl/enc_external_image_gbench.cc
   jxl/splines_gbench.cc
@@ -593,6 +597,7 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/data_parallel_test.cc
   jxl/dct_test.cc
   jxl/decode_test.cc
+  jxl/enc_bit_writer_test.cc
   jxl/enc_external_image_test.cc
   jxl/enc_gaborish_test.cc
   jxl/enc_linalg_test.cc

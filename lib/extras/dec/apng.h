@@ -10,8 +10,6 @@
 
 #include <cstdint>
 
-#include "lib/extras/dec/color_hints.h"
-#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
@@ -20,6 +18,9 @@ namespace jxl {
 struct SizeConstraints;
 
 namespace extras {
+
+class ColorHints;
+class PackedPixelFile;
 
 bool CanDecodeAPNG();
 

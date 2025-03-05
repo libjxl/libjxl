@@ -7,17 +7,16 @@
 #include <jxl/memory_manager.h>
 
 #include <cstddef>
-#include <utility>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/cms/opsin_params.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
-#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/opsin_params.h"
 #include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
@@ -36,14 +35,9 @@ void LinearSrgbToOpsin(float rgb_r, float rgb_g, float rgb_b,
   linear.PlaneRow(0, 0)[0] = rgb_r;
   linear.PlaneRow(1, 0)[0] = rgb_g;
   linear.PlaneRow(2, 0)[0] = rgb_b;
-
-  ImageMetadata metadata;
-  metadata.SetFloat32Samples();
-  metadata.color_encoding = ColorEncoding::LinearSRGB();
-  ImageBundle ib(memory_manager, &metadata);
-  ASSERT_TRUE(ib.SetFromImage(std::move(linear), metadata.color_encoding));
-  JXL_TEST_ASSIGN_OR_DIE(Image3F opsin, Image3F::Create(memory_manager, 1, 1));
-  (void)ToXYB(ib, /*pool=*/nullptr, &opsin, *JxlGetDefaultCms());
+  ASSERT_TRUE(ToXYB(ColorEncoding::LinearSRGB(), kDefaultIntensityTarget,
+                    nullptr, nullptr, &linear, *JxlGetDefaultCms(), nullptr));
+  Image3F& opsin = linear;
 
   *xyb_x = opsin.PlaneRow(0, 0)[0];
   *xyb_y = opsin.PlaneRow(1, 0)[0];

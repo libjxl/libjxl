@@ -269,10 +269,10 @@ TEST(SplinesTest, DuplicatePoints) {
   std::vector<Spline> spline_data{spline};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
-  for (const Spline& spline : spline_data) {
+  for (const Spline& ospline : spline_data) {
     JXL_ASSIGN_OR_QUIT(
         QuantizedSpline qspline,
-        QuantizedSpline::Create(spline, kQuantizationAdjustment, kYToX, kYToB),
+        QuantizedSpline::Create(ospline, kQuantizationAdjustment, kYToX, kYToB),
         "Failed to create QuantizedSpline.");
     quantized_splines.emplace_back(std::move(qspline));
     starting_points.push_back(spline.control_points.front());
@@ -289,9 +289,9 @@ TEST(SplinesTest, DuplicatePoints) {
 
 TEST(SplinesTest, Drawing) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecInOut io_expected{memory_manager};
+  auto io_expected = jxl::make_unique<jxl::CodecInOut>(memory_manager);
   const std::vector<uint8_t> orig = ReadTestData("jxl/splines.pfm");
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_expected,
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), io_expected.get(),
                            /*pool=*/nullptr));
 
   std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
@@ -310,10 +310,10 @@ TEST(SplinesTest, Drawing) {
   std::vector<Spline> spline_data = {spline};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
-  for (const Spline& spline : spline_data) {
+  for (const Spline& ospline : spline_data) {
     JXL_ASSIGN_OR_QUIT(
         QuantizedSpline qspline,
-        QuantizedSpline::Create(spline, kQuantizationAdjustment, kYToX, kYToB),
+        QuantizedSpline::Create(ospline, kQuantizationAdjustment, kYToX, kYToB),
         "Failed to create QuantizedSpline.");
     quantized_splines.emplace_back(std::move(qspline));
     starting_points.push_back(spline.control_points.front());
@@ -328,42 +328,45 @@ TEST(SplinesTest, Drawing) {
                                           color_correlation));
   splines.AddTo(&image, Rect(image));
 
-  CodecInOut io_actual{memory_manager};
+  auto io_actual = jxl::make_unique<jxl::CodecInOut>(memory_manager);
   JXL_TEST_ASSIGN_OR_DIE(Image3F image2,
                          Image3F::Create(memory_manager, 320, 320));
   ASSERT_TRUE(CopyImageTo(image, &image2));
-  ASSERT_TRUE(io_actual.SetFromImage(std::move(image2), ColorEncoding::SRGB()));
-  ASSERT_TRUE(io_actual.frames[0].TransformTo(io_expected.Main().c_current(),
-                                              *JxlGetDefaultCms()));
+  ASSERT_TRUE(
+      io_actual->SetFromImage(std::move(image2), ColorEncoding::SRGB()));
+  ASSERT_TRUE(io_actual->frames[0].TransformTo(io_expected->Main().c_current(),
+                                               *JxlGetDefaultCms()));
 
-  JXL_TEST_ASSERT_OK(VerifyRelativeError(
-      *io_expected.Main().color(), *io_actual.Main().color(), 1e-2f, 1e-1f, _));
+  JXL_TEST_ASSERT_OK(VerifyRelativeError(*io_expected->Main().color(),
+                                         *io_actual->Main().color(), 1e-2f,
+                                         1e-1f, _));
 }
 
 TEST(SplinesTest, ClearedEveryFrame) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecInOut io_expected{memory_manager};
+  auto io_expected = jxl::make_unique<jxl::CodecInOut>(memory_manager);
   const std::vector<uint8_t> bytes_expected =
       ReadTestData("jxl/spline_on_first_frame.png");
-  ASSERT_TRUE(SetFromBytes(Bytes(bytes_expected), &io_expected,
+  ASSERT_TRUE(SetFromBytes(Bytes(bytes_expected), io_expected.get(),
                            /*pool=*/nullptr));
-  CodecInOut io_actual{memory_manager};
+  auto io_actual = jxl::make_unique<jxl::CodecInOut>(memory_manager);
   const std::vector<uint8_t> bytes_actual =
       ReadTestData("jxl/spline_on_first_frame.jxl");
-  ASSERT_TRUE(test::DecodeFile({}, Bytes(bytes_actual), &io_actual));
+  ASSERT_TRUE(test::DecodeFile({}, Bytes(bytes_actual), io_actual.get()));
 
-  ASSERT_TRUE(io_actual.frames[0].TransformTo(ColorEncoding::SRGB(),
-                                              *JxlGetDefaultCms()));
+  ASSERT_TRUE(io_actual->frames[0].TransformTo(ColorEncoding::SRGB(),
+                                               *JxlGetDefaultCms()));
   for (size_t c = 0; c < 3; ++c) {
-    for (size_t y = 0; y < io_actual.ysize(); ++y) {
-      float* const JXL_RESTRICT row = io_actual.Main().color()->PlaneRow(c, y);
-      for (size_t x = 0; x < io_actual.xsize(); ++x) {
+    for (size_t y = 0; y < io_actual->ysize(); ++y) {
+      float* const JXL_RESTRICT row = io_actual->Main().color()->PlaneRow(c, y);
+      for (size_t x = 0; x < io_actual->xsize(); ++x) {
         row[x] = Clamp1(row[x], 0.f, 1.f);
       }
     }
   }
-  JXL_TEST_ASSERT_OK(VerifyRelativeError(
-      *io_expected.Main().color(), *io_actual.Main().color(), 1e-2f, 1e-1f, _));
+  JXL_TEST_ASSERT_OK(VerifyRelativeError(*io_expected->Main().color(),
+                                         *io_actual->Main().color(), 1e-2f,
+                                         1e-1f, _));
 }
 
 }  // namespace jxl

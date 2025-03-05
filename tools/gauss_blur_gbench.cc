@@ -5,10 +5,12 @@
 
 #include <jxl/memory_manager.h>
 
-#include <hwy/targets.h>
+#include <cstddef>
+#include <cstdlib>
 
 #include "benchmark/benchmark.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "tools/gauss_blur.h"
 #include "tools/no_memory_manager.h"
@@ -45,6 +47,7 @@ void BM_GaussBlur1d(benchmark::State& state) {
                      "Failed to allocate image.");
   const auto rg = CreateRecursiveGaussian(sigma);
   for (auto _ : state) {
+    (void)_;
     FastGaussian1D(rg, length, in.Row(0), out.Row(0));
     // Prevent optimizing out
     BM_CHECK(std::abs(out.ConstRow(0)[length / 2] - expected) / expected <
@@ -71,8 +74,10 @@ void BM_GaussBlur2d(benchmark::State& state) {
                      "Failed to allocate image.");
   const auto rg = CreateRecursiveGaussian(sigma);
   for (auto _ : state) {
+    (void)_;
     BM_CHECK(FastGaussian(
-        rg, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+        memory_manager, rg, in.xsize(), in.ysize(),
+        [&](size_t y) { return in.ConstRow(y); },
         [&](size_t y) { return temp.Row(y); },
         [&](size_t y) { return out.Row(y); }));
     // Prevent optimizing out

@@ -4,12 +4,27 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/types.h>
+#include <stdio.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <utility>
+#include <vector>
 
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 #include "tools/file_io.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -115,7 +130,7 @@ StatusOr<ImageF> Upsample(const ImageF& image, ThreadPool* pool) {
     }
     return true;
   };
-  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
+  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), ThreadPool::NoInit,
                                process_row_h, "UpsampleHorizontally"));
 
   HWY_FULL(float) df;
@@ -150,7 +165,7 @@ StatusOr<ImageF> Upsample(const ImageF& image, ThreadPool* pool) {
     }
     return true;
   };
-  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), &ThreadPool::NoInit,
+  JPEGXL_TOOLS_CHECK(RunOnPool(pool, 0, image.ysize(), ThreadPool::NoInit,
                                process_row_v, "UpsampleVertically"));
   return upsampled;
 }
@@ -199,7 +214,7 @@ Status ApplyLocalToneMapping(const ImageF& blurred_luminances,
     }
     return true;
   };
-  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, color->ysize(), &ThreadPool::NoInit,
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, color->ysize(), ThreadPool::NoInit,
                                 process_row, "ApplyLocalToneMapping"));
 
   return true;
@@ -316,22 +331,23 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
-  jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
+  auto image =
+      jxl::make_unique<jxl::CodecInOut>(jpegxl::tools::NoMemoryManager());
   jxl::extras::ColorHints color_hints;
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;
   JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JPEGXL_TOOLS_CHECK(
-      jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, pool.get()));
+  JPEGXL_TOOLS_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints,
+                                       image.get(), pool.get()));
 
   JPEGXL_TOOLS_CHECK(
-      jxl::ProcessFrame(&image, preserve_saturation, pool.get()));
+      jxl::ProcessFrame(image.get(), preserve_saturation, pool.get()));
 
   JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   JXL_ASSIGN_OR_QUIT(jxl::extras::PackedPixelFile ppf,
                      jxl::extras::ConvertImage3FToPackedPixelFile(
-                         *image.Main().color(), image.metadata.m.color_encoding,
-                         format, pool.get()),
+                         *image->Main().color(),
+                         image->metadata.m.color_encoding, format, pool.get()),
                      "ConvertImage3FToPackedPixelFile failed.");
   JPEGXL_TOOLS_CHECK(jxl::Encode(ppf, output_filename, &encoded, pool.get()));
   JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));

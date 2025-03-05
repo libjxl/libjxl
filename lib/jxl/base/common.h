@@ -49,6 +49,10 @@ constexpr inline size_t RoundUpTo(size_t what, size_t align) {
 
 constexpr double kPi = 3.14159265358979323846264338327950288;
 
+// Multiplier for conversion of log2(x) result to ln(x).
+// print(1.0 / math.log2(math.e))
+constexpr float kInvLog2e = 0.6931471805599453;
+
 // Reasonable default for sRGB, matches common monitors. We map white to this
 // many nits (cd/m^2) by default. Butteraugli was tuned for 250 nits, which is
 // very close.

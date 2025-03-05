@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/extras/enc/apng.h"
-
 // Parts of this code are taken from apngdis, which has the following license:
 /* APNG Disassembler 2.8
  *
@@ -36,21 +34,48 @@
  *
  */
 
+#include "lib/extras/enc/apng.h"
+
+// IWYU pragma: no_include <pngconf.h>
+
+#include <memory>
+
+#include "lib/extras/enc/encode.h"
+
+#if !JPEGXL_ENABLE_APNG
+
+namespace jxl {
+namespace extras {
+std::unique_ptr<Encoder> GetAPNGEncoder() { return nullptr; }
+}  // namespace extras
+}  // namespace jxl
+
+#else  // JPEGXL_ENABLE_APNG
+
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
+#include <jxl/types.h>
+
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
 
 #include "lib/extras/exif.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
-#if JPEGXL_ENABLE_APNG
+#include "lib/jxl/base/status.h"
 #include "png.h" /* original (unpatched) libpng is ok */
-#endif
 
 namespace jxl {
 namespace extras {
 
-#if JPEGXL_ENABLE_APNG
 namespace {
 
 constexpr unsigned char kExifSignature[6] = {0x45, 0x78, 0x69,
@@ -264,19 +289,20 @@ void MaybeAddGAMA(const JxlColorEncoding& c_enc, png_structp png_ptr,
 void MaybeAddCLLi(const JxlColorEncoding& c_enc, const float intensity_target,
                   png_structp png_ptr, png_infop info_ptr) {
   if (c_enc.transfer_function != JXL_TRANSFER_FUNCTION_PQ) return;
+  if (intensity_target == 10'000) return;
 
   const uint32_t max_content_light_level =
-      static_cast<uint32_t>(10000.f * Clamp1(intensity_target, 0.f, 10000.f));
+      static_cast<uint32_t>(10'000.f * Clamp1(intensity_target, 0.f, 10'000.f));
   png_byte chunk_data[8] = {};
   png_save_uint_32(chunk_data, max_content_light_level);
   // Leave MaxFALL set to 0.
   png_unknown_chunk chunk;
-  memcpy(chunk.name, "cLLi", 5);
+  memcpy(chunk.name, "cLLI", 5);
   chunk.data = chunk_data;
   chunk.size = sizeof chunk_data;
   chunk.location = PNG_HAVE_IHDR;
   png_set_keep_unknown_chunks(png_ptr, PNG_HANDLE_CHUNK_ALWAYS,
-                              reinterpret_cast<const png_byte*>("cLLi"), 1);
+                              reinterpret_cast<const png_byte*>("cLLI"), 1);
   png_set_unknown_chunks(png_ptr, info_ptr, &chunk, 1);
 }
 
@@ -397,7 +423,10 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
                  PNG_FILTER_TYPE_BASE);
     if (count == 0 && !encode_extra_channels) {
       if (!MaybeAddSRGB(ppf.color_encoding, png_ptr, info_ptr)) {
-        MaybeAddCICP(ppf.color_encoding, png_ptr, info_ptr);
+        if (ppf.primary_color_representation !=
+            PackedPixelFile::kIccIsPrimary) {
+          MaybeAddCICP(ppf.color_encoding, png_ptr, info_ptr);
+        }
         if (!ppf.icc.empty()) {
           png_set_benign_errors(png_ptr, 1);
           png_set_iCCP(png_ptr, info_ptr, "1", 0, ppf.icc.data(),
@@ -492,15 +521,12 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
 }
 
 }  // namespace
-#endif
 
 std::unique_ptr<Encoder> GetAPNGEncoder() {
-#if JPEGXL_ENABLE_APNG
   return jxl::make_unique<APNGEncoder>();
-#else
-  return nullptr;
-#endif
 }
 
 }  // namespace extras
 }  // namespace jxl
+
+#endif  // JPEGXL_ENABLE_APNG

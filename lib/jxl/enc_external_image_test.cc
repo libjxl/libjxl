@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/span.h"
@@ -30,17 +31,17 @@ TEST(ExternalImageTest, InvalidSize) {
   ImageBundle ib(jxl::test::MemoryManager(), &im);
 
   JxlPixelFormat format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  const uint8_t buf[10 * 100 * 8] = {};
-  EXPECT_FALSE(ConvertFromExternal(Bytes(buf, 10), /*xsize=*/10, /*ysize=*/100,
-                                   /*c_current=*/ColorEncoding::SRGB(),
-                                   /*bits_per_sample=*/16, format, nullptr,
-                                   &ib));
+  std::vector<uint8_t> buf(10 * 100 * 8);
+  EXPECT_FALSE(
+      ConvertFromExternal(Bytes(buf.data(), 10), /*xsize=*/10, /*ysize=*/100,
+                          /*c_current=*/ColorEncoding::SRGB(),
+                          /*bits_per_sample=*/16, format, nullptr, &ib));
   EXPECT_FALSE(ConvertFromExternal(
-      Bytes(buf, sizeof(buf) - 1), /*xsize=*/10, /*ysize=*/100,
+      Bytes(buf.data(), buf.size() - 1), /*xsize=*/10, /*ysize=*/100,
       /*c_current=*/ColorEncoding::SRGB(),
       /*bits_per_sample=*/16, format, nullptr, &ib));
   EXPECT_TRUE(
-      ConvertFromExternal(Bytes(buf, sizeof(buf)), /*xsize=*/10,
+      ConvertFromExternal(Bytes(buf), /*xsize=*/10,
                           /*ysize=*/100, /*c_current=*/ColorEncoding::SRGB(),
                           /*bits_per_sample=*/16, format, nullptr, &ib));
 }

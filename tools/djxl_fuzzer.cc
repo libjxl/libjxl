@@ -17,6 +17,7 @@
 #include <cstring>
 #include <hwy/targets.h>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <random>
 #include <vector>
@@ -89,7 +90,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
       std::min<size_t>(2, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   auto runner = JxlThreadParallelRunnerMake(memory_manager, num_threads);
 
-  std::mt19937 mt(spec.random_seed);
+  auto mt = std::make_unique<std::mt19937>(spec.random_seed);
   std::exponential_distribution<> dis_streaming(kStreamingTargetNumberOfChunks);
 
   auto dec = JxlDecoderMake(memory_manager);
@@ -201,7 +202,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
         leftover -= used;
         streaming_size -= used;
         size_t chunk_size = std::max<size_t>(
-            1, size * std::min<double>(1.0, dis_streaming(mt)));
+            1, size * std::min<double>(1.0, dis_streaming(*mt)));
         size_t add_size =
             std::min<size_t>(chunk_size, leftover - streaming_size);
         if (add_size == 0) {
@@ -371,20 +372,22 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
 
       if (info.num_extra_channels > 0) {
         std::uniform_int_distribution<> dis(0, info.num_extra_channels);
-        size_t ec_index = dis(mt);
+        size_t ec_index = dis(*mt);
         // There is also a probability no extra channel is chosen
         if (ec_index < info.num_extra_channels) {
-          size_t ec_index = info.num_extra_channels - 1;
+          // TODO(eustas): that looks suspicious to me
+          size_t last_ec_index = info.num_extra_channels - 1;
           size_t ec_size;
-          if (JXL_DEC_SUCCESS != JxlDecoderExtraChannelBufferSize(
-                                     dec.get(), &format, &ec_size, ec_index)) {
+          if (JXL_DEC_SUCCESS !=
+              JxlDecoderExtraChannelBufferSize(dec.get(), &format, &ec_size,
+                                               last_ec_index)) {
             return false;
           }
           extra_channel_pixels.resize(ec_size);
           if (JXL_DEC_SUCCESS !=
               JxlDecoderSetExtraChannelBuffer(dec.get(), &format,
                                               extra_channel_pixels.data(),
-                                              ec_size, ec_index)) {
+                                              ec_size, last_ec_index)) {
             return false;
           }
         }

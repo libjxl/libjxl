@@ -12,6 +12,10 @@ import java.nio.channels.WritableByteChannel;
 
 /** Jpegli JNI encoder wrapper. */
 public class Encoder {
+  static {
+    JniHelper.ensureInitialized();
+  }
+
   /** Utility library, disable object construction. */
   private Encoder() {}
 

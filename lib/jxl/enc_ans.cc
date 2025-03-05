@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <unordered_map>
@@ -17,9 +18,13 @@
 #include <vector>
 
 #include "lib/jxl/ans_common.h"
+#include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -289,7 +294,7 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
       if (counts[i] != counts[last] || i + 1 == alphabet_size ||
           (i - last) >= 255 || i == omit_pos || i == omit_pos + 1) {
         same[last] = (i - last);
-        last = i + 1;
+        last = i;
       }
     }
 
@@ -531,6 +536,9 @@ StatusOr<size_t> BuildAndStoreANSEncodingData(
 StatusOr<float> ANSPopulationCost(const ANSHistBin* data,
                                   size_t alphabet_size) {
   float cost = 0.0f;
+  if (ANS_MAX_ALPHABET_SIZE < alphabet_size) {
+    return std::numeric_limits<float>::max();
+  }
   JXL_ASSIGN_OR_RETURN(
       uint32_t method,
       ComputeBestMethod(data, alphabet_size, &cost,
@@ -1680,7 +1688,8 @@ StatusOr<size_t> BuildAndEncodeHistograms(
       const size_t alphabet_size = ANS_MAX_ALPHABET_SIZE;
       const size_t log_alpha_size = 8;
       JXL_ENSURE(alphabet_size == 1u << log_alpha_size);
-      static_assert(ANS_MAX_ALPHABET_SIZE <= ANS_TAB_SIZE);
+      static_assert(ANS_MAX_ALPHABET_SIZE <= ANS_TAB_SIZE,
+                    "Alphabet does not fit table");
       std::vector<int32_t> counts =
           CreateFlatHistogram(alphabet_size, ANS_TAB_SIZE);
       codes->encoding_info.emplace_back();

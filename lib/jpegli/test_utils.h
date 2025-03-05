@@ -6,11 +6,14 @@
 #ifndef LIB_JPEGLI_TEST_UTILS_H_
 #define LIB_JPEGLI_TEST_UTILS_H_
 
+#include <csetjmp>
 #include <cstddef>
 #include <cstdint>
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/test_params.h"
 #include "lib/jpegli/types.h"
 #include "lib/jxl/base/include_jpeglib.h"  // NOLINT
@@ -48,7 +51,6 @@ void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo);
 
 void SetDecompressParams(const DecompressParams& dparams,
                          j_decompress_ptr cinfo);
-
 void SetScanDecompressParams(const DecompressParams& dparams,
                              j_decompress_ptr cinfo, int scan_number);
 
@@ -117,6 +119,8 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
                        double max_rms, double max_diff = 255.0);
+
+void Check(bool ok);
 
 }  // namespace jpegli
 

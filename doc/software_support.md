@@ -27,7 +27,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 
 - [ImageMagick](https://imagemagick.org/): supported since 7.0.10-54
 - [libvips](https://libvips.github.io/libvips/): supported since 8.11
-- [Imlib2](https://github.com/alistair7/imlib2-jxl)
+- [Imlib2](https://docs.enlightenment.org/api/imlib2/html/)
 - [FFmpeg](https://github.com/FFmpeg/FFmpeg/search?q=jpeg-xl&type=commits)
 - [GDAL](https://gdal.org/drivers/raster/jpegxl.html): supported since 3.4.0 as a TIFF codec, and 3.6.0 as standalone format
 - [GraphicsMagick](http://www.graphicsmagick.org/NEWS.html#march-26-2022): supported since 1.3.38
@@ -62,7 +62,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Graphic Converter (since 11.5)](https://www.lemkesoft.de/en/products/graphicconverter/)
 - [Krita](https://invent.kde.org/graphics/krita/-/commit/13e5d2e5b9f0eac5c8064b7767f0b62264a0797b)
 - [Paint.NET](https://www.getpaint.net/index.html); supported since 4.3.12 - requires a [plugin](https://github.com/0xC0000054/pdn-jpegxl) to be downloaded and installed.
-- Photoshop: no plugin available yet, no official support yet
+- [Photoshop](https://gitlab.com/SuperSaltyGamer/jpegxlformat); plugin for Adobe Photoshop 2020 and above on Windows, supports 8-bit and 16-bit color depth, embedded ICC color profiles, transparency.
 - [XL Converter](https://github.com/JacobDev1/xl-converter)
 - [Image Toolbox (supported since 2.6.0)](https://github.com/T8RIN/ImageToolbox)
 - [JPEG XL Toolbox by SUIKA LTD](https://apps.apple.com/app/jpeg-xl-toolbox/id6470681357)
@@ -94,3 +94,9 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [MConverter](https://mconverter.eu/)
 - [jpegxl.io](https://jpegxl.io/)
 - [EXIF Viewer](https://stefan-oltmann.de/exif-viewer)
+- [Immich](https://immich.app/), a self-hosted image gallery service
+
+## 3D Software
+
+- [Okino PolyTrans|CAD+DCC 3D Conversion System](https://www.okino.com/conv/conv.htm)
+- [Okino NuGraf|CAD+DCC 3D Visualization and Conversion System](https://www.okino.com)

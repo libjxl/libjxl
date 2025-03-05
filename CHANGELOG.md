@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+  - Huffman lookup table size fix (#3871 -
+    [CVE-2024-11403](https://www.cve.org/cverecord?id=CVE-2024-11403))
+  - Check height limit in modular trees. (#3943 -
+    [CVE-2024-11498](https://www.cve.org/cverecord?id=CVE-2024-11498))
+
+## [0.11.0] - 2024-09-13
+
 ### Added
   - Gain Map API (#3552 and #3628):  `JxlGainMapBundle` struct and API functions
     to read and write gain map bundles`JxlGainMapWriteBundle` and
