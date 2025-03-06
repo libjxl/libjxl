@@ -112,7 +112,7 @@ if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS OR JPEGXL_ENABLE_PLUGINS)
     endif ()
   else()
     include(lcms2.cmake)
-    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lcms/COPYING"
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lcms/LICENSE"
                    ${PROJECT_BINARY_DIR}/LICENSE.lcms COPYONLY)
   endif()
 endif()
