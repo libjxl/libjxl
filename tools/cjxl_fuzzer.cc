@@ -79,6 +79,7 @@ bool EncodeJpegXl(const FuzzSpec& spec, JxlMemoryManager* memory_manager) {
                                     runner.get()));
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc, nullptr);
+    Check(frame_settings != nullptr);
 
     for (auto option : spec.options) {
       TRY(JxlEncoderFrameSettingsSetOption(frame_settings, option.id,
