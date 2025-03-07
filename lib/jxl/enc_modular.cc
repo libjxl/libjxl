@@ -1148,61 +1148,29 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
     const auto process_chunk = [&](const uint32_t chunk,
                                    size_t /* thread */) -> Status {
       // TODO(veluca): parallelize more.
-      size_t total_pixels = 0;
       uint32_t start = useful_splits[chunk];
       uint32_t stop = useful_splits[chunk + 1];
       while (start < stop && stream_images_[start].empty()) ++start;
       while (start < stop && stream_images_[stop - 1].empty()) --stop;
-      if (stream_options_[start].tree_kind !=
+
+      if (stream_options_[start].tree_kind ==
           ModularOptions::TreeKind::kLearn) {
+        JXL_ASSIGN_OR_RETURN(
+            trees[chunk],
+            LearnTree(stream_images_.data(), stream_options_.data(), start,
+                       stop, multiplier_info));
+      } else {
+        size_t total_pixels = 0;
         for (size_t i = start; i < stop; i++) {
           for (const Channel& ch : stream_images_[i].channel) {
             total_pixels += ch.w * ch.h;
           }
         }
+        total_pixels = std::max<size_t>(total_pixels, 1);
+
         trees[chunk] = PredefinedTree(stream_options_[start].tree_kind,
                                       total_pixels, 8, 0);
-        return true;
       }
-      TreeSamples tree_samples;
-      JXL_RETURN_IF_ERROR(
-          tree_samples.SetPredictor(stream_options_[start].predictor,
-                                    stream_options_[start].wp_tree_mode));
-      JXL_RETURN_IF_ERROR(tree_samples.SetProperties(
-          stream_options_[start].splitting_heuristics_properties,
-          stream_options_[start].wp_tree_mode));
-      uint32_t max_c = 0;
-      std::vector<pixel_type> pixel_samples;
-      std::vector<pixel_type> diff_samples;
-      std::vector<uint32_t> group_pixel_count;
-      std::vector<uint32_t> channel_pixel_count;
-      for (uint32_t i = start; i < stop; i++) {
-        max_c = std::max<uint32_t>(stream_images_[i].channel.size(), max_c);
-        CollectPixelSamples(stream_images_[i], stream_options_[i], i,
-                            group_pixel_count, channel_pixel_count,
-                            pixel_samples, diff_samples);
-      }
-      StaticPropRange range;
-      range[0] = {{0, max_c}};
-      range[1] = {{start, stop}};
-
-      tree_samples.PreQuantizeProperties(
-          range, multiplier_info, group_pixel_count, channel_pixel_count,
-          pixel_samples, diff_samples,
-          stream_options_[start].max_property_values);
-      for (size_t i = start; i < stop; i++) {
-        JXL_RETURN_IF_ERROR(
-            ModularGenericCompress(stream_images_[i], stream_options_[i],
-                                   /*writer=*/nullptr,
-                                   /*aux_out=*/nullptr, LayerType::Header, i,
-                                   &tree_samples, &total_pixels));
-      }
-
-      // TODO(veluca): parallelize more.
-      JXL_ASSIGN_OR_RETURN(
-          trees[chunk],
-          LearnTree(std::move(tree_samples), total_pixels,
-                    stream_options_[start], multiplier_info, range));
       return true;
     };
     JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, useful_splits.size() - 1,
@@ -1260,14 +1228,10 @@ Status ModularFrameEncoder::ComputeTokens(ThreadPool* pool) {
                                   size_t /* thread */) -> Status {
     AuxOut my_aux_out;
     tokens_[stream_id].clear();
-    JXL_RETURN_IF_ERROR(ModularGenericCompress(
-        stream_images_[stream_id], stream_options_[stream_id],
-        /*writer=*/nullptr, &my_aux_out, LayerType::Header, stream_id,
-        /*tree_samples=*/nullptr,
-        /*total_pixels=*/nullptr,
-        /*tree=*/&tree_, /*header=*/&stream_headers_[stream_id],
-        /*tokens=*/&tokens_[stream_id],
-        /*widths=*/&image_widths_[stream_id]));
+    JXL_RETURN_IF_ERROR(
+        ModularCompress(stream_images_[stream_id], stream_options_[stream_id],
+                        stream_id, tree_, stream_headers_[stream_id],
+                        tokens_[stream_id], &image_widths_[stream_id]));
     return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_streams, ThreadPool::NoInit,
@@ -1332,7 +1296,7 @@ Status ModularFrameEncoder::EncodeStream(BitWriter* writer, AuxOut* aux_out,
   }
   if (tokens_.empty()) {
     JXL_RETURN_IF_ERROR(ModularGenericCompress(
-        stream_images_[stream_id], stream_options_[stream_id], writer, aux_out,
+        stream_images_[stream_id], stream_options_[stream_id], *writer, aux_out,
         layer, stream_id));
   } else {
     JXL_RETURN_IF_ERROR(
@@ -1792,7 +1756,7 @@ Status ModularFrameEncoder::EncodeQuantTable(
     }
   }
   ModularOptions cfopts;
-  JXL_RETURN_IF_ERROR(ModularGenericCompress(image, cfopts, writer));
+  JXL_RETURN_IF_ERROR(ModularGenericCompress(image, cfopts, *writer));
   return true;
 }
 
