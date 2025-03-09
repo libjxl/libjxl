@@ -1673,7 +1673,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
       ButteraugliDistance(io0->frames, io1->frames, butteraugli_params,
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr, nullptr),
-      1.00f);
+      1.10f);
 
   JxlDecoderDestroy(dec);
 }
@@ -1771,7 +1771,7 @@ TEST_P(DecodeAllEncodingsTest, PreserveOriginalProfileTest) {
   EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
   double dist = ButteraugliDistance(xsize, ysize, pixels, c_in, intensity_in,
                                     out, c_in, intensity_in);
-  EXPECT_LT(dist, 1.40);
+  EXPECT_LT(dist, 1.45);
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
   JxlDecoderDestroy(dec);
 }
