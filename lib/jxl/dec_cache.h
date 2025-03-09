@@ -119,6 +119,8 @@ struct PassesDecoderState {
   // output.
   bool unpremul_alpha;
 
+  int leniency = 0;
+
   // The render pipeline will apply this orientation to bring the image to the
   // intended display orientation.
   Orientation undo_orientation;
