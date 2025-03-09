@@ -26,18 +26,18 @@ The following table describes what the various effort settings do:
 | e6 | e5 + more RCTs and MA tree properties | e5 + error diffusion, full variable blocks heuristics |
 | e7 | e6 + more RCTs and MA tree properties | e6 + patches (including dots) |
 | e8 | e7 + more RCTs, MA tree properties, and Weighted predictor parameters | e7 + Butteraugli iterations for adaptive quantization |
-| e9 | e8 + more RCTs, MA tree properties, and Weighted predictor parameters | e8 + more Butteraugli iterations and disables chunked encoding |
-| e10 | e9 + global MA tree, try all predictors, and disables chunked encoding | e9 + more thorough adaptive quantization |
-| e11 | e10 + previous-channel MA tree properties, different group dimensions, and try multiple e10 configurations | N/A |
+| e9 | e8 + more RCTs, MA tree properties, and Weighted predictor parameters | e8 + more Butteraugli iterations |
+| e10 | e9 + global MA tree, try all predictors, and disables chunked encoding | e9 + more thorough adaptive quantization and disables chunked encoding |
+| e11 | e10 + previous-channel MA tree properties, different group dimensions, and try multiple e10 configurations | e10 + iterative downsampling for high distance values |
 
 For the entropy coding (context clustering, lz77 search, hybriduint configuration): slower/more exhaustive search as effort goes up.
 
 <u>Chunked encoding is also disabled under these circumstances:</u>
 * When the image is smaller than 2048x2048.
 * Lossless Jpeg transcoding.
-* VarDCT at distances ≥20.
 * Effort 7 VarDCT at distances ≥3.0.
 * Effort 8 VarDCT at distances >0.5.
+* Effort 11 VarDCT with --resampling 2.
 * Lossy Modular.
 * When using any of these flags:
   * `--patches=1`
@@ -45,5 +45,4 @@ For the entropy coding (context clustering, lz77 search, hybriduint configuratio
   * `-p`
   * `-d 0` and `-R 1`
   * `--noise=1`
-  * `--resampling >1`
   * `--disable_perceptual_optimizations`
