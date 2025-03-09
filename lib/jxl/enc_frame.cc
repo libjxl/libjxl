@@ -106,9 +106,11 @@ Status ParamsPostInit(CompressParams* p) {
     // For very low bit rates, using 2x2 resampling gives better results on
     // most photographic images, with an adjusted butteraugli score chosen to
     // give roughly the same amount of bits per pixel.
-    if (!p->already_downsampled && p->butteraugli_distance >= 20) {
+    if (!p->already_downsampled && p->butteraugli_distance >= 10) {
+      // TODO(Jonnyawsom3): Explore 4x4 resampling at distance 25. Results are
+      // inconsistent and images under 4K become far too blurry.
       p->resampling = 2;
-      p->butteraugli_distance = 6 + ((p->butteraugli_distance - 20) * 0.25);
+      p->butteraugli_distance = 2.5 + ((p->butteraugli_distance - 10) * 0.25);
     }
   }
   if (p->ec_resampling <= 0) {
@@ -713,7 +715,9 @@ Status DownsampleColorChannels(const CompressParams& cparams,
     if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
       // TODO(Jonnyawsom3): DownsampleImage2_Iterative is currently a 2x
       // slowdown on Glacier and 3x memory increase for Squirrel due
-      // to chunked encoding, so enabled only for TectonicPlate.
+      // to chunked encoding. Until optimized, enabled only for TectonicPlate.
+      // Downsampling is only active at high distances by default, 
+      // making improvements negligable. Explore seperate flag for distance.
       JXL_RETURN_IF_ERROR(DownsampleImage2_Iterative(opsin));
     } else {
       JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(opsin));
