@@ -717,7 +717,7 @@ Status DownsampleColorChannels(const CompressParams& cparams,
       // slowdown on Glacier and 3x memory increase for Squirrel due
       // to chunked encoding. Until optimized, enabled only for TectonicPlate.
       // Downsampling is only active at high distances by default, 
-      // making improvements negligable. Explore seperate flag for distance.
+      // making improvements negligible. Explore separate flag for distance.
       JXL_RETURN_IF_ERROR(DownsampleImage2_Iterative(opsin));
     } else {
       JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(opsin));
