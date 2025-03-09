@@ -710,9 +710,10 @@ Status DownsampleColorChannels(const CompressParams& cparams,
     // TODO(lode): use the regular DownsampleImage, or adapt to the custom
     // coefficients, if there is are custom upscaling coefficients in
     // CustomTransformData
-    if (cparams.speed_tier <= SpeedTier::kTectonicPlate) {
+    if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
       // TODO(Jonnyawsom3): DownsampleImage2_Iterative is currently a 2x
-      // slowdown on Glacier, therefore enabled only for TectonicPlate.
+      // slowdown on Glacier and 3x memory increase for Squirrel due
+      // to chunked encoding, so enabled only for TectonicPlate.
       JXL_RETURN_IF_ERROR(DownsampleImage2_Iterative(opsin));
     } else {
       JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(opsin));
