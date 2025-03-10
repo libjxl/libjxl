@@ -110,7 +110,9 @@ Status ParamsPostInit(CompressParams* p) {
       // TODO(Jonnyawsom3): Explore 4x4 resampling at distance 25. Lower bpp
       // but results are inconsistent and images under 4K become far too blurry.
       p->resampling = 2;
-      p->butteraugli_distance = p->butteraugli_distance * 0.25;
+      // Adding 0.25 balances photo with non-photo, shifting towards lower bpp
+      // to avoid large overshoot while maintaining quality equal to before.
+      p->butteraugli_distance = (p->butteraugli_distance * 0.25) + 0.25;
     }
   }
   if (p->ec_resampling <= 0) {
