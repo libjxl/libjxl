@@ -107,10 +107,10 @@ Status ParamsPostInit(CompressParams* p) {
     // most photographic images, with an adjusted butteraugli score chosen to
     // give roughly the same amount of bits per pixel.
     if (!p->already_downsampled && p->butteraugli_distance >= 10) {
-      // TODO(Jonnyawsom3): Explore 4x4 resampling at distance 25. Results are
-      // inconsistent and images under 4K become far too blurry.
+      // TODO(Jonnyawsom3): Explore 4x4 resampling at distance 25. Lower bpp
+      // but results are inconsistent and images under 4K become far too blurry.
       p->resampling = 2;
-      p->butteraugli_distance = 2.5 + ((p->butteraugli_distance - 10) * 0.25);
+      p->butteraugli_distance = p->butteraugli_distance * 0.25;
     }
   }
   if (p->ec_resampling <= 0) {
