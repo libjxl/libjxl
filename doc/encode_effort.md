@@ -45,4 +45,5 @@ For the entropy coding (context clustering, lz77 search, hybriduint configuratio
   * `-p`
   * `-d 0` and `-R 1`
   * `--noise=1`
+  * `--resampling >1`
   * `--disable_perceptual_optimizations`
