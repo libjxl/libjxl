@@ -36,7 +36,7 @@ For the entropy coding (context clustering, lz77 search, hybriduint configuratio
 * When the image is smaller than 2048x2048.
 * Lossless Jpeg transcoding.
 * Effort 7 VarDCT at distances ≥3.0.
-* Effort 8 VarDCT at distances >0.5.
+* Efforts 8 & 9 VarDCT at distances >0.5.
 * Lossy Modular.
 * When using any of these flags:
   * `--patches=1`
