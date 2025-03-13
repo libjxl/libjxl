@@ -774,6 +774,10 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   // set encoder options
   JxlEncoderFrameSettings* frame_settings;
   frame_settings = JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  if (frame_settings == nullptr) {
+    g_printerr(SAVE_PROC " Error: JxlEncoderFrameSettingsCreate failed\n");
+    return false;
+  }
 
   JxlEncoderFrameSettingsSetOption(frame_settings, JXL_ENC_FRAME_SETTING_EFFORT,
                                    jxl_save_opts.encoding_effort);
