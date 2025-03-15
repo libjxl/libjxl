@@ -4241,7 +4241,7 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                              unsigned char** output, void* runner_opaque,
                              FJxlParallelRunner runner) {
   FJxlFrameInput input(rgba, row_stride, nb_chans, bitdepth);
-  auto frame_state = JxlFastLosslessPrepareFrame(
+  auto* frame_state = JxlFastLosslessPrepareFrame(
       input.GetInputSource(), width, height, nb_chans, bitdepth, big_endian,
       effort, /*oneshot=*/true);
   if (!JxlFastLosslessProcessFrame(frame_state, /*is_last=*/true, runner_opaque,
