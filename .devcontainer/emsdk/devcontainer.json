@@ -1,0 +1,13 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "onCreateCommand": "./deps.sh && SKIP_TEST=1 ./ci.sh release",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "extensions.ignoreRecommendations": true
+      }
+    }
+  }
+}
