@@ -748,6 +748,7 @@ std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
       thresholds.push_back(i);
       while (cumsum > threshold * sum / num_chunks) threshold++;
     }
+    if (cumsum == sum) break;
   }
   return thresholds;
 }
