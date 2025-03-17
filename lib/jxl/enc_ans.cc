@@ -160,6 +160,9 @@ bool RebalanceHistogram(const float* targets, int max_symbol,
       if (target >= count + 0.5f * inc && count + inc < table_size) {
         count += inc;
       }
+      if (target < count - 0.5f * inc && count - inc > 0) {
+        count -= inc;
+      }
       sum += count;
       counts[n] = count;
       const int count_log = FloorLog2Nonzero(count);
