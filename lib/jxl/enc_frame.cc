@@ -716,10 +716,10 @@ Status DownsampleColorChannels(const CompressParams& cparams,
     // CustomTransformData
     if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
       // TODO(Jonnyawsom3): DownsampleImage2_Iterative is currently a 2x
-      // slowdown on Glacier and 3x memory increase for Squirrel due
-      // to chunked encoding. Until optimized, enabled only for TectonicPlate.
-      // Downsampling is only active at high distances by default, 
-      // making improvements negligible. Explore separate flag for distance.
+      // slowdown on Glacier and 3x memory increase for Squirrel.
+      // Until optimized, enabled only for TectonicPlate. Downsampling is
+      // only active at high distances by default anyway, making improvements
+      // negligible. Explore separate flag for explicit distance setting.
       JXL_RETURN_IF_ERROR(DownsampleImage2_Iterative(opsin));
     } else {
       JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(opsin));
