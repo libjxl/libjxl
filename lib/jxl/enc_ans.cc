@@ -141,9 +141,9 @@ bool RebalanceHistogram(const float* targets, int max_symbol,
       (table_size - sum) / (table_size - sum_nonrounded);
   JXL_ENSURE(discount_ratio > 0);
   JXL_ENSURE(discount_ratio <= 1.0f);
-  // Invariant for minimize_error_of_sum == true:
-  // abs(sum - sum_nonrounded)
-  //   <= SmallestIncrementNonzero(max(targets[])) + max_symbol
+  // The case of minimize_error_of_sum == true should be able to rebalance
+  // any histogram, but it's hard to test this exhaustively
+  // since the number of possible inputs is too huge
   for (int n = 0; n < max_symbol; ++n) {
     if (targets[n] >= 1.0f) {
       sum_nonrounded += targets[n];
@@ -157,8 +157,15 @@ bool RebalanceHistogram(const float* targets, int max_symbol,
       count &= ~(inc - 1);
       const float target = minimize_error_of_sum ? sum_nonrounded - sum
                                                  : discount_ratio * targets[n];
-      if (target >= count + 0.5f * inc && count + inc < table_size) {
+      while (target >= count + 0.5f * inc && count + inc < table_size) {
         count += inc;
+        // `count` increased to the next power of 2 grows increment,
+        // but it cannot drop more digits
+        inc = SmallestIncrementNonzero(count, shift);
+      }
+      while (target < count - 0.5f * inc && count - inc > 0) {
+        count -= inc;
+        inc = SmallestIncrementNonzero(count, shift);
       }
       sum += count;
       counts[n] = count;
