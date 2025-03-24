@@ -252,9 +252,8 @@ bool RebalanceHistogram(const float* targets, int max_symbol, uint32_t shift,
                  EntropyIncLess);
   remainder_pos = entropy_inc_heap[0].ind;
   real max_freq = targets[remainder_pos];
-  ANSHistBin max_counts = max_freq;
-  // height of balancing bin is `max_counts + rest`
-  rest -= max_counts - 1;
+  // initial height of balancing bin is `rest + 1`
+  ++rest;
 
   std::pop_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(),
                 EntropyIncLess);
@@ -266,7 +265,7 @@ bool RebalanceHistogram(const float* targets, int max_symbol, uint32_t shift,
     ANSHistBin count = counts[ind];
     ANSHistBin inc = entropy_inc_heap[0].inc;
     // if balancing bin content does not drop below 1
-    if (rest + max_counts - inc > 0) {
+    if (rest > inc) {
       rest -= inc;
       count += inc;
       counts[ind] = count;
@@ -278,11 +277,10 @@ bool RebalanceHistogram(const float* targets, int max_symbol, uint32_t shift,
               : 0;
       entropy_inc_heap[0].inc = inc;
       // update balancing bin penalties for all bins
-      ANSHistBin curr_balance = rest + max_counts;
       for (auto& a : entropy_inc_heap) {
-        if (curr_balance - a.inc > 0)
+        if (rest > a.inc)
           a.max_bin =
-              max_freq * (log2[curr_balance] - log2[curr_balance - a.inc]);
+              max_freq * (log2[rest] - log2[rest - a.inc]);
         else
           a.max_bin = std::numeric_limits<float>::max();
       }
@@ -295,13 +293,14 @@ bool RebalanceHistogram(const float* targets, int max_symbol, uint32_t shift,
       std::make_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(),
                      EntropyIncLess);
     } else {
+      // we've done with that bin
       std::pop_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(),
                     EntropyIncLess);
       entropy_inc_heap.pop_back();
     }
   }
 
-  counts[remainder_pos] += rest;
+  counts[remainder_pos] = rest;
   *omit_pos = remainder_pos;
 
   return counts[remainder_pos] > 0;
