@@ -122,28 +122,47 @@ uint32_t SmallestIncrementNonzero(uint32_t count, uint32_t shift) {
   return 1u << drop_bits;
 }
 
-// float accuracy is not enough - differences between consequtive values are not
-// monotonic
-using real = double;
+uint32_t SmallestIncrementLogNonzero(uint32_t count, uint32_t shift) {
+  JXL_DASSERT(count > 0);
+  uint32_t bits = FloorLog2Nonzero(count);
+  uint32_t drop_bits = bits - GetPopulationCountPrecision(bits, shift);
+  return drop_bits;
+}
 
-const std::array<real, 1 << ANS_LOG_TAB_SIZE> log2 = []() {
-  std::array<real, 1 << ANS_LOG_TAB_SIZE> log2 = {};
-  log2[0] = 0;  // for entropy calculations it is OK
+// fixed-point log2 LUT
+const std::array<int32_t, 1 << ANS_LOG_TAB_SIZE> lg2 = []() {
+  std::array<int32_t, 1 << ANS_LOG_TAB_SIZE> lg2 = {};
+  lg2[0] = 0;  // for entropy calculations it is OK
   for (int i = 1; i < 1 << ANS_LOG_TAB_SIZE; ++i) {
-    log2[i] = std::log2(real(i));
+    lg2[i] = round(log2(i) / ANS_LOG_TAB_SIZE * (int64_t(1) << 31));
   }
-  return log2;
+  return lg2;
 }();
 
-bool RebalanceHistogram(const float* targets, int max_symbol, uint32_t shift,
-                        int* omit_pos, ANSHistBin* counts) {
-  JXL_ENSURE(max_symbol > 0);
+bool RebalanceHistogram(int max_symbol, uint32_t shift, int* omit_pos,
+                        ANSHistBin* counts) {
+  constexpr ANSHistBin table_size = 1 << ANS_LOG_TAB_SIZE;
+  // JXL_ENSURE(max_symbol > 0);
+  // JXL_ENSURE(max_symbol <= table_size);
 
-  const ANSHistBin table_size = 1 << ANS_LOG_TAB_SIZE;
+  // storage for initial counts
+  ANSHistBin freq[table_size];
+  ANSHistBin total = 0;
+  for (int n = 0; n < max_symbol; ++n) {
+    freq[n] = counts[n];
+    total += counts[n];
+  }
+  // if (total == 0) {  // only zeros
+  //   counts[0] = table_size;
+  //   return true;
+  // }
+  float norm = float(table_size) / total;
+  float targets[table_size];
+  for (int n = 0; n < max_symbol; ++n) targets[n] = counts[n] * norm;
+
+  int remainder_pos = 0;
   ANSHistBin sum = 0;
-  float sum_nonrounded = 0.0;
-  int remainder_pos = 0;  // if all of them are handled in first loop
-  int remainder_log = -1;
+  float sum_nonrounded = 0;
   for (int n = 0; n < max_symbol; ++n) {
     if (targets[n] > 0 && targets[n] < 1.0f) {
       counts[n] = 1;
@@ -153,150 +172,214 @@ bool RebalanceHistogram(const float* targets, int max_symbol, uint32_t shift,
   }
   const float discount_ratio =
       (table_size - sum) / (table_size - sum_nonrounded);
-  JXL_ENSURE(discount_ratio > 0);
-  JXL_ENSURE(discount_ratio <= 1.0f);
-  for (int n = 0; n < max_symbol; ++n) {
-    if (targets[n] >= 1.0f) {
-      const float target = discount_ratio * targets[n];
-      uint32_t count = target;  // truncation
-      if (count == 0) count = 1;
-      if (count >= table_size) count = table_size - 1;
-      // Round the count to the closest nonzero multiple of
-      // SmallestIncrementNonzero.
-      uint32_t inc = SmallestIncrementNonzero(count, shift);
-      count &= ~(inc - 1);
-      uint32_t twice_target = 2.0f * target + 0.5f;
-      while (twice_target < count + count - inc && count > inc) {
-        count -= inc;
-        // we can get lower than needed due to possible decrease of `inc`
-        // for new count, but it will be compensated by the next loop
-        inc = SmallestIncrementNonzero(count, shift);
-      }
-      while (twice_target >= count + count + inc && count + inc < table_size) {
-        count += inc;
-        // `count` increased to the next power of 2 grows increment,
-        // but it cannot drop more digits
-        inc = SmallestIncrementNonzero(count, shift);
-      }
-      sum += count;
-      counts[n] = count;
-      const int count_log = FloorLog2Nonzero(count);
-      if (count_log > remainder_log) {
-        remainder_pos = n;
-        remainder_log = count_log;
+
+  if (discount_ratio > 0 && discount_ratio <= 1.0f) {
+    for (int n = 0; n < max_symbol; ++n) {
+      if (targets[n] >= 1.0f) {
+        const float target = discount_ratio * targets[n];
+        uint32_t count = target;  // truncation
+        if (count == 0) count = 1;
+        if (count >= table_size) count = table_size - 1;
+        // Round the count to the closest nonzero multiple of
+        // SmallestIncrementNonzero.
+        uint32_t inc = SmallestIncrementNonzero(count, shift);
+        count &= ~(inc - 1);
+
+        uint32_t twice_target = 2.0f * target + 0.5f;
+        while (twice_target < count + count - inc && count > inc) {
+          count -= inc;
+          // we can get lower than needed due to possible decrease of `inc`
+          // for new count, but it will be compensated by the next loop
+          inc = SmallestIncrementNonzero(count, shift);
+        }
+        while (twice_target >= count + count + inc &&
+               count + inc < table_size) {
+          count += inc;
+          // `count` increased to the next power of 2 grows increment,
+          // but it cannot drop more digits
+          inc = SmallestIncrementNonzero(count, shift);
+        }
+
+        sum += count;
+        counts[n] = count;
+        if (count > static_cast<uint32_t>(counts[remainder_pos])) {
+          remainder_pos = n;
+        }
       }
     }
-  }
-  JXL_ENSURE(remainder_pos != -1);
-  // NOTE: This is the only place where counts could go negative. We could
-  // detect that, return false and make ANSHistBin uint32_t.
-  counts[remainder_pos] -= sum - table_size;
-  *omit_pos = remainder_pos;
+    // NOTE: This is the only place where counts could go negative. We could
+    // detect that, return false and make ANSHistBin uint32_t.
+    counts[remainder_pos] -= sum - table_size;
+    *omit_pos = remainder_pos;
 
-  if (counts[remainder_pos] > 0) return true;
+    if (counts[remainder_pos] > 0) return true;
+  }
 
   // Use an alternative rebalancing mechanism if the one above failed
   // to create a histogram that is positive wherever the first one was.
 
   // We are growing histogram step by step trying to maximize total entropy
-  // i.e. sum of (targets[n] * log[counts[n]]) with a given sum of counts[n].
-  // This sum is balanced by the counts[omit_pos] in the highest bin of
-  // max targets[n]. Each time a step with maximum entropy increase per unit
-  // of histogram growth is chosen.
-  // This greedy scheme is not guaranteed to achieve the global maximum,
-  // but cannot produce invalid histogram.
-  struct EntropyInc {
-    real curr;       // local entropy increase by a step in current bin
-    real max_bin;    // corresponding to this step penalty - entropy decrease in
-                     // balancing bin
-    ANSHistBin inc;  // step in current bin
-    int ind;         // index of current bin
+  // i.e. sum of `freq[n] * log[counts[n]]` with a given sum of counts[n].
+  // This sum is balanced by the `counts[omit_pos]` in the highest bin of
+  // histogram. Each time a step with maximum entropy increase per unit of
+  // histogram growth is chosen. This greedy scheme is not guaranteed to achieve
+  // the global maximum, but cannot produce invalid histogram.
+  // We use a fixed-point approximation for logarithms and all arithmetic is
+  // integer. Sum of `freq[n]` and each of `lg2[counts]` are supposed to be
+  // limited to `int32_t` range, so that the sum of their products should not
+  // exceed `int64_t`.
+  struct EntropyDelta {
+    // direct step
+    int64_t current_inc;  // local entropy increase by step in current bin
+    uint32_t inc_log;     // step in current bin
+    // reverse step
+    int64_t current_dec;
+    uint32_t dec_log;
 
-    EntropyInc(real curr, real max_bin, int inc, int ind)
-        : curr(curr), max_bin(max_bin), inc(inc), ind(ind) {}
-    // total entropy change by a step
-    real val() const { return curr - max_bin; };
+    int ind;  // index of current bin
+  };
+  // Penalties corresponding to different step sizes - entropy decrease in
+  // balancing bin, step of size (1 << ANS_LOG_TAB_SIZE - 1) is not possible
+  int64_t balance_inc[ANS_LOG_TAB_SIZE - 1];
+  int64_t balance_dec[ANS_LOG_TAB_SIZE - 1];
+  // Total entropy change by a step
+  auto delta_inc = [&](const EntropyDelta& a) {
+    return a.current_inc - balance_inc[a.inc_log];
+  };
+  auto delta_dec = [&](const EntropyDelta& a) {
+    return a.current_dec - balance_dec[a.dec_log];
   };
   // Compare steps by entropy increase per unit of histogram bin growth
-  auto EntropyIncLess = [](const EntropyInc& a, const EntropyInc& b) {
-    return (a.curr - a.max_bin) * b.inc < (b.curr - b.max_bin) * a.inc;
+  // TODO(ivan) check if rounding is better than truncation here
+  auto IncLess = [delta_inc](const EntropyDelta& a, const EntropyDelta& b) {
+    return delta_inc(a) >> a.inc_log < delta_inc(b) >> b.inc_log;
   };
-  // heap to store potential steps
-  std::vector<EntropyInc> entropy_inc_heap;
+  auto DecLess = [delta_dec](const EntropyDelta& a, const EntropyDelta& b) {
+    return delta_dec(a) >> a.dec_log > delta_dec(b) >> b.dec_log;
+  };
+  // Heap to store potential steps
+  std::vector<EntropyDelta> entropy_inc_heap;
+  entropy_inc_heap.reserve(256);
 
   ANSHistBin rest = table_size;  // reserve of histogram counts to distribute
   for (int n = 0; n < max_symbol; ++n) {
     // set 0 and minimal targets
-    ANSHistBin count_init = (targets[n] > 0);
+    ANSHistBin count_init = (freq[n] > 0);
     counts[n] = count_init;
     rest -= count_init;
-    // we don't know exact penalties yet, but they are all the same
-    if (targets[n] > 1)
-      entropy_inc_heap.emplace_back(
-          targets[n] * (log2[count_init + 1] - log2[count_init]), 0, 1, n);
+    // We don't know exact penalties yet, but they are all the same,
+    // so it does not impede heapifying further
+    if (count_init)
+      entropy_inc_heap.push_back(
+          {freq[n] * int64_t(lg2[2] - lg2[1]), 0, 0, 0, n});
   }
-  // treat special histograms
-  if (rest == table_size) {  // only zeros
-    counts[0] = table_size;
-    return true;
-  }
-  if (rest == table_size - 1) {  // single-bin
-    counts[entropy_inc_heap[0].ind] = table_size;
-    return true;
-  }
+  // Treat special histograms
+  // if (rest == table_size) {  // only zeros
+  //   counts[0] = table_size;
+  //   return true;
+  // }
+  // if (rest == table_size - 1) {  // single-bin
+  //   counts[entropy_inc_heap[0].ind] = table_size;
+  //   return true;
+  // }
   if (rest == 0) return true;  // ready histogram
-  if (rest < 0) return false;  // too wide
+  // if (rest < 0) return false;  // too wide
 
-  // define highest balancing bin
-  std::make_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(),
-                 EntropyIncLess);
+  // Define highest balancing bin
+  std::make_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(), IncLess);
   remainder_pos = entropy_inc_heap[0].ind;
-  real max_freq = targets[remainder_pos];
-  // initial height of balancing bin is `rest + 1`
+  const int64_t max_freq = freq[remainder_pos];
+  // Initial height of balancing bin is `rest + 1`
   ++rest;
 
-  std::pop_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(),
-                EntropyIncLess);
+  std::pop_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(), IncLess);
   entropy_inc_heap.pop_back();
 
+  // Update balancing bin penalties
+  auto update_balance = [&]() {
+    for (uint32_t log = 0; log < ANS_LOG_TAB_SIZE - 1; ++log) {
+      ANSHistBin delta = 1 << log;
+      balance_inc[log] =
+          max_freq * int64_t(lg2[rest] - lg2[std::max(0, rest - delta)]);
+      balance_dec[log] =
+          max_freq *
+          int64_t(lg2[std::min(table_size - 1, rest + delta)] - lg2[rest]);
+    }
+  };
+  update_balance();
+  // Remove bins with never-increasing entropy - we cannot decrease them
+  entropy_inc_heap.erase(
+      std::remove_if(
+          entropy_inc_heap.begin(), entropy_inc_heap.end(),
+          [delta_inc](const EntropyDelta& a) { return delta_inc(a) <= 0; }),
+      entropy_inc_heap.end());
+
   while (!entropy_inc_heap.empty()) {
-    //  try to grow the bin with the best entropy increase
-    int ind = entropy_inc_heap[0].ind;
-    ANSHistBin count = counts[ind];
-    ANSHistBin inc = entropy_inc_heap[0].inc;
-    // if balancing bin content does not drop below 1
-    if (rest > inc) {
-      rest -= inc;
-      count += inc;
-      counts[ind] = count;
-      // update current bin entropy increase
-      inc = SmallestIncrementNonzero(count, shift);
-      entropy_inc_heap[0].curr =
-          (count + inc < table_size)
-              ? targets[ind] * (log2[count + inc] - log2[count])
-              : 0;
-      entropy_inc_heap[0].inc = inc;
-      // update balancing bin penalties for all bins
-      for (auto& a : entropy_inc_heap) {
-        if (rest > a.inc)
-          a.max_bin =
-              max_freq * (log2[rest] - log2[rest - a.inc]);
-        else
-          a.max_bin = std::numeric_limits<float>::max();
+    // restore the heap
+    std::make_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(), IncLess);
+
+    if (delta_inc(entropy_inc_heap[0]) > 0) {
+      // Try to grow the bin with the best entropy increase
+      int ind = entropy_inc_heap[0].ind;
+      ANSHistBin count = counts[ind];
+      ANSHistBin inc = 1 << entropy_inc_heap[0].inc_log;
+      // If balancing bin content does not drop below 1
+      if (rest > inc) {
+        rest -= inc;
+        count += inc;
+        counts[ind] = count;
+        // update current bin step
+        entropy_inc_heap[0].dec_log = entropy_inc_heap[0].inc_log;
+        entropy_inc_heap[0].current_dec = entropy_inc_heap[0].current_inc;
+
+        uint32_t inc_log = SmallestIncrementLogNonzero(count, shift);
+        inc = 1 << inc_log;
+        entropy_inc_heap[0].current_inc =
+            freq[ind] *
+            int64_t(lg2[std::min(table_size - 1, count + inc)] - lg2[count]);
+        entropy_inc_heap[0].inc_log = inc_log;
+        // update balancing bin penalties
+        update_balance();
+      } else {  // move the bin into the end of inc heap making its `delta_inc`
+                // negative
+        entropy_inc_heap[0].current_inc = 0;
       }
-      // remove steps with non-increasing entropy
-      entropy_inc_heap.erase(
-          std::remove_if(entropy_inc_heap.begin(), entropy_inc_heap.end(),
-                         [](const EntropyInc& a) { return a.val() <= 0; }),
-          entropy_inc_heap.end());
-      // restore the heap
-      std::make_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(),
-                     EntropyIncLess);
     } else {
-      // we've done with that bin
-      std::pop_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(),
-                    EntropyIncLess);
-      entropy_inc_heap.pop_back();
+      // If all the increasing bin steps produce negative entropy,
+      // try to reverse the grow direction.
+      // This still implies that either entropy is increasing each step or a bin
+      // is removed from valid ones, so we cannot loop infinitely
+      std::make_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(), DecLess);
+      // break if no steps can grow entropy
+      if (delta_dec(entropy_inc_heap[0]) >= 0) break;
+      // Try to reverse the step
+      int ind = entropy_inc_heap[0].ind;
+      ANSHistBin count = counts[ind];
+      ANSHistBin dec = 1 << entropy_inc_heap[0].dec_log;
+      // If step back is possible
+      if (rest + dec < table_size && count > dec) {
+        rest += dec;
+        count -= dec;
+        counts[ind] = count;
+
+        entropy_inc_heap[0].inc_log = entropy_inc_heap[0].dec_log;
+        entropy_inc_heap[0].current_inc = entropy_inc_heap[0].current_dec;
+
+        // restore next backward step
+        dec = (FloorLog2Nonzero<uint32_t>(count) ==
+               FloorLog2Nonzero<uint32_t>(count + dec))
+                  ? dec
+                  : -(-dec >> 1);  // shift of negative do not convert -1 into 0
+        entropy_inc_heap[0].dec_log = FloorLog2Nonzero<uint32_t>(dec);
+        entropy_inc_heap[0].current_dec =
+            freq[ind] * int64_t(lg2[count] - lg2[std::max(0, count - dec)]);
+        // update balancing bin penalties
+        update_balance();
+      } else {  // move the bin into the end of dec heap making its `delta_dec`
+                // positive
+        entropy_inc_heap[0].current_dec = std::numeric_limits<int64_t>::max();
+      }
+      std::make_heap(entropy_inc_heap.begin(), entropy_inc_heap.end(), IncLess);
     }
   }
 
@@ -309,11 +392,9 @@ bool RebalanceHistogram(const float* targets, int max_symbol, uint32_t shift,
 Status NormalizeCounts(ANSHistBin* counts, int* omit_pos, const int length,
                        uint32_t shift, int* num_symbols, int* symbols) {
   const int32_t table_size = 1 << ANS_LOG_TAB_SIZE;
-  uint64_t total = 0;
   int max_symbol = 0;
   int symbol_count = 0;
   for (int n = 0; n < length; ++n) {
-    total += counts[n];
     if (counts[n] > 0) {
       if (symbol_count < kMaxNumSymbolsForSmallCode) {
         symbols[symbol_count] = n;
@@ -330,16 +411,10 @@ Status NormalizeCounts(ANSHistBin* counts, int* omit_pos, const int length,
     counts[symbols[0]] = table_size;
     return true;
   }
-  if (symbol_count > table_size)
+  if (symbol_count > table_size || max_symbol > table_size)
     return JXL_FAILURE("Too many entries in an ANS histogram");
 
-  const float norm = 1.f * table_size / total;
-  std::vector<float> targets(max_symbol);
-  for (size_t n = 0; n < targets.size(); ++n) {
-    targets[n] = norm * counts[n];
-  }
-  if (!RebalanceHistogram(targets.data(), max_symbol, shift, omit_pos,
-                          counts)) {
+  if (!RebalanceHistogram(max_symbol, shift, omit_pos, counts)) {
     return JXL_FAILURE("Logic error: couldn't rebalance a histogram");
   }
   return true;
