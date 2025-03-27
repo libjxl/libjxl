@@ -277,24 +277,22 @@ bool RebalanceHistogram(ANSHistBin total, int max_symbol, uint32_t shift,
     const uint32_t max_log =
         SmallestIncrementLog((1 << ANS_LOG_TAB_SIZE) - 1, shift);
     auto update_balance = [&]() {
-      if (rest > 1) {
-        for (uint32_t log = 0; log <= max_log; ++log) {
-          ANSHistBin delta = 1 << log;
+      for (uint32_t log = 0; log <= max_log; ++log) {
+        ANSHistBin delta = 1 << log;
+        if (rest > 1) {
           // Guards against non-possible steps
           balance_inc[log] =
               rest < table_size && rest > delta
                   ? max_freq * int64_t(lg2[rest] - lg2[rest - delta])
-                  : std::numeric_limits<int64_t>::max();
+                  : std::numeric_limits<int64_t>::max();  // forbid
           balance_dec[log] =
               rest + delta < table_size
                   ? max_freq * int64_t(lg2[rest + delta] - lg2[rest])
-                  : 0;
-        }
-      } else {
-        // Tract negative or zero `rest` into positive
-        for (uint32_t log = 0; log <= max_log; ++log) {
-          balance_inc[log] = 0;
-          balance_dec[log] = std::numeric_limits<int64_t>::max();
+                  : 0;  // forbid
+        } else {
+          // Tract negative or zero `rest` into positive
+          balance_inc[log] = std::numeric_limits<int64_t>::max();  // forbid all
+          balance_dec[log] = std::numeric_limits<int64_t>::max();  // permit all
         }
       }
     };
