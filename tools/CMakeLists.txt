@@ -164,6 +164,10 @@ if(JPEGXL_ENABLE_TOOLS)
   target_link_libraries(jxlinfo jxl jxl_extras_nocodec-internal)
   list(APPEND TOOL_BINARIES jxlinfo)
 
+  add_executable(jxltran jxltran.cc)
+  target_link_libraries(jxltran jxl jxl_tool)
+  list(APPEND TOOL_BINARIES jxltran)
+
   if(NOT SANITIZER STREQUAL "none")
     # Linking a C test binary with the C++ JPEG XL implementation when using
     # address sanitizer is not well supported by clang 9, so force using clang++
