@@ -56,8 +56,8 @@ Image3F GenerateTestGradient(uint32_t color0, uint32_t color1, double angle,
   double y1 = y0 + std::cos(angle / 360.0 * 2.0 * kPi);
 
   double maxdist =
-      std::max<double>(fabs(PointLineDist(x0, y0, x1, y1, 0, 0)),
-                       fabs(PointLineDist(x0, y0, x1, y1, xsize, 0)));
+      std::max<double>(std::fabs(PointLineDist(x0, y0, x1, y1, 0, 0)),
+                       std::fabs(PointLineDist(x0, y0, x1, y1, xsize, 0)));
 
   for (size_t c = 0; c < 3; ++c) {
     float c0 = ((color0 >> (8 * (2 - c))) & 255);
