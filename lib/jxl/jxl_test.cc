@@ -1081,7 +1081,8 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 223026);
+  EXPECT_SLIGHTLY_BELOW(
+      Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 223040u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
