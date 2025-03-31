@@ -94,7 +94,7 @@ uint32_t SmallestIncrementLog(uint32_t count, uint32_t shift) {
 const auto lg2 = []() {
   std::array<uint32_t, ANS_TAB_SIZE + 1> lg2;
   lg2[0] = 0;  // for entropy calculations it is OK
-  for (size_t i = 1; i < std::size(lg2); ++i) {
+  for (size_t i = 1; i < lg2.size(); ++i) {
     lg2[i] = round(std::ldexp(log2(i) / ANS_LOG_TAB_SIZE, 31));
   }
   return lg2;
@@ -145,9 +145,9 @@ const auto allowed_counts = []() {
   std::array<std::array<CountsEntropy, ANS_TAB_SIZE>, ANS_LOG_TAB_SIZE>
       allowed_counts = {};
 
-  for (uint32_t shift = 0; shift < std::size(allowed_counts); ++shift) {
+  for (uint32_t shift = 0; shift < allowed_counts.size(); ++shift) {
     auto& ac = allowed_counts[shift];
-    for (uint32_t i = 1; i < std::size(allowed_counts[0]); ++i) {
+    for (uint32_t i = 1; i < allowed_counts[0].size(); ++i) {
       int32_t cnt = i & ~((1 << SmallestIncrementLog(i, shift)) - 1);
       ac[cnt].count = cnt;
     }
