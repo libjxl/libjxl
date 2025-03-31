@@ -72,38 +72,6 @@ void ANSBuildInfoTable(const ANSHistBin* counts, const AliasTable::Entry* table,
   }
 }
 
-float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
-                       size_t len) {
-  float sum = 0.0f;
-  int total_histogram = 0;
-  int total_counts = 0;
-  for (size_t i = 0; i < len; ++i) {
-    total_histogram += histogram[i];
-    total_counts += counts[i];
-    if (histogram[i] > 0) {
-      JXL_DASSERT(counts[i] > 0);
-      // += histogram[i] * -log(counts[i]/total_counts)
-      sum += histogram[i] *
-             std::max(0.0f, ANS_LOG_TAB_SIZE - FastLog2f(counts[i]));
-    }
-  }
-  if (total_histogram > 0) {
-    // Used only in assert.
-    (void)total_counts;
-    JXL_DASSERT(total_counts == ANS_TAB_SIZE);
-  }
-  return sum;
-}
-
-float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
-  const float flat_bits = std::max(FastLog2f(len), 0.0f);
-  float total_histogram = 0;
-  for (size_t i = 0; i < len; ++i) {
-    total_histogram += histogram[i];
-  }
-  return total_histogram * flat_bits;
-}
-
 // Static Huffman code for encoding logcounts. The last symbol is used as RLE
 // sequence.
 const uint8_t kLogCountBitLengths[ANS_LOG_TAB_SIZE + 2] = {
@@ -124,13 +92,44 @@ uint32_t SmallestIncrementLog(uint32_t count, uint32_t shift) {
 
 // fixed-point log2 LUT
 const auto lg2 = []() {
-  std::array<int32_t, ANS_TAB_SIZE> lg2;
+  std::array<uint32_t, ANS_TAB_SIZE + 1> lg2;
   lg2[0] = 0;  // for entropy calculations it is OK
-  for (int i = 1; i < ANS_TAB_SIZE; ++i) {
-    lg2[i] = round(log2(i) / ANS_LOG_TAB_SIZE * (int64_t(1) << 31));
+  for (size_t i = 1; i < std::size(lg2); ++i) {
+    lg2[i] = round(std::ldexp(log2(i) / ANS_LOG_TAB_SIZE, 31));
   }
   return lg2;
 }();
+
+float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
+                        size_t len) {
+  int64_t sum = 0;
+  int total_histogram = 0;
+  int total_counts = 0;
+  for (size_t i = 0; i < len; ++i) {
+    total_histogram += histogram[i];
+    total_counts += counts[i];
+    if (histogram[i] > 0) {
+      JXL_DASSERT(counts[i] > 0);
+    }
+    // += histogram[i] * -log(counts[i]/total_counts)
+    sum += histogram[i] * int64_t(lg2[counts[i]]);
+  }
+  if (total_histogram > 0) {
+    // Used only in assert.
+    (void)total_counts;
+    JXL_DASSERT(total_counts == ANS_TAB_SIZE);
+  }
+  return (total_histogram - std::ldexpf(sum, -31)) * ANS_LOG_TAB_SIZE;
+}
+
+float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
+  int64_t flat_bits = int64_t(lg2[len]) * ANS_LOG_TAB_SIZE;
+  int total_histogram = 0;
+  for (size_t i = 0; i < len; ++i) {
+    total_histogram += histogram[i];
+  }
+  return std::ldexpf(total_histogram * flat_bits, -31);
+}
 
 struct CountsEntropy {
   ANSHistBin count : 16;   // allowed value of counts in a histogram bin
@@ -214,8 +213,8 @@ bool RebalanceHistogram(ANSHistBin total, int max_symbol, uint32_t shift,
     return a.freq * int64_t(ac[a.count_ind + 1].delta_lg2) -
            balance_dec[ac[a.count_ind + 1].step_log];
   };
-  // Compare steps by entropy increase per unit of histogram bin change
-  // TODO(ivan) check if rounding is better than truncation here
+  // Compare steps by entropy increase per unit of histogram bin change.
+  // Truncation is OK here, accuracy is anyway better than float
   const auto IncLess = [&](const EntropyDelta& a, const EntropyDelta& b) {
     return delta_entropy_inc(a) >> ac[a.count_ind].step_log <
            delta_entropy_inc(b) >> ac[b.count_ind].step_log;
@@ -259,17 +258,15 @@ bool RebalanceHistogram(ANSHistBin total, int max_symbol, uint32_t shift,
   }
 
   // Delete the highest balancing bin from adjustable by `allowed_counts`
-  bins.erase(std::remove_if(bins.begin(), bins.end(),
-                            [&](const EntropyDelta& a) {
-                              return a.bin_ind == remainder_pos;
-                            }),
-             bins.end());
+  bins.erase(std::find_if(bins.begin(), bins.end(), [&](const EntropyDelta& a) {
+    return a.bin_ind == remainder_pos;
+  }));
   // From now on `rest` is the height of balancing bin,
   // here it can be negative, but will be tracted into positive domain later
   rest += counts[remainder_pos];
 
   if (!bins.empty()) {
-    const uint32_t max_log = SmallestIncrementLog(table_size - 1, shift);
+    const uint32_t max_log = ac[1].step_log;
     while (true) {
       // Update balancing bin penalties setting guards and tractors
       for (uint32_t log = 0; log <= max_log; ++log) {
@@ -316,7 +313,7 @@ bool RebalanceHistogram(ANSHistBin total, int max_symbol, uint32_t shift,
     for (auto& a : bins) counts[a.bin_ind] = ac[a.count_ind].count;
 
     // The scheme works fine if we have room to grow `logcount` of balancing
-    // bin, otherwise we need to put balancing bin to the first bin of 11 bit
+    // bin, otherwise we need to put balancing bin to the first bin of 12 bit
     // width. In this case both that bin and balancing one should be close to
     // 2048 in targets, so exchange of them will not produce much worse
     // histogram
@@ -524,6 +521,9 @@ void EncodeFlatHistogram(const int alphabet_size, BitWriter* writer) {
 
 StatusOr<float> ComputeHistoAndDataCost(const ANSHistBin* histogram,
                                         size_t alphabet_size, uint32_t method) {
+  // TODO(ivan) check possible SIMD
+  while (alphabet_size > 0 && histogram[alphabet_size - 1] == 0)
+    --alphabet_size;
   if (method == 0) {  // Flat code
     return ANS_LOG_TAB_SIZE + 2 +
            EstimateDataBitsFlat(histogram, alphabet_size);
