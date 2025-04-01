@@ -476,32 +476,34 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
     switch (cparams_.decoding_speed_tier) {
       case 0:
         break;
-      case 1:
-        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kWPOnly;
+      case 1: // No Weighted predictor
+        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
         break;
-      case 2: {
+      case 2: { // Gradient only
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kGradientOnly;
         cparams_.options.predictor = Predictor::Gradient;
         break;
       }
-      case 3: {  // LZ77, no Gradient.
+      case 3: {  // No MA tree, Gradient predictor only.
         cparams_.options.nb_repeats = 0;
         cparams_.options.predictor = Predictor::Gradient;
         break;
       }
-      default: {  // LZ77, no predictor.
+      default: {  // Only LZ77.
+        cparams_.options.tree_kind =
+            ModularOptions::TreeKind::kTrivialTreeNoPredictor;
         cparams_.options.nb_repeats = 0;
         cparams_.options.predictor = Predictor::Zero;
         break;
       }
     }
   }
-  if (cparams_.decoding_speed_tier >= 1 && cparams_.responsive &&
-      cparams_.ModularPartIsLossless()) {
-    cparams_.options.tree_kind =
-        ModularOptions::TreeKind::kTrivialTreeNoPredictor;
-    cparams_.options.nb_repeats = 0;
-  }
+//  if (cparams_.decoding_speed_tier >= 1 && cparams_.responsive &&
+//      cparams_.ModularPartIsLossless()) {
+//    cparams_.options.tree_kind =
+//        ModularOptions::TreeKind::kTrivialTreeNoPredictor;
+//    cparams_.options.nb_repeats = 0;
+//  }
   for (size_t i = 0; i < num_streams; ++i) {
     stream_images_.emplace_back(memory_manager_);
   }
@@ -607,9 +609,9 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       // TODO(veluca): allow all predictors that don't break residual
       // multipliers in lossy mode.
       cparams_.options.predictor = Predictor::Variable;
-    } else if (cparams_.responsive || cparams_.lossy_palette) {
-      // zero predictor for Squeeze residues and lossy palette
-      cparams_.options.predictor = Predictor::Zero;
+    } else if (cparams_.lossy_palette) {
+      // AvgAll predictor for delta palette/lossy palette
+      cparams_.options.predictor = Predictor::Average4;
     } else if (!cparams_.IsLossless()) {
       // If not responsive and lossy. TODO(veluca): use near_lossless instead?
       cparams_.options.predictor = Predictor::Gradient;
@@ -1436,8 +1438,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   // and 17 RCTs
   if (cparams.color_transform == ColorTransform::kNone &&
       cparams.IsLossless() && cparams.colorspace < 0 &&
-      gi.channel.size() - gi.nb_meta_channels >= 3 &&
-      cparams.responsive == JXL_FALSE && do_color &&
+      gi.channel.size() - gi.nb_meta_channels >= 3 && do_color &&
       cparams.speed_tier <= SpeedTier::kHare) {
     Transform sg(TransformId::kRCT);
     sg.begin_c = gi.nb_meta_channels;
