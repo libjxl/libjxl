@@ -1854,12 +1854,7 @@ HistogramParams HistogramParams::ForModular(
         cparams.speed_tier > SpeedTier::kThunder
             ? HistogramParams::ANSHistogramStrategy::kFast
             : HistogramParams::ANSHistogramStrategy::kApproximate;
-    params.lz77_method =
-        cparams.decoding_speed_tier >= 3 && cparams.modular_mode
-            ? (cparams.speed_tier >= SpeedTier::kFalcon
-                   ? HistogramParams::LZ77Method::kRLE
-                   : HistogramParams::LZ77Method::kLZ77)
-            : HistogramParams::LZ77Method::kNone;
+    params.lz77_method = HistogramParams::LZ77Method::kNone;
     // Near-lossless DC, as well as modular mode, require choosing hybrid uint
     // more carefully.
     if ((!extra_dc_precision.empty() && extra_dc_precision[0] != 0) ||
@@ -1873,17 +1868,17 @@ HistogramParams HistogramParams::ForModular(
   } else {
     params.lz77_method = HistogramParams::LZ77Method::kLZ77;
   }
-  if (cparams.decoding_speed_tier >= 1) {
+  if (cparams.decoding_speed_tier >= 2) {
     params.max_histograms = 12;
   }
-  if (cparams.decoding_speed_tier >= 1 && cparams.responsive) {
+  if cparams.decoding_speed_tier >= 3 {
     params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
                              ? HistogramParams::LZ77Method::kRLE
                          : cparams.speed_tier >= SpeedTier::kKitten
                              ? HistogramParams::LZ77Method::kLZ77
                              : HistogramParams::LZ77Method::kOptimal;
   }
-  if (cparams.decoding_speed_tier >= 2 && cparams.responsive) {
+  if (cparams.decoding_speed_tier >= 4) {
     params.uint_method = HistogramParams::HybridUintMethod::k000;
     params.force_huffman = true;
   }
