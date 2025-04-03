@@ -479,31 +479,25 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       case 1: // No Weighted predictor
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
         break;
-      case 2: { // Gradient only
+      case 2: { // No Weighted predictor, Group size 0
+        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+        cparams.modular_group_size_shift = 0;
+        break;
+      }
+      case 3: { // Gradient only, Group size 0
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kGradientOnly;
         cparams_.options.predictor = Predictor::Gradient;
+        cparams.modular_group_size_shift = 0;
         break;
       }
-      case 3: {  // No MA tree, Gradient predictor only.
-        cparams_.options.nb_repeats = 0;
+      default: {  // Gradient only, Group size 0, No MA tree
         cparams_.options.predictor = Predictor::Gradient;
-        break;
-      }
-      default: {  // Only LZ77.
-        cparams_.options.tree_kind =
-            ModularOptions::TreeKind::kTrivialTreeNoPredictor;
+        cparams.modular_group_size_shift = 0;
         cparams_.options.nb_repeats = 0;
-        cparams_.options.predictor = Predictor::Zero;
         break;
       }
     }
   }
-//  if (cparams_.decoding_speed_tier >= 1 && cparams_.responsive &&
-//      cparams_.ModularPartIsLossless()) {
-//    cparams_.options.tree_kind =
-//        ModularOptions::TreeKind::kTrivialTreeNoPredictor;
-//    cparams_.options.nb_repeats = 0;
-//  }
   for (size_t i = 0; i < num_streams; ++i) {
     stream_images_.emplace_back(memory_manager_);
   }
@@ -625,8 +619,6 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       // just gradient predictor in thunder mode
       cparams_.options.predictor = Predictor::Gradient;
     }
-  } else {
-    if (cparams_.lossy_palette) cparams_.options.predictor = Predictor::Zero;
   }
   if (!cparams_.ModularPartIsLossless()) {
     if (cparams_.options.predictor == Predictor::Weighted ||
