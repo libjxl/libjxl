@@ -95,7 +95,7 @@ const auto lg2 = []() {
   std::array<uint32_t, ANS_TAB_SIZE + 1> lg2;
   lg2[0] = 0;  // for entropy calculations it is OK
   for (size_t i = 1; i < lg2.size(); ++i) {
-    lg2[i] = round(std::ldexp(log2(i) / ANS_LOG_TAB_SIZE, 31));
+    lg2[i] = round(ldexp(log2(i) / ANS_LOG_TAB_SIZE, 31));
   }
   return lg2;
 }();
@@ -119,7 +119,7 @@ float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
     (void)total_counts;
     JXL_DASSERT(total_counts == ANS_TAB_SIZE);
   }
-  return (total_histogram - std::ldexpf(sum, -31)) * ANS_LOG_TAB_SIZE;
+  return (total_histogram - ldexpf(sum, -31)) * ANS_LOG_TAB_SIZE;
 }
 
 float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
@@ -128,7 +128,7 @@ float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
   for (size_t i = 0; i < len; ++i) {
     total_histogram += histogram[i];
   }
-  return std::ldexpf(total_histogram * flat_bits, -31);
+  return ldexpf(total_histogram * flat_bits, -31);
 }
 
 struct CountsEntropy {
@@ -223,7 +223,7 @@ bool RebalanceHistogram(ANSHistBin total, int max_symbol, uint32_t shift,
     return delta_entropy_dec(a) >> ac[a.count_ind + 1].step_log <
            delta_entropy_dec(b) >> ac[b.count_ind + 1].step_log;
   };
-  // Vector of adjustable bins from `alllowed_counts`
+  // Vector of adjustable bins from `allowed_counts`
   std::vector<EntropyDelta> bins;
   bins.reserve(256);
 
