@@ -1870,6 +1870,7 @@ HistogramParams HistogramParams::ForModular(
   }
   if (cparams.decoding_speed_tier >= 2) {
     params.max_histograms = 12;
+  // This barely increases decoding speed, is it even worth using?
   }
   if (cparams.decoding_speed_tier >= 3) {
     params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
@@ -1879,8 +1880,12 @@ HistogramParams HistogramParams::ForModular(
                              : HistogramParams::LZ77Method::kOptimal;
   }
   if (cparams.decoding_speed_tier >= 4) {
-    params.uint_method = HistogramParams::HybridUintMethod::k000;
-    params.force_huffman = true;
+    params.clustering = HistogramParams::ClusteringType::kBest;
+	params.ans_histogram_strategy = HistogramParams::ANSHistogramStrategy::kPrecise;
+  //  This change needs more benchmarking, better density and slightly better
+  //  decoding speed on my PC. Old params are below.
+  //    params.uint_method = HistogramParams::HybridUintMethod::k000;
+  //    params.force_huffman = true;
   }
   return params;
 }
