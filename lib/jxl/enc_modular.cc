@@ -479,21 +479,22 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       case 1: // No Weighted predictor
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
         break;
-      case 2: { // No Weighted predictor, Group size 0
+      case 2: { // No Weighted predictor, Group size 0, sizes defined in enc_frame.cc
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
-        cparams.modular_group_size_shift = 0;
         break;
       }
       case 3: { // Gradient only, Group size 0
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kGradientOnly;
         cparams_.options.predictor = Predictor::Gradient;
-        cparams.modular_group_size_shift = 0;
         break;
       }
       default: {  // Gradient only, Group size 0, No MA tree
+        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kGradientOnly;
+          // Readding TreeMode bring level 4 up to parity with level 3
         cparams_.options.predictor = Predictor::Gradient;
-        cparams.modular_group_size_shift = 0;
         cparams_.options.nb_repeats = 0;
+          // Disabling MA Trees sometimes doesn't increase decode speed
+          // depending on image/PC, sacrificing density for nothing
         break;
       }
     }
