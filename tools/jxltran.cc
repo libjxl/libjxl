@@ -3,11 +3,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+
 #include <string>
 #include <vector>
 
-#include "lib/include/jxl/decode.h"
-#include "lib/include/jxl/decode_cxx.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 
@@ -169,4 +170,3 @@ int JxlTranMain(int argc, const char* argv[]) {
 int main(int argc, const char* argv[]) {
   return jpegxl::tools::JxlTranMain(argc, argv);
 }
-
