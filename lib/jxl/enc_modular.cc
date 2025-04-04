@@ -380,7 +380,7 @@ void try_palettes(Image& gi, int& max_bitdepth, int& maxval,
       maybe_palette.lossy_palette =
           (cparams_.lossy_palette && maybe_palette.num_c == 3);
       if (maybe_palette.lossy_palette) {
-        maybe_palette.predictor = delta_pred_;
+        maybe_palette.predictor = Predictor::Average4;
       }
       // TODO(veluca): use a custom weighted header if using the weighted
       // predictor.
@@ -401,7 +401,7 @@ void try_palettes(Image& gi, int& max_bitdepth, int& maxval,
       maybe_palette_3.ordered_palette = cparams_.palette_colors >= 0;
       maybe_palette_3.lossy_palette = cparams_.lossy_palette;
       if (maybe_palette_3.lossy_palette) {
-        maybe_palette_3.predictor = delta_pred_;
+        maybe_palette_3.predictor = Predictor::Average4;
       }
       if (maybe_do_transform(gi, maybe_palette_3, cparams_, weighted::Header(),
                              cost_before, pool, cparams_.options.zero_tokens)) {
@@ -621,9 +621,8 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       cparams_.options.predictor = Predictor::Gradient;
     }
    } else {
-      delta_pred_ = cparams_.options.predictor;
-      if (cparams_.lossy_palette) cparams_.options.predictor = Predictor::Zero;
-   }
+    if (cparams_.lossy_palette) cparams_.options.predictor = Predictor::Zero;
+  }
   if (!cparams_.ModularPartIsLossless()) {
     if (cparams_.options.predictor == Predictor::Weighted ||
         cparams_.options.predictor == Predictor::Variable ||
