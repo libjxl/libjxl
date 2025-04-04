@@ -49,7 +49,7 @@ struct ProgressiveMode {
 
   template <size_t nump>
   explicit ProgressiveMode(const PassDefinition (&p)[nump]) {
-    static_assert(nump <= kMaxNumPasses);
+    static_assert(nump <= kMaxNumPasses, "Too many passes");
     num_passes = nump;
     PassDefinition previous_pass{
         /*num_coefficients=*/1, /*shift=*/0,
