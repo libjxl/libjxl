@@ -499,6 +499,11 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       }
     }
   }
+if (cparams_.responsive && cparams_.ModularPartIsLossless()) {
+    // None is best for the squeezed channels, but residuals suffer.
+    // Add kSqueeze that tries most common predictors, including none.
+    cparams_.options.predictor = Predictor::Zero;
+}
   for (size_t i = 0; i < num_streams; ++i) {
     stream_images_.emplace_back(memory_manager_);
   }
@@ -1422,7 +1427,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
-      if (!(cparams.responsive && cparams.decoding_speed_tier >= 1)) {
+      if (!(cparams.responsive && (cparams.decoding_speed_tier >= 1 || cparams.IsLossless()))) {
         channel_color_percent = cparams.channel_colors_percent;
       }
       try_palettes(gi, max_bitdepth, maxval, cparams, channel_color_percent);
@@ -1438,7 +1443,10 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     Transform sg(TransformId::kRCT);
     sg.begin_c = gi.nb_meta_channels;
     size_t nb_rcts_to_try = 0;
-    switch (cparams.speed_tier) {
+      if (cparams.responsive && cparams.IsLossless()) {
+          nb_rcts_to_try = 0;
+      } else {
+      switch (cparams.speed_tier) {
       case SpeedTier::kLightning:
       case SpeedTier::kThunder:
       case SpeedTier::kFalcon:
@@ -1463,6 +1471,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         nb_rcts_to_try = 19;
         break;
     }
+  }
     float best_cost = std::numeric_limits<float>::max();
     size_t best_rct = 0;
     // These should be 19 actually different transforms; the remaining ones
