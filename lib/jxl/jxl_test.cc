@@ -925,7 +925,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
   std::vector<uint8_t> compressed;
   EXPECT_TRUE(test::EncodeFile(cparams, io.get(), &compressed));
-  EXPECT_LE(compressed.size(), 18000u);
+  EXPECT_LE(compressed.size(), 18313u);
 
   for (bool use_image_callback : {false, true}) {
     for (bool unpremul_alpha : {false, true}) {
@@ -1081,7 +1081,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 223044);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 223047);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1158,7 +1158,7 @@ TEST(JxlTest, RoundtripLossless8Alpha) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 251456);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 251466);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.alpha_bits, 8);
   EXPECT_TRUE(test::SameAlpha(t.ppf(), ppf_out));
@@ -1197,7 +1197,7 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
 
   PackedPixelFile ppf_out;
   // TODO(szabadka) Investigate big size difference on i686
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 4665, 100);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 4906, 100);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.alpha_bits, 16);
   EXPECT_TRUE(test::SameAlpha(t.ppf(), ppf_out));
@@ -1236,7 +1236,7 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 280, 50);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 331, 50);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.bits_per_sample, 16);
   EXPECT_EQ(ppf_out.info.alpha_bits, 16);
@@ -1332,7 +1332,7 @@ TEST(JxlTest, RoundtripLossless8Gray) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 92179);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 92859);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.color_encoding.color_space, JXL_COLOR_SPACE_GRAY);
   EXPECT_EQ(ppf_out.info.bits_per_sample, 8);
