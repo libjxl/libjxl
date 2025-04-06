@@ -499,7 +499,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       }
     }
   }
-if (cparams_.responsive && cparams_.ModularPartIsLossless()) {
+if (cparams_.responsive && cparams_.IsLossless()) {
     // None is best for the squeezed channels, but residuals suffer.
     // Add kSqueeze that tries most common predictors, including none.
     cparams_.options.predictor = Predictor::Zero;
