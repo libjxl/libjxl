@@ -514,9 +514,10 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
   }
 
 if (cparams_.responsive && cparams_.IsLossless()) {
-    // None is best for the squeezed channels, but residuals suffer.
+    // YCoCg and Zero is best for the squeezed channels, but residuals suffer.
     // TODO: Add kSqueeze that tries most common predictors, including none.
     cparams_.options.predictor = Predictor::Zero;
+    cparams.colorspace = 6;
 }
 
   cparams_.options.splitting_heuristics_node_threshold =
@@ -1444,9 +1445,6 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     Transform sg(TransformId::kRCT);
     sg.begin_c = gi.nb_meta_channels;
     size_t nb_rcts_to_try = 0;
-      if (cparams.responsive && cparams.IsLossless()) {
-          nb_rcts_to_try = 0;
-      } else {
       switch (cparams.speed_tier) {
       case SpeedTier::kLightning:
       case SpeedTier::kThunder:
@@ -1472,7 +1470,6 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         nb_rcts_to_try = 19;
         break;
     }
-  }
     float best_cost = std::numeric_limits<float>::max();
     size_t best_rct = 0;
     // These should be 19 actually different transforms; the remaining ones
