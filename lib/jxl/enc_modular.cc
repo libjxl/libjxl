@@ -479,31 +479,26 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       case 1: // No Weighted predictor
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
         break;
-      case 2: { // No Weighted predictor, Group size 0, sizes defined in enc_frame.cc
+      case 2: { // No Weighted predictor and Group size 0 defined in enc_frame.cc
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
         break;
       }
-      case 3: { // Gradient only, Group size 0
+      case 3: { // Gradient only, Group size 0, and Fast MA tree
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kGradientOnly;
         cparams_.options.predictor = Predictor::Gradient;
         break;
       }
-      default: {  // Gradient only, Group size 0, No MA tree
+      default: { // Gradient only, Group size 0, and No MA tree
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kGradientOnly;
-          // Readding TreeMode bring level 4 up to parity with level 3
         cparams_.options.predictor = Predictor::Gradient;
         cparams_.options.nb_repeats = 0;
           // Disabling MA Trees sometimes doesn't increase decode speed
-          // depending on image/PC, sacrificing density for nothing
+          // depending on PC
         break;
       }
     }
   }
-if (cparams_.responsive && cparams_.IsLossless()) {
-    // None is best for the squeezed channels, but residuals suffer.
-    // Add kSqueeze that tries most common predictors, including none.
-    cparams_.options.predictor = Predictor::Zero;
-}
+
   for (size_t i = 0; i < num_streams; ++i) {
     stream_images_.emplace_back(memory_manager_);
   }
@@ -517,6 +512,12 @@ if (cparams_.responsive && cparams_.IsLossless()) {
       cparams_.responsive = 1;
     }
   }
+
+if (cparams_.responsive && cparams_.IsLossless()) {
+    // None is best for the squeezed channels, but residuals suffer.
+    // TODO: Add kSqueeze that tries most common predictors, including none.
+    cparams_.options.predictor = Predictor::Zero;
+}
 
   cparams_.options.splitting_heuristics_node_threshold =
       82 + 14 * static_cast<int>(cparams_.speed_tier);
