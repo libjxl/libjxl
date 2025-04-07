@@ -514,10 +514,15 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
   }
 
 if (cparams_.responsive && cparams_.IsLossless()) {
-    // YCoCg and Zero is best for the squeezed channels, but residuals suffer.
-    // TODO: Add kSqueeze that tries most common predictors, including none.
-    cparams_.options.predictor = Predictor::Zero;
-    cparams.colorspace = 6;
+    // Predictor Zero is best for the squeezed channels, but residuals suffer.
+    // TODO: Try adding kSqueeze with the most common predictors, including none.
+    if (cparams_.options.predictor == kUndefinedPredictor) {
+        cparams_.options.predictor = Predictor::Zero;
+    }
+    //RCT selection seems bugged with Squeeze, YCoCg works well.
+    if (cparams.colorspace < 0) {
+        cparams.colorspace = 6;
+    }
 }
 
   cparams_.options.splitting_heuristics_node_threshold =
