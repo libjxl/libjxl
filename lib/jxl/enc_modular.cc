@@ -520,8 +520,8 @@ if (cparams_.responsive && cparams_.IsLossless()) {
         cparams_.options.predictor = Predictor::Zero;
     }
     //RCT selection seems bugged with Squeeze, YCoCg works well.
-    if (cparams.colorspace < 0) {
-        cparams.colorspace = 6;
+    if (cparams_.colorspace < 0) {
+        cparams_.colorspace = 6;
     }
 }
 
