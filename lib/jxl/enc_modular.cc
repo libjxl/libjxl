@@ -513,6 +513,13 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
     }
   }
 
+  // Progressive lossless only benefits from levels 2 and higher
+  // Lower levels of faster decoding can outperfom higher tiers
+  // depending on the PC
+  if (cparams_.responsive == 1 && cparams_.IsLossless() && cparams_.decoding_speed_tier == 1) {
+    cparams_.decoding_speed_tier = 2;
+  }
+
 if (cparams_.responsive && cparams_.IsLossless()) {
     // Predictor Zero is best for the squeezed channels, but residuals suffer.
     // TODO: Try adding kSqueeze with the most common predictors, including none.
