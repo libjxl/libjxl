@@ -517,8 +517,12 @@ if (cparams_.responsive && cparams_.IsLossless()) {
     // Predictor Zero is best for the squeezed channels, but residuals suffer.
     // TODO: Try adding kSqueeze with the most common predictors, including none.
     if (cparams_.options.predictor == kUndefinedPredictor) {
+        if (cparams_.speed_tier <= SpeedTier::kGlacier) {
+        cparams_.options.predictor = Predictor::Variable;
+    } else {
         cparams_.options.predictor = Predictor::Zero;
     }
+}
     //RCT selection seems bugged with Squeeze, YCoCg works well.
     if (cparams_.colorspace < 0) {
         cparams_.colorspace = 6;
