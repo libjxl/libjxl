@@ -346,7 +346,10 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
 	  // by default uses the smallest group size for faster decoding 2 and
 	  // higher, greatly speeds up decoding via multithreading at the cost
 	  // of density.
-	 } else {}
+    } else if (cparams.responsive && cparams.decoding_speed_tier == 1) {
+		frame_header->group_size_shift = 0;
+		// Force decoding speed to tier 2 for progessive lossless
+	 }
   }
 
   if (jpeg_data) {
