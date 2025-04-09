@@ -341,6 +341,13 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
     } else {
       frame_header->group_size_shift = cparams.modular_group_size_shift;
     }
+	  // Progressive lossless only benefits from levels 2 and 4
+	  if (cparams_.responsive && cparams_.IsLossless()) {
+		  if (cparams.decoding_speed_tier = 1) {
+			  cparams.decoding_speed_tier 2 }
+		  if (cparams.decoding_speed_tier = 3) {
+			  cparams.decoding_speed_tier 4 }
+	  }
     if (cparams.modular_group_size_shift == -1 && cparams.decoding_speed_tier >= 2) {
 	  frame_header->group_size_shift = 0;
 	  // by default uses the smallest group size for faster decoding 2 and
