@@ -520,7 +520,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
     cparams_.decoding_speed_tier = 2;
   }
 
-if (cparams_.responsive && cparams_.IsLossless()) {
+if (cparams_.responsive) {
     // Predictor Zero is best for the squeezed channels, but residuals suffer.
     // TODO: Try adding kSqueeze with the most common predictors, including none.
     if (cparams_.options.predictor == kUndefinedPredictor) {
