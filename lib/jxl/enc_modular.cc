@@ -519,17 +519,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
   if (cparams_.responsive == 1 && cparams_.IsLossless() && cparams_.decoding_speed_tier == 1) {
     cparams_.decoding_speed_tier = 2;
   }
-
-if (cparams_.responsive) {
-    // Predictor Zero is best for the squeezed channels, but residuals suffer.
-    // TODO: Try adding kSqueeze with the most common predictors, including none.
-    if (cparams_.options.predictor == kUndefinedPredictor) {
-        if (cparams_.speed_tier <= SpeedTier::kGlacier) {
-        cparams_.options.predictor = Predictor::Variable;
-    } else {
-        cparams_.options.predictor = Predictor::Zero;
-    }
-}
+if (cparams_.responsive && cparams_.IsLossless()) {
     //RCT selection seems bugged with Squeeze, YCoCg works well.
     if (cparams_.colorspace < 0) {
         cparams_.colorspace = 6;
@@ -627,8 +617,10 @@ if (cparams_.responsive) {
       // TODO(veluca): allow all predictors that don't break residual
       // multipliers in lossy mode.
       cparams_.options.predictor = Predictor::Variable;
-    } else if (cparams_.lossy_palette) {
-      // zero predictor for lossy palette indices
+    } else if (cparams_.responsive || cparams_.lossy_palette) {
+    // zero predictor for Squeeze residues and lossy palette indices
+    // TODO: Try adding 'Squeezed' predictor set, with the most
+    // common predictors used by Variable in squeezed images, including none.
       cparams_.options.predictor = Predictor::Zero;
     } else if (!cparams_.IsLossless()) {
       // If not responsive and lossy. TODO(veluca): use near_lossless instead?
@@ -1456,7 +1448,8 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   // and 17 RCTs
   if (cparams.color_transform == ColorTransform::kNone &&
       cparams.IsLossless() && cparams.colorspace < 0 &&
-      gi.channel.size() - gi.nb_meta_channels >= 3 && do_color &&
+      gi.channel.size() - gi.nb_meta_channels >= 3 &&
+      cparams.responsive == JXL_FALSE && do_color &&
       cparams.speed_tier <= SpeedTier::kHare) {
     Transform sg(TransformId::kRCT);
     sg.begin_c = gi.nb_meta_channels;
