@@ -74,26 +74,31 @@ class RectT {
 
   template <template <class> class P, typename V>
   V* Row(P<V>* image, size_t y) const {
+    JXL_DASSERT(y >= 0 && y0_ + y >= y0_);
     return image->Row(y + y0_) + x0_;
   }
 
   template <template <class> class P, typename V>
   const V* Row(const P<V>* image, size_t y) const {
+    JXL_DASSERT(y >= 0 && y0_ + y >= y0_);
     return image->Row(y + y0_) + x0_;
   }
 
   template <template <class> class MP, typename V>
   V* PlaneRow(MP<V>* image, const size_t c, size_t y) const {
+    JXL_DASSERT(y >= 0 && y0_ + y >= y0_);
     return image->PlaneRow(c, y + y0_) + x0_;
   }
 
   template <template <class> class P, typename V>
   const V* ConstRow(const P<V>& image, size_t y) const {
+    JXL_DASSERT(y >= 0 && y0_ + y >= y0_);
     return image.ConstRow(y + y0_) + x0_;
   }
 
   template <template <class> class MP, typename V>
   const V* ConstPlaneRow(const MP<V>& image, size_t c, size_t y) const {
+    JXL_DASSERT(y >= 0 && y0_ + y >= y0_);
     return image.ConstPlaneRow(c, y + y0_) + x0_;
   }
 
