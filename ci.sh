@@ -711,7 +711,9 @@ cmd_msan_install() {
       ["15"]="15.0.7"
       ["16"]="16.0.6"
       ["17"]="17.0.6"
-      ["18"]="18.1.6"
+      ["18"]="18.1.8"
+      ["19"]="19.1.7"
+      ["20"]="20.1.2"
     ) 
     local llvm_tag="${CLANG_VERSION}.0.0"
     if [[ -n "${llvm_tag_by_version["${CLANG_VERSION}"]}" ]]; then
