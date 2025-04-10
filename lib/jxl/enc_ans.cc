@@ -91,7 +91,7 @@ uint32_t SmallestIncrementLog(uint32_t count, uint32_t shift) {
 }
 
 // fixed-point log2 LUT
-const auto lg2 = []() {
+const auto lg2 = [] {
   std::array<uint32_t, ANS_TAB_SIZE + 1> lg2;
   lg2[0] = 0;  // for entropy calculations it is OK
   for (size_t i = 1; i < lg2.size(); ++i) {
@@ -111,8 +111,7 @@ float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
     if (histogram[i] > 0) {
       JXL_DASSERT(counts[i] > 0);
     }
-    // += histogram[i] * -log(counts[i]/total_counts)
-    sum += histogram[i] * int64_t(lg2[counts[i]]);
+    sum += histogram[i] * int64_t{lg2[counts[i]]};
   }
   if (total_histogram > 0) {
     // Used only in assert.
@@ -123,7 +122,7 @@ float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
 }
 
 float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
-  int64_t flat_bits = int64_t(lg2[len]) * ANS_LOG_TAB_SIZE;
+  int64_t flat_bits = int64_t{lg2[len]} * ANS_LOG_TAB_SIZE;
   int total_histogram = 0;
   for (size_t i = 0; i < len; ++i) {
     total_histogram += histogram[i];
@@ -159,7 +158,7 @@ const auto allowed_counts = []() {
     while (ac[ind].count > 0) {
       ac[ind].delta_lg2 =
           round(log2(double(ac[ind - 1].count) / ac[ind].count) /
-                ANS_LOG_TAB_SIZE * (int64_t(1) << 31));
+                ANS_LOG_TAB_SIZE * (int64_t{1} << 31));
       ac[ind].step_log =
           FloorLog2Nonzero<uint32_t>(ac[ind - 1].count - ac[ind].count);
       ++ind;
@@ -206,11 +205,11 @@ bool RebalanceHistogram(ANSHistBin total, int max_symbol, uint32_t shift,
   // together with corresponding decrease/increase in the balancing bin.
   // Inc steps increase current bin, dec steps decrease
   const auto delta_entropy_inc = [&](const EntropyDelta& a) {
-    return a.freq * int64_t(ac[a.count_ind].delta_lg2) -
+    return a.freq * int64_t{ac[a.count_ind].delta_lg2} -
            balance_inc[ac[a.count_ind].step_log];
   };
   const auto delta_entropy_dec = [&](const EntropyDelta& a) {
-    return a.freq * int64_t(ac[a.count_ind + 1].delta_lg2) -
+    return a.freq * int64_t{ac[a.count_ind + 1].delta_lg2} -
            balance_dec[ac[a.count_ind + 1].step_log];
   };
   // Compare steps by entropy increase per unit of histogram bin change.
@@ -279,11 +278,11 @@ bool RebalanceHistogram(ANSHistBin total, int max_symbol, uint32_t shift,
           // `rest` is OK, put guards against non-possible steps
           balance_inc[log] =
               rest > delta  // possible step
-                  ? max_freq * int64_t(lg2[rest] - lg2[rest - delta])
+                  ? max_freq * int64_t{lg2[rest] - lg2[rest - delta]}
                   : std::numeric_limits<int64_t>::max();  // forbidden
           balance_dec[log] =
               rest + delta < table_size  // possible step
-                  ? max_freq * int64_t(lg2[rest + delta] - lg2[rest])
+                  ? max_freq * int64_t{lg2[rest + delta] - lg2[rest]}
                   : 0;  // forbidden
         } else {
           // Tract negative or zero `rest` into positive:
