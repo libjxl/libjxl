@@ -55,3 +55,16 @@ invocation. To build and test the project, run
 
 This writes binaries to `build/tools` and runs unit tests. More information
 on [build modes and testing](building_and_testing.md) is available.
+
+## Debian Build with Docker
+
+There is a Dockerfile contained in the `.devcontainer` which can be used for building on windows
+to create a docker image.  It is used as a devcontainer in your editor, or from the command line via:
+
+```bash
+docker build . -f .devcontainer/Dockerfile -t libjxl
+docker run --mount type=bind,src=.,dst=/workspaces/libjxl -i libjxl
+emconfigure ./ci.sh release
+```
+
+See also the building wasm for how to use this image to build wasm builds.
