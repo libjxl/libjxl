@@ -589,17 +589,6 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   TreeSamples tree_samples_storage;
   size_t total_pixels_storage = 0;
   if (!total_pixels) total_pixels = &total_pixels_storage;
-  if (*total_pixels == 0) {
-    for (size_t i = 0; i < nb_channels; i++) {
-      if (i >= image.nb_meta_channels &&
-          (image.channel[i].w > options.max_chan_size ||
-           image.channel[i].h > options.max_chan_size)) {
-        break;
-      }
-      *total_pixels += image.channel[i].w * image.channel[i].h;
-    }
-    *total_pixels = std::max<size_t>(*total_pixels, 1);
-  }
   // If there's no tree, compute one (or gather data to).
   if (tree == nullptr &&
       options.tree_kind == ModularOptions::TreeKind::kLearn) {
@@ -647,6 +636,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     EntropyEncodingData code;
     std::vector<uint8_t> context_map;
 
+    *total_pixels = std::max<size_t>(*total_pixels, 1);
     std::vector<std::vector<Token>> tree_tokens(1);
     if (options.tree_kind == ModularOptions::TreeKind::kLearn) {
       JXL_ASSIGN_OR_RETURN(
