@@ -149,7 +149,7 @@ Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
     // Invalid input, e.g. due to invalid usage of RLE.
     if (omit_pos < 0) return JXL_FAILURE("Invalid histogram.");
     if (static_cast<size_t>(omit_pos) + 1 < logcounts.size() &&
-        logcounts[omit_pos + 1] == ANS_TAB_SIZE + 1) {
+        logcounts[omit_pos + 1] == ANS_LOG_TAB_SIZE + 1) {
       return JXL_FAILURE("Invalid histogram.");
     }
     int prev = 0;
