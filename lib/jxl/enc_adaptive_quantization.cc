@@ -872,12 +872,12 @@ StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,
 
   size_t num_special_frames = enc_state->special_frames.size();
   size_t num_passes = enc_state->progressive_splitter.GetNumPasses();
-  JXL_ASSIGN_OR_RETURN(ModularFrameEncoder modular_frame_encoder,
+  JXL_ASSIGN_OR_RETURN(auto modular_frame_encoder,
                        ModularFrameEncoder::Create(memory_manager, frame_header,
                                                    enc_state->cparams, false));
-  JXL_RETURN_IF_ERROR(InitializePassesEncoder(frame_header, opsin, Rect(opsin),
-                                              cms, pool, enc_state,
-                                              &modular_frame_encoder, nullptr));
+  JXL_RETURN_IF_ERROR(
+      InitializePassesEncoder(frame_header, opsin, Rect(opsin), cms, pool,
+                              enc_state, modular_frame_encoder.get(), nullptr));
   JXL_RETURN_IF_ERROR(dec_state->Init(frame_header));
   JXL_RETURN_IF_ERROR(dec_state->InitForAC(num_passes, pool));
 

@@ -138,9 +138,9 @@ std::vector<ColorEncodingDescriptor> AllEncodings();
 
 // Returns a CodecInOut based on the buf, xsize, ysize, and the assumption
 // that the buffer was created using `GetSomeTestImage`.
-jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
-                                          size_t num_channels, size_t xsize,
-                                          size_t ysize);
+std::unique_ptr<jxl::CodecInOut> SomeTestImageToCodecInOut(
+    const std::vector<uint8_t>& buf, size_t num_channels, size_t xsize,
+    size_t ysize);
 
 bool Near(double expected, double value, double max_dist);
 

@@ -8,9 +8,9 @@ cmake_minimum_required(VERSION 3.16...3.27)
 
 project(LIBJXL_DOC LANGUAGES C CXX)
 
-find_package(Doxygen)
+find_package(Doxygen OPTIONAL_COMPONENTS dot)
 
-if(DOXYGEN_FOUND)
+if(DOXYGEN_FOUND AND TARGET Doxygen::dot)
   set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../lib")
   set(DOXYGEN_GENERATE_HTML "YES")
   set(DOXYGEN_GENERATE_XML "YES")
@@ -47,9 +47,10 @@ if(DOXYGEN_FOUND)
 
 else()  # DOXYGEN_FOUND
 
+  message(WARNING "Doxygen or Dot not installed; 'doc' target will FAIL")
   # Create a "doc" target for compatibility since "doc" is not otherwise added
   # to the build when doxygen is not installed.
   add_custom_target(doc false
-    COMMENT "Error: Can't generate doc since Doxygen not installed.")
+    COMMENT "Error: Can't generate doc since Doxygen or Dot not installed.")
 
 endif() # DOXYGEN_FOUND

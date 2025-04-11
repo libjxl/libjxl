@@ -3677,7 +3677,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   encoder.output = output;
   encoder.code = &code[0];
   encoder.PrepareForSimd();
-  int16_t p[4][32 + 1024] = {};
+  std::vector<std::array<int16_t, 32 + 1024>> p(4);
   size_t i = 0;
   size_t have_zero = 1;
   for (; i < pcolors; i++) {
@@ -3687,21 +3687,25 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
     p[3][16 + i + have_zero] = (palette[i] >> 24) & 0xFF;
   }
   p[0][15] = 0;
-  row_encoder.ProcessRow(p[0] + 16, p[0] + 15, p[0] + 15, p[0] + 15, pcolors);
+  row_encoder.ProcessRow(p[0].data() + 16, p[0].data() + 15, p[0].data() + 15,
+                         p[0].data() + 15, pcolors);
   p[1][15] = p[0][16];
   p[0][15] = p[0][16];
   if (nb_chans > 1) {
-    row_encoder.ProcessRow(p[1] + 16, p[1] + 15, p[0] + 16, p[0] + 15, pcolors);
+    row_encoder.ProcessRow(p[1].data() + 16, p[1].data() + 15, p[0].data() + 16,
+                           p[0].data() + 15, pcolors);
   }
   p[2][15] = p[1][16];
   p[1][15] = p[1][16];
   if (nb_chans > 2) {
-    row_encoder.ProcessRow(p[2] + 16, p[2] + 15, p[1] + 16, p[1] + 15, pcolors);
+    row_encoder.ProcessRow(p[2].data() + 16, p[2].data() + 15, p[1].data() + 16,
+                           p[1].data() + 15, pcolors);
   }
   p[3][15] = p[2][16];
   p[2][15] = p[2][16];
   if (nb_chans > 3) {
-    row_encoder.ProcessRow(p[3] + 16, p[3] + 15, p[2] + 16, p[2] + 15, pcolors);
+    row_encoder.ProcessRow(p[3].data() + 16, p[3].data() + 15, p[2].data() + 16,
+                           p[2].data() + 15, pcolors);
   }
   row_encoder.Finalize();
 

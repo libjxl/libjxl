@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -451,11 +452,12 @@ void try_palettes(Image& gi, int& max_bitdepth, int& maxval,
 
 }  // namespace
 
-StatusOr<ModularFrameEncoder> ModularFrameEncoder::Create(
+StatusOr<std::unique_ptr<ModularFrameEncoder>> ModularFrameEncoder::Create(
     JxlMemoryManager* memory_manager, const FrameHeader& frame_header,
     const CompressParams& cparams_orig, bool streaming_mode) {
-  ModularFrameEncoder self{memory_manager};
-  JXL_RETURN_IF_ERROR(self.Init(frame_header, cparams_orig, streaming_mode));
+  auto self = std::unique_ptr<ModularFrameEncoder>(
+      new ModularFrameEncoder(memory_manager));
+  JXL_RETURN_IF_ERROR(self->Init(frame_header, cparams_orig, streaming_mode));
   return self;
 }
 

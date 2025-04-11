@@ -176,21 +176,21 @@ Status int_to_float(const pixel_type* const JXL_RESTRICT row_in,
 #if JXL_DEBUG_V_LEVEL >= 1
 std::string ModularStreamId::DebugString() const {
   std::ostringstream os;
-  os << (kind == GlobalData   ? "ModularGlobal"
-         : kind == VarDCTDC   ? "VarDCTDC"
-         : kind == ModularDC  ? "ModularDC"
-         : kind == ACMetadata ? "ACMeta"
-         : kind == QuantTable ? "QuantTable"
-         : kind == ModularAC  ? "ModularAC"
-                              : "");
-  if (kind == VarDCTDC || kind == ModularDC || kind == ACMetadata ||
-      kind == ModularAC) {
+  os << (kind == Kind::GlobalData   ? "ModularGlobal"
+         : kind == Kind::VarDCTDC   ? "VarDCTDC"
+         : kind == Kind::ModularDC  ? "ModularDC"
+         : kind == Kind::ACMetadata ? "ACMeta"
+         : kind == Kind::QuantTable ? "QuantTable"
+         : kind == Kind::ModularAC  ? "ModularAC"
+                                    : "");
+  if (kind == Kind::VarDCTDC || kind == Kind::ModularDC ||
+      kind == Kind::ACMetadata || kind == Kind::ModularAC) {
     os << " group " << group_id;
   }
-  if (kind == ModularAC) {
+  if (kind == Kind::ModularAC) {
     os << " pass " << pass_id;
   }
-  if (kind == QuantTable) {
+  if (kind == Kind::QuantTable) {
     os << " " << quant_table_id;
   }
   return os.str();

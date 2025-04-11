@@ -160,8 +160,7 @@ class ReadVisitor : public VisitorBase {
               uint32_t* JXL_RESTRICT value) override {
     *value = BitsCoder::Read(bits, reader_);
     if (!reader_->AllReadsWithinBounds()) {
-      return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                        "Not enough bytes for header");
+      return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
     }
     return true;
   }
@@ -170,8 +169,7 @@ class ReadVisitor : public VisitorBase {
              uint32_t* JXL_RESTRICT value) override {
     *value = U32Coder::Read(dist, reader_);
     if (!reader_->AllReadsWithinBounds()) {
-      return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                        "Not enough bytes for header");
+      return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
     }
     return true;
   }
@@ -180,8 +178,7 @@ class ReadVisitor : public VisitorBase {
              uint64_t* JXL_RESTRICT value) override {
     *value = U64Coder::Read(reader_);
     if (!reader_->AllReadsWithinBounds()) {
-      return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                        "Not enough bytes for header");
+      return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
     }
     return true;
   }
@@ -190,8 +187,7 @@ class ReadVisitor : public VisitorBase {
              float* JXL_RESTRICT value) override {
     ok_ &= F16Coder::Read(reader_, value);
     if (!reader_->AllReadsWithinBounds()) {
-      return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                        "Not enough bytes for header");
+      return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
     }
     return true;
   }
@@ -252,8 +248,7 @@ class ReadVisitor : public VisitorBase {
       JXL_WARNING("Skipping %" PRIuS "-bit extension(s)", remaining_bits);
       reader_->SkipBits(remaining_bits);
       if (!reader_->AllReadsWithinBounds()) {
-        return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                          "Not enough bytes for header");
+        return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
       }
     }
     return true;
@@ -592,8 +587,7 @@ Status CheckHasEnoughBits(Visitor* visitor, size_t bits) {
   size_t have_bits = rv->reader_->TotalBytes() * kBitsPerByte;
   size_t want_bits = bits + rv->reader_->TotalBitsConsumed();
   if (have_bits < want_bits) {
-    return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                      "Not enough bytes for header");
+    return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
   }
   return true;
 }

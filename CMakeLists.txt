@@ -217,7 +217,7 @@ if (NOT CMAKE_C_COMPILER_ID STREQUAL CMAKE_CXX_COMPILER_ID)
 endif()
 
 message(STATUS
-    "Compiled IDs C:${CMAKE_C_COMPILER_ID}, C++:${CMAKE_CXX_COMPILER_ID}")
+    "Compiler IDs C:${CMAKE_C_COMPILER_ID}, C++:${CMAKE_CXX_COMPILER_ID}")
 
 set(JXL_HWY_INCLUDE_DIRS "$<BUILD_INTERFACE:$<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>>")
 # Always disable SSSE3 since it is rare to have SSSE3 but not SSE4
@@ -254,7 +254,7 @@ if(JPEGXL_STATIC)
   # Clang developers say that in case to use "static" we have to build stdlib
   # ourselves; for real use case we don't care about stdlib, as it is "granted",
   # so just linking all other libraries is fine.
-  if (NOT MSVC)
+  if (NOT MSVC AND NOT APPLE)
     string(APPEND CMAKE_EXE_LINKER_FLAGS " -static")
   endif()
   if ((NOT WIN32 AND NOT APPLE) OR CYGWIN OR MINGW)

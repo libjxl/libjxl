@@ -95,10 +95,10 @@ class WebPCodec : public ImageCodec {
   Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io{jpegxl::tools::NoMemoryManager()};
+    auto io = jxl::make_unique<CodecInOut>(jpegxl::tools::NoMemoryManager());
     JXL_RETURN_IF_ERROR(
-        jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, &io));
-    return Compress(filename, &io, pool, compressed, speed_stats);
+        jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, io.get()));
+    return Compress(filename, io.get(), pool, compressed, speed_stats);
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
@@ -179,12 +179,12 @@ class WebPCodec : public ImageCodec {
                     const Span<const uint8_t> compressed, ThreadPool* pool,
                     PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io{jpegxl::tools::NoMemoryManager()};
+    auto io = jxl::make_unique<CodecInOut>(jpegxl::tools::NoMemoryManager());
     JXL_RETURN_IF_ERROR(
-        Decompress(filename, compressed, pool, &io, speed_stats));
+        Decompress(filename, compressed, pool, io.get(), speed_stats));
     JxlPixelFormat format{0, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
     return jxl::extras::ConvertCodecInOutToPackedPixelFile(
-        io, format, io.Main().c_current(), pool, ppf);
+        *io, format, io->Main().c_current(), pool, ppf);
   };
 
   Status Decompress(const std::string& filename,

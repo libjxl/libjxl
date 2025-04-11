@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
@@ -74,9 +75,9 @@ int main(int argc, char** argv) {
   if (argc != 3) return PrintUsage(argv);
   JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
 
-  jxl::CodecInOut io1{memory_manager};
-  jxl::CodecInOut io2{memory_manager};
-  jxl::CodecInOut* io[2] = {&io1, &io2};
+  auto io1 = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  auto io2 = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  jxl::CodecInOut* io[2] = {io1.get(), io2.get()};
   const char* purpose[] = {"original", "distorted"};
   for (size_t i = 0; i < 2; ++i) {
     std::vector<uint8_t> encoded;
@@ -95,23 +96,23 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (io1.xsize() != io2.xsize() || io1.ysize() != io2.ysize()) {
+  if (io1->xsize() != io2->xsize() || io1->ysize() != io2->ysize()) {
     QUIT("Image size mismatch.");
   }
 
-  if (!io1.Main().HasAlpha()) {
+  if (!io1->Main().HasAlpha()) {
     JXL_ASSIGN_OR_QUIT(Msssim msssim,
-                       ComputeSSIMULACRA2(io1.Main(), io2.Main()),
+                       ComputeSSIMULACRA2(io1->Main(), io2->Main()),
                        "ComputeSSIMULACRA2 failed.");
     printf("%.8f\n", msssim.Score());
   } else {
     // in case of alpha transparency: blend against dark and bright backgrounds
     // and return the worst of both scores
     JXL_ASSIGN_OR_QUIT(Msssim msssim0,
-                       ComputeSSIMULACRA2(io1.Main(), io2.Main(), 0.1f),
+                       ComputeSSIMULACRA2(io1->Main(), io2->Main(), 0.1f),
                        "ComputeSSIMULACRA2 failed.");
     JXL_ASSIGN_OR_QUIT(Msssim msssim1,
-                       ComputeSSIMULACRA2(io1.Main(), io2.Main(), 0.9f),
+                       ComputeSSIMULACRA2(io1->Main(), io2->Main(), 0.9f),
                        "ComputeSSIMULACRA2 failed.");
     printf("%.8f\n", std::min(msssim0.Score(), msssim1.Score()));
   }

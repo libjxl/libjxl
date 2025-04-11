@@ -31,6 +31,8 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+#if HWY_TARGET != HWY_SCALAR
+
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::Abs;
 using hwy::HWY_NAMESPACE::Add;
@@ -40,6 +42,7 @@ using hwy::HWY_NAMESPACE::IfThenElse;
 using hwy::HWY_NAMESPACE::IfThenZeroElse;
 using hwy::HWY_NAMESPACE::Lt;
 using hwy::HWY_NAMESPACE::MulEven;
+using hwy::HWY_NAMESPACE::MulOdd;
 using hwy::HWY_NAMESPACE::Ne;
 using hwy::HWY_NAMESPACE::Neg;
 using hwy::HWY_NAMESPACE::OddEven;
@@ -49,7 +52,10 @@ using hwy::HWY_NAMESPACE::ShiftRight;
 using hwy::HWY_NAMESPACE::Sub;
 using hwy::HWY_NAMESPACE::Xor;
 
-#if HWY_TARGET != HWY_SCALAR
+using D = HWY_CAPPED(pixel_type, 8);
+using DU = RebindToUnsigned<D>;
+constexpr D d;
+constexpr DU du;
 
 JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
                               const pixel_type *JXL_RESTRICT p_avg,
@@ -57,8 +63,6 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
                               const pixel_type *p_pout,
                               pixel_type *JXL_RESTRICT p_out,
                               pixel_type *p_nout) {
-  const HWY_CAPPED(pixel_type, 8) d;
-  const RebindToUnsigned<decltype(d)> du;
   const size_t N = Lanes(d);
   auto onethird = Set(d, 0x55555556);
   for (size_t x = 0; x < 8; x += N) {
@@ -74,12 +78,13 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
     auto absan = Abs(an);
     auto absBn = Abs(Sub(top, next_avg));
     // Compute a3 = absBa / 3
-    auto a3e = BitCast(d, ShiftRight<32>(MulEven(absBa, onethird)));
-    auto a3oi = MulEven(Reverse(d, absBa), onethird);
-    auto a3o = BitCast(
-        d, Reverse(hwy::HWY_NAMESPACE::Repartition<pixel_type_w, decltype(d)>(),
-                   a3oi));
-    auto a3 = OddEven(a3o, a3e);
+    auto a3eh = MulEven(absBa, onethird);
+    auto a3oh = MulOdd(absBa, onethird);
+#if HWY_IS_LITTLE_ENDIAN
+    auto a3 = InterleaveOdd(d, BitCast(d, a3eh), BitCast(d, a3oh));
+#else
+    auto a3 = InterleaveEven(d, BitCast(d, a3eh), BitCast(d, a3oh));
+#endif
     a3 = Add(a3, Add(absBn, Set(d, 2)));
     auto absdiff = ShiftRight<2>(a3);
     auto skipdiff = Ne(Ba, Zero(d));
@@ -105,7 +110,7 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
   }
 }
 
-#endif
+#endif  // HWY_TARGET != HWY_SCALAR
 
 Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   JXL_ENSURE(c < input.channel.size());
@@ -180,7 +185,6 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
     HWY_ALIGN pixel_type b_p_out_odd[8 * kRowsPerThread];
     HWY_ALIGN pixel_type b_p_out_evenT[8 * kRowsPerThread];
     HWY_ALIGN pixel_type b_p_out_oddT[8 * kRowsPerThread];
-    const HWY_CAPPED(pixel_type, 8) d;
     const size_t N = Lanes(d);
     if (chin_residual.w > 16 && rows == kRowsPerThread) {
       for (; x < chin_residual.w - 9; x += 8) {
@@ -208,7 +212,7 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
         }
       }
     }
-#endif
+#endif  // HWY_TARGET != HWY_SCALAR
     for (size_t y = 0; y < rows; y++) {
       unsqueeze_row(y0 + y, x);
     }

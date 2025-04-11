@@ -34,11 +34,13 @@ namespace {
 using hwy::HWY_NAMESPACE::IfThenZeroElse;
 
 struct OpLinear {
+  explicit OpLinear(const OutputEncodingInfo&) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {}
 };
 
 struct OpRgb {
+  explicit OpRgb(const OutputEncodingInfo&) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
@@ -48,7 +50,8 @@ struct OpRgb {
 };
 
 struct OpPq {
-  explicit OpPq(const float intensity_target) : tf_pq_(intensity_target) {}
+  explicit OpPq(const OutputEncodingInfo& output_encoding_info)
+      : tf_pq_(output_encoding_info.orig_intensity_target) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
@@ -59,9 +62,10 @@ struct OpPq {
 };
 
 struct OpHlg {
-  explicit OpHlg(const Vector3& luminances, const float intensity_target)
-      : hlg_ootf_(HlgOOTF::FromSceneLight(
-            /*display_luminance=*/intensity_target, luminances)) {}
+  explicit OpHlg(const OutputEncodingInfo& output_encoding_info)
+      : hlg_ootf_(
+            HlgOOTF::FromSceneLight(output_encoding_info.orig_intensity_target,
+                                    output_encoding_info.luminances)) {}
 
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
@@ -74,6 +78,7 @@ struct OpHlg {
 };
 
 struct Op709 {
+  explicit Op709(const OutputEncodingInfo&) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
@@ -83,6 +88,8 @@ struct Op709 {
 };
 
 struct OpGamma {
+  explicit OpGamma(const OutputEncodingInfo& output_encoding_info)
+      : gamma(1.f / output_encoding_info.inverse_gamma) {}
   const float gamma;
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
@@ -94,6 +101,7 @@ struct OpGamma {
 };
 
 struct OpInvalid {
+  explicit OpInvalid(const OutputEncodingInfo&) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {}
 };
@@ -101,9 +109,9 @@ struct OpInvalid {
 template <typename Op>
 class ToLinearStage : public RenderPipelineStage {
  public:
-  explicit ToLinearStage(Op&& op)
+  explicit ToLinearStage(const OutputEncodingInfo& output_encoding_info)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
-        op_(std::move(op)) {}
+        op_(output_encoding_info) {}
 
   explicit ToLinearStage()
       : RenderPipelineStage(RenderPipelineStage::Settings()), valid_(false) {}
@@ -153,28 +161,28 @@ class ToLinearStage : public RenderPipelineStage {
 };
 
 template <typename Op>
-std::unique_ptr<ToLinearStage<Op>> MakeToLinearStage(Op&& op) {
-  return jxl::make_unique<ToLinearStage<Op>>(std::forward<Op>(op));
+std::unique_ptr<ToLinearStage<Op>> MakeToLinearStage(
+    const OutputEncodingInfo& output_encoding_info) {
+  return jxl::make_unique<ToLinearStage<Op>>(output_encoding_info);
 }
 
 std::unique_ptr<RenderPipelineStage> GetToLinearStage(
     const OutputEncodingInfo& output_encoding_info) {
   const auto& tf = output_encoding_info.color_encoding.Tf();
   if (tf.IsLinear()) {
-    return MakeToLinearStage(OpLinear());
+    return MakeToLinearStage<OpLinear>(output_encoding_info);
   } else if (tf.IsSRGB()) {
-    return MakeToLinearStage(OpRgb());
+    return MakeToLinearStage<OpRgb>(output_encoding_info);
   } else if (tf.IsPQ()) {
-    return MakeToLinearStage(OpPq(output_encoding_info.orig_intensity_target));
+    return MakeToLinearStage<OpPq>(output_encoding_info);
   } else if (tf.IsHLG()) {
-    return MakeToLinearStage(OpHlg(output_encoding_info.luminances,
-                                   output_encoding_info.orig_intensity_target));
+    return MakeToLinearStage<OpHlg>(output_encoding_info);
   } else if (tf.Is709()) {
-    return MakeToLinearStage(Op709());
+    return MakeToLinearStage<Op709>(output_encoding_info);
   } else if (tf.have_gamma || tf.IsDCI()) {
-    return MakeToLinearStage(OpGamma{1.f / output_encoding_info.inverse_gamma});
+    return MakeToLinearStage<OpGamma>(output_encoding_info);
   } else {
-    return jxl::make_unique<ToLinearStage<OpInvalid>>();
+    return MakeToLinearStage<OpInvalid>(output_encoding_info);
   }
 }
 

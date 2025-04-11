@@ -410,8 +410,7 @@ Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
 
 Status ICCReader::CheckEOI(BitReader* reader) {
   if (reader->AllReadsWithinBounds()) return true;
-  return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                    "Not enough bytes for reading ICC profile");
+  return JXL_NOT_ENOUGH_BYTES("Not enough bytes for reading ICC profile");
 }
 
 }  // namespace jxl

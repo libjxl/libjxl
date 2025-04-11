@@ -176,17 +176,17 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     std::cerr << "Generating " << spec << " as " << hash_str << "\n";
   }
 
-  jxl::CodecInOut io{memory_manager};
+  auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
   if (spec.bit_depth == 32) {
-    io.metadata.m.SetFloat32Samples();
+    io->metadata.m.SetFloat32Samples();
   } else {
-    io.metadata.m.SetUintSamples(spec.bit_depth);
+    io->metadata.m.SetUintSamples(spec.bit_depth);
   }
-  io.metadata.m.SetAlphaBits(spec.alpha_bit_depth,
-                             FROM_JXL_BOOL(spec.alpha_is_premultiplied));
-  io.metadata.m.orientation = spec.orientation;
-  io.frames.clear();
-  io.frames.reserve(spec.num_frames);
+  io->metadata.m.SetAlphaBits(spec.alpha_bit_depth,
+                              FROM_JXL_BOOL(spec.alpha_is_premultiplied));
+  io->metadata.m.orientation = spec.orientation;
+  io->frames.clear();
+  io->frames.reserve(spec.num_frames);
 
   jxl::ColorEncoding c;
   if (spec.num_channels == 1) {
@@ -211,14 +211,14 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   ppf.info.num_color_channels = spec.num_channels ? 1 : 3;
   ppf.info.bits_per_sample = spec.bit_depth;
   for (uint32_t frame = 0; frame < spec.num_frames; frame++) {
-    jxl::ImageBundle ib(memory_manager, &io.metadata.m);
+    jxl::ImageBundle ib(memory_manager, &io->metadata.m);
     const bool has_alpha = (spec.alpha_bit_depth != 0);
     const int alpha_channels = (has_alpha ? 1 : 0);
     const size_t bytes_per_sample =
-        jxl::DivCeil(io.metadata.m.bit_depth.bits_per_sample, 8);
+        jxl::DivCeil(io->metadata.m.bit_depth.bits_per_sample, 8);
     const size_t bytes_per_pixel =
         bytes_per_sample *
-        (io.metadata.m.color_encoding.Channels() + alpha_channels);
+        (io->metadata.m.color_encoding.Channels() + alpha_channels);
     const size_t row_size = spec.width * bytes_per_pixel;
     std::vector<uint8_t> img_data(row_size * spec.height, 0);
     for (size_t y = 0; y < spec.height; y++) {
@@ -235,9 +235,9 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     JxlPixelFormat format = {num_channels, data_type, JXL_LITTLE_ENDIAN, 0};
     const jxl::Span<const uint8_t> span(img_data.data(), img_data.size());
     JXL_RETURN_IF_ERROR(ConvertFromExternal(
-        span, spec.width, spec.height, io.metadata.m.color_encoding,
-        io.metadata.m.bit_depth.bits_per_sample, format, nullptr, &ib));
-    io.frames.push_back(std::move(ib));
+        span, spec.width, spec.height, io->metadata.m.color_encoding,
+        io->metadata.m.bit_depth.bits_per_sample, format, nullptr, &ib));
+    io->frames.push_back(std::move(ib));
     JXL_ASSIGN_OR_RETURN(
         jxl::extras::PackedFrame packed_frame,
         jxl::extras::PackedFrame::Create(spec.width, spec.height, format));
@@ -254,16 +254,16 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     // If this image is supposed to be a reconstructible JPEG, collect the JPEG
     // metadata and encode it in the beginning of the compressed bytes.
     std::vector<uint8_t> jpeg_bytes;
-    io.jpeg_quality = 70;
+    io->jpeg_quality = 70;
     auto encoder = jxl::extras::GetJPEGEncoder();
     encoder->SetOption("quality", "70");
     jxl::extras::EncodedImage encoded;
     JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, nullptr));
     jpeg_bytes = encoded.bitstreams[0];
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
-        jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), &io));
+        jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), io.get()));
     std::vector<uint8_t> jpeg_data;
-    JXL_RETURN_IF_ERROR(EncodeJPEGData(memory_manager, *io.Main().jpeg_data,
+    JXL_RETURN_IF_ERROR(EncodeJPEGData(memory_manager, *io->Main().jpeg_data,
                                        &jpeg_data, params));
     std::vector<uint8_t> header;
     header.insert(header.end(), jxl::kContainerHeader.begin(),
@@ -285,7 +285,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
 
   // EncodeFile replaces output; pass a temporary storage for it.
   std::vector<uint8_t> compressed_image;
-  bool ok = jxl::test::EncodeFile(params, &io, &compressed_image);
+  bool ok = jxl::test::EncodeFile(params, io.get(), &compressed_image);
   if (!ok) return false;
   JXL_RETURN_IF_ERROR(compressed.append(compressed_image));
 
