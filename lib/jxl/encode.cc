@@ -5,6 +5,7 @@
 
 #include <brotli/encode.h>
 #include <jxl/cms.h>
+#include <jxl/cms_interface.h>
 #include <jxl/codestream_header.h>
 #include <jxl/color_encoding.h>
 #include <jxl/encode.h>
@@ -35,7 +36,7 @@
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -50,6 +51,7 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/luminance.h"
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/modular/options.h"
@@ -798,9 +800,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     }
     // Only send ICC (at least several hundred bytes) if fields aren't enough.
     if (metadata.m.color_encoding.WantICC()) {
-      if (!jxl::WriteICC(
-              jxl::Span<const uint8_t>(metadata.m.color_encoding.ICC()),
-              &writer, jxl::LayerType::Header, aux_out)) {
+      if (!jxl::WriteICC(jxl::Bytes(metadata.m.color_encoding.ICC()), &writer,
+                         jxl::LayerType::Header, aux_out)) {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
                              "Failed to write ICC profile");
       }
@@ -2103,21 +2104,27 @@ JxlEncoderStatus GetCurrentDimensions(
 JxlEncoderStatus JxlEncoderAddJPEGFrame(
     const JxlEncoderFrameSettings* frame_settings, const uint8_t* buffer,
     size_t size) {
+  JxlMemoryManager* memory_manager = &frame_settings->enc->memory_manager;
   if (frame_settings->enc->frames_closed) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "Frame input is already closed");
   }
 
-  jxl::CodecInOut io{&frame_settings->enc->memory_manager};
-  if (!jxl::jpeg::DecodeImageJPG(jxl::Bytes(buffer, size), &io)) {
+  std::unique_ptr<jxl::jpeg::JPEGData> jpeg_data;
+  auto decode_jpg = [&]() -> jxl::Status {
+    JXL_ASSIGN_OR_RETURN(
+        jpeg_data,
+        jxl::jpeg::ParseJPG(memory_manager, jxl::Bytes(buffer, size)));
+    return true;
+  };
+  if (!decode_jpg()) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
                          "Error during decode of input JPEG");
   }
 
   if (!frame_settings->enc->color_encoding_set) {
     if (!SetColorEncodingFromJpegData(
-            *io.Main().jpeg_data,
-            &frame_settings->enc->metadata.m.color_encoding)) {
+            *jpeg_data, &frame_settings->enc->metadata.m.color_encoding)) {
       return JXL_API_ERROR(
           frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
           "Error decoding the ICC profile embedded in the input JPEG");
@@ -2128,8 +2135,8 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
   if (!frame_settings->enc->basic_info_set) {
     JxlBasicInfo basic_info;
     JxlEncoderInitBasicInfo(&basic_info);
-    basic_info.xsize = io.Main().jpeg_data->width;
-    basic_info.ysize = io.Main().jpeg_data->height;
+    basic_info.xsize = jpeg_data->width;
+    basic_info.ysize = jpeg_data->height;
     basic_info.uses_original_profile = JXL_TRUE;
     if (JxlEncoderSetBasicInfo(frame_settings->enc, &basic_info) !=
         JXL_ENC_SUCCESS) {
@@ -2144,8 +2151,8 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                          "bad dimensions");
   }
-  if (xsize != static_cast<size_t>(io.Main().jpeg_data->width) ||
-      ysize != static_cast<size_t>(io.Main().jpeg_data->height)) {
+  if (xsize != static_cast<size_t>(jpeg_data->width) ||
+      ysize != static_cast<size_t>(jpeg_data->height)) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                          "JPEG dimensions don't match frame dimensions");
   }
@@ -2154,14 +2161,21 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "Can't XYB encode a lossless JPEG");
   }
-  if (!io.blobs.exif.empty()) {
+
+  jxl::jpeg::Blobs blobs;
+  if (!SetBlobsFromJpegData(*jpeg_data, &blobs)) {
+    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
+                         "Error during parsing of input JPEG blobs");
+  }
+
+  if (!blobs.exif.empty()) {
     JxlOrientation orientation = static_cast<JxlOrientation>(
         frame_settings->enc->metadata.m.orientation);
-    jxl::InterpretExif(io.blobs.exif, &orientation);
+    jxl::InterpretExif(blobs.exif, &orientation);
     frame_settings->enc->metadata.m.orientation = orientation;
   }
-  if (!io.blobs.exif.empty() && frame_settings->values.cparams.jpeg_keep_exif) {
-    size_t exif_size = io.blobs.exif.size();
+  if (!blobs.exif.empty() && frame_settings->values.cparams.jpeg_keep_exif) {
+    size_t exif_size = blobs.exif.size();
     // Exif data in JPEG is limited to 64k
     if (exif_size > 0xFFFF) {
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
@@ -2169,24 +2183,22 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     }
     exif_size += 4;  // prefix 4 zero bytes for tiff offset
     std::vector<uint8_t> exif(exif_size);
-    memcpy(exif.data() + 4, io.blobs.exif.data(), io.blobs.exif.size());
+    memcpy(exif.data() + 4, blobs.exif.data(), blobs.exif.size());
     JxlEncoderUseBoxes(frame_settings->enc);
     JxlEncoderAddBox(
         frame_settings->enc, "Exif", exif.data(), exif_size,
         TO_JXL_BOOL(frame_settings->values.cparams.jpeg_compress_boxes));
   }
-  if (!io.blobs.xmp.empty() && frame_settings->values.cparams.jpeg_keep_xmp) {
+  if (!blobs.xmp.empty() && frame_settings->values.cparams.jpeg_keep_xmp) {
     JxlEncoderUseBoxes(frame_settings->enc);
     JxlEncoderAddBox(
-        frame_settings->enc, "xml ", io.blobs.xmp.data(), io.blobs.xmp.size(),
+        frame_settings->enc, "xml ", blobs.xmp.data(), blobs.xmp.size(),
         TO_JXL_BOOL(frame_settings->values.cparams.jpeg_compress_boxes));
   }
-  if (!io.blobs.jumbf.empty() &&
-      frame_settings->values.cparams.jpeg_keep_jumbf) {
+  if (!blobs.jumbf.empty() && frame_settings->values.cparams.jpeg_keep_jumbf) {
     JxlEncoderUseBoxes(frame_settings->enc);
     JxlEncoderAddBox(
-        frame_settings->enc, "jumb", io.blobs.jumbf.data(),
-        io.blobs.jumbf.size(),
+        frame_settings->enc, "jumb", blobs.jumbf.data(), blobs.jumbf.size(),
         TO_JXL_BOOL(frame_settings->values.cparams.jpeg_compress_boxes));
   }
   if (frame_settings->enc->store_jpeg_metadata) {
@@ -2196,21 +2208,20 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
                            "Need to preserve EXIF and XMP to allow JPEG "
                            "bitstream reconstruction");
     }
-    jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
-    std::vector<uint8_t> jpeg_data;
+    std::vector<uint8_t> jpeg_metadata;
     if (!jxl::jpeg::EncodeJPEGData(&frame_settings->enc->memory_manager,
-                                   data_in, &jpeg_data,
+                                   *jpeg_data, &jpeg_metadata,
                                    frame_settings->values.cparams)) {
       return JXL_API_ERROR(
           frame_settings->enc, JXL_ENC_ERR_JBRD,
           "JPEG bitstream reconstruction data cannot be encoded");
     }
-    frame_settings->enc->jpeg_metadata = jpeg_data;
+    frame_settings->enc->jpeg_metadata = jpeg_metadata;
   }
 
   jxl::JxlEncoderChunkedFrameAdapter frame_data(
       xsize, ysize, frame_settings->enc->metadata.m.num_extra_channels);
-  frame_data.SetJPEGData(std::move(io.Main().jpeg_data));
+  frame_data.SetJPEGData(std::move(jpeg_data));
 
   // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
   // default move constructor there.
