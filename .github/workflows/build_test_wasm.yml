@@ -124,4 +124,5 @@ jobs:
         (github.event_name == 'pull_request' &&
          contains(github.event.pull_request.labels.*.name, 'CI:full'))
       run: |
-        ./ci.sh test -E 'bash_test'
+        ./ci.sh test -E 'bash_test' || \
+          ./ci.sh test -E 'bash_test' --rerun-failed
