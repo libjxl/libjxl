@@ -248,7 +248,7 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
     return pci.is_similar_v(v1, v2, threshold);
   };
 
-  std::atomic<bool> has_screenshot_areas{false};
+  std::atomic<uint32_t> has_screenshot_areas{0};
   const size_t opsin_stride = opsin.PixelsPerRow();
   const float* JXL_RESTRICT opsin_rows[3] = {opsin.ConstPlaneRow(0, 0),
                                              opsin.ConstPlaneRow(1, 0),
@@ -315,7 +315,7 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
       // Too few equal pixels nearby.
       if (num_same * 8 < num * 7) continue;
       screenshot_row[y * screenshot_stride + x] = 1;
-      has_screenshot_areas = true;
+      has_screenshot_areas = 1;
     }
     return true;
   };
