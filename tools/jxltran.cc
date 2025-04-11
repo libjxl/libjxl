@@ -69,6 +69,16 @@ JxlDecoderStatus apply_file_format_options(
     auto& codestream = *output_bytes;
     uint32_t already_written_bytes = 0;
 
+    uint32_t jxlc;
+    uint32_t jxll;
+    // these aren't hardcoded beause
+    // they're in native endian order
+    memcpy(&jxlc, "jxlc", sizeof(jxlc));
+    memcpy(&jxll, "jxll", sizeof(jxll));
+
+    uint32_t box;
+    uint8_t level = 5;
+
     for (;;) {
       status = JxlDecoderProcessInput(dec.get());
       if (status == JXL_DEC_ERROR) {
@@ -84,12 +94,20 @@ JxlDecoderStatus apply_file_format_options(
           fprintf(stderr, "Error, failed to get box type\n");
           return JXL_DEC_ERROR;
         }
-        if (!memcmp(type, "jxlc", 4)) {
+        memcpy(&box, type, sizeof(box));
+        if (box == jxll) {
+          JxlDecoderSetBoxBuffer(dec.get(), &level, 1);
+        } else if (box == jxlc) {
           codestream.resize(kChunkSize);
           JxlDecoderSetBoxBuffer(dec.get(), codestream.data(),
                                  codestream.size());
         }
       } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+        if (box == jxll) {
+          fprintf(stderr, "jxll box too large");
+          JxlDecoderReleaseBoxBuffer(dec.get());
+          continue;
+        }
         size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
         already_written_bytes += kChunkSize - remaining;
         codestream.resize(codestream.size() + kChunkSize);
@@ -97,11 +115,20 @@ JxlDecoderStatus apply_file_format_options(
                                codestream.data() + already_written_bytes,
                                codestream.size() - already_written_bytes);
       } else if (status == JXL_DEC_BOX_COMPLETE) {
-        if (!codestream.empty()) {
-          size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
-          codestream.resize(codestream.size() - remaining);
+        if (box == jxlc) {
+          if (!codestream.empty()) {
+            size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
+            codestream.resize(codestream.size() - remaining);
+          }
+          return JXL_DEC_SUCCESS;
+        } else if (box == jxll) {
+          JxlDecoderReleaseBoxBuffer(dec.get());
+          if (level > 5) {
+            fprintf(stderr,
+                    "Warning: extracting raw codestream that"
+                    "is greater than level 5\n");
+          }
         }
-        return JXL_DEC_SUCCESS;
       } else {
         fprintf(stderr, "Unknown decoder status\n");
         return JXL_DEC_ERROR;
