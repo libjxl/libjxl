@@ -1872,11 +1872,17 @@ HistogramParams HistogramParams::ForModular(
     params.max_histograms = 12;
   }
   if (cparams.decoding_speed_tier >= 3) {
+    if (cparams.modular_mode) {
     params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
                              ? HistogramParams::LZ77Method::kRLE
                          : cparams.speed_tier >= SpeedTier::kKitten
                              ? HistogramParams::LZ77Method::kLZ77
                              : HistogramParams::LZ77Method::kOptimal;
+    } else {
+	  params.lz77_method = HistogramParams::LZ77Method::kNone;
+	  // LZ77 signifcantly slows down encoding for VarDCT with
+	  // no benefit to density or decoding speed
+    }
   }
   return params;
 }
