@@ -1493,9 +1493,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelName(JxlEncoder* enc,
 
 JxlEncoderFrameSettings* JxlEncoderFrameSettingsCreate(
     JxlEncoder* enc, const JxlEncoderFrameSettings* source) {
-  auto opts = jxl::MemoryManagerMakeUnique<JxlEncoderFrameSettings>(
-      &enc->memory_manager);
-  if (!opts) return nullptr;
+  JXL_MEMORY_MANAGER_MAKE_UNIQUE_OR_RETURN(opts, JxlEncoderFrameSettings,
+                                           (&enc->memory_manager), nullptr);
   opts->enc = enc;
   if (source != nullptr) {
     opts->values = source->values;
@@ -2070,12 +2069,11 @@ JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "parallel runner already set");
   }
-  enc->thread_pool = jxl::MemoryManagerMakeUnique<jxl::ThreadPool>(
-      &enc->memory_manager, parallel_runner, parallel_runner_opaque);
-  if (!enc->thread_pool) {
-    return JXL_API_ERROR(enc, JXL_ENC_ERR_GENERIC,
-                         "error setting parallel runner");
-  }
+  JXL_MEMORY_MANAGER_MAKE_UNIQUE_OR_RETURN(
+      thread_pool, jxl::ThreadPool,
+      (&enc->memory_manager, parallel_runner, parallel_runner_opaque),
+      JXL_API_ERROR(enc, JXL_ENC_ERR_OOM, "can not allocate thread pool"));
+  enc->thread_pool = std::move(thread_pool);
   return JxlErrorOrStatus::Success();
 }
 
@@ -2214,17 +2212,15 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
       xsize, ysize, frame_settings->enc->metadata.m.num_extra_channels);
   frame_data.SetJPEGData(std::move(io.Main().jpeg_data));
 
-  auto queued_frame = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedFrame>(
-      &frame_settings->enc->memory_manager,
-      // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
-      // default move constructor there.
-      jxl::JxlEncoderQueuedFrame{
-          frame_settings->values, std::move(frame_data), {}});
-  if (!queued_frame) {
-    // TODO(jon): when can this happen? is this an API usage error?
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
-                         "No frame queued?");
-  }
+  // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
+  // default move constructor there.
+  JXL_MEMORY_MANAGER_MAKE_UNIQUE_OR_RETURN(
+      queued_frame, jxl::JxlEncoderQueuedFrame,
+      (&frame_settings->enc->memory_manager,
+       jxl::JxlEncoderQueuedFrame{
+           frame_settings->values, std::move(frame_data), {}}),
+      JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_OOM,
+                    "can not allocate queued frame"));
   queued_frame->ec_initialized.resize(
       frame_settings->enc->metadata.m.num_extra_channels);
 
@@ -2399,19 +2395,15 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
     }
     frame_settings->enc->metadata.m.color_encoding = c_current;
   }
-
-  auto queued_frame = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedFrame>(
-      &frame_settings->enc->memory_manager,
-      // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
-      // default move constructor there.
-      jxl::JxlEncoderQueuedFrame{
-          frame_settings->values, std::move(frame_data), {}});
-
-  if (!queued_frame) {
-    // TODO(jon): when can this happen? is this an API usage error?
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
-                         "No frame queued?");
-  }
+  // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
+  // default move constructor there.
+  JXL_MEMORY_MANAGER_MAKE_UNIQUE_OR_RETURN(
+      queued_frame, jxl::JxlEncoderQueuedFrame,
+      (&frame_settings->enc->memory_manager,
+       jxl::JxlEncoderQueuedFrame{
+           frame_settings->values, std::move(frame_data), {}}),
+      JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_OOM,
+                    "can not allocate queued frame"));
 
   for (auto& ec_info : frame_settings->enc->metadata.m.extra_channel_info) {
     if (has_interleaved_alpha && ec_info.type == jxl::ExtraChannel::kAlpha) {
@@ -2521,8 +2513,9 @@ JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, const JxlBoxType type,
     }
   }
 
-  auto box = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedBox>(
-      &enc->memory_manager);
+  JXL_MEMORY_MANAGER_MAKE_UNIQUE_OR_RETURN(
+      box, jxl::JxlEncoderQueuedBox, (&enc->memory_manager),
+      JXL_API_ERROR(enc, JXL_ENC_ERR_OOM, "can not allocate queued box"));
 
   box->type = jxl::MakeBoxType(type);
   box->contents.assign(contents, contents + size);
