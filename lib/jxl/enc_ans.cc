@@ -120,7 +120,7 @@ class ANSEncodingHistogram {
       result.counts = histo.counts_;
       result.counts[result.symbols[0]] = ANS_TAB_SIZE;
       SizeWriter writer;
-      result.Encode(&writer);
+      JXL_RETURN_IF_ERROR(result.Encode(&writer));
       result.cost = writer.size;
       return result;
     }
@@ -137,7 +137,7 @@ class ANSEncodingHistogram {
         return JXL_FAILURE("Logic error: couldn't rebalance a histogram");
       }
       SizeWriter writer;
-      normalized.Encode(&writer);
+      JXL_RETURN_IF_ERROR(normalized.Encode(&writer));
       normalized.cost = writer.size + normalized.EstimateDataBits(histo);
       if (normalized.cost < result.cost) {
         result = normalized;
@@ -178,6 +178,8 @@ class ANSEncodingHistogram {
         int bitcount =
             GetPopulationCountPrecision(logcounts, result.method - 1);
         int drop_bits = logcounts - bitcount;
+        (void)drop_bits;
+        // Check that the value is divisible by 2^drop_bits
         JXL_DASSERT((result.counts[i] & ((1 << drop_bits) - 1)) == 0);
       }
       total += result.counts[i];
@@ -186,24 +188,25 @@ class ANSEncodingHistogram {
       JXL_DASSERT(histo.counts_[i] == 0);
       JXL_DASSERT(result.counts[i] == 0);
     }
+    (void)total;
     JXL_DASSERT((histo.total_count_ == 0) || (total == ANS_TAB_SIZE));
     return result;
   }
 
   template <typename Writer>
-  void Encode(Writer* writer) {
-    JXL_DASSERT(alphabet_size <= ANS_MAX_ALPHABET_SIZE);
+  Status Encode(Writer* writer) {
+    JXL_ENSURE(alphabet_size <= ANS_MAX_ALPHABET_SIZE);
     // Flat histogram.
     if (method == 0) {
       // Mark non-small tree.
       writer->Write(1, 0);
       // Mark uniform histogram.
       writer->Write(1, 1);
-      JXL_DASSERT(alphabet_size > 0);
+      JXL_ENSURE(alphabet_size > 0);
       // Encode alphabet size.
       StoreVarLenUint8(alphabet_size - 1, writer);
 
-      return;
+      return true;
     }
     // Small tree.
     if (num_symbols <= kMaxNumSymbolsForSmallCode) {
@@ -222,7 +225,7 @@ class ANSEncodingHistogram {
         writer->Write(ANS_LOG_TAB_SIZE, counts[symbols[0]]);
       }
 
-      return;
+      return true;
     }
 
     /// General tree.
@@ -312,6 +315,7 @@ class ANSEncodingHistogram {
         writer->Write(bitcount, (counts[i] >> drop_bits) - (1 << bitcount));
       }
     }
+    return true;
   }
 
   void ANSBuildInfoTable(const AliasTable::Entry* table, size_t log_alpha_size,
@@ -350,14 +354,14 @@ class ANSEncodingHistogram {
     int64_t sum = 0;
     for (int i = 0; i < alphabet_size; ++i) {
       // += histogram[i] * -log(counts[i]/total_counts)
-      sum += histo.counts_[i] * int64_t(lg2[counts[i]]);
+      sum += histo.counts_[i] * int64_t{lg2[counts[i]]};
     }
     return (histo.total_count_ - ldexpf(sum, -31)) * ANS_LOG_TAB_SIZE;
   }
 
   static float EstimateDataBitsFlat(const Histogram& histo) {
     size_t len = histo.alphabet_size();
-    int64_t flat_bits = int64_t(lg2[len]) * ANS_LOG_TAB_SIZE;
+    int64_t flat_bits = int64_t{lg2[len]} * ANS_LOG_TAB_SIZE;
     return ldexpf(histo.total_count_ * flat_bits, -31);
   }
 
@@ -414,11 +418,11 @@ class ANSEncodingHistogram {
     // together with corresponding decrease/increase in the balancing bin.
     // Inc steps increase current bin, dec steps decrease
     const auto delta_entropy_inc = [&](const EntropyDelta& a) {
-      return a.freq * int64_t(ac[a.count_ind].delta_lg2) -
+      return a.freq * int64_t{ac[a.count_ind].delta_lg2} -
              balance_inc[ac[a.count_ind].step_log];
     };
     const auto delta_entropy_dec = [&](const EntropyDelta& a) {
-      return a.freq * int64_t(ac[a.count_ind + 1].delta_lg2) -
+      return a.freq * int64_t{ac[a.count_ind + 1].delta_lg2} -
              balance_dec[ac[a.count_ind + 1].step_log];
     };
     // Compare steps by entropy increase per unit of histogram bin change.
@@ -435,7 +439,7 @@ class ANSEncodingHistogram {
     std::vector<EntropyDelta> bins;
     bins.reserve(256);
 
-    double norm = double(table_size) / histo.total_count_;
+    double norm = double{table_size} / histo.total_count_;
 
     int remainder_pos = 0;  // highest balancing bin in the histogram
     int64_t max_freq = 0;
@@ -487,11 +491,11 @@ class ANSEncodingHistogram {
             // `rest` is OK, put guards against non-possible steps
             balance_inc[log] =
                 rest > delta  // possible step
-                    ? max_freq * int64_t(lg2[rest] - lg2[rest - delta])
+                    ? max_freq * int64_t{lg2[rest] - lg2[rest - delta]}
                     : std::numeric_limits<int64_t>::max();  // forbidden
             balance_dec[log] =
                 rest + delta < table_size  // possible step
-                    ? max_freq * int64_t(lg2[rest + delta] - lg2[rest])
+                    ? max_freq * int64_t{lg2[rest + delta] - lg2[rest]}
                     : 0;  // forbidden
           } else {
             // Tract negative or zero `rest` into positive:
@@ -578,7 +582,7 @@ const auto ANSEncodingHistogram::allowed_counts = []() {
     int ind = 1;
     while (ac[ind].count > 0) {
       ac[ind].delta_lg2 = round(std::ldexp(
-          log2(double(ac[ind - 1].count) / ac[ind].count) / ANS_LOG_TAB_SIZE,
+          log2(static_cast<double>(ac[ind - 1].count) / ac[ind].count) / ANS_LOG_TAB_SIZE,
           31));
       ac[ind].step_log =
           FloorLog2Nonzero<uint32_t>(ac[ind - 1].count - ac[ind].count);
@@ -656,7 +660,7 @@ StatusOr<size_t> BuildAndStoreANSEncodingData(
   normalized.ANSBuildInfoTable(a, log_alpha_size, info);
   if (writer != nullptr) {
     // size_t start = writer->BitsWritten();
-    normalized.Encode(writer);
+    JXL_RETURN_IF_ERROR(normalized.Encode(writer));
     // return writer->BitsWritten() - start;
   }
   return static_cast<size_t>(ceilf(normalized.cost));
