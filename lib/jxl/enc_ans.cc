@@ -79,6 +79,9 @@ void StoreVarLenUint16(size_t n, Writer* writer) {
 
 class ANSEncodingHistogram {
  public:
+  const std::vector<ANSHistBin>& Counts() const { return counts; }
+  float Cost() const { return cost; }
+  // The only way to construct valid histogram for ANS encoding
   static StatusOr<ANSEncodingHistogram> ComputeBest(
       const Histogram& histo,
       HistogramParams::ANSHistogramStrategy ans_histogram_strategy) {
@@ -127,8 +130,6 @@ class ANSEncodingHistogram {
 
     // Here min 2 symbols
     ANSEncodingHistogram normalized = result;
-    // Restore suitable for SIMD length
-    normalized.counts.assign(histo.counts_.size(), 0);
     auto try_shift = [&](uint32_t shift) -> Status {
       // `shift = 12` and `shift = 11` are the same
       normalized.method = std::min(shift, ANS_LOG_TAB_SIZE - 1) + 1;
@@ -556,13 +557,13 @@ class ANSEncodingHistogram {
   size_t alphabet_size = 0;
   size_t num_symbols = 0;
   size_t symbols[kMaxNumSymbolsForSmallCode] = {};
-
- public:
-  std::vector<ANSHistBin> counts;
+  std::vector<ANSHistBin> counts{};
   float cost = 0;
 };
 
-const ANSEncodingHistogram::Lg2LUT ANSEncodingHistogram::lg2 = [] {
+using AEH = ANSEncodingHistogram;
+
+const AEH::Lg2LUT AEH::lg2 = [] {
   Lg2LUT lg2;
   lg2[0] = 0;  // for entropy calculations it is OK
   for (size_t i = 1; i < lg2.size(); ++i) {
@@ -571,36 +572,35 @@ const ANSEncodingHistogram::Lg2LUT ANSEncodingHistogram::lg2 = [] {
   return lg2;
 }();
 
-const ANSEncodingHistogram::CountsArray ANSEncodingHistogram::allowed_counts =
-    [] {
-      CountsArray allowed_counts = {};
+const AEH::CountsArray AEH::allowed_counts = [] {
+  CountsArray allowed_counts = {};
 
-      for (uint32_t shift = 0; shift < allowed_counts.size(); ++shift) {
-        auto& ac = allowed_counts[shift];
-        for (uint32_t i = 1; i < ac.size(); ++i) {
-          int32_t cnt = i & ~((1 << SmallestIncrementLog(i, shift)) - 1);
-          ac[cnt].count = cnt;
-        }
-        std::sort(ac.begin(), ac.end(),
-                  [](const CountsEntropy& a, const CountsEntropy& b) {
-                    return a.count > b.count;
-                  });
-        int ind = 1;
-        while (ac[ind].count > 0) {
-          ac[ind].delta_lg2 = round(ldexp(
-              log2(static_cast<double>(ac[ind - 1].count) / ac[ind].count) /
-                  ANS_LOG_TAB_SIZE,
-              31));
-          ac[ind].step_log =
-              FloorLog2Nonzero<uint32_t>(ac[ind - 1].count - ac[ind].count);
-          ++ind;
-        }
-        // Guards against non-possible steps:
-        // at max value [0] - 0 (by init), at min value - max
-        ac[ind].delta_lg2 = std::numeric_limits<int32_t>::max();
-      }
-      return allowed_counts;
-    }();
+  for (uint32_t shift = 0; shift < allowed_counts.size(); ++shift) {
+    auto& ac = allowed_counts[shift];
+    for (uint32_t i = 1; i < ac.size(); ++i) {
+      int32_t cnt = i & ~((1 << SmallestIncrementLog(i, shift)) - 1);
+      ac[cnt].count = cnt;
+    }
+    std::sort(ac.begin(), ac.end(),
+              [](const CountsEntropy& a, const CountsEntropy& b) {
+                return a.count > b.count;
+              });
+    int ind = 1;
+    while (ac[ind].count > 0) {
+      ac[ind].delta_lg2 = round(
+          ldexp(log2(static_cast<double>(ac[ind - 1].count) / ac[ind].count) /
+                    ANS_LOG_TAB_SIZE,
+                31));
+      ac[ind].step_log =
+          FloorLog2Nonzero<uint32_t>(ac[ind - 1].count - ac[ind].count);
+      ++ind;
+    }
+    // Guards against non-possible steps:
+    // at max value [0] - 0 (by init), at min value - max
+    ac[ind].delta_lg2 = std::numeric_limits<int32_t>::max();
+  }
+  return allowed_counts;
+}();
 
 }  // namespace
 
@@ -612,7 +612,7 @@ StatusOr<float> Histogram::ANSPopulationCost() const {
       ANSEncodingHistogram normalized,
       ANSEncodingHistogram::ComputeBest(
           *this, HistogramParams::ANSHistogramStrategy::kFast));
-  return std::move(normalized.cost);
+  return normalized.Cost();
 }
 
 // Returns an estimate or exact cost of encoding this histogram and the
@@ -663,14 +663,14 @@ StatusOr<size_t> BuildAndStoreANSEncodingData(
       ANSEncodingHistogram::ComputeBest(histogram, ans_histogram_strategy));
   AliasTable::Entry a[ANS_MAX_ALPHABET_SIZE];
   JXL_RETURN_IF_ERROR(
-      InitAliasTable(normalized.counts, ANS_LOG_TAB_SIZE, log_alpha_size, a));
+      InitAliasTable(normalized.Counts(), ANS_LOG_TAB_SIZE, log_alpha_size, a));
   normalized.ANSBuildInfoTable(a, log_alpha_size, info);
   if (writer != nullptr) {
     // size_t start = writer->BitsWritten();
     JXL_RETURN_IF_ERROR(normalized.Encode(writer));
     // return writer->BitsWritten() - start;
   }
-  return static_cast<size_t>(ceilf(normalized.cost));
+  return static_cast<size_t>(ceilf(normalized.Cost()));
 }
 
 template <typename Writer>
