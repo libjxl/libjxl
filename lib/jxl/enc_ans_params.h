@@ -91,9 +91,11 @@ struct HistogramParams {
 struct Histogram {
   // Create flat histogram
   static Histogram Flat(int length, int total_count) {
-    return {.counts_ = CreateFlatHistogram(length, total_count),
-            .total_count_ = static_cast<size_t>(total_count),
-            .entropy_ = 0.0};
+    Histogram flat;
+    flat.counts_ = CreateFlatHistogram(length, total_count);
+    flat.total_count_ = static_cast<size_t>(total_count);
+    flat.entropy_ = 0.0;
+    return flat;
   }
   void Clear() {
     counts_.clear();
