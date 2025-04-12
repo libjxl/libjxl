@@ -104,8 +104,8 @@ class ANSEncodingHistogram {
       return result;
     }
 
-    int symbol_count = 0;
-    for (int n = 0; n < result.alphabet_size; ++n) {
+    size_t symbol_count = 0;
+    for (size_t n = 0; n < result.alphabet_size; ++n) {
       if (histo.counts_[n] > 0) {
         if (symbol_count < kMaxNumSymbolsForSmallCode) {
           result.symbols[symbol_count] = n;
@@ -166,7 +166,7 @@ class ANSEncodingHistogram {
     // Sanity check
     JXL_DASSERT(histo.counts_.size() == result.counts.size());
     ANSHistBin total = 0;  // Used only in assert.
-    for (int i = 0; i < result.alphabet_size; ++i) {
+    for (size_t i = 0; i < result.alphabet_size; ++i) {
       JXL_DASSERT(result.counts[i] >= 0);
       // For non-flat histogram values should be zero or non-zero simultaneously
       // for the same symbol in both initial and normalized histograms.
@@ -184,7 +184,7 @@ class ANSEncodingHistogram {
       }
       total += result.counts[i];
     }
-    for (int i = result.alphabet_size; i < int(result.counts.size()); ++i) {
+    for (size_t i = result.alphabet_size; i < result.counts.size(); ++i) {
       JXL_DASSERT(histo.counts_[i] == 0);
       JXL_DASSERT(result.counts[i] == 0);
     }
@@ -195,8 +195,11 @@ class ANSEncodingHistogram {
 
   template <typename Writer>
   Status Encode(Writer* writer) {
+    // The check ensures also that all RLE sequencies can be
+    // encoded by `StoreVarLenUint8`
     JXL_ENSURE(alphabet_size <= ANS_MAX_ALPHABET_SIZE);
-    // Flat histogram.
+
+    /// Flat histogram.
     if (method == 0) {
       // Mark non-small tree.
       writer->Write(1, 0);
@@ -208,7 +211,8 @@ class ANSEncodingHistogram {
 
       return true;
     }
-    // Small tree.
+
+    /// Small tree.
     if (num_symbols <= kMaxNumSymbolsForSmallCode) {
       // Small tree marker to encode 1-2 symbols.
       writer->Write(1, 1);
@@ -217,7 +221,7 @@ class ANSEncodingHistogram {
         StoreVarLenUint8(0, writer);
       } else {
         writer->Write(1, num_symbols - 1);
-        for (int i = 0; i < num_symbols; ++i) {
+        for (size_t i = 0; i < num_symbols; ++i) {
           StoreVarLenUint8(symbols[i], writer);
         }
       }
@@ -234,50 +238,50 @@ class ANSEncodingHistogram {
     // Mark non-flat histogram.
     writer->Write(1, 0);
 
-    // Precompute sequences for RLE encoding. Contains the number of identical
-    // values starting at a given index. Only contains the value at the first
-    // element of the series.
-    uint8_t same[ANS_MAX_ALPHABET_SIZE] = {};
-    int last = 0;
-    for (int i = 1; i <= alphabet_size; i++) {
-      // Store the sequence length once different symbol reached, or we're at
-      // the end, or the length is longer than we can encode, or we are at
-      // the omit_pos. We don't support including the omit_pos in an RLE
-      // sequence because this value may use a different amount of log2 bits
-      // than standard, it is too complex to handle in the decoder.
-      if (i == alphabet_size || i == omit_pos || i == omit_pos + 1 ||
-          counts[i] != counts[last]) {
-        same[last] = (i - last);
-        last = i;
-      }
-    }
-
-    uint8_t logcounts[ANS_MAX_ALPHABET_SIZE] = {};
-    uint8_t omit_log = 6;  // reduce min
-    for (int i = 0; i < alphabet_size; ++i) {
-      if (i != omit_pos && counts[i] > 0) {
-        logcounts[i] = FloorLog2Nonzero<uint32_t>(counts[i]) + 1;
-        if (i < omit_pos) {
-          omit_log = std::max(omit_log, uint8_t(logcounts[i] + 1));
-        } else {
-          omit_log = std::max(omit_log, logcounts[i]);
-        }
-      }
-    }
-    logcounts[omit_pos] = omit_log;
-
-    // Elias gamma-like code for shift. Only difference is that if the number
-    // of bits to be encoded is equal to FloorLog2(ANS_LOG_TAB_SIZE+1), we
-    // skip the terminating 0 in unary coding.
+    // Elias gamma-like code for `shift = method - 1`. Only difference is that
+    // if the number of bits to be encoded is equal to `upper_bound_log`,
+    // we skip the terminating 0 in unary coding.
     int upper_bound_log = FloorLog2Nonzero(ANS_LOG_TAB_SIZE + 1);
     int log = FloorLog2Nonzero(method);
     writer->Write(log, (1 << log) - 1);
     if (log != upper_bound_log) writer->Write(1, 0);
     writer->Write(log, ((1 << log) - 1) & method);
 
-    // Since num_symbols >= 3, we know that length >= 3, therefore we encode
-    // length - 3.
+    // Since `num_symbols >= 3`, we know that `alphabet_size >= 3`, therefore
+    // we encode `alphabet_size - 3`.
     StoreVarLenUint8(alphabet_size - 3, writer);
+
+    // Precompute sequences for RLE encoding. Contains the number of identical
+    // values starting at a given index. Only contains that value at the first
+    // element of the series.
+    uint8_t same[ANS_MAX_ALPHABET_SIZE] = {};
+    size_t last = 0;
+    for (size_t i = 1; i <= alphabet_size; i++) {
+      // Store the sequence length once different symbol reached, or we are
+      // near the omit_pos, or we're at the end. We don't support including the
+      // omit_pos in an RLE sequence because this value may use a different
+      // amount of log2 bits than standard, it is too complex to handle in the
+      // decoder.
+      if (i == alphabet_size || i == omit_pos || i == omit_pos + 1 ||
+          counts[i] != counts[last]) {
+        same[last] = i - last;
+        last = i;
+      }
+    }
+
+    uint8_t logcounts[ANS_MAX_ALPHABET_SIZE] = {};
+    // Use shortest possible Huffman code to encode `omit_pos` (see
+    // `kLogCountBitLengths`). `logcounts` value at `omit_pos` should be the
+    // first of maximal values in the whole `logcounts` array, so it can be
+    // increased without changing that property
+    int omit_log = 10;
+    for (size_t i = 0; i < alphabet_size; ++i) {
+      if (i != omit_pos && counts[i] > 0) {
+        logcounts[i] = FloorLog2Nonzero<uint32_t>(counts[i]) + 1;
+        omit_log = std::max(omit_log, logcounts[i] + int{i < omit_pos});
+      }
+    }
+    logcounts[omit_pos] = static_cast<uint8_t>(omit_log);
 
     // The logcount values are encoded with a static Huffman code.
     // The last symbol is used as RLE sequence.
@@ -287,32 +291,33 @@ class ANSEncodingHistogram {
     constexpr uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
         17, 11, 15, 3, 9, 7, 4, 2, 5, 6, 0, 33, 1, 65,
     };
-    constexpr size_t kMinReps = 4;
-
-    size_t rep = ANS_LOG_TAB_SIZE + 1;
-    for (int i = 0; i < alphabet_size; ++i) {
-      if (i > 0 && same[i - 1] > kMinReps) {
-        // Encode the RLE symbol and skip the repeated ones.
-        writer->Write(kLogCountBitLengths[rep], kLogCountSymbols[rep]);
-        StoreVarLenUint8(same[i - 1] - kMinReps - 1, writer);
-        i += same[i - 1] - 2;
-        continue;
-      }
+    constexpr uint8_t kMinReps = 4;
+    constexpr size_t rep = ANS_LOG_TAB_SIZE + 1;
+    // Encode symbol logs
+    for (size_t i = 0; i < alphabet_size; ++i) {
       writer->Write(kLogCountBitLengths[logcounts[i]],
                     kLogCountSymbols[logcounts[i]]);
-    }
-    for (int i = 0; i < alphabet_size; ++i) {
-      if (i > 0 && same[i - 1] > kMinReps) {
-        // Skip symbols encoded by RLE.
-        i += same[i - 1] - 2;
-        continue;
+      if (same[i] > kMinReps) {
+        // Encode the RLE symbol and skip the repeated ones.
+        writer->Write(kLogCountBitLengths[rep], kLogCountSymbols[rep]);
+        StoreVarLenUint8(same[i] - kMinReps - 1, writer);
+        i += same[i] - 1;
       }
-      if (logcounts[i] > 1 && i != omit_pos) {
-        int bitcount =
-            GetPopulationCountPrecision(logcounts[i] - 1, method - 1);
-        int drop_bits = logcounts[i] - 1 - bitcount;
-        JXL_ENSURE((counts[i] & ((1 << drop_bits) - 1)) == 0);
-        writer->Write(bitcount, (counts[i] >> drop_bits) - (1 << bitcount));
+    }
+    // Encode additional bits of accuracy
+    if (method != 1) {  // otherwise `bitcount = 0`
+      for (size_t i = 0; i < alphabet_size; ++i) {
+        if (logcounts[i] > 1 && i != omit_pos) {
+          int bitcount =
+              GetPopulationCountPrecision(logcounts[i] - 1, method - 1);
+          int drop_bits = logcounts[i] - 1 - bitcount;
+          JXL_DASSERT((counts[i] & ((1 << drop_bits) - 1)) == 0);
+          writer->Write(bitcount, (counts[i] >> drop_bits) - (1 << bitcount));
+        }
+        if (same[i] > kMinReps) {
+          // Skip symbols encoded by RLE.
+          i += same[i] - 1;
+        }
       }
     }
     return true;
@@ -321,7 +326,7 @@ class ANSEncodingHistogram {
   void ANSBuildInfoTable(const AliasTable::Entry* table, size_t log_alpha_size,
                          ANSEncSymbolInfo* info) {
     // Create valid alias table for empty streams
-    for (int s = 0; s < std::max(1, alphabet_size); ++s) {
+    for (size_t s = 0; s < std::max(size_t{1}, alphabet_size); ++s) {
       const ANSHistBin freq = s == alphabet_size ? ANS_TAB_SIZE : counts[s];
       info[s].freq_ = static_cast<uint16_t>(freq);
 #ifdef USE_MULT_BY_RECIPROCAL
@@ -348,11 +353,12 @@ class ANSEncodingHistogram {
   ANSEncodingHistogram() {}
 
   // Fixed-point log2 LUT for values of [0,4096]
-  static const std::array<uint32_t, ANS_TAB_SIZE + 1> lg2;
+  using Lg2LUT = std::array<uint32_t, ANS_TAB_SIZE + 1>;
+  static const Lg2LUT lg2;
 
   float EstimateDataBits(const Histogram& histo) {
     int64_t sum = 0;
-    for (int i = 0; i < alphabet_size; ++i) {
+    for (size_t i = 0; i < alphabet_size; ++i) {
       // += histogram[i] * -log(counts[i]/total_counts)
       sum += histo.counts_[i] * int64_t{lg2[counts[i]]};
     }
@@ -375,9 +381,9 @@ class ANSEncodingHistogram {
   // Exclusion of single-bin histograms before `RebalanceHistogram` allows
   // to put count upper limit of 4095, and shifts of 11 and 12 produce the
   // same table
-  static const std::array<std::array<CountsEntropy, ANS_TAB_SIZE>,
-                          ANS_LOG_TAB_SIZE>
-      allowed_counts;
+  using CountsArray =
+      std::array<std::array<CountsEntropy, ANS_TAB_SIZE>, ANS_LOG_TAB_SIZE>;
+  static const CountsArray allowed_counts;
 
   // Returns the difference between largest count that can be represented and is
   // smaller than "count" and smallest representable count larger than "count".
@@ -403,9 +409,9 @@ class ANSEncodingHistogram {
     uint32_t shift = method - 1;
 
     struct EntropyDelta {
-      ANSHistBin freq;  // initial count
-      int count_ind;    // index of current bin value in `allowed_counts`
-      int bin_ind;      // index of current bin in `counts`
+      ANSHistBin freq;   // initial count
+      size_t count_ind;  // index of current bin value in `allowed_counts`
+      size_t bin_ind;    // index of current bin in `counts`
     };
     // Penalties corresponding to different step sizes - entropy decrease in
     // balancing bin, step of size (1 << ANS_LOG_TAB_SIZE - 1) is not possible
@@ -435,16 +441,16 @@ class ANSEncodingHistogram {
       return delta_entropy_dec(a) >> ac[a.count_ind + 1].step_log <
              delta_entropy_dec(b) >> ac[b.count_ind + 1].step_log;
     };
-    // Vector of adjustable bins from `alllowed_counts`
+    // Vector of adjustable bins from `allowed_counts`
     std::vector<EntropyDelta> bins;
     bins.reserve(256);
 
     double norm = double{table_size} / histo.total_count_;
 
-    int remainder_pos = 0;  // highest balancing bin in the histogram
+    size_t remainder_pos = 0;  // highest balancing bin in the histogram
     int64_t max_freq = 0;
     ANSHistBin rest = table_size;  // reserve of histogram counts to distribute
-    for (int n = 0; n < alphabet_size; ++n) {
+    for (size_t n = 0; n < alphabet_size; ++n) {
       ANSHistBin freq = histo.counts_[n];
       if (freq > max_freq) {
         remainder_pos = n;
@@ -462,7 +468,7 @@ class ANSEncodingHistogram {
       counts[n] = count;
       rest -= count;
       if (target > 1.0) {
-        int count_ind = 0;
+        size_t count_ind = 0;
         // TODO(ivan) binary search instead of linear?
         while (ac[count_ind].count != count) ++count_ind;
         bins.push_back({freq, count_ind, n});
@@ -530,7 +536,7 @@ class ANSEncodingHistogram {
       // width. In this case both that bin and balancing one should be close to
       // 2048 in targets, so exchange of them will not produce much worse
       // histogram
-      for (int n = 0; n < remainder_pos; ++n) {
+      for (size_t n = 0; n < remainder_pos; ++n) {
         if (counts[n] >= 2048) {
           counts[remainder_pos] = counts[n];
           remainder_pos = n;
@@ -546,54 +552,55 @@ class ANSEncodingHistogram {
   }
 
   uint32_t method = 0;
-  int omit_pos = 0;
-  int alphabet_size = 0;
-  int num_symbols = 0;
-  int symbols[kMaxNumSymbolsForSmallCode] = {};
+  size_t omit_pos = 0;
+  size_t alphabet_size = 0;
+  size_t num_symbols = 0;
+  size_t symbols[kMaxNumSymbolsForSmallCode] = {};
 
  public:
   std::vector<ANSHistBin> counts;
   float cost = 0;
 };
 
-const auto ANSEncodingHistogram::lg2 = []() {
-  std::array<uint32_t, ANS_TAB_SIZE + 1> lg2;
+const ANSEncodingHistogram::Lg2LUT ANSEncodingHistogram::lg2 = [] {
+  Lg2LUT lg2;
   lg2[0] = 0;  // for entropy calculations it is OK
   for (size_t i = 1; i < lg2.size(); ++i) {
-    lg2[i] = round(std::ldexp(log2(i) / ANS_LOG_TAB_SIZE, 31));
+    lg2[i] = round(ldexp(log2(i) / ANS_LOG_TAB_SIZE, 31));
   }
   return lg2;
 }();
 
-const auto ANSEncodingHistogram::allowed_counts = []() {
-  std::array<std::array<CountsEntropy, ANS_TAB_SIZE>, ANS_LOG_TAB_SIZE>
-      allowed_counts = {};
+const ANSEncodingHistogram::CountsArray ANSEncodingHistogram::allowed_counts =
+    [] {
+      CountsArray allowed_counts = {};
 
-  for (uint32_t shift = 0; shift < allowed_counts.size(); ++shift) {
-    auto& ac = allowed_counts[shift];
-    for (uint32_t i = 1; i < allowed_counts[0].size(); ++i) {
-      int32_t cnt = i & ~((1 << SmallestIncrementLog(i, shift)) - 1);
-      ac[cnt].count = cnt;
-    }
-    std::sort(ac.begin(), ac.end(),
-              [](const CountsEntropy& a, const CountsEntropy& b) {
-                return a.count > b.count;
-              });
-    int ind = 1;
-    while (ac[ind].count > 0) {
-      ac[ind].delta_lg2 = round(std::ldexp(
-          log2(static_cast<double>(ac[ind - 1].count) / ac[ind].count) / ANS_LOG_TAB_SIZE,
-          31));
-      ac[ind].step_log =
-          FloorLog2Nonzero<uint32_t>(ac[ind - 1].count - ac[ind].count);
-      ++ind;
-    }
-    // Guards against non-possible steps:
-    // at max value [0] - 0 (by init), at min value - max
-    ac[ind].delta_lg2 = std::numeric_limits<int32_t>::max();
-  }
-  return allowed_counts;
-}();
+      for (uint32_t shift = 0; shift < allowed_counts.size(); ++shift) {
+        auto& ac = allowed_counts[shift];
+        for (uint32_t i = 1; i < ac.size(); ++i) {
+          int32_t cnt = i & ~((1 << SmallestIncrementLog(i, shift)) - 1);
+          ac[cnt].count = cnt;
+        }
+        std::sort(ac.begin(), ac.end(),
+                  [](const CountsEntropy& a, const CountsEntropy& b) {
+                    return a.count > b.count;
+                  });
+        int ind = 1;
+        while (ac[ind].count > 0) {
+          ac[ind].delta_lg2 = round(ldexp(
+              log2(static_cast<double>(ac[ind - 1].count) / ac[ind].count) /
+                  ANS_LOG_TAB_SIZE,
+              31));
+          ac[ind].step_log =
+              FloorLog2Nonzero<uint32_t>(ac[ind - 1].count - ac[ind].count);
+          ++ind;
+        }
+        // Guards against non-possible steps:
+        // at max value [0] - 0 (by init), at min value - max
+        ac[ind].delta_lg2 = std::numeric_limits<int32_t>::max();
+      }
+      return allowed_counts;
+    }();
 
 }  // namespace
 
