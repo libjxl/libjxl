@@ -341,12 +341,13 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
     } else {
       frame_header->group_size_shift = cparams.modular_group_size_shift;
     }
-    if (cparams.modular_group_size_shift == -1 && cparams.decoding_speed_tier >= 2) {
+    if (cparams.modular_group_size_shift < 0 && cparams.decoding_speed_tier >= 2) {
 	  frame_header->group_size_shift = 0;
 	  // by default uses the smallest group size for faster decoding 2 and
 	  // higher, greatly speeds up decoding via multithreading at the cost
 	  // of density.
-    } else if (cparams.responsive && cparams.decoding_speed_tier == 1) {
+    } if (cparams.modular_group_size_shift < 0 && cparams.decoding_speed_tier > 1 &&
+	       cparams.responsive) {
 		frame_header->group_size_shift = 0;
 		// Force decoding speed to tier 2 for progessive lossless
 	 }
