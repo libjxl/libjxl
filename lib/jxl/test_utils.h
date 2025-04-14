@@ -24,7 +24,8 @@
 #include <string>
 #include <vector>
 
-#include "lib/extras/dec/decode.h"  // for TEST_LIBJPEG_SUPPORT
+#include "lib/extras/codec_in_out.h"
+#include "lib/extras/dec/decode.h"  // IWYU pragma: keep TEST_LIBJPEG_SUPPORT
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
@@ -34,12 +35,12 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 
 // TODO(eustas): rewrite
 #define TEST_LIBJPEG_SUPPORT()                                              \
@@ -242,6 +243,9 @@ Status EncodeFile(const CompressParams& params, CodecInOut* io,
                   std::vector<uint8_t>* compressed, ThreadPool* pool = nullptr);
 
 constexpr const char* BoolToCStr(bool b) { return b ? "true" : "false"; }
+
+Status JpegDataToCodecInOut(std::unique_ptr<jxl::jpeg::JPEGData>&& data,
+                            CodecInOut* io);
 
 }  // namespace test
 

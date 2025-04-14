@@ -3,11 +3,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+
 #include <string>
 #include <vector>
 
-#include "lib/include/jxl/decode.h"
-#include "lib/include/jxl/decode_cxx.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 
@@ -66,7 +67,10 @@ JxlDecoderStatus apply_file_format_options(
     static constexpr uint32_t kChunkSize = 65536;
     output_bytes = std::make_shared<std::vector<uint8_t>>();
     auto& codestream = *output_bytes;
-    uint32_t already_written_bytes = 0;
+    size_t already_written_bytes = 0;
+    size_t start_of_last_codestream_box = 0;
+
+    JxlBoxType type;
 
     for (;;) {
       status = JxlDecoderProcessInput(dec.get());
@@ -77,16 +81,17 @@ JxlDecoderStatus apply_file_format_options(
         fprintf(stderr, "Error, already provided all input\n");
         return JXL_DEC_ERROR;
       } else if (status == JXL_DEC_BOX) {
-        JxlBoxType type;
         status = JxlDecoderGetBoxType(dec.get(), type, /*decompressed=*/false);
         if (status != JXL_DEC_SUCCESS) {
           fprintf(stderr, "Error, failed to get box type\n");
           return JXL_DEC_ERROR;
         }
-        if (!memcmp(type, "jxlc", 4)) {
-          codestream.resize(kChunkSize);
-          JxlDecoderSetBoxBuffer(dec.get(), codestream.data(),
-                                 codestream.size());
+        if (!memcmp(type, "jxlc", 4) || !memcmp(type, "jxlp", 4)) {
+          codestream.resize(codestream.size() + kChunkSize);
+          JxlDecoderSetBoxBuffer(dec.get(),
+                                 codestream.data() + already_written_bytes,
+                                 codestream.size() - already_written_bytes);
+          start_of_last_codestream_box = already_written_bytes;
         }
       } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
         size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
@@ -99,7 +104,17 @@ JxlDecoderStatus apply_file_format_options(
         if (!codestream.empty()) {
           size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
           codestream.resize(codestream.size() - remaining);
+          if (!memcmp(type, "jxlp", 4)) {
+            // Remove jxlp's indices from the codestream
+            // TODO: Warn about malformed files, like missing or unordered jxlp
+            //       or even mixed jxlp and jxlc boxes.
+            codestream.erase(
+                codestream.begin() + start_of_last_codestream_box,
+                codestream.begin() + start_of_last_codestream_box + 4);
+          }
+          already_written_bytes = codestream.size();
         }
+      } else if (status == JXL_DEC_SUCCESS) {
         return JXL_DEC_SUCCESS;
       } else {
         fprintf(stderr, "Unknown decoder status\n");
@@ -169,4 +184,3 @@ int JxlTranMain(int argc, const char* argv[]) {
 int main(int argc, const char* argv[]) {
   return jpegxl::tools::JxlTranMain(argc, argv);
 }
-
