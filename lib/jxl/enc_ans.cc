@@ -196,7 +196,7 @@ class ANSEncodingHistogram {
 
   template <typename Writer>
   Status Encode(Writer* writer) {
-    // The check ensures also that all RLE sequencies can be
+    // The check ensures also that all RLE sequences can be
     // encoded by `StoreVarLenUint8`
     JXL_ENSURE(alphabet_size <= ANS_MAX_ALPHABET_SIZE);
 
