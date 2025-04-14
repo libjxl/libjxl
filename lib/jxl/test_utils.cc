@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/metrics.h"
@@ -40,7 +41,8 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -58,6 +60,10 @@
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
+#include "lib/jxl/luminance.h"
 #include "lib/jxl/padded_bytes.h"
 #include "lib/jxl/test_memory_manager.h"
 
@@ -931,6 +937,32 @@ StatusOr<Image3F> GetColorImage(const extras::PackedPixelFile& ppf) {
         ppf.info.bits_per_sample, format, c, nullptr, &color.Plane(c)));
   }
   return color;
+}
+
+Status JpegDataToCodecInOut(std::unique_ptr<jxl::jpeg::JPEGData>&& data,
+                            CodecInOut* io) {
+  JxlMemoryManager* memory_manager = io->memory_manager;
+  io->frames.clear();
+  io->frames.reserve(1);
+  io->frames.emplace_back(memory_manager, &io->metadata.m);
+  io->Main().jpeg_data = std::move(data);
+  jpeg::JPEGData* jpeg_data = io->Main().jpeg_data.get();
+  JXL_RETURN_IF_ERROR(jxl::jpeg::SetColorEncodingFromJpegData(
+      *jpeg_data, &io->metadata.m.color_encoding));
+  JXL_RETURN_IF_ERROR(jxl::jpeg::SetChromaSubsamplingFromJpegData(
+      *jpeg_data, &io->Main().chroma_subsampling));
+  JXL_RETURN_IF_ERROR(jxl::jpeg::SetColorTransformFromJpegData(
+      *jpeg_data, &io->Main().color_transform));
+
+  io->metadata.m.SetIntensityTarget(kDefaultIntensityTarget);
+  io->metadata.m.SetUintSamples(8);
+  JXL_ASSIGN_OR_RETURN(
+      Image3F tmp,
+      Image3F::Create(memory_manager, jpeg_data->width, jpeg_data->height));
+  JXL_RETURN_IF_ERROR(
+      io->SetFromImage(std::move(tmp), io->metadata.m.color_encoding));
+  SetIntensityTarget(&io->metadata.m);
+  return true;
 }
 
 }  // namespace test
