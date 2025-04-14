@@ -22,6 +22,7 @@
 #include <random>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/fuzztest.h"
 #include "tools/tracking_memory_manager.h"
@@ -90,7 +91,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
       std::min<size_t>(2, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   auto runner = JxlThreadParallelRunnerMake(memory_manager, num_threads);
 
-  auto mt = std::make_unique<std::mt19937>(spec.random_seed);
+  auto mt = jxl::make_unique<std::mt19937>(spec.random_seed);
   std::exponential_distribution<> dis_streaming(kStreamingTargetNumberOfChunks);
 
   auto dec = JxlDecoderMake(memory_manager);
