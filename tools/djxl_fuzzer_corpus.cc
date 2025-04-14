@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
@@ -22,6 +23,7 @@
 #include "lib/jxl/common.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/modular/options.h"
 #include "tools/no_memory_manager.h"
 #if defined(_WIN32) || defined(_WIN64)
@@ -35,12 +37,12 @@
 #include <random>
 #include <vector>
 
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/jpg.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_params.h"
@@ -260,17 +262,20 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     jxl::extras::EncodedImage encoded;
     JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, nullptr));
     jpeg_bytes = encoded.bitstreams[0];
-    JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
-        jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), io.get()));
-    std::vector<uint8_t> jpeg_data;
+    JXL_TEST_ASSIGN_OR_DIE(
+        std::unique_ptr<jxl::jpeg::JPEGData> jpeg_data,
+        jxl::jpeg::ParseJPG(memory_manager, jxl::Bytes(jpeg_bytes)));
+    JXL_RETURN_IF_ERROR(
+        jxl::test::JpegDataToCodecInOut(std::move(jpeg_data), io.get()));
+    std::vector<uint8_t> encoded_jpeg_data;
     JXL_RETURN_IF_ERROR(EncodeJPEGData(memory_manager, *io->Main().jpeg_data,
-                                       &jpeg_data, params));
+                                       &encoded_jpeg_data, params));
     std::vector<uint8_t> header;
     header.insert(header.end(), jxl::kContainerHeader.begin(),
                   jxl::kContainerHeader.end());
-    jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_data.size(), false,
-                         &header);
-    jxl::Bytes(jpeg_data).AppendTo(header);
+    jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), encoded_jpeg_data.size(),
+                         false, &header);
+    jxl::Bytes(encoded_jpeg_data).AppendTo(header);
     jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, &header);
     JXL_RETURN_IF_ERROR(compressed.append(header));
   }
