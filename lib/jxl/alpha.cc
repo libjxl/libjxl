@@ -49,7 +49,7 @@ void PerformAlphaBlending(const float* bg, const float* bga, const float* fg,
   } else {
     if (alpha_is_premultiplied) {
       for (size_t x = 0; x < num_pixels; ++x) {
-        float fa = clamp ? Clamp(fga[x]): fga[x];
+        float fa = clamp ? Clamp(fga[x]) : fga[x];
         out[x] = (fg[x] + bg[x] * (1.f - fa));
       }
     } else {

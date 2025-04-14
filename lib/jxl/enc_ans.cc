@@ -101,7 +101,7 @@ const auto lg2 = [] {
 }();
 
 float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
-                        size_t len) {
+                       size_t len) {
   int64_t sum = 0;
   int total_histogram = 0;
   int total_counts = 0;
@@ -131,7 +131,7 @@ float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
 }
 
 struct CountsEntropy {
-  ANSHistBin count : 16;   // allowed value of counts in a histogram bin
+  ANSHistBin count : 16;    // allowed value of counts in a histogram bin
   ANSHistBin step_log : 5;  // log2 of increase step size
   int32_t delta_lg2;  // change of log between that value and the next allowed
 };
@@ -454,17 +454,18 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     }
 
     // Since `num_symbols >= 3`, we know that `length >= 3`, therefore we encode
-    // `length - 3`. The check also ensures that all `same[i] <= 255` and can be encoded
-    // further after RLE symbols by `StoreVarLenUint8`
+    // `length - 3`. The check also ensures that all `same[i] <= 255` and can be
+    // encoded further after RLE symbols by `StoreVarLenUint8`
     if (length - 3 > 255) {
       return false;
     }
     StoreVarLenUint8(length - 3, writer);
 
     std::vector<int> logcounts(length, -1);
-    // Use shortest possible Huffman code to encode `omit_pos` (see `kLogCountBitLengths`).
-    // `logcounts` value at `omit_pos` should be the first of maximal values
-    // in the whole `logcounts` array, so it can be increased without changing that property
+    // Use shortest possible Huffman code to encode `omit_pos` (see
+    // `kLogCountBitLengths`). `logcounts` value at `omit_pos` should be the
+    // first of maximal values in the whole `logcounts` array, so it can be
+    // increased without changing that property
     int omit_log = 9;
     for (int i = 0; i < length; ++i) {
       JXL_DASSERT(counts[i] <= ANS_TAB_SIZE);
@@ -489,7 +490,7 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
         i += same[i] - 1;
       }
     }
-    if (shift != 0) { // otherwise `bitcount = 0`
+    if (shift != 0) {  // otherwise `bitcount = 0`
       for (int i = 0; i < length; ++i) {
         if (logcounts[i] > 0 && i != omit_pos) {
           int bitcount = GetPopulationCountPrecision(logcounts[i], shift);
@@ -535,11 +536,11 @@ StatusOr<float> ComputeHistoAndDataCost(const ANSHistBin* histogram,
   JXL_RETURN_IF_ERROR(NormalizeCounts(counts.data(), &omit_pos, alphabet_size,
                                       shift, &num_symbols, symbols));
   SizeWriter writer;
-  if(EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols, shift,
-                  symbols, &writer)) {
+  if (EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols, shift,
+                   symbols, &writer)) {
     return writer.size +
            EstimateDataBits(histogram, counts.data(), alphabet_size);
-  } else { // not possible to encode
+  } else {  // not possible to encode
     return std::numeric_limits<float>::max();
   }
 }
