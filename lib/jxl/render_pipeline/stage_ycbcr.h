@@ -6,7 +6,6 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_YCBCR_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_YCBCR_H_
 
-#include <cmath>
 #include <memory>
 
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"

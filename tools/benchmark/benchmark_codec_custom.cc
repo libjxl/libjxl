@@ -8,7 +8,7 @@
 #include <jxl/types.h>
 
 #include <cstdint>
-#include <cstdio>  // remove
+#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>
@@ -85,7 +85,7 @@ Status ReportCodecRunningTime(F&& function, std::string output_filename,
     speed_stats->NotifyElapsed(end - start);
   }
   if (time_stream.is_open()) {
-    remove(time_filename.c_str());
+    std::remove(time_filename.c_str());
   }
   return true;
 }

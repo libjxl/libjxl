@@ -118,7 +118,7 @@ StatusOr<double> ComputeDistanceP(const ImageF& distmap,
     v /= 3.0;
     return v;
   } else {
-    static std::atomic<int> once{0};
+    static std::atomic<uint32_t> once{0};
     if (once.fetch_add(1, std::memory_order_relaxed) == 0) {
       JXL_WARNING("WARNING: using slow ComputeDistanceP");
     }

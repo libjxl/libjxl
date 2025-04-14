@@ -13,7 +13,6 @@
 #include <utility>
 
 #include "lib/extras/metrics.h"
-#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
@@ -25,8 +24,6 @@
 namespace jxl {
 namespace {
 
-using ::jxl::extras::PackedImage;
-using ::jxl::extras::PackedPixelFile;
 using ::jxl::test::GetColorImage;
 using ::jxl::test::TestImage;
 

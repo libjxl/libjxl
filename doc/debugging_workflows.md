@@ -20,6 +20,7 @@ add the following snippet in workflow .yml:
 When the plugin is executed it dumps to log a command to "ssh" to that instance.
 
 NB: since session is wrapped in tmux, scrolling might be very inconvenient.
+NB: this action is not in allow-list of libjxl repository; use it in a fork.
 
 ### Debugging build_test_cross.yml locally
 
