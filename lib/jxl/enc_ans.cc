@@ -771,8 +771,9 @@ Status ChooseUintConfigs(const HistogramParams& params,
                            std::numeric_limits<float>::max());
   std::vector<uint32_t> extra_bits(clustered_histograms->size());
   std::vector<uint8_t> is_valid(clustered_histograms->size());
-  size_t max_alpha =
-      codes->use_prefix_code ? PREFIX_MAX_ALPHABET_SIZE : ANS_MAX_ALPHABET_SIZE;
+  // Wider histograms are assigned max cost in PopulationCost anyway
+  // and therefore will not be used
+  constexpr size_t max_alpha = ANS_MAX_ALPHABET_SIZE;
   for (HybridUintConfig cfg : configs) {
     std::fill(is_valid.begin(), is_valid.end(), true);
     std::fill(extra_bits.begin(), extra_bits.end(), 0);
@@ -816,7 +817,7 @@ Status ChooseUintConfigs(const HistogramParams& params,
   for (auto& histo : *clustered_histograms) {
     histo.Clear();
   }
-  *log_alpha_size = 4;
+  *log_alpha_size = 5;
   for (const auto& stream : tokens) {
     for (const auto& token : stream) {
       uint32_t tok, nbits, bits;
@@ -923,7 +924,6 @@ class HistogramBuilder {
                                             &clustered_histograms, codes,
                                             &log_alpha_size));
     }
-    if (log_alpha_size < 5) log_alpha_size = 5;
     if (params.streaming_mode) {
       // TODO(szabadka) Figure out if we can use lower values here.
       log_alpha_size = 8;
