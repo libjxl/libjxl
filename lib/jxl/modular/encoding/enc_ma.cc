@@ -694,7 +694,7 @@ std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
   }
   JXL_DASSERT(thresholds.size() <= num_chunks);
   // last value collects all histogram and is not really a threshold
-  thresholds.resize(thresholds.size() - 1);
+  thresholds.pop_back();
   return thresholds;
 }
 
