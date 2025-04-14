@@ -352,7 +352,7 @@ typedef enum {
    *
    * When using streaming input and output the encoder minimizes memory usage at
    * the cost of compression density. Also note that images produced with
-   * streaming mode might not be progressively decodeable.
+   * streaming mode might not be progressively decodable.
    */
   JXL_ENC_FRAME_SETTING_BUFFERING = 34,
 
@@ -1004,8 +1004,9 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
  * case metadata cannot be added.
  *
  * Each box generally has the following byte structure in the file:
- * - 4 bytes: box size including box header (Big endian. If set to 0, an
- *   8-byte 64-bit size follows instead).
+ * - 4 bytes: box size including box header (Big endian. If set to 1, an
+ *   8-byte 64-bit size follows instead. If set to 0, the box extends to the
+ *   end of the file.)
  * - 4 bytes: type, e.g. "JXL " for the signature box, "jxlc" for a codestream
  *   box.
  * - N bytes: box contents.

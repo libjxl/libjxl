@@ -8,9 +8,9 @@
 
 #include <utility>
 
+#include "lib/extras/codec_in_out.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 
 namespace jxl {
 

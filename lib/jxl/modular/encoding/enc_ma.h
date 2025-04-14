@@ -96,10 +96,6 @@ struct TreeSamples {
   // Swaps samples in position a and b. Does nothing if a == b.
   void Swap(size_t a, size_t b);
 
-  // Cycles samples: a -> b -> c -> a. We assume a <= b <= c, so that we can
-  // just call Swap(a, b) if b==c.
-  void ThreeShuffle(size_t a, size_t b, size_t c);
-
  private:
   // TODO(veluca): as the total number of properties and predictors are known
   // before adding any samples, it might be better to interleave predictors,
