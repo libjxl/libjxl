@@ -716,9 +716,8 @@ Status DownsampleColorChannels(const CompressParams& cparams,
     // CustomTransformData
     if (cparams.speed_tier <= SpeedTier::kGlacier) {
       // TODO(Jonnyawsom3): Until optimized, enabled only for Glacier and
-      // TectonicPlate. It's a 2x slowdown for 1 higher SSIMULACRA2.
-      // Downsampling is only active at high distances by default
-      // anyway, making improvements negligible.
+      // TectonicPlate. It's an 80% slowdown and downsampling is only active
+      // at high distances by default anyway, making improvements negligible.
       JXL_RETURN_IF_ERROR(DownsampleImage2_Iterative(opsin));
     } else {
       JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(opsin));
