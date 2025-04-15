@@ -714,12 +714,11 @@ Status DownsampleColorChannels(const CompressParams& cparams,
     // TODO(lode): use the regular DownsampleImage, or adapt to the custom
     // coefficients, if there is are custom upscaling coefficients in
     // CustomTransformData
-    if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
-      // TODO(Jonnyawsom3): DownsampleImage2_Iterative is currently a 2x
-      // slowdown on Glacier and 3x memory increase for Squirrel.
-      // Until optimized, enabled only for TectonicPlate. Downsampling is
-      // only active at high distances by default anyway, making improvements
-      // negligible. Explore separate flag for explicit distance setting.
+    if (cparams.speed_tier <= SpeedTier::kGlacier) {
+      // TODO(Jonnyawsom3): Until optimized, enabled only for Glacier and
+      // TectonicPlate. It's a 2x slowdown for 1 higher SSIMULACRA2.
+      // Downsampling is only active at high distances by default
+      // anyway, making improvements negligible.
       JXL_RETURN_IF_ERROR(DownsampleImage2_Iterative(opsin));
     } else {
       JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(opsin));
