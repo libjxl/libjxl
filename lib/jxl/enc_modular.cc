@@ -472,6 +472,20 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
 
   size_t num_streams =
       ModularStreamId::Num(frame_dim_, frame_header.passes.num_passes);
+
+  // Progressive lossless only benefits from levels 2 and higher
+  // Lower levels of faster decoding can outperfom higher tiers
+  // depending on the PC
+  if (cparams_.responsive == 1 && cparams_.IsLossless() && cparams_.decoding_speed_tier == 1) {
+    cparams_.decoding_speed_tier = 2;
+  }
+  if (cparams_.responsive && cparams_.IsLossless()) {
+      //RCT selection seems bugged with Squeeze, YCoCg works well.
+      if (cparams_.colorspace < 0) {
+          cparams_.colorspace = 6;
+      }
+  }
+
   if (cparams_.ModularPartIsLossless()) {
     switch (cparams_.decoding_speed_tier) {
       case 0:
@@ -512,19 +526,6 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       cparams_.responsive = 1;
     }
   }
-
-  // Progressive lossless only benefits from levels 2 and higher
-  // Lower levels of faster decoding can outperfom higher tiers
-  // depending on the PC
-  if (cparams_.responsive == 1 && cparams_.IsLossless() && cparams_.decoding_speed_tier == 1) {
-    cparams_.decoding_speed_tier = 2;
-  }
-if (cparams_.responsive && cparams_.IsLossless()) {
-    //RCT selection seems bugged with Squeeze, YCoCg works well.
-    if (cparams_.colorspace < 0) {
-        cparams_.colorspace = 6;
-    }
-}
 
   cparams_.options.splitting_heuristics_node_threshold =
       82 + 14 * static_cast<int>(cparams_.speed_tier);
