@@ -54,7 +54,7 @@ struct FuzzSpec {
   };
 
 #define INT_OPTION(FLAG, MIN_V, MAX_V, V) \
-  IntOptionSpec{FLAG, #FLAG, MIN_V, MAX_V, V}
+  IntOptionSpec { FLAG, #FLAG, MIN_V, MAX_V, V }
 
   std::vector<IntOptionSpec> int_options = {
       INT_OPTION(JXL_ENC_FRAME_SETTING_EFFORT, 1, 9, 0),

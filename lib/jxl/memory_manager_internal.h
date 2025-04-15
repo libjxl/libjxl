@@ -89,9 +89,9 @@ JXL_INLINE MemoryManagerUniquePtr<T> MemoryManagerMakeUniquePrivate(
 // NB: ARGS should be in parentheses on instantiation side; it contains
 //     arguments for MemoryManagerMakeUniquePrivate, including `memory_manager`.
 #define JXL_MEMORY_MANAGER_MAKE_UNIQUE_OR_RETURN(NAME, TYPE, ARGS, RETURN) \
-  auto NAME = ::jxl::MemoryManagerMakeUniquePrivate<TYPE>ARGS; \
-  if (!NAME) { \
-    return RETURN; \
+  auto NAME = ::jxl::MemoryManagerMakeUniquePrivate<TYPE> ARGS;            \
+  if (!NAME) {                                                             \
+    return RETURN;                                                         \
   }
 // NOLINTEND(bugprone-macro-parentheses)
 
