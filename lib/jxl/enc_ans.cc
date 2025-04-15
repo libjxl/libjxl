@@ -270,19 +270,19 @@ class ANSEncodingHistogram {
       }
     }
 
-    uint8_t logcounts[ANS_MAX_ALPHABET_SIZE] = {};
+    uint8_t bit_width[ANS_MAX_ALPHABET_SIZE] = {};
     // Use shortest possible Huffman code to encode `omit_pos` (see
-    // `kLogCountBitLengths`). `logcounts` value at `omit_pos` should be the
-    // first of maximal values in the whole `logcounts` array, so it can be
+    // `kLogCountBitLengths`). `bit_width` value at `omit_pos` should be the
+    // first of maximal values in the whole `bit_width` array, so it can be
     // increased without changing that property
     int omit_log = 10;
     for (size_t i = 0; i < alphabet_size; ++i) {
       if (i != omit_pos && counts[i] > 0) {
-        logcounts[i] = FloorLog2Nonzero<uint32_t>(counts[i]) + 1;
-        omit_log = std::max(omit_log, logcounts[i] + int{i < omit_pos});
+        bit_width[i] = FloorLog2Nonzero<uint32_t>(counts[i]) + 1;
+        omit_log = std::max(omit_log, bit_width[i] + int{i < omit_pos});
       }
     }
-    logcounts[omit_pos] = static_cast<uint8_t>(omit_log);
+    bit_width[omit_pos] = static_cast<uint8_t>(omit_log);
 
     // The logcount values are encoded with a static Huffman code.
     // The last symbol is used as RLE sequence.
@@ -292,30 +292,30 @@ class ANSEncodingHistogram {
     constexpr uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
         17, 11, 15, 3, 9, 7, 4, 2, 5, 6, 0, 33, 1, 65,
     };
-    constexpr uint8_t kMinReps = 4;
+    constexpr uint8_t kMinReps = 5;
     constexpr size_t rep = ANS_LOG_TAB_SIZE + 1;
     // Encode symbol logs
     for (size_t i = 0; i < alphabet_size; ++i) {
-      writer->Write(kLogCountBitLengths[logcounts[i]],
-                    kLogCountSymbols[logcounts[i]]);
-      if (same[i] > kMinReps) {
+      writer->Write(kLogCountBitLengths[bit_width[i]],
+                    kLogCountSymbols[bit_width[i]]);
+      if (same[i] >= kMinReps) {
         // Encode the RLE symbol and skip the repeated ones.
         writer->Write(kLogCountBitLengths[rep], kLogCountSymbols[rep]);
-        StoreVarLenUint8(same[i] - kMinReps - 1, writer);
+        StoreVarLenUint8(same[i] - kMinReps, writer);
         i += same[i] - 1;
       }
     }
     // Encode additional bits of accuracy
     if (method != 1) {  // otherwise `bitcount = 0`
       for (size_t i = 0; i < alphabet_size; ++i) {
-        if (logcounts[i] > 1 && i != omit_pos) {
+        if (bit_width[i] > 1 && i != omit_pos) {
           int bitcount =
-              GetPopulationCountPrecision(logcounts[i] - 1, method - 1);
-          int drop_bits = logcounts[i] - 1 - bitcount;
+              GetPopulationCountPrecision(bit_width[i] - 1, method - 1);
+          int drop_bits = bit_width[i] - 1 - bitcount;
           JXL_DASSERT((counts[i] & ((1 << drop_bits) - 1)) == 0);
           writer->Write(bitcount, (counts[i] >> drop_bits) - (1 << bitcount));
         }
-        if (same[i] > kMinReps) {
+        if (same[i] >= kMinReps) {
           // Skip symbols encoded by RLE.
           i += same[i] - 1;
         }
