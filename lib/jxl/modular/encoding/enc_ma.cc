@@ -417,7 +417,8 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       // Split node and try to split children.
       MakeSplitNode(pos, p, dequant, best->lpred, 0, best->rpred, 0, tree);
       // "Sort" according to winning property
-      SplitTreeSamples(tree_samples, begin, best->pos, end, best->prop, best->val);
+      SplitTreeSamples(tree_samples, begin, best->pos, end, best->prop,
+                       best->val);
       if (p >= kNumStaticProperties) {
         used_properties |= 1 << best->prop;
       }

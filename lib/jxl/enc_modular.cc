@@ -1157,7 +1157,7 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
         JXL_ASSIGN_OR_RETURN(
             trees[chunk],
             LearnTree(stream_images_.data(), stream_options_.data(), start,
-                       stop, multiplier_info));
+                      stop, multiplier_info));
       } else {
         size_t total_pixels = 0;
         for (size_t i = start; i < stop; i++) {
