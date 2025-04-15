@@ -3,7 +3,7 @@
 Various trade-offs between encode speed and compression performance can be selected in libjxl. In `cjxl`, this is done via the `--effort` (`-e`) option.
 Higher effort means slower encoding; generally the higher the effort, the more coding tools are used, computationally more expensive heuristics are used,
 and more exhaustive search is performed. 
-Generally, efforts range between `1` and `10`, but there is also `e11` if you pass the flag `--allow_expert_options`. It is considered an expert option because it can be extremely slow.
+Generally, efforts range between `1` and `10`, but there is also `e11` if you pass the flag `--allow_expert_options` (in combination with "lossless", i.e. `-d 0`). It is considered an expert option because it can be extremely slow.
 
 
 For lossy compression, higher effort results in better visual quality at a given filesize, and also better
@@ -27,14 +27,15 @@ The following table describes what the various effort settings do:
 | e7 | e6 + more RCTs and MA tree properties | e6 + patches (including dots) |
 | e8 | e7 + more RCTs, MA tree properties, and Weighted predictor parameters | e7 + Butteraugli iterations for adaptive quantization |
 | e9 | e8 + more RCTs, MA tree properties, and Weighted predictor parameters | e8 + more Butteraugli iterations |
-| e10 | e9 + global MA tree, try all predictors, and disables chunked encoding | e9 + more thorough adaptive quantization and disables chunked encoding |
-| e11 | e10 + previous-channel MA tree properties, different group dimensions, and try multiple e10 configurations | e10 + iterative downsampling for high distance values |
+| e10 | e9 + global MA tree, try all predictors, and disables chunked encoding | e9 + more thorough adaptive quantization, disables chunked encoding and uses iterative downsampling |
+| e11 | e10 + previous-channel MA tree properties, different group dimensions, and try multiple e10 configurations | N/A |
 
 For the entropy coding (context clustering, lz77 search, hybriduint configuration): slower/more exhaustive search as effort goes up.
 
 <u>Chunked encoding is also disabled under these circumstances:</u>
 * When the image is smaller than 2048x2048.
 * Lossless Jpeg transcoding.
+* VarDCT at distances ≥10.
 * Effort 7 VarDCT at distances ≥3.0.
 * Efforts 8 & 9 VarDCT at distances >0.5.
 * Lossy Modular.
