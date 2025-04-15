@@ -98,7 +98,9 @@ class ANSEncodingHistogram {
       result.counts = CreateFlatHistogram(result.alphabet_size, ANS_TAB_SIZE);
       // in this case length can be non-suitable for SIMD - fix it
       result.counts.resize(histo.counts_.size());
-      result.cost = ANS_LOG_TAB_SIZE + 2 + EstimateDataBitsFlat(histo);
+      SizeWriter writer;
+      JXL_RETURN_IF_ERROR(result.Encode(&writer));
+      result.cost = writer.size + EstimateDataBitsFlat(histo);
     } else {
       // Empty histogram
       result.method = 1;
