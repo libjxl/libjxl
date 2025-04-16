@@ -128,19 +128,9 @@ jobs:
             mode: release
             cc: gcc
             cxx: g++
-          - name: release:gcc-old-old
-            os: ubuntu-20.04
-            mode: release
-            cc: gcc
-            cxx: g++
           # Builds with old clang in release mode
           - name: release:clang-old
             os: ubuntu-22.04
-            mode: release
-            cc: clang
-            cxx: clang++
-          - name: release:clang-old-old
-            os: ubuntu-20.04
             mode: release
             cc: clang
             cxx: clang++
