@@ -224,9 +224,9 @@ Status ParseTransferFunction(Tokenizer* tokenizer, JxlColorEncoding* c) {
 Status ParseDescription(const std::string& description, JxlColorEncoding* c) {
   *c = {};
   if (description == "sRGB") {
-    return ParseDescription("RGB_D65_SRG_Per_SRG", c);
+    return ParseDescription("RGB_D65_SRG_Rel_SRG", c);
   } else if (description == "DisplayP3") {
-    return ParseDescription("RGB_D65_DCI_Per_SRG", c);
+    return ParseDescription("RGB_D65_DCI_Rel_SRG", c);
   } else if (description == "Adobe98") {
     return ParseDescription("RGB_D65_Ado_Rel_Ado", c);
   } else if (description == "Rec2100PQ") {
