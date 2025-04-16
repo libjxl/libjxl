@@ -138,11 +138,15 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
   if (params.HasOutputProcessor() &&
       JXL_ENC_SUCCESS !=
           JxlEncoderSetOutputProcessor(enc, params.output_processor)) {
-    fprintf(stderr, "JxlEncoderSetOutputProcessorfailed\n");
+    fprintf(stderr, "JxlEncoderSetOutputProcessor failed\n");
     return false;
   }
 
   auto* settings = JxlEncoderFrameSettingsCreate(enc, nullptr);
+  if (!settings) {
+    fprintf(stderr, "JxlEncoderFrameSettingsCreate failed\n");
+    return false;
+  }
   size_t option_idx = 0;
   if (!SetFrameOptions(params.options, 0, &option_idx, settings)) {
     return false;

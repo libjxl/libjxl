@@ -1507,6 +1507,8 @@ JXL_EXPORT float JxlEncoderDistanceFromQuality(float quality);
  * only @ref JxlEncoderFrameSettings created with this function for the same
  * encoder instance can be used.
  *
+ * The returned value could be NULL in case of out of memory situatiton.
+ *
  * @param enc encoder object.
  * @param source source options to copy initial values from, or NULL to get
  * defaults initialized to defaults.
