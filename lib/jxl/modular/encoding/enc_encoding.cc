@@ -639,7 +639,7 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
   size_t nb_channels = image.channel.size();
 
   if (image.w == 0 || image.h == 0 || nb_channels < 1)
-    return true; // is there any use for a zero-channel image?
+    return true;  // is there any use for a zero-channel image?
   if (image.error) return JXL_FAILURE("Invalid image");
 
   JXL_DEBUG_V(
@@ -701,7 +701,7 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
   size_t nb_channels = image.channel.size();
 
   if (image.w == 0 || image.h == 0 || nb_channels < 1)
-    return true; // is there any use for a zero-channel image?
+    return true;  // is there any use for a zero-channel image?
   if (image.error) return JXL_FAILURE("Invalid image");
 
   ModularOptions options = opts;  // Make a copy to modify it.
