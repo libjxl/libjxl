@@ -221,7 +221,8 @@ message(STATUS
 
 set(JXL_HWY_INCLUDE_DIRS "$<BUILD_INTERFACE:$<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>>")
 # Always disable SSSE3 since it is rare to have SSSE3 but not SSE4
-set(HWY_DISABLED_TARGETS "HWY_SSSE3")
+# Also always disable SVE_256 for now since it fails conformance testing
+set(HWY_DISABLED_TARGETS "HWY_SSSE3|HWY_SVE_256")
 if (NOT JPEGXL_ENABLE_AVX512)
   message(STATUS "Disabled AVX512 (set JPEGXL_ENABLE_AVX512 to enable it)")
   set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_AVX3")

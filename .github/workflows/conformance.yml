@@ -82,9 +82,6 @@ jobs:
           - name: SVE2_128
             os: ubuntu-24.04-arm
             cflags: -DHWY_DISABLED_TARGETS=HWY_SVE2_128-1
-          - name: SVE_256
-            os: ubuntu-24.04-arm
-            cflags: -DHWY_DISABLED_TARGETS=HWY_SVE_256-1
           - name: SVE2
             os: ubuntu-24.04-arm
             cflags: -DHWY_DISABLED_TARGETS=HWY_SVE2-1

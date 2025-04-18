@@ -13,6 +13,7 @@
 
 #include <vector>
 
+#include "lib/jxl/ans_common.h"
 #include "lib/jxl/common.h"
 
 namespace jxl {
@@ -85,6 +86,57 @@ struct HistogramParams {
   bool streaming_mode = false;
   bool add_missing_symbols = false;
   bool add_fixed_histograms = false;
+};
+
+struct Histogram {
+  // Create flat histogram
+  static Histogram Flat(int length, int total_count) {
+    Histogram flat;
+    flat.counts_ = CreateFlatHistogram(length, total_count);
+    flat.total_count_ = static_cast<size_t>(total_count);
+    flat.entropy_ = 0.0;
+    return flat;
+  }
+  void Clear() {
+    counts_.clear();
+    total_count_ = 0;
+    entropy_ = 0.0;
+  }
+  void Add(size_t symbol) {
+    if (counts_.size() <= symbol) {
+      counts_.resize(DivCeil(symbol + 1, kRounding) * kRounding);
+    }
+    ++counts_[symbol];
+    ++total_count_;
+  }
+  void AddHistogram(const Histogram& other) {
+    if (other.counts_.size() > counts_.size()) {
+      counts_.resize(other.counts_.size());
+    }
+    for (size_t i = 0; i < other.counts_.size(); ++i) {
+      counts_[i] += other.counts_[i];
+    }
+    total_count_ += other.total_count_;
+  }
+  size_t alphabet_size() const {
+    for (int i = counts_.size() - 1; i >= 0; --i) {
+      if (counts_[i] > 0) {
+        return i + 1;
+      }
+    }
+    return 0;
+  }
+
+  // Returns an estimate of the number of bits required to encode the given
+  // histogram (header bits plus data bits).
+  StatusOr<float> ANSPopulationCost() const;
+
+  float ShannonEntropy() const;
+
+  std::vector<ANSHistBin> counts_;
+  size_t total_count_ = 0;
+  mutable float entropy_ = 0;  // WARNING: not kept up-to-date.
+  static constexpr size_t kRounding = 8;
 };
 
 }  // namespace jxl

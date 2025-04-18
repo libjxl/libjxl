@@ -707,7 +707,6 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
         // no new AC pass, nothing to do
         return true;
       }
-      (void)num;
       size_t first_pass = decoded_passes_per_ac_group_[g];
       BitReader* JXL_RESTRICT readers[kMaxNumPasses];
       for (size_t i = 0; i < desired_num_ac_passes[g]; i++) {
