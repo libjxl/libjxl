@@ -2006,7 +2006,7 @@ HistogramParams HistogramParams::ForModular(
                              : HistogramParams::LZ77Method::kOptimal;
     } else {
 	  params.lz77_method = HistogramParams::LZ77Method::kNone;
-	  // LZ77 signifcantly slows down encoding for VarDCT with
+	  // LZ77 significantly slows down encoding for VarDCT with
 	  // no benefit to density or decoding speed
     }
   }
