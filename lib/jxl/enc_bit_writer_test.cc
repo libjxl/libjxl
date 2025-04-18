@@ -34,7 +34,7 @@ struct BitPatch {
 TEST(BitWriterTest, RandomSequence) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
 
-  auto mt = std::make_unique<std::mt19937>(42);
+  auto mt = jxl::make_unique<std::mt19937>(42);
   std::uniform_int_distribution<> num_bits_dist(1, BitWriter::kMaxBitsPerCall);
   constexpr size_t kNumSequences = 1024 * 1024;
   std::vector<BitPatch> content;

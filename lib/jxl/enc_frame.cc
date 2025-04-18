@@ -1343,7 +1343,6 @@ Status EncodeGroups(const FrameHeader& frame_header,
     return true;
   };
 
-  std::atomic<bool> has_error{false};
   const auto process_dc_group = [&](const uint32_t group_index,
                                     const size_t thread) -> Status {
     AuxOut* my_aux_out = aux_outs[thread].get();
@@ -1389,7 +1388,6 @@ Status EncodeGroups(const FrameHeader& frame_header,
                                   resize_aux_outs, process_dc_group,
                                   "EncodeDCGroup"));
   }
-  if (has_error) return JXL_FAILURE("EncodeDCGroup failed");
   if (frame_header.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(EncodeGlobalACInfo(
         enc_state, get_output(global_ac_index), enc_modular, aux_out));

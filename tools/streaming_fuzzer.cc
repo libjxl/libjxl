@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
@@ -46,33 +47,39 @@ struct FuzzSpec {
 
   struct IntOptionSpec {
     JxlEncoderFrameSettingId flag;
+    std::string name;
     int min;
     int max;
     int value;
   };
 
+#define INT_OPTION(FLAG, MIN_V, MAX_V, V) \
+  IntOptionSpec { FLAG, #FLAG, MIN_V, MAX_V, V }
+
   std::vector<IntOptionSpec> int_options = {
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_EFFORT, 1, 9, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_DECODING_SPEED, 0, 4, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_NOISE, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_DOTS, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_PATCHES, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_EPF, -1, 3, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_GABORISH, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_MODULAR, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_KEEP_INVISIBLE, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_RESPONSIVE, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_PALETTE_COLORS, -1, 255, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_LOSSY_PALETTE, -1, 1, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM, -1, 2, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE, -1, 41, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, -1, 3, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, -1, 15, 0},
-      IntOptionSpec{JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS, -1, 11, 0},
+      INT_OPTION(JXL_ENC_FRAME_SETTING_EFFORT, 1, 9, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_DECODING_SPEED, 0, 4, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_NOISE, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_DOTS, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_PATCHES, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_EPF, -1, 3, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_GABORISH, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_MODULAR, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_KEEP_INVISIBLE, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_RESPONSIVE, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_PALETTE_COLORS, -1, 255, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_LOSSY_PALETTE, -1, 1, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM, -1, 2, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE, -1, 41, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, -1, 3, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, -1, 15, 0),
+      INT_OPTION(JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS, -1, 11, 0),
   };
+
+#undef INT_OPTION
 
   struct FloatOptionSpec {
     JxlEncoderFrameSettingId flag;
@@ -110,6 +117,7 @@ struct FuzzSpec {
     auto b1 = [&]() -> bool { return static_cast<bool>(u8() % 2); };
     auto u16 = [&]() -> uint16_t { return (uint16_t{u8()} << 8) | u8(); };
     FuzzSpec spec;
+    // TODO(eustas): allow dimensions to be 130k
     spec.xsize = uint32_t{u16()} + 1;
     spec.ysize = uint32_t{u16()} + 1;
     constexpr uint64_t kMaxSize = 1 << 24;
@@ -146,6 +154,13 @@ struct FuzzSpec {
       }
     }
 
+    if (false) {
+      fprintf(stderr, "Image size: %d X %d\n", spec.xsize, spec.ysize);
+      for (auto& int_opt : spec.int_options) {
+        fprintf(stderr, "%s = %d\n", int_opt.name.c_str(), int_opt.value);
+      }
+    }
+
     return spec;
   }
 };
@@ -161,6 +176,7 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
                                     runner.get()) == JXL_ENC_SUCCESS);
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
+  Check(frame_settings != nullptr);
 
   Check(JxlEncoderSetFrameDistance(frame_settings, spec.distance) ==
         JXL_ENC_SUCCESS);
@@ -225,6 +241,7 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
   for (size_t y = 0; y < spec.ysize; y++) {
     for (size_t x = 0; x < spec.xsize; x++) {
       for (size_t c = 0; c < nchan; c++) {
+        // TODO(eustas): make it less regular for tiles except (0, 0)
         pixels[(y * spec.xsize + x) * nchan + c] =
             spec.pixel_data[c][y % 64][x % 64];
       }

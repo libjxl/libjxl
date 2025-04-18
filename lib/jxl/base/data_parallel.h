@@ -97,7 +97,7 @@ class ThreadPool {
       // Returns -1 when the internal init function returns false Status to
       // indicate an error.
       if (!self->init_func_(num_threads)) {
-        self->has_error_ = true;
+        self->has_error_ = 1;
         return JXL_PARALLEL_RET_RUNNER_ERROR;
       }
       return JXL_PARALLEL_RET_SUCCESS;
@@ -110,16 +110,16 @@ class ThreadPool {
           static_cast<RunCallState<InitFunc, DataFunc>*>(jpegxl_opaque);
       if (self->has_error_) return;
       if (!self->data_func_(value, thread_id)) {
-        self->has_error_ = true;
+        self->has_error_ = 1;
       }
     }
 
-    bool HasError() const { return has_error_; }
+    bool HasError() const { return has_error_ != 0; }
 
    private:
     const InitFunc& init_func_;
     const DataFunc& data_func_;
-    std::atomic<bool> has_error_{false};
+    std::atomic<uint32_t> has_error_{0};
   };
 
   // The caller supplied runner function and its opaque void*.

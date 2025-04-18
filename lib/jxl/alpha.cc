@@ -43,18 +43,18 @@ void PerformAlphaBlending(const float* bg, const float* bga, const float* fg,
                           bool alpha_is_premultiplied, bool clamp) {
   if (bg == bga && fg == fga) {
     for (size_t x = 0; x < num_pixels; ++x) {
-      float fa = clamp ? fga[x] : Clamp(fga[x]);
+      float fa = clamp ? Clamp(fga[x]) : fga[x];
       out[x] = (1.f - (1.f - fa) * (1.f - bga[x]));
     }
   } else {
     if (alpha_is_premultiplied) {
       for (size_t x = 0; x < num_pixels; ++x) {
-        float fa = clamp ? fga[x] : Clamp(fga[x]);
+        float fa = clamp ? Clamp(fga[x]) : fga[x];
         out[x] = (fg[x] + bg[x] * (1.f - fa));
       }
     } else {
       for (size_t x = 0; x < num_pixels; ++x) {
-        float fa = clamp ? fga[x] : Clamp(fga[x]);
+        float fa = clamp ? Clamp(fga[x]) : fga[x];
         const float new_a = 1.f - (1.f - fa) * (1.f - bga[x]);
         const float rnew_a = (new_a > 0 ? 1.f / new_a : 0.f);
         out[x] = (fg[x] * fa + bg[x] * bga[x] * (1.f - fa)) * rnew_a;

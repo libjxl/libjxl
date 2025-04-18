@@ -70,9 +70,9 @@ template <typename T>
 using MemoryManagerUniquePtr = std::unique_ptr<T, MemoryManagerDeleteHelper>;
 
 // Creates a new object T allocating it with the memory allocator into a
-// unique_ptr.
+// unique_ptr; not to be used outside JXL_MEMORY_MANAGER_MAKE_UNIQUE_OR_RETURN.
 template <typename T, typename... Args>
-JXL_INLINE MemoryManagerUniquePtr<T> MemoryManagerMakeUnique(
+JXL_INLINE MemoryManagerUniquePtr<T> MemoryManagerMakeUniquePrivate(
     const JxlMemoryManager* memory_manager, Args&&... args) {
   T* mem =
       static_cast<T*>(memory_manager->alloc(memory_manager->opaque, sizeof(T)));
@@ -84,6 +84,16 @@ JXL_INLINE MemoryManagerUniquePtr<T> MemoryManagerMakeUnique(
   return MemoryManagerUniquePtr<T>(new (mem) T(std::forward<Args>(args)...),
                                    MemoryManagerDeleteHelper(memory_manager));
 }
+
+// NOLINTBEGIN(bugprone-macro-parentheses)
+// NB: ARGS should be in parentheses on instantiation side; it contains
+//     arguments for MemoryManagerMakeUniquePrivate, including `memory_manager`.
+#define JXL_MEMORY_MANAGER_MAKE_UNIQUE_OR_RETURN(NAME, TYPE, ARGS, RETURN) \
+  auto NAME = ::jxl::MemoryManagerMakeUniquePrivate<TYPE> ARGS;            \
+  if (!NAME) {                                                             \
+    return RETURN;                                                         \
+  }
+// NOLINTEND(bugprone-macro-parentheses)
 
 // Returns recommended distance in bytes between the start of two consecutive
 // rows.

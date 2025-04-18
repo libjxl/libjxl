@@ -6,7 +6,6 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_CHROMA_UPSAMPLING_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_CHROMA_UPSAMPLING_H_
 
-#include <cmath>
 #include <cstddef>
 #include <memory>
 

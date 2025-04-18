@@ -6,8 +6,7 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_UPSAMPLING_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_UPSAMPLING_H_
 
-#include <cmath>
-#include <cstdio>
+#include <cstddef>
 #include <memory>
 
 #include "lib/jxl/image_metadata.h"
