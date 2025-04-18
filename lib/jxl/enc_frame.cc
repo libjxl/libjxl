@@ -353,7 +353,7 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
     } if (cparams.modular_group_size_shift < 0 && cparams.decoding_speed_tier > 1 &&
 	       cparams.responsive) {
 		frame_header->group_size_shift = 0;
-		// Force decoding speed to tier 2 for progessive lossless
+		// Force decoding speed to tier 2 for progressive lossless
 	 }
   }
 
