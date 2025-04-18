@@ -96,10 +96,6 @@ struct Token {
   uint32_t value;
 };
 
-// Returns an estimate of the number of bits required to encode the given
-// histogram (header bits plus data bits).
-StatusOr<float> ANSPopulationCost(const ANSHistBin* data, size_t alphabet_size);
-
 // Writes the context map to the bitstream and concatenates the individual
 // histogram bitstreams in codes.encoded_histograms. Used in streaming mode.
 Status EncodeHistograms(const std::vector<uint8_t>& context_map,
