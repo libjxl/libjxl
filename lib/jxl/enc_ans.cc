@@ -44,7 +44,7 @@ constexpr
 #endif
     bool ans_fuzzer_friendly_ = false;
 
-const int kMaxNumSymbolsForSmallCode = 4;
+const int kMaxNumSymbolsForSmallCode = 2;
 
 void ANSBuildInfoTable(const ANSHistBin* counts, const AliasTable::Entry* table,
                        size_t alphabet_size, size_t log_alpha_size,
@@ -101,7 +101,7 @@ const auto lg2 = [] {
 }();
 
 float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
-                        size_t len) {
+                       size_t len) {
   int64_t sum = 0;
   int total_histogram = 0;
   int total_counts = 0;
@@ -131,7 +131,7 @@ float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
 }
 
 struct CountsEntropy {
-  ANSHistBin count : 16;   // allowed value of counts in a histogram bin
+  ANSHistBin count : 16;    // allowed value of counts in a histogram bin
   ANSHistBin step_log : 5;  // log2 of increase step size
   int32_t delta_lg2;  // change of log between that value and the next allowed
 };
@@ -398,7 +398,6 @@ template <typename Writer>
 bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
                   const int omit_pos, const int num_symbols, uint32_t shift,
                   const int* symbols, Writer* writer) {
-  bool ok = true;
   if (num_symbols <= 2) {
     // Small tree marker to encode 1-2 symbols.
     writer->Write(1, 1);
@@ -420,44 +419,6 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     // Mark non-flat histogram.
     writer->Write(1, 0);
 
-    // Precompute sequences for RLE encoding. Contains the number of identical
-    // values starting at a given index. Only contains the value at the first
-    // element of the series.
-    std::vector<uint32_t> same(alphabet_size, 0);
-    int last = 0;
-    for (int i = 1; i < alphabet_size; i++) {
-      // Store the sequence length once different symbol reached, or we're at
-      // the end, or the length is longer than we can encode, or we are at
-      // the omit_pos. We don't support including the omit_pos in an RLE
-      // sequence because this value may use a different amount of log2 bits
-      // than standard, it is too complex to handle in the decoder.
-      if (counts[i] != counts[last] || i + 1 == alphabet_size ||
-          (i - last) >= 255 || i == omit_pos || i == omit_pos + 1) {
-        same[last] = (i - last);
-        last = i;
-      }
-    }
-
-    int length = 0;
-    std::vector<int> logcounts(alphabet_size);
-    int omit_log = 0;
-    for (int i = 0; i < alphabet_size; ++i) {
-      JXL_ENSURE(counts[i] <= ANS_TAB_SIZE);
-      JXL_ENSURE(counts[i] >= 0);
-      if (i == omit_pos) {
-        length = i + 1;
-      } else if (counts[i] > 0) {
-        logcounts[i] = FloorLog2Nonzero(static_cast<uint32_t>(counts[i])) + 1;
-        length = i + 1;
-        if (i < omit_pos) {
-          omit_log = std::max(omit_log, logcounts[i] + 1);
-        } else {
-          omit_log = std::max(omit_log, logcounts[i]);
-        }
-      }
-    }
-    logcounts[omit_pos] = omit_log;
-
     // Elias gamma-like code for shift. Only difference is that if the number
     // of bits to be encoded is equal to FloorLog2(ANS_LOG_TAB_SIZE+1), we skip
     // the terminating 0 in unary coding.
@@ -467,45 +428,84 @@ bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
     if (log != upper_bound_log) writer->Write(1, 0);
     writer->Write(log, ((1 << log) - 1) & (shift + 1));
 
-    // Since num_symbols >= 3, we know that length >= 3, therefore we encode
-    // length - 3.
-    if (length - 3 > 255) {
-      // Pretend that everything is OK, but complain about correctness later.
-      StoreVarLenUint8(255, writer);
-      ok = false;
+    // Precompute sequences for RLE encoding. Contains the number of identical
+    // values starting at a given index. Only contains the value at the first
+    // element of the series.
+    std::vector<uint32_t> same(alphabet_size, 0);
+    int last = 0;
+    int length = 0;
+    // Store the sequence length once different symbol reached, or we are
+    // near the omit_pos. We don't support including the omit_pos in an RLE
+    // sequence because this value may use a different amount of log2 bits
+    // than standard, it is too complex to handle in the decoder.
+    for (int i = 1; i < alphabet_size; i++) {
+      if (i == omit_pos || i == omit_pos + 1 || counts[i] != counts[last]) {
+        same[last] = i - last;
+        last = i;
+      }
+    }
+    if (counts[last] != 0) {
+      // Store the last sequence length if it is a non-zero sequence
+      same[last] = alphabet_size - last;
+      length = alphabet_size;
     } else {
-      StoreVarLenUint8(length - 3, writer);
+      // else exclude last zero run
+      length = last;
     }
 
-    // The logcount values are encoded with a static Huffman code.
-    static const size_t kMinReps = 4;
-    size_t rep = ANS_LOG_TAB_SIZE + 1;
+    // Since `num_symbols >= 3`, we know that `length >= 3`, therefore we encode
+    // `length - 3`. The check also ensures that all `same[i] <= 255` and can be
+    // encoded further after RLE symbols by `StoreVarLenUint8`
+    if (length - 3 > 255) {
+      return false;
+    }
+    StoreVarLenUint8(length - 3, writer);
+
+    std::vector<int> logcounts(length, -1);
+    // Use shortest possible Huffman code to encode `omit_pos` (see
+    // `kLogCountBitLengths`). `logcounts` value at `omit_pos` should be the
+    // first of maximal values in the whole `logcounts` array, so it can be
+    // increased without changing that property
+    int omit_log = 9;
     for (int i = 0; i < length; ++i) {
-      if (i > 0 && same[i - 1] > kMinReps) {
+      JXL_DASSERT(counts[i] <= ANS_TAB_SIZE);
+      JXL_DASSERT(counts[i] >= 0);
+      if (i != omit_pos && counts[i] > 0) {
+        logcounts[i] = FloorLog2Nonzero(static_cast<uint32_t>(counts[i]));
+        omit_log = std::max(omit_log, logcounts[i] + (i < omit_pos));
+      }
+    }
+    logcounts[omit_pos] = omit_log;
+
+    // The logcount values are encoded with a static Huffman code.
+    constexpr size_t kMinReps = 4;
+    constexpr size_t rep = ANS_LOG_TAB_SIZE + 1;
+    for (int i = 0; i < length; ++i) {
+      writer->Write(kLogCountBitLengths[logcounts[i] + 1],
+                    kLogCountSymbols[logcounts[i] + 1]);
+      if (same[i] > kMinReps) {
         // Encode the RLE symbol and skip the repeated ones.
         writer->Write(kLogCountBitLengths[rep], kLogCountSymbols[rep]);
-        StoreVarLenUint8(same[i - 1] - kMinReps - 1, writer);
-        i += same[i - 1] - 2;
-        continue;
+        StoreVarLenUint8(same[i] - kMinReps - 1, writer);
+        i += same[i] - 1;
       }
-      writer->Write(kLogCountBitLengths[logcounts[i]],
-                    kLogCountSymbols[logcounts[i]]);
     }
-    for (int i = 0; i < length; ++i) {
-      if (i > 0 && same[i - 1] > kMinReps) {
-        // Skip symbols encoded by RLE.
-        i += same[i - 1] - 2;
-        continue;
-      }
-      if (logcounts[i] > 1 && i != omit_pos) {
-        int bitcount = GetPopulationCountPrecision(logcounts[i] - 1, shift);
-        int drop_bits = logcounts[i] - 1 - bitcount;
-        JXL_ENSURE((counts[i] & ((1 << drop_bits) - 1)) == 0);
-        writer->Write(bitcount, (counts[i] >> drop_bits) - (1 << bitcount));
+    if (shift != 0) {  // otherwise `bitcount = 0`
+      for (int i = 0; i < length; ++i) {
+        if (logcounts[i] > 0 && i != omit_pos) {
+          int bitcount = GetPopulationCountPrecision(logcounts[i], shift);
+          int drop_bits = logcounts[i] - bitcount;
+          JXL_DASSERT((counts[i] & ((1 << drop_bits) - 1)) == 0);
+          writer->Write(bitcount, (counts[i] >> drop_bits) - (1 << bitcount));
+        }
+        if (same[i] > kMinReps) {
+          // Skip symbols encoded by RLE.
+          i += same[i] - 1;
+        }
       }
     }
   }
-  return ok;
+  return true;
 }
 
 void EncodeFlatHistogram(const int alphabet_size, BitWriter* writer) {
@@ -536,11 +536,13 @@ StatusOr<float> ComputeHistoAndDataCost(const ANSHistBin* histogram,
   JXL_RETURN_IF_ERROR(NormalizeCounts(counts.data(), &omit_pos, alphabet_size,
                                       shift, &num_symbols, symbols));
   SizeWriter writer;
-  // Ignore the correctness, no real encoding happens at this stage.
-  (void)EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols, shift,
-                     symbols, &writer);
-  return writer.size +
-         EstimateDataBits(histogram, counts.data(), alphabet_size);
+  if (EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols, shift,
+                   symbols, &writer)) {
+    return writer.size +
+           EstimateDataBits(histogram, counts.data(), alphabet_size);
+  } else {  // not possible to encode
+    return std::numeric_limits<float>::max();
+  }
 }
 
 StatusOr<uint32_t> ComputeBestMethod(
@@ -549,7 +551,7 @@ StatusOr<uint32_t> ComputeBestMethod(
   uint32_t method = 0;
   JXL_ASSIGN_OR_RETURN(float fcost,
                        ComputeHistoAndDataCost(histogram, alphabet_size, 0));
-  auto try_shift = [&](size_t shift) -> Status {
+  auto try_shift = [&](uint32_t shift) -> Status {
     JXL_ASSIGN_OR_RETURN(
         float c, ComputeHistoAndDataCost(histogram, alphabet_size, shift + 1));
     if (c < fcost) {
@@ -786,8 +788,9 @@ Status ChooseUintConfigs(const HistogramParams& params,
                            std::numeric_limits<float>::max());
   std::vector<uint32_t> extra_bits(clustered_histograms->size());
   std::vector<uint8_t> is_valid(clustered_histograms->size());
-  size_t max_alpha =
-      codes->use_prefix_code ? PREFIX_MAX_ALPHABET_SIZE : ANS_MAX_ALPHABET_SIZE;
+  // Wider histograms are assigned max cost in PopulationCost anyway
+  // and therefore will not be used
+  constexpr size_t max_alpha = ANS_MAX_ALPHABET_SIZE;
   for (HybridUintConfig cfg : configs) {
     std::fill(is_valid.begin(), is_valid.end(), true);
     std::fill(extra_bits.begin(), extra_bits.end(), 0);
@@ -831,7 +834,7 @@ Status ChooseUintConfigs(const HistogramParams& params,
   for (auto& histo : *clustered_histograms) {
     histo.Clear();
   }
-  *log_alpha_size = 4;
+  *log_alpha_size = 5;
   for (const auto& stream : tokens) {
     for (const auto& token : stream) {
       uint32_t tok, nbits, bits;
@@ -938,7 +941,6 @@ class HistogramBuilder {
                                             &clustered_histograms, codes,
                                             &log_alpha_size));
     }
-    if (log_alpha_size < 5) log_alpha_size = 5;
     if (params.streaming_mode) {
       // TODO(szabadka) Figure out if we can use lower values here.
       log_alpha_size = 8;

@@ -33,7 +33,7 @@ void GroupBorderAssigner::Init(const FrameDimensions& frame_dim) {
   }
   // Counters at image borders don't have anything on the other side, we
   // pre-fill their value to have more uniform handling afterwards.
-  auto set = [this] (size_t x, size_t y, uint32_t corners) {
+  auto set = [this](size_t x, size_t y, uint32_t corners) {
     counters_[y][x / 8] |= corners << (4 * (x & 7u));
   };
   for (size_t x = 0; x < x_size + 1; x++) {
@@ -47,7 +47,7 @@ void GroupBorderAssigner::Init(const FrameDimensions& frame_dim) {
 }
 
 void GroupBorderAssigner::ClearDone(size_t group_id) {
-  auto clear = [this] (size_t x, size_t y, uint32_t corners) {
+  auto clear = [this](size_t x, size_t y, uint32_t corners) {
     counters_[y][x / 8].fetch_and(~(corners << (4 * (x & 7u))));
   };
   size_t x = group_id % frame_dim_.xsize_groups;

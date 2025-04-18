@@ -67,7 +67,20 @@ JxlDecoderStatus apply_file_format_options(
     static constexpr uint32_t kChunkSize = 65536;
     output_bytes = std::make_shared<std::vector<uint8_t>>();
     auto& codestream = *output_bytes;
-    uint32_t already_written_bytes = 0;
+    size_t already_written_bytes = 0;
+    size_t start_of_last_codestream_box = 0;
+
+    JxlBoxType type;
+
+    uint32_t jxlc, jxll, jxlp;
+    // these aren't hardcoded because
+    // they're in native endian order
+    memcpy(&jxlc, "jxlc", sizeof(jxlc));
+    memcpy(&jxll, "jxll", sizeof(jxll));
+    memcpy(&jxlp, "jxlp", sizeof(jxlp));
+
+    uint32_t box = 0;
+    uint8_t level = 5;
 
     for (;;) {
       status = JxlDecoderProcessInput(dec.get());
@@ -78,18 +91,27 @@ JxlDecoderStatus apply_file_format_options(
         fprintf(stderr, "Error, already provided all input\n");
         return JXL_DEC_ERROR;
       } else if (status == JXL_DEC_BOX) {
-        JxlBoxType type;
         status = JxlDecoderGetBoxType(dec.get(), type, /*decompressed=*/false);
         if (status != JXL_DEC_SUCCESS) {
           fprintf(stderr, "Error, failed to get box type\n");
           return JXL_DEC_ERROR;
         }
-        if (!memcmp(type, "jxlc", 4)) {
-          codestream.resize(kChunkSize);
-          JxlDecoderSetBoxBuffer(dec.get(), codestream.data(),
-                                 codestream.size());
+        memcpy(&box, type, sizeof(box));
+        if (box == jxlc || box == jxlp) {
+          codestream.resize(codestream.size() + kChunkSize);
+          JxlDecoderSetBoxBuffer(dec.get(),
+                                 codestream.data() + already_written_bytes,
+                                 codestream.size() - already_written_bytes);
+          start_of_last_codestream_box = already_written_bytes;
+        } else if (box == jxll) {
+          JxlDecoderSetBoxBuffer(dec.get(), &level, 1);
         }
       } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+        if (box == jxll) {
+          fprintf(stderr, "jxll box too large");
+          JxlDecoderReleaseBoxBuffer(dec.get());
+          continue;
+        }
         size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
         already_written_bytes += kChunkSize - remaining;
         codestream.resize(codestream.size() + kChunkSize);
@@ -97,10 +119,27 @@ JxlDecoderStatus apply_file_format_options(
                                codestream.data() + already_written_bytes,
                                codestream.size() - already_written_bytes);
       } else if (status == JXL_DEC_BOX_COMPLETE) {
-        if (!codestream.empty()) {
+        if (box == jxlc || box == jxlp) {
           size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
           codestream.resize(codestream.size() - remaining);
+          if (box == jxlp) {
+            // Remove jxlp's indices from the codestream
+            // TODO: Warn about malformed files, like missing or unordered jxlp
+            //       or even mixed jxlp and jxlc boxes.
+            codestream.erase(
+                codestream.begin() + start_of_last_codestream_box,
+                codestream.begin() + start_of_last_codestream_box + 4);
+          }
+          already_written_bytes = codestream.size();
+        } else if (box == jxll) {
+          JxlDecoderReleaseBoxBuffer(dec.get());
+          if (level > 5) {
+            fprintf(stderr,
+                    "Warning: extracting raw codestream that"
+                    "is greater than level 5\n");
+          }
         }
+      } else if (status == JXL_DEC_SUCCESS) {
         return JXL_DEC_SUCCESS;
       } else {
         fprintf(stderr, "Unknown decoder status\n");
