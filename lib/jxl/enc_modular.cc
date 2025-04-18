@@ -474,7 +474,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       ModularStreamId::Num(frame_dim_, frame_header.passes.num_passes);
 
   // Progressive lossless only benefits from levels 2 and higher
-  // Lower levels of faster decoding can outperfom higher tiers
+  // Lower levels of faster decoding can outperform higher tiers
   // depending on the PC
   if (cparams_.responsive == 1 && cparams_.IsLossless() && cparams_.decoding_speed_tier == 1) {
     cparams_.decoding_speed_tier = 2;
