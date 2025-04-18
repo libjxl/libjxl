@@ -160,6 +160,16 @@ Status ParsePrimaries(Tokenizer* tokenizer, JxlColorEncoding* c) {
   std::string str;
   JXL_RETURN_IF_ERROR(tokenizer->Next(&str));
   if (ParseEnum(str, kJxlPrimariesNames, &c->primaries)) return true;
+  if (str == "Ado") {
+    c->primaries_red_xy[0] = 0.6400;
+    c->primaries_red_xy[1] = 0.3300;
+    c->primaries_green_xy[0] = 0.2100;
+    c->primaries_green_xy[1] = 0.7100;
+    c->primaries_blue_xy[0] = 0.1500;
+    c->primaries_blue_xy[1] = 0.0600;
+    c->primaries = JXL_PRIMARIES_CUSTOM;
+    return true;
+  }
 
   Tokenizer xy_tokenizer(&str, ';');
   JXL_RETURN_IF_ERROR(ParseDouble(&xy_tokenizer, c->primaries_red_xy + 0));
@@ -195,7 +205,11 @@ Status ParseTransferFunction(Tokenizer* tokenizer, JxlColorEncoding* c) {
   if (ParseEnum(str, kJxlTransferFunctionNames, &c->transfer_function)) {
     return true;
   }
-
+  if (str == "Ado") {
+    c->transfer_function = JXL_TRANSFER_FUNCTION_GAMMA;
+    c->gamma = 256.0/563.0;
+    return true;
+  }
   if (str[0] == 'g') {
     JXL_RETURN_IF_ERROR(ParseDouble(str.substr(1), &c->gamma));
     c->transfer_function = JXL_TRANSFER_FUNCTION_GAMMA;
@@ -210,29 +224,15 @@ Status ParseTransferFunction(Tokenizer* tokenizer, JxlColorEncoding* c) {
 Status ParseDescription(const std::string& description, JxlColorEncoding* c) {
   *c = {};
   if (description == "sRGB") {
-    c->color_space = JXL_COLOR_SPACE_RGB;
-    c->white_point = JXL_WHITE_POINT_D65;
-    c->primaries = JXL_PRIMARIES_SRGB;
-    c->transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
-    c->rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;
+    return ParseDescription("RGB_D65_SRG_Rel_SRG", c);
   } else if (description == "DisplayP3") {
-    c->color_space = JXL_COLOR_SPACE_RGB;
-    c->white_point = JXL_WHITE_POINT_D65;
-    c->primaries = JXL_PRIMARIES_P3;
-    c->transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
-    c->rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;
+    return ParseDescription("RGB_D65_DCI_Rel_SRG", c);
+  } else if (description == "Adobe98") {
+    return ParseDescription("RGB_D65_Ado_Rel_Ado", c);
   } else if (description == "Rec2100PQ") {
-    c->color_space = JXL_COLOR_SPACE_RGB;
-    c->white_point = JXL_WHITE_POINT_D65;
-    c->primaries = JXL_PRIMARIES_2100;
-    c->transfer_function = JXL_TRANSFER_FUNCTION_PQ;
-    c->rendering_intent = JXL_RENDERING_INTENT_RELATIVE;
+    return ParseDescription("RGB_D65_202_Rel_PeQ", c);
   } else if (description == "Rec2100HLG") {
-    c->color_space = JXL_COLOR_SPACE_RGB;
-    c->white_point = JXL_WHITE_POINT_D65;
-    c->primaries = JXL_PRIMARIES_2100;
-    c->transfer_function = JXL_TRANSFER_FUNCTION_HLG;
-    c->rendering_intent = JXL_RENDERING_INTENT_RELATIVE;
+    return ParseDescription("RGB_D65_202_Rel_HLG", c);
   } else {
     Tokenizer tokenizer(&description, '_');
     JXL_RETURN_IF_ERROR(ParseColorSpace(&tokenizer, c));
