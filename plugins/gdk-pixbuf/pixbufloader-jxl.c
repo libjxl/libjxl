@@ -704,6 +704,10 @@ static gboolean jxl_image_saver(FILE *f, GdkPixbuf *pixbuf, gchar **keys,
   }
 
   frame_settings = JxlEncoderFrameSettingsCreate(encoder, NULL);
+  if (frame_settings == NULL) {
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                "JxlEncoderFrameSettingsCreate failed");
+  }
   JxlEncoderSetFrameDistance(frame_settings, distance);
   JxlEncoderSetFrameLossless(frame_settings, output_info.uses_original_profile);
 

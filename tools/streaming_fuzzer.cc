@@ -54,7 +54,7 @@ struct FuzzSpec {
   };
 
 #define INT_OPTION(FLAG, MIN_V, MAX_V, V) \
-  IntOptionSpec{FLAG, #FLAG, MIN_V, MAX_V, V}
+  IntOptionSpec { FLAG, #FLAG, MIN_V, MAX_V, V }
 
   std::vector<IntOptionSpec> int_options = {
       INT_OPTION(JXL_ENC_FRAME_SETTING_EFFORT, 1, 9, 0),
@@ -176,6 +176,7 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
                                     runner.get()) == JXL_ENC_SUCCESS);
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
+  Check(frame_settings != nullptr);
 
   Check(JxlEncoderSetFrameDistance(frame_settings, spec.distance) ==
         JXL_ENC_SUCCESS);
