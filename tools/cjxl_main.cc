@@ -213,7 +213,7 @@ struct CompressArgs {
         "rendering intent\n"
         "      -x color_space=RGB_D65_202_Rel_PeQ is Rec.2100 PQ with relative "
         "rendering intent\n"
-        "    Shorthands: sRGB, DisplayP3, Rec2100PQ, Rec2100HLG\n"
+        "    Shorthands: sRGB, DisplayP3, Adobe98, Rec2100PQ, Rec2100HLG\n"
         "    The key 'icc_pathname' refers to a binary file containing an ICC "
         "profile.\n"
         "    The keys 'exif', 'xmp', and 'jumbf' refer to a binary file "

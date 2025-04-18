@@ -39,12 +39,12 @@ static void PrintColorEncoding(const JxlColorEncoding* color_encoding) {
     if ((*color_encoding).primaries == JXL_PRIMARIES_CUSTOM) {
       printf(": red(x=%f,y=%f),", (*color_encoding).primaries_red_xy[0],
              (*color_encoding).primaries_red_xy[1]);
-      printf("  green(x=%f,y=%f),", (*color_encoding).primaries_green_xy[0],
+      printf(" green(x=%f,y=%f),", (*color_encoding).primaries_green_xy[0],
              (*color_encoding).primaries_green_xy[1]);
-      printf("  blue(x=%f,y=%f)", (*color_encoding).primaries_blue_xy[0],
+      printf(" blue(x=%f,y=%f)", (*color_encoding).primaries_blue_xy[0],
              (*color_encoding).primaries_blue_xy[1]);
-    } else
-      printf(", ");
+    }
+    printf(", ");
   }
   if ((*color_encoding).transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
     printf("gamma(%f) transfer function, ", (*color_encoding).gamma);
