@@ -106,9 +106,13 @@ Status ParamsPostInit(CompressParams* p) {
     // For very low bit rates, using 2x2 resampling gives better results on
     // most photographic images, with an adjusted butteraugli score chosen to
     // give roughly the same amount of bits per pixel.
-    if (!p->already_downsampled && p->butteraugli_distance >= 20) {
+    if (!p->already_downsampled && p->butteraugli_distance >= 10) {
+      // TODO(Jonnyawsom3): Explore 4x4 resampling at distance 25. Lower bpp
+      // but results are inconsistent and images under 4K become far too blurry.
       p->resampling = 2;
-      p->butteraugli_distance = 6 + ((p->butteraugli_distance - 20) * 0.25);
+      // Adding 0.25 balances photo with non-photo, shifting towards lower bpp
+      // to avoid large overshoot while maintaining quality equal to before.
+      p->butteraugli_distance = (p->butteraugli_distance * 0.25) + 0.25;
     }
   }
   if (p->ec_resampling <= 0) {
@@ -710,10 +714,10 @@ Status DownsampleColorChannels(const CompressParams& cparams,
     // TODO(lode): use the regular DownsampleImage, or adapt to the custom
     // coefficients, if there is are custom upscaling coefficients in
     // CustomTransformData
-    if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-      // TODO(lode): DownsampleImage2_Iterative is currently too slow to
-      // be used for squirrel, make it faster, and / or enable it only for
-      // kitten.
+    if (cparams.speed_tier <= SpeedTier::kGlacier) {
+      // TODO(Jonnyawsom3): Until optimized, enabled only for Glacier and
+      // TectonicPlate. It's an 80% slowdown and downsampling is only active
+      // at high distances by default anyway, making improvements negligible.
       JXL_RETURN_IF_ERROR(DownsampleImage2_Iterative(opsin));
     } else {
       JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(opsin));
