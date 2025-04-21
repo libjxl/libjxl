@@ -1279,7 +1279,7 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
 
   return true;
 }
-
+bool globalMA = false;
 Status EncodeGroups(const FrameHeader& frame_header,
                     PassesEncoderState* enc_state,
                     ModularFrameEncoder* enc_modular, ThreadPool* pool,
@@ -1643,8 +1643,10 @@ Status ComputeEncodingData(
   if (!enc_state.streaming_mode) {
     if (cparams.speed_tier < SpeedTier::kTortoise ||
         !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
-        !cparams.custom_fixed_tree.empty()) {
+        (cparams.responsive && !cparams.IsLossless()) || 
+	!cparams.custom_fixed_tree.empty()) {
       // Use local trees if doing lossless modular, unless at very slow speeds.
+      globalMA = true;
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
     }
@@ -1783,8 +1785,7 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.max_error_mode) {
     return false;
   }
-  if (!cparams.ModularPartIsLossless() || cparams.responsive > 0) {
-    if (metadata.m.num_extra_channels > 0 || cparams.modular_mode) {
+  if (globalMA) {
       return false;
     }
   }
