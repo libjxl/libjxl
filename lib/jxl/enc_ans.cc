@@ -98,7 +98,9 @@ class ANSEncodingHistogram {
       result.counts_ = CreateFlatHistogram(result.alphabet_size_, ANS_TAB_SIZE);
       // in this case length can be non-suitable for SIMD - fix it
       result.counts_.resize(histo.counts_.size());
-      result.cost_ = ANS_LOG_TAB_SIZE + 2 + EstimateDataBitsFlat(histo);
+      SizeWriter writer;
+      JXL_RETURN_IF_ERROR(result.Encode(&writer));
+      result.cost_ = writer.size + EstimateDataBitsFlat(histo);
     } else {
       // Empty histogram
       result.method_ = 1;
@@ -165,6 +167,7 @@ class ANSEncodingHistogram {
     }
 
     // Sanity check
+#if JXL_IS_DEBUG_BUILD
     JXL_DASSERT(histo.counts_.size() == result.counts_.size());
     ANSHistBin total = 0;  // Used only in assert.
     for (size_t i = 0; i < result.alphabet_size_; ++i) {
@@ -190,8 +193,8 @@ class ANSEncodingHistogram {
       JXL_DASSERT(histo.counts_[i] == 0);
       JXL_DASSERT(result.counts_[i] == 0);
     }
-    (void)total;
     JXL_DASSERT((histo.total_count_ == 0) || (total == ANS_TAB_SIZE));
+#endif
     return result;
   }
 
@@ -271,19 +274,19 @@ class ANSEncodingHistogram {
       }
     }
 
-    uint8_t logcounts[ANS_MAX_ALPHABET_SIZE] = {};
-    // Use shortest possible Huffman code to encode `omit_pos_` (see
-    // `kLogCountBitLengths`). `logcounts` value at `omit_pos_` should be the
-    // first of maximal values in the whole `logcounts` array, so it can be
+    uint8_t bit_width[ANS_MAX_ALPHABET_SIZE] = {};
+    // Use shortest possible Huffman code to encode `omit_pos` (see
+    // `kLogCountBitLengths`). `bit_width` value at `omit_pos` should be the
+    // first of maximal values in the whole `bit_width` array, so it can be
     // increased without changing that property
     int omit_log = 10;
     for (size_t i = 0; i < alphabet_size_; ++i) {
       if (i != omit_pos_ && counts_[i] > 0) {
-        logcounts[i] = FloorLog2Nonzero<uint32_t>(counts_[i]) + 1;
-        omit_log = std::max(omit_log, logcounts[i] + int{i < omit_pos_});
+        bit_width[i] = FloorLog2Nonzero<uint32_t>(counts_[i]) + 1;
+        omit_log = std::max(omit_log, bit_width[i] + int{i < omit_pos_});
       }
     }
-    logcounts[omit_pos_] = static_cast<uint8_t>(omit_log);
+    bit_width[omit_pos_] = static_cast<uint8_t>(omit_log);
 
     // The logcount values are encoded with a static Huffman code.
     // The last symbol is used as RLE sequence.
@@ -293,30 +296,30 @@ class ANSEncodingHistogram {
     constexpr uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
         17, 11, 15, 3, 9, 7, 4, 2, 5, 6, 0, 33, 1, 65,
     };
-    constexpr uint8_t kMinReps = 4;
+    constexpr uint8_t kMinReps = 5;
     constexpr size_t rep = ANS_LOG_TAB_SIZE + 1;
     // Encode symbol logs
     for (size_t i = 0; i < alphabet_size_; ++i) {
-      writer->Write(kLogCountBitLengths[logcounts[i]],
-                    kLogCountSymbols[logcounts[i]]);
-      if (same[i] > kMinReps) {
+      writer->Write(kLogCountBitLengths[bit_width[i]],
+                    kLogCountSymbols[bit_width[i]]);
+      if (same[i] >= kMinReps) {
         // Encode the RLE symbol and skip the repeated ones.
         writer->Write(kLogCountBitLengths[rep], kLogCountSymbols[rep]);
-        StoreVarLenUint8(same[i] - kMinReps - 1, writer);
+        StoreVarLenUint8(same[i] - kMinReps, writer);
         i += same[i] - 1;
       }
     }
     // Encode additional bits of accuracy
-    if (method_ != 1) {  // otherwise `bitcount = 0`
+    uint32_t shift = method_ - 1;
+    if (shift != 0) {  // otherwise `bitcount = 0`
       for (size_t i = 0; i < alphabet_size_; ++i) {
-        if (logcounts[i] > 1 && i != omit_pos_) {
-          int bitcount =
-              GetPopulationCountPrecision(logcounts[i] - 1, method_ - 1);
-          int drop_bits = logcounts[i] - 1 - bitcount;
+        if (bit_width[i] > 1 && i != omit_pos_) {
+          int bitcount = GetPopulationCountPrecision(bit_width[i] - 1, shift);
+          int drop_bits = bit_width[i] - 1 - bitcount;
           JXL_DASSERT((counts_[i] & ((1 << drop_bits) - 1)) == 0);
           writer->Write(bitcount, (counts_[i] >> drop_bits) - (1 << bitcount));
         }
-        if (same[i] > kMinReps) {
+        if (same[i] >= kMinReps) {
           // Skip symbols encoded by RLE.
           i += same[i] - 1;
         }
