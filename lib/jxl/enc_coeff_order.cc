@@ -210,7 +210,7 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
         // Worst case: all dct8x8, all zeroes: count <= nb_pixels/64/8
         // nb_pixels is limited to 2^40 (Level 10 limit)
         // so count is limited to 2^31
-        JXL_DASSERT(count < (1lu << 48));
+        JXL_DASSERT(count < (uint64_t{1} << 48));
         pos_and_val[i].count_and_idx = (count << 16) | i;
       }
 
