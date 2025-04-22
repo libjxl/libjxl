@@ -1788,7 +1788,6 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (globalMA) {
       return false;
     }
-  }
   ColorTransform ok_color_transform =
       cparams.modular_mode ? ColorTransform::kNone : ColorTransform::kXYB;
   if (cparams.color_transform != ok_color_transform) {
