@@ -37,6 +37,8 @@
 
 namespace jxl {
 
+namespace {
+
 class SymbolCostEstimator {
  public:
   SymbolCostEstimator(size_t num_contexts, bool force_huffman,
@@ -681,6 +683,8 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
   }
   return tokens_lz77;
 }
+
+}  // namespace
 
 std::vector<std::vector<Token>> ApplyLZ77(
     const HistogramParams& params, size_t num_contexts,

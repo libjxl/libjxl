@@ -6,9 +6,6 @@
 #ifndef LIB_JXL_ENC_LZ77_H_
 #define LIB_JXL_ENC_LZ77_H_
 
-// Library to encode the ANS population counts to the bit-stream and encode
-// symbols based on the respective distributions.
-
 #include <cstdint>
 #include <vector>
 
@@ -18,6 +15,9 @@
 
 namespace jxl {
 
+// Returns a vector of token streams with the LZ77 compression applied
+// in accordance with parameters sent. If compression is not beneficial,
+// returns an empty vector.
 std::vector<std::vector<Token>> ApplyLZ77(
     const HistogramParams& params, size_t num_contexts,
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77);
