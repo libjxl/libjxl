@@ -15,6 +15,7 @@
 
 #include "lib/jxl/ans_common.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/dec_ans.h"
 
 namespace jxl {
 
@@ -74,6 +75,17 @@ struct HistogramParams {
   static HistogramParams ForModular(
       const CompressParams& cparams,
       const std::vector<uint8_t>& extra_dc_precision, bool streaming_mode);
+
+  HybridUintConfig UintConfig() const {
+    if (uint_method == HistogramParams::HybridUintMethod::kContextMap) {
+      return HybridUintConfig(2, 0, 1);
+    }
+    if (uint_method == HistogramParams::HybridUintMethod::k000) {
+      return HybridUintConfig(0, 0, 0);
+    }
+    // Default config for clustering.
+    return HybridUintConfig();
+  }
 
   ClusteringType clustering = ClusteringType::kBest;
   HybridUintMethod uint_method = HybridUintMethod::kBest;
