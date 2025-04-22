@@ -78,14 +78,6 @@ class ANSCoder {
 
 static const int kNumFixedHistograms = 1;
 
-struct EntropyEncodingData {
-  std::vector<std::vector<ANSEncSymbolInfo>> encoding_info;
-  bool use_prefix_code;
-  std::vector<HybridUintConfig> uint_config;
-  LZ77Params lz77;
-  std::vector<BitWriter> encoded_histograms;
-};
-
 // Integer to be encoded by an entropy coder, either ANS or Huffman.
 struct Token {
   Token() = default;
@@ -94,6 +86,49 @@ struct Token {
   uint32_t is_lz77_length : 1;
   uint32_t context : 31;
   uint32_t value;
+};
+
+struct SizeWriter {
+  size_t size = 0;
+  void Write(size_t num, size_t bits) { size += num; }
+};
+
+class HistogramBuilder {
+ public:
+  explicit HistogramBuilder(const size_t num_contexts)
+      : histograms_(num_contexts) {}
+
+  void VisitSymbol(int symbol, size_t histo_idx) {
+    JXL_DASSERT(histo_idx < histograms_.size());
+    histograms_[histo_idx].Add(symbol);
+  }
+
+  const Histogram& Histo(size_t i) const { return histograms_[i]; }
+  size_t HistoNum() const { return histograms_.size(); }
+
+  friend struct EntropyEncodingData;
+
+ protected:
+  std::vector<Histogram> histograms_;
+};
+
+struct EntropyEncodingData {
+  std::vector<std::vector<ANSEncSymbolInfo>> encoding_info;
+  bool use_prefix_code;
+  std::vector<HybridUintConfig> uint_config;
+  LZ77Params lz77;
+  std::vector<BitWriter> encoded_histograms;
+
+  StatusOr<size_t> BuildAndStoreEntropyCodes(
+      JxlMemoryManager* memory_manager, const HistogramParams& params,
+      const std::vector<std::vector<Token>>& tokens,
+      const HistogramBuilder* builder, std::vector<uint8_t>* context_map,
+      BitWriter* writer, LayerType layer, AuxOut* aux_out);
+
+  StatusOr<size_t> BuildAndStoreANSEncodingData(
+      JxlMemoryManager* memory_manager,
+      HistogramParams::ANSHistogramStrategy ans_histogram_strategy,
+      const Histogram& histogram, size_t log_alpha_size, BitWriter* writer);
 };
 
 // Writes the context map to the bitstream and concatenates the individual
