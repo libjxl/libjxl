@@ -271,35 +271,35 @@ class ANSEncodingHistogram {
 
     uint8_t bit_width[ANS_MAX_ALPHABET_SIZE] = {};
     // Use shortest possible Huffman code to encode `omit_pos` (see
-    // `kLogCountBitLengths`). `bit_width` value at `omit_pos` should be the
+    // `kBitWidthLengths`). `bit_width` value at `omit_pos` should be the
     // first of maximal values in the whole `bit_width` array, so it can be
     // increased without changing that property
-    int omit_log = 10;
+    int omit_width = 10;
     for (size_t i = 0; i < alphabet_size_; ++i) {
       if (i != omit_pos_ && counts_[i] > 0) {
         bit_width[i] = FloorLog2Nonzero<uint32_t>(counts_[i]) + 1;
-        omit_log = std::max(omit_log, bit_width[i] + int{i < omit_pos_});
+        omit_width = std::max(omit_width, bit_width[i] + int{i < omit_pos_});
       }
     }
-    bit_width[omit_pos_] = static_cast<uint8_t>(omit_log);
+    bit_width[omit_pos_] = static_cast<uint8_t>(omit_width);
 
-    // The logcount values are encoded with a static Huffman code.
+    // The bit widths are encoded with a static Huffman code.
     // The last symbol is used as RLE sequence.
-    constexpr uint8_t kLogCountBitLengths[ANS_LOG_TAB_SIZE + 2] = {
+    constexpr uint8_t kBitWidthLengths[ANS_LOG_TAB_SIZE + 2] = {
         5, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 6, 7, 7,
     };
-    constexpr uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
+    constexpr uint8_t kBitWidthSymbols[ANS_LOG_TAB_SIZE + 2] = {
         17, 11, 15, 3, 9, 7, 4, 2, 5, 6, 0, 33, 1, 65,
     };
     constexpr uint8_t kMinReps = 5;
     constexpr size_t rep = ANS_LOG_TAB_SIZE + 1;
-    // Encode symbol logs
+    // Encode count bit widths
     for (size_t i = 0; i < alphabet_size_; ++i) {
-      writer->Write(kLogCountBitLengths[bit_width[i]],
-                    kLogCountSymbols[bit_width[i]]);
+      writer->Write(kBitWidthLengths[bit_width[i]],
+                    kBitWidthSymbols[bit_width[i]]);
       if (same[i] >= kMinReps) {
         // Encode the RLE symbol and skip the repeated ones.
-        writer->Write(kLogCountBitLengths[rep], kLogCountSymbols[rep]);
+        writer->Write(kBitWidthLengths[rep], kBitWidthSymbols[rep]);
         StoreVarLenUint8(same[i] - kMinReps, writer);
         i += same[i] - 1;
       }
@@ -531,7 +531,7 @@ class ANSEncodingHistogram {
       // Set counts besides the balancing bin
       for (auto& a : bins) counts_[a.bin_ind] = ac[a.count_ind].count;
 
-      // The scheme works fine if we have room to grow `logcount` of balancing
+      // The scheme works fine if we have room to grow `bit_width` of balancing
       // bin, otherwise we need to put balancing bin to the first bin of 12 bit
       // width. In this case both that bin and balancing one should be close to
       // 2048 in targets, so exchange of them will not produce much worse
@@ -551,13 +551,13 @@ class ANSEncodingHistogram {
     return counts_[remainder_pos] > 0;
   }
 
+  float cost_ = 0;
   uint32_t method_ = 0;
   size_t omit_pos_ = 0;
   size_t alphabet_size_ = 0;
   size_t num_symbols_ = 0;
   size_t symbols_[kMaxNumSymbolsForSmallCode] = {};
   std::vector<ANSHistBin> counts_{};
-  float cost_ = 0;
 };
 
 using AEH = ANSEncodingHistogram;
