@@ -168,14 +168,14 @@ class ANSEncodingHistogram {
 
     // Sanity check
 #if JXL_IS_DEBUG_BUILD
-    JXL_DASSERT(histo.counts_.size() == result.counts_.size());
+    JXL_ENSURE(histo.counts_.size() == result.counts_.size());
     ANSHistBin total = 0;  // Used only in assert.
     for (size_t i = 0; i < result.alphabet_size_; ++i) {
-      JXL_DASSERT(result.counts_[i] >= 0);
+      JXL_ENSURE(result.counts_[i] >= 0);
       // For non-flat histogram values should be zero or non-zero simultaneously
       // for the same symbol in both initial and normalized histograms.
-      JXL_DASSERT(result.method_ == 0 ||
-                  (histo.counts_[i] > 0) == (result.counts_[i] > 0));
+      JXL_ENSURE(result.method_ == 0 ||
+                 (histo.counts_[i] > 0) == (result.counts_[i] > 0));
       // Check accuracy of the histogram values
       if (result.method_ > 0 && result.counts_[i] > 0 &&
           i != result.omit_pos_) {
@@ -183,17 +183,16 @@ class ANSEncodingHistogram {
         int bitcount =
             GetPopulationCountPrecision(logcounts, result.method_ - 1);
         int drop_bits = logcounts - bitcount;
-        (void)drop_bits;
         // Check that the value is divisible by 2^drop_bits
-        JXL_DASSERT((result.counts_[i] & ((1 << drop_bits) - 1)) == 0);
+        JXL_ENSURE((result.counts_[i] & ((1 << drop_bits) - 1)) == 0);
       }
       total += result.counts_[i];
     }
     for (size_t i = result.alphabet_size_; i < result.counts_.size(); ++i) {
-      JXL_DASSERT(histo.counts_[i] == 0);
-      JXL_DASSERT(result.counts_[i] == 0);
+      JXL_ENSURE(histo.counts_[i] == 0);
+      JXL_ENSURE(result.counts_[i] == 0);
     }
-    JXL_DASSERT((histo.total_count_ == 0) || (total == ANS_TAB_SIZE));
+    JXL_ENSURE((histo.total_count_ == 0) || (total == ANS_TAB_SIZE));
 #endif
     return result;
   }
