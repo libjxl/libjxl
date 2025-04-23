@@ -1262,8 +1262,8 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
         BuildAndEncodeHistograms(
             memory_manager, hist_params,
             num_histogram_groups * shared.block_ctx_map.NumACContexts(),
-            enc_state->passes[i].ac_tokens, &enc_state->passes[i].codes,
-            &enc_state->passes[i].context_map, writer, LayerType::Ac, aux_out));
+            enc_state->passes[i].ac_tokens, &enc_state->passes[i].codes, writer,
+            LayerType::Ac, aux_out));
     (void)cost;
   }
 
@@ -1916,11 +1916,10 @@ Status OutputGroups(std::vector<std::unique_ptr<BitWriter>>&& group_codes,
   return true;
 }
 
-void RemoveUnusedHistograms(std::vector<uint8_t>& context_map,
-                            EntropyEncodingData& codes) {
+void RemoveUnusedHistograms(EntropyEncodingData& codes) {
   std::vector<int> remap(256, -1);
   std::vector<uint8_t> inv_remap;
-  for (uint8_t& context : context_map) {
+  for (uint8_t& context : codes.context_map) {
     const uint8_t histo_ix = context;
     if (remap[histo_ix] == -1) {
       remap[histo_ix] = inv_remap.size();
@@ -1931,6 +1930,7 @@ void RemoveUnusedHistograms(std::vector<uint8_t>& context_map,
   EntropyEncodingData new_codes;
   new_codes.use_prefix_code = codes.use_prefix_code;
   new_codes.lz77 = codes.lz77;
+  new_codes.context_map = std::move(codes.context_map);
   for (uint8_t histo_idx : inv_remap) {
     new_codes.encoding_info.emplace_back(
         std::move(codes.encoding_info[histo_idx]));
@@ -1974,10 +1974,8 @@ Status OutputAcGlobal(PassesEncoderState& enc_state,
                           &writer, LayerType::Order, aux_out));
     // Fix up context map and entropy codes to remove any fix histograms that
     // were not selected by clustering.
-    RemoveUnusedHistograms(enc_state.passes[i].context_map,
-                           enc_state.passes[i].codes);
-    JXL_RETURN_IF_ERROR(EncodeHistograms(enc_state.passes[i].context_map,
-                                         enc_state.passes[i].codes, &writer,
+    RemoveUnusedHistograms(enc_state.passes[i].codes);
+    JXL_RETURN_IF_ERROR(EncodeHistograms(enc_state.passes[i].codes, &writer,
                                          LayerType::Ac, aux_out));
   }
   JXL_RETURN_IF_ERROR(writer.WithMaxBits(8, LayerType::Ac, aux_out, [&] {

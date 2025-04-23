@@ -44,7 +44,7 @@ class SymbolCostEstimator {
   SymbolCostEstimator(size_t num_contexts, bool force_huffman,
                       const std::vector<std::vector<Token>>& tokens,
                       const LZ77Params& lz77) {
-    HistogramBuilder builder(num_contexts);
+    std::vector<Histogram> builder(num_contexts);
     // Build histograms for estimating lz77 savings.
     HybridUintConfig uint_config;
     for (const auto& stream : tokens) {
@@ -53,31 +53,32 @@ class SymbolCostEstimator {
         (token.is_lz77_length ? lz77.length_uint_config : uint_config)
             .Encode(token.value, &tok, &nbits, &bits);
         tok += token.is_lz77_length ? lz77.min_symbol : 0;
-        builder.VisitSymbol(tok, token.context);
+        JXL_DASSERT(token.context < num_contexts);
+        builder[token.context].Add(tok);
       }
     }
     max_alphabet_size_ = 0;
     for (size_t i = 0; i < num_contexts; i++) {
       max_alphabet_size_ =
-          std::max(max_alphabet_size_, builder.Histo(i).counts_.size());
+          std::max(max_alphabet_size_, builder[i].counts.size());
     }
     bits_.resize(num_contexts * max_alphabet_size_);
     // TODO(veluca): SIMD?
     add_symbol_cost_.resize(num_contexts);
     for (size_t i = 0; i < num_contexts; i++) {
-      float inv_total = 1.0f / (builder.Histo(i).total_count_ + 1e-8f);
+      float inv_total = 1.0f / (builder[i].total_count + 1e-8f);
       float total_cost = 0;
-      for (size_t j = 0; j < builder.Histo(i).counts_.size(); j++) {
-        size_t cnt = builder.Histo(i).counts_[j];
+      for (size_t j = 0; j < builder[i].counts.size(); j++) {
+        size_t cnt = builder[i].counts[j];
         float cost = 0;
-        if (cnt != 0 && cnt != builder.Histo(i).total_count_) {
+        if (cnt != 0 && cnt != builder[i].total_count) {
           cost = -FastLog2f(cnt * inv_total);
           if (force_huffman) cost = std::ceil(cost);
         } else if (cnt == 0) {
           cost = ANS_LOG_TAB_SIZE;  // Highest possible cost.
         }
         bits_[i * max_alphabet_size_ + j] = cost;
-        total_cost += cost * builder.Histo(i).counts_[j];
+        total_cost += cost * builder[i].counts[j];
       }
       // Penalty for adding a lz77 symbol to this contest (only used for static
       // cost model). Higher penalty for contexts that have a very low
