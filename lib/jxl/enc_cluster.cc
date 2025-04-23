@@ -52,15 +52,15 @@ void HistogramEntropy(const Histogram& a) {
   const HWY_CAPPED(int32_t, Histogram::kRounding) di;
 
   const auto inv_tot = Set(df, 1.0f / a.total_count);
-  auto entropylanes = Zero(df);
+  auto entropy_lanes = Zero(df);
   auto total = Set(df, a.total_count);
 
   for (size_t i = 0; i < a.counts.size(); i += Lanes(di)) {
     const auto counts = LoadU(di, &a.counts[i]);
-    entropylanes =
-        Add(entropylanes, Entropy(ConvertTo(df, counts), inv_tot, total));
+    entropy_lanes =
+        Add(entropy_lanes, Entropy(ConvertTo(df, counts), inv_tot, total));
   }
-  a.entropy += GetLane(SumOfLanes(df, entropylanes));
+  a.entropy += GetLane(SumOfLanes(df, entropy_lanes));
 }
 
 float HistogramDistance(const Histogram& a, const Histogram& b) {
