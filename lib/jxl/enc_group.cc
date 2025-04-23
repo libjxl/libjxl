@@ -561,10 +561,10 @@ Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
   }
   size_t context_offset =
       histogram_idx * enc_state.shared.block_ctx_map.NumACContexts();
-  JXL_RETURN_IF_ERROR(WriteTokens(
-      enc_state.passes[pass_idx].ac_tokens[group_idx],
-      enc_state.passes[pass_idx].codes, enc_state.passes[pass_idx].context_map,
-      context_offset, writer, LayerType::AcTokens, aux_out));
+  JXL_RETURN_IF_ERROR(
+      WriteTokens(enc_state.passes[pass_idx].ac_tokens[group_idx],
+                  enc_state.passes[pass_idx].codes, context_offset, writer,
+                  LayerType::AcTokens, aux_out));
 
   return true;
 }

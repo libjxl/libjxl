@@ -101,38 +101,40 @@ struct HistogramParams {
 };
 
 struct Histogram {
+  Histogram(size_t length = 0) {
+    counts.resize(DivCeil(length, kRounding) * kRounding);
+  }
   // Create flat histogram
   static Histogram Flat(int length, int total_count) {
     Histogram flat;
-    flat.counts_ = CreateFlatHistogram(length, total_count);
-    flat.total_count_ = static_cast<size_t>(total_count);
-    flat.entropy_ = 0.0;
+    flat.counts = CreateFlatHistogram(length, total_count);
+    flat.total_count = static_cast<size_t>(total_count);
     return flat;
   }
   void Clear() {
-    counts_.clear();
-    total_count_ = 0;
-    entropy_ = 0.0;
+    counts.clear();
+    total_count = 0;
+    entropy = 0.0;
   }
   void Add(size_t symbol) {
-    if (counts_.size() <= symbol) {
-      counts_.resize(DivCeil(symbol + 1, kRounding) * kRounding);
+    if (counts.size() <= symbol) {
+      counts.resize(DivCeil(symbol + 1, kRounding) * kRounding);
     }
-    ++counts_[symbol];
-    ++total_count_;
+    ++counts[symbol];
+    ++total_count;
   }
   void AddHistogram(const Histogram& other) {
-    if (other.counts_.size() > counts_.size()) {
-      counts_.resize(other.counts_.size());
+    if (other.counts.size() > counts.size()) {
+      counts.resize(other.counts.size());
     }
-    for (size_t i = 0; i < other.counts_.size(); ++i) {
-      counts_[i] += other.counts_[i];
+    for (size_t i = 0; i < other.counts.size(); ++i) {
+      counts[i] += other.counts[i];
     }
-    total_count_ += other.total_count_;
+    total_count += other.total_count;
   }
   size_t alphabet_size() const {
-    for (int i = counts_.size() - 1; i >= 0; --i) {
-      if (counts_[i] > 0) {
+    for (int i = counts.size() - 1; i >= 0; --i) {
+      if (counts[i] > 0) {
         return i + 1;
       }
     }
@@ -145,9 +147,9 @@ struct Histogram {
 
   float ShannonEntropy() const;
 
-  std::vector<ANSHistBin> counts_;
-  size_t total_count_ = 0;
-  mutable float entropy_ = 0;  // WARNING: not kept up-to-date.
+  std::vector<ANSHistBin> counts;
+  size_t total_count = 0;
+  mutable float entropy = 0;  // WARNING: not kept up-to-date.
   static constexpr size_t kRounding = 8;
 };
 
