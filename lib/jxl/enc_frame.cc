@@ -1643,7 +1643,7 @@ Status ComputeEncodingData(
   if (!enc_state.streaming_mode) {
     if (cparams.speed_tier < SpeedTier::kTortoise ||
         !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
-        (cparams.responsive && !cparams.IsLossless()) || cparams.buffering ||
+        (cparams.responsive && !cparams.IsLossless()) ||
 	!cparams.custom_fixed_tree.empty()) {
       // Use local trees if doing lossless modular, unless at very slow speeds.
       globalMA = true;
