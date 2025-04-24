@@ -1273,15 +1273,12 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
       HistogramParams::ForModular(cparams_, extra_dc_precision, streaming_mode);
   {
     EntropyEncodingData tree_code;
-    std::vector<uint8_t> tree_context_map;
     JXL_ASSIGN_OR_RETURN(
-        size_t cost,
-        BuildAndEncodeHistograms(memory_manager, params, kNumTreeContexts,
-                                 tree_tokens_, &tree_code, &tree_context_map,
-                                 writer, LayerType::ModularTree, aux_out));
+        size_t cost, BuildAndEncodeHistograms(
+                         memory_manager, params, kNumTreeContexts, tree_tokens_,
+                         &tree_code, writer, LayerType::ModularTree, aux_out));
     (void)cost;
-    JXL_RETURN_IF_ERROR(WriteTokens(tree_tokens_[0], tree_code,
-                                    tree_context_map, 0, writer,
+    JXL_RETURN_IF_ERROR(WriteTokens(tree_tokens_[0], tree_code, 0, writer,
                                     LayerType::ModularTree, aux_out));
   }
   params.streaming_mode = streaming_mode;
@@ -1289,10 +1286,9 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
   params.image_widths = image_widths_;
   // Write histograms.
   JXL_ASSIGN_OR_RETURN(
-      size_t cost,
-      BuildAndEncodeHistograms(memory_manager, params, (tree_.size() + 1) / 2,
-                               tokens_, &code_, &context_map_, writer,
-                               LayerType::ModularGlobal, aux_out));
+      size_t cost, BuildAndEncodeHistograms(
+                       memory_manager, params, (tree_.size() + 1) / 2, tokens_,
+                       &code_, writer, LayerType::ModularGlobal, aux_out));
   (void)cost;
   return true;
 }
@@ -1312,8 +1308,8 @@ Status ModularFrameEncoder::EncodeStream(BitWriter* writer, AuxOut* aux_out,
   } else {
     JXL_RETURN_IF_ERROR(
         Bundle::Write(stream_headers_[stream_id], writer, layer, aux_out));
-    JXL_RETURN_IF_ERROR(WriteTokens(tokens_[stream_id], code_, context_map_, 0,
-                                    writer, layer, aux_out));
+    JXL_RETURN_IF_ERROR(
+        WriteTokens(tokens_[stream_id], code_, 0, writer, layer, aux_out));
   }
   return true;
 }
