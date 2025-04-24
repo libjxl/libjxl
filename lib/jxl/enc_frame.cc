@@ -1643,7 +1643,6 @@ Status ComputeEncodingData(
     if (cparams.speed_tier < SpeedTier::kTortoise ||
         !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
         (cparams.responsive && !cparams.IsLossless()) ||
-	(frame_data.xsize <= 2048 && frame_data.ysize <= 2048) ||
 	!cparams.custom_fixed_tree.empty()) {
       // Use local trees if doing lossless modular, unless at very slow speeds.
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
