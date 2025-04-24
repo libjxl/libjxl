@@ -1279,7 +1279,6 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
 
   return true;
 }
-bool globalMA = false;
 Status EncodeGroups(const FrameHeader& frame_header,
                     PassesEncoderState* enc_state,
                     ModularFrameEncoder* enc_modular, ThreadPool* pool,
@@ -1646,7 +1645,6 @@ Status ComputeEncodingData(
         (cparams.responsive && !cparams.IsLossless()) ||
 	!cparams.custom_fixed_tree.empty()) {
       // Use local trees if doing lossless modular, unless at very slow speeds.
-      globalMA = true;
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
     }
@@ -1782,12 +1780,17 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.resampling != 1 || cparams.ec_resampling != 1) {
     return false;
   }
+  if cparams.lossy_palette {
+    return false;
+  }
   if (cparams.max_error_mode) {
     return false;
   }
-  if (globalMA) {
+  if (!cparams.ModularPartIsLossless() || cparams.responsive > 0) {
+    if (metadata.m.num_extra_channels > 0 || cparams.modular_mode) {
       return false;
     }
+  }
   ColorTransform ok_color_transform =
       cparams.modular_mode ? ColorTransform::kNone : ColorTransform::kXYB;
   if (cparams.color_transform != ok_color_transform) {
