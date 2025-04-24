@@ -351,7 +351,7 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
 	  // higher, greatly speeds up decoding via multithreading at the cost
 	  // of density.
     } if (cparams.modular_group_size_shift < 0 && cparams.decoding_speed_tier > 1 &&
-	       cparams.responsive) {
+	       cparams.responsive == 1) {
 		frame_header->group_size_shift = 0;
 		// Force decoding speed to tier 2 for progressive lossless
 	 }
@@ -1642,7 +1642,7 @@ Status ComputeEncodingData(
   if (!enc_state.streaming_mode) {
     if (cparams.speed_tier < SpeedTier::kTortoise ||
         !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
-        (cparams.responsive && !cparams.IsLossless()) ||
+        (cparams.responsive == 1 && !cparams.IsLossless()) ||
 	!cparams.custom_fixed_tree.empty()) {
       // Use local trees if doing lossless modular, unless at very slow speeds.
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
