@@ -1780,7 +1780,7 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.resampling != 1 || cparams.ec_resampling != 1) {
     return false;
   }
-  if cparams.lossy_palette {
+  if (cparams.lossy_palette) {
     return false;
   }
   if (cparams.max_error_mode) {
