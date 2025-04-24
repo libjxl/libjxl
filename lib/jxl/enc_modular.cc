@@ -479,7 +479,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
   if (cparams_.responsive == 1 && cparams_.IsLossless() && cparams_.decoding_speed_tier == 1) {
     cparams_.decoding_speed_tier = 2;
   }
-  if (cparams_.responsive && cparams_.IsLossless()) {
+  if (cparams_.responsive == 1 && cparams_.IsLossless()) {
       //RCT selection seems bugged with Squeeze, YCoCg works well.
       if (cparams_.colorspace < 0) {
           cparams_.colorspace = 6;
