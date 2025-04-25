@@ -1640,9 +1640,11 @@ Status ComputeEncodingData(
   }
 
   if (!enc_state.streaming_mode) {
+  // If checks pass here, a Global MA tree is used.
     if (cparams.speed_tier < SpeedTier::kTortoise ||
         !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
         (cparams.responsive == 1 && !cparams.IsLossless()) ||
+      // Allow Local trees for progressive lossless but not lossy.
 	(cparams.buffering && cparams.responsive < 0) ||
 	!cparams.custom_fixed_tree.empty()) {
       // Use local trees if doing lossless modular, unless at very slow speeds.
@@ -1787,6 +1789,8 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.max_error_mode) {
     return false;
   }
+  // Progressive lossless uses Local MA trees, but requires a full
+  // buffer to compress well, so no special check.
   if (!cparams.ModularPartIsLossless() || cparams.responsive > 0) {
     if (metadata.m.num_extra_channels > 0 || cparams.modular_mode) {
       return false;
