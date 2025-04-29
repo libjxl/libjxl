@@ -472,36 +472,47 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
 
   size_t num_streams =
       ModularStreamId::Num(frame_dim_, frame_header.passes.num_passes);
+
+  // Progressive lossless only benefits from levels 2 and higher
+  // Lower levels of faster decoding can outperform higher tiers
+  // depending on the PC
+  if (cparams_.responsive == 1 && cparams_.IsLossless() && cparams_.decoding_speed_tier == 1) {
+    cparams_.decoding_speed_tier = 2;
+  }
+  if (cparams_.responsive == 1 && cparams_.IsLossless()) {
+      //RCT selection seems bugged with Squeeze, YCoCg works well.
+      if (cparams_.colorspace < 0) {
+          cparams_.colorspace = 6;
+      }
+  }
+
   if (cparams_.ModularPartIsLossless()) {
     switch (cparams_.decoding_speed_tier) {
       case 0:
         break;
-      case 1:
-        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kWPOnly;
+      case 1: // No Weighted predictor
+        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
         break;
-      case 2: {
+      case 2: { // No Weighted predictor and Group size 0 defined in enc_frame.cc
+        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+        break;
+      }
+      case 3: { // Gradient only, Group size 0, and Fast MA tree
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kGradientOnly;
         cparams_.options.predictor = Predictor::Gradient;
         break;
       }
-      case 3: {  // LZ77, no Gradient.
-        cparams_.options.nb_repeats = 0;
+      default: { // Gradient only, Group size 0, and No MA tree
+        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kGradientOnly;
         cparams_.options.predictor = Predictor::Gradient;
-        break;
-      }
-      default: {  // LZ77, no predictor.
         cparams_.options.nb_repeats = 0;
-        cparams_.options.predictor = Predictor::Zero;
+          // Disabling MA Trees sometimes doesn't increase decode speed
+          // depending on PC
         break;
       }
     }
   }
-  if (cparams_.decoding_speed_tier >= 1 && cparams_.responsive &&
-      cparams_.ModularPartIsLossless()) {
-    cparams_.options.tree_kind =
-        ModularOptions::TreeKind::kTrivialTreeNoPredictor;
-    cparams_.options.nb_repeats = 0;
-  }
+
   for (size_t i = 0; i < num_streams; ++i) {
     stream_images_.emplace_back(memory_manager_);
   }
@@ -608,7 +619,9 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       // multipliers in lossy mode.
       cparams_.options.predictor = Predictor::Variable;
     } else if (cparams_.responsive || cparams_.lossy_palette) {
-      // zero predictor for Squeeze residues and lossy palette
+    // zero predictor for Squeeze residues and lossy palette indices
+    // TODO: Try adding 'Squeezed' predictor set, with the most
+    // common predictors used by Variable in squeezed images, including none.
       cparams_.options.predictor = Predictor::Zero;
     } else if (!cparams_.IsLossless()) {
       // If not responsive and lossy. TODO(veluca): use near_lossless instead?
@@ -623,7 +636,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       // just gradient predictor in thunder mode
       cparams_.options.predictor = Predictor::Gradient;
     }
-  } else {
+   } else {
     if (cparams_.lossy_palette) cparams_.options.predictor = Predictor::Zero;
   }
   if (!cparams_.ModularPartIsLossless()) {
@@ -1383,7 +1396,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
-      if (!(cparams.responsive && cparams.decoding_speed_tier >= 1)) {
+      if (!(cparams.responsive && (cparams.decoding_speed_tier >= 1 || cparams.IsLossless()))) {
         channel_color_percent = cparams.channel_colors_percent;
       }
       try_palettes(gi, max_bitdepth, maxval, cparams, channel_color_percent);
@@ -1400,7 +1413,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     Transform sg(TransformId::kRCT);
     sg.begin_c = gi.nb_meta_channels;
     size_t nb_rcts_to_try = 0;
-    switch (cparams.speed_tier) {
+      switch (cparams.speed_tier) {
       case SpeedTier::kLightning:
       case SpeedTier::kThunder:
       case SpeedTier::kFalcon:
