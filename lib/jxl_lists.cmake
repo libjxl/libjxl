@@ -358,6 +358,8 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_image_bundle.h
   jxl/enc_linalg.cc
   jxl/enc_linalg.h
+  jxl/enc_lz77.cc
+  jxl/enc_lz77.h
   jxl/enc_modular.cc
   jxl/enc_modular.h
   jxl/enc_noise.cc
