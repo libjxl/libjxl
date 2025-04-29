@@ -1125,7 +1125,7 @@ Status AcStrategyHeuristics::ProcessRect(const Rect& rect,
                                          const ColorCorrelationMap& cmap,
                                          AcStrategyImage* ac_strategy,
                                          size_t thread) {
-  // In Falcon mode, use DCT8 everywhere and uniform quantization.
+  // In Cheetah mode, use DCT8 everywhere and uniform quantization.
   if (cparams.speed_tier >= SpeedTier::kCheetah) {
     ac_strategy->FillDCT8(rect);
     return true;

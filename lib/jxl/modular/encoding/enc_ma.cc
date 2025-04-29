@@ -677,20 +677,24 @@ void TreeSamples::Swap(size_t a, size_t b) {
 namespace {
 std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
                                        size_t num_chunks) {
-  if (histogram.empty()) return {};
+  if (histogram.empty() || num_chunks == 0) return {};
+  uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
+  if (sum == 0) return {};
   // TODO(veluca): selecting distinct quantiles is likely not the best
   // way to go about this.
   std::vector<int32_t> thresholds;
-  uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
   uint64_t cumsum = 0;
   uint64_t threshold = 1;
-  for (size_t i = 0; i + 1 < histogram.size(); i++) {
+  for (size_t i = 0; i < histogram.size(); i++) {
     cumsum += histogram[i];
-    if (cumsum >= threshold * sum / num_chunks) {
+    if (cumsum * num_chunks >= threshold * sum) {
       thresholds.push_back(i);
-      while (cumsum > threshold * sum / num_chunks) threshold++;
+      while (cumsum * num_chunks >= threshold * sum) threshold++;
     }
   }
+  JXL_DASSERT(thresholds.size() <= num_chunks);
+  // last value collects all histogram and is not really a threshold
+  thresholds.pop_back();
   return thresholds;
 }
 
@@ -855,6 +859,7 @@ void TreeSamples::PreQuantizeProperties(
                  compact_properties[i][mapped]) {
         mapped++;
       }
+      JXL_DASSERT(mapped < 256);
       // property_mapping[i] of a value V is `mapped` if
       // compact_properties[i][mapped] <= j and
       // compact_properties[i][mapped-1] > j

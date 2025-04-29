@@ -45,63 +45,63 @@ V Entropy(V count, V inv_total, V total) {
 }
 
 void HistogramEntropy(const Histogram& a) {
-  a.entropy_ = 0.0f;
-  if (a.total_count_ == 0) return;
+  a.entropy = 0.0f;
+  if (a.total_count == 0) return;
 
   const HWY_CAPPED(float, Histogram::kRounding) df;
   const HWY_CAPPED(int32_t, Histogram::kRounding) di;
 
-  const auto inv_tot = Set(df, 1.0f / a.total_count_);
+  const auto inv_tot = Set(df, 1.0f / a.total_count);
   auto entropy_lanes = Zero(df);
-  auto total = Set(df, a.total_count_);
+  auto total = Set(df, a.total_count);
 
-  for (size_t i = 0; i < a.data_.size(); i += Lanes(di)) {
-    const auto counts = LoadU(di, &a.data_[i]);
+  for (size_t i = 0; i < a.counts.size(); i += Lanes(di)) {
+    const auto counts = LoadU(di, &a.counts[i]);
     entropy_lanes =
         Add(entropy_lanes, Entropy(ConvertTo(df, counts), inv_tot, total));
   }
-  a.entropy_ += GetLane(SumOfLanes(df, entropy_lanes));
+  a.entropy += GetLane(SumOfLanes(df, entropy_lanes));
 }
 
 float HistogramDistance(const Histogram& a, const Histogram& b) {
-  if (a.total_count_ == 0 || b.total_count_ == 0) return 0;
+  if (a.total_count == 0 || b.total_count == 0) return 0;
 
   const HWY_CAPPED(float, Histogram::kRounding) df;
   const HWY_CAPPED(int32_t, Histogram::kRounding) di;
 
-  const auto inv_tot = Set(df, 1.0f / (a.total_count_ + b.total_count_));
+  const auto inv_tot = Set(df, 1.0f / (a.total_count + b.total_count));
   auto distance_lanes = Zero(df);
-  auto total = Set(df, a.total_count_ + b.total_count_);
+  auto total = Set(df, a.total_count + b.total_count);
 
-  for (size_t i = 0; i < std::max(a.data_.size(), b.data_.size());
+  for (size_t i = 0; i < std::max(a.counts.size(), b.counts.size());
        i += Lanes(di)) {
     const auto a_counts =
-        a.data_.size() > i ? LoadU(di, &a.data_[i]) : Zero(di);
+        a.counts.size() > i ? LoadU(di, &a.counts[i]) : Zero(di);
     const auto b_counts =
-        b.data_.size() > i ? LoadU(di, &b.data_[i]) : Zero(di);
+        b.counts.size() > i ? LoadU(di, &b.counts[i]) : Zero(di);
     const auto counts = ConvertTo(df, Add(a_counts, b_counts));
     distance_lanes = Add(distance_lanes, Entropy(counts, inv_tot, total));
   }
   const float total_distance = GetLane(SumOfLanes(df, distance_lanes));
-  return total_distance - a.entropy_ - b.entropy_;
+  return total_distance - a.entropy - b.entropy;
 }
 
 constexpr const float kInfinity = std::numeric_limits<float>::infinity();
 
 float HistogramKLDivergence(const Histogram& actual, const Histogram& coding) {
-  if (actual.total_count_ == 0) return 0;
-  if (coding.total_count_ == 0) return kInfinity;
+  if (actual.total_count == 0) return 0;
+  if (coding.total_count == 0) return kInfinity;
 
   const HWY_CAPPED(float, Histogram::kRounding) df;
   const HWY_CAPPED(int32_t, Histogram::kRounding) di;
 
-  const auto coding_inv = Set(df, 1.0f / coding.total_count_);
+  const auto coding_inv = Set(df, 1.0f / coding.total_count);
   auto cost_lanes = Zero(df);
 
-  for (size_t i = 0; i < actual.data_.size(); i += Lanes(di)) {
-    const auto counts = LoadU(di, &actual.data_[i]);
+  for (size_t i = 0; i < actual.counts.size(); i += Lanes(di)) {
+    const auto counts = LoadU(di, &actual.counts[i]);
     const auto coding_counts =
-        coding.data_.size() > i ? LoadU(di, &coding.data_[i]) : Zero(di);
+        coding.counts.size() > i ? LoadU(di, &coding.counts[i]) : Zero(di);
     const auto coding_probs = Mul(ConvertTo(df, coding_counts), coding_inv);
     const auto neg_coding_cost = BitCast(
         df,
@@ -112,7 +112,7 @@ float HistogramKLDivergence(const Histogram& actual, const Histogram& coding) {
     cost_lanes = NegMulAdd(ConvertTo(df, counts), neg_coding_cost, cost_lanes);
   }
   const float total_cost = GetLane(SumOfLanes(df, cost_lanes));
-  return total_cost - actual.entropy_;
+  return total_cost - actual.entropy;
 }
 
 // First step of a k-means clustering with a fancy distance metric.
@@ -127,13 +127,13 @@ Status FastClusterHistograms(const std::vector<Histogram>& in,
   std::vector<float> dists(in.size(), std::numeric_limits<float>::max());
   size_t largest_idx = 0;
   for (size_t i = 0; i < in.size(); i++) {
-    if (in[i].total_count_ == 0) {
+    if (in[i].total_count == 0) {
       (*histogram_symbols)[i] = 0;
       dists[i] = 0.0f;
       continue;
     }
     HistogramEntropy(in[i]);
-    if (in[i].total_count_ > in[largest_idx].total_count_) {
+    if (in[i].total_count > in[largest_idx].total_count) {
       largest_idx = i;
     }
   }
@@ -200,13 +200,9 @@ namespace jxl {
 HWY_EXPORT(FastClusterHistograms);  // Local function
 HWY_EXPORT(HistogramEntropy);       // Local function
 
-StatusOr<float> Histogram::PopulationCost() const {
-  return ANSPopulationCost(data_.data(), data_.size());
-}
-
 float Histogram::ShannonEntropy() const {
   HWY_DYNAMIC_DISPATCH(HistogramEntropy)(*this);
-  return entropy_;
+  return entropy;
 }
 
 namespace {
@@ -258,9 +254,7 @@ Status ClusterHistograms(const HistogramParams& params,
   if (prev_histograms == 0 &&
       params.clustering == HistogramParams::ClusteringType::kBest) {
     for (auto& histo : *out) {
-      JXL_ASSIGN_OR_RETURN(
-          histo.entropy_,
-          ANSPopulationCost(histo.data_.data(), histo.data_.size()));
+      JXL_ASSIGN_OR_RETURN(histo.entropy, histo.ANSPopulationCost());
     }
     uint32_t next_version = 2;
     std::vector<uint32_t> version(out->size(), 1);
@@ -291,9 +285,8 @@ Status ClusterHistograms(const HistogramParams& params,
         Histogram histo;
         histo.AddHistogram((*out)[i]);
         histo.AddHistogram((*out)[j]);
-        JXL_ASSIGN_OR_RETURN(float cost, ANSPopulationCost(histo.data_.data(),
-                                                           histo.data_.size()));
-        cost -= (*out)[i].entropy_ + (*out)[j].entropy_;
+        JXL_ASSIGN_OR_RETURN(float cost, histo.ANSPopulationCost());
+        cost -= (*out)[i].entropy + (*out)[j].entropy;
         // Avoid enqueueing pairs that are not advantageous to merge.
         if (cost >= 0) continue;
         pairs_to_merge.push(
@@ -313,10 +306,8 @@ Status ClusterHistograms(const HistogramParams& params,
         continue;
       }
       (*out)[first].AddHistogram((*out)[second]);
-      JXL_ASSIGN_OR_RETURN(float cost,
-                           ANSPopulationCost((*out)[first].data_.data(),
-                                             (*out)[first].data_.size()));
-      (*out)[first].entropy_ = cost;
+      JXL_ASSIGN_OR_RETURN((*out)[first].entropy,
+                           (*out)[first].ANSPopulationCost());
       for (uint32_t& item : renumbering) {
         if (item == second) {
           item = first;
@@ -330,10 +321,8 @@ Status ClusterHistograms(const HistogramParams& params,
         Histogram histo;
         histo.AddHistogram((*out)[first]);
         histo.AddHistogram((*out)[j]);
-        JXL_ASSIGN_OR_RETURN(
-            float merge_cost,
-            ANSPopulationCost(histo.data_.data(), histo.data_.size()));
-        merge_cost -= (*out)[first].entropy_ + (*out)[j].entropy_;
+        JXL_ASSIGN_OR_RETURN(float merge_cost, histo.ANSPopulationCost());
+        merge_cost -= (*out)[first].entropy + (*out)[j].entropy;
         // Avoid enqueueing pairs that are not advantageous to merge.
         if (merge_cost >= 0) continue;
         pairs_to_merge.push(

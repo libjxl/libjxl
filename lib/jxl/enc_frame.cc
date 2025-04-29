@@ -106,9 +106,13 @@ Status ParamsPostInit(CompressParams* p) {
     // For very low bit rates, using 2x2 resampling gives better results on
     // most photographic images, with an adjusted butteraugli score chosen to
     // give roughly the same amount of bits per pixel.
-    if (!p->already_downsampled && p->butteraugli_distance >= 20) {
+    if (!p->already_downsampled && p->butteraugli_distance >= 10) {
+      // TODO(Jonnyawsom3): Explore 4x4 resampling at distance 25. Lower bpp
+      // but results are inconsistent and images under 4K become far too blurry.
       p->resampling = 2;
-      p->butteraugli_distance = 6 + ((p->butteraugli_distance - 20) * 0.25);
+      // Adding 0.25 balances photo with non-photo, shifting towards lower bpp
+      // to avoid large overshoot while maintaining quality equal to before.
+      p->butteraugli_distance = (p->butteraugli_distance * 0.25) + 0.25;
     }
   }
   if (p->ec_resampling <= 0) {
@@ -710,10 +714,10 @@ Status DownsampleColorChannels(const CompressParams& cparams,
     // TODO(lode): use the regular DownsampleImage, or adapt to the custom
     // coefficients, if there is are custom upscaling coefficients in
     // CustomTransformData
-    if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-      // TODO(lode): DownsampleImage2_Iterative is currently too slow to
-      // be used for squirrel, make it faster, and / or enable it only for
-      // kitten.
+    if (cparams.speed_tier <= SpeedTier::kGlacier) {
+      // TODO(Jonnyawsom3): Until optimized, enabled only for Glacier and
+      // TectonicPlate. It's an 80% slowdown and downsampling is only active
+      // at high distances by default anyway, making improvements negligible.
       JXL_RETURN_IF_ERROR(DownsampleImage2_Iterative(opsin));
     } else {
       JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(opsin));
@@ -1258,8 +1262,8 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
         BuildAndEncodeHistograms(
             memory_manager, hist_params,
             num_histogram_groups * shared.block_ctx_map.NumACContexts(),
-            enc_state->passes[i].ac_tokens, &enc_state->passes[i].codes,
-            &enc_state->passes[i].context_map, writer, LayerType::Ac, aux_out));
+            enc_state->passes[i].ac_tokens, &enc_state->passes[i].codes, writer,
+            LayerType::Ac, aux_out));
     (void)cost;
   }
 
@@ -1912,11 +1916,10 @@ Status OutputGroups(std::vector<std::unique_ptr<BitWriter>>&& group_codes,
   return true;
 }
 
-void RemoveUnusedHistograms(std::vector<uint8_t>& context_map,
-                            EntropyEncodingData& codes) {
+void RemoveUnusedHistograms(EntropyEncodingData& codes) {
   std::vector<int> remap(256, -1);
   std::vector<uint8_t> inv_remap;
-  for (uint8_t& context : context_map) {
+  for (uint8_t& context : codes.context_map) {
     const uint8_t histo_ix = context;
     if (remap[histo_ix] == -1) {
       remap[histo_ix] = inv_remap.size();
@@ -1927,6 +1930,7 @@ void RemoveUnusedHistograms(std::vector<uint8_t>& context_map,
   EntropyEncodingData new_codes;
   new_codes.use_prefix_code = codes.use_prefix_code;
   new_codes.lz77 = codes.lz77;
+  new_codes.context_map = std::move(codes.context_map);
   for (uint8_t histo_idx : inv_remap) {
     new_codes.encoding_info.emplace_back(
         std::move(codes.encoding_info[histo_idx]));
@@ -1970,10 +1974,8 @@ Status OutputAcGlobal(PassesEncoderState& enc_state,
                           &writer, LayerType::Order, aux_out));
     // Fix up context map and entropy codes to remove any fix histograms that
     // were not selected by clustering.
-    RemoveUnusedHistograms(enc_state.passes[i].context_map,
-                           enc_state.passes[i].codes);
-    JXL_RETURN_IF_ERROR(EncodeHistograms(enc_state.passes[i].context_map,
-                                         enc_state.passes[i].codes, &writer,
+    RemoveUnusedHistograms(enc_state.passes[i].codes);
+    JXL_RETURN_IF_ERROR(EncodeHistograms(enc_state.passes[i].codes, &writer,
                                          LayerType::Ac, aux_out));
   }
   JXL_RETURN_IF_ERROR(writer.WithMaxBits(8, LayerType::Ac, aux_out, [&] {

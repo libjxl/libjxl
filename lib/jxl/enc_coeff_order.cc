@@ -210,7 +210,7 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
         // Worst case: all dct8x8, all zeroes: count <= nb_pixels/64/8
         // nb_pixels is limited to 2^40 (Level 10 limit)
         // so count is limited to 2^31
-        JXL_DASSERT(count < (1lu << 48));
+        JXL_DASSERT(count < (uint64_t{1} << 48));
         pos_and_val[i].count_and_idx = (count << 16) | i;
       }
 
@@ -264,15 +264,13 @@ Status EncodePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
   JxlMemoryManager* memory_manager = writer->memory_manager();
   std::vector<std::vector<Token>> tokens(1);
   JXL_RETURN_IF_ERROR(TokenizePermutation(order, skip, size, tokens.data()));
-  std::vector<uint8_t> context_map;
   EntropyEncodingData codes;
   JXL_ASSIGN_OR_RETURN(
-      size_t cost, BuildAndEncodeHistograms(
-                       memory_manager, HistogramParams(), kPermutationContexts,
-                       tokens, &codes, &context_map, writer, layer, aux_out));
+      size_t cost, BuildAndEncodeHistograms(memory_manager, HistogramParams(),
+                                            kPermutationContexts, tokens,
+                                            &codes, writer, layer, aux_out));
   (void)cost;
-  JXL_RETURN_IF_ERROR(
-      WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteTokens(tokens[0], codes, 0, writer, layer, aux_out));
   return true;
 }
 
@@ -319,16 +317,14 @@ Status EncodeCoeffOrders(uint16_t used_orders,
   }
   // Do not write anything if no order is used.
   if (used_orders != 0) {
-    std::vector<uint8_t> context_map;
     EntropyEncodingData codes;
     JXL_ASSIGN_OR_RETURN(
-        size_t cost,
-        BuildAndEncodeHistograms(memory_manager, HistogramParams(),
-                                 kPermutationContexts, tokens, &codes,
-                                 &context_map, writer, layer, aux_out));
+        size_t cost, BuildAndEncodeHistograms(memory_manager, HistogramParams(),
+                                              kPermutationContexts, tokens,
+                                              &codes, writer, layer, aux_out));
     (void)cost;
     JXL_RETURN_IF_ERROR(
-        WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out));
+        WriteTokens(tokens[0], codes, 0, writer, layer, aux_out));
   }
   return true;
 }
