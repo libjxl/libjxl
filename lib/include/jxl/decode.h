@@ -474,6 +474,24 @@ JXL_EXPORT size_t JxlDecoderSizeHintBasicInfo(const JxlDecoder* dec);
 JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
                                                       int events_wanted);
 
+/** Configure how strict or lenient the decoder is when the input bitstream
+ * is technically non-conforming, truncated or corrupt.
+ * By default, the value is 0. Higher values mean more leniency, lower values
+ * mean stricter.
+ * Currently supported values are:
+ * -2: fully check bitstream conformance including value range (not implemented)
+ * -1: check signaled level limitations, error on corruption (not implemented)
+ * 0 (default): check Main profile Level 10 limitations, error on corruption
+ * 1: recover HF corruption, error on other corruption
+ * 2: recover all recoverable corruption, error on non-recoverable corruption
+ *
+ * @param dec decoder object
+ * @param leniency amount of leniency regarding invalid input
+ * @return ::JXL_DEC_SUCCESS if no error, ::JXL_DEC_ERROR otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetLeniency(JxlDecoder* dec,
+                                                  int leniency);
+
 /** Enables or disables preserving of as-in-bitstream pixeldata
  * orientation. Some images are encoded with an Orientation tag
  * indicating that the decoder must perform a rotation and/or
