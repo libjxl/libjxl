@@ -1281,7 +1281,10 @@ HistogramParams HistogramParams::ForModular(
         cparams.speed_tier > SpeedTier::kThunder
             ? HistogramParams::ANSHistogramStrategy::kFast
             : HistogramParams::ANSHistogramStrategy::kApproximate;
-    params.lz77_method = HistogramParams::LZ77Method::kNone;
+	  params.lz77_method = cparams.modular_mode &&
+		  cparams.speed_tier <= SpeedTier::kHare
+		  ? HistogramParams::LZ77Method::kRLE
+		  : HistogramParams::LZ77Method::kNone;
     // Near-lossless DC, as well as modular mode, require choosing hybrid uint
     // more carefully.
     if ((!extra_dc_precision.empty() && extra_dc_precision[0] != 0) ||
@@ -1298,18 +1301,13 @@ HistogramParams HistogramParams::ForModular(
   if (cparams.decoding_speed_tier >= 2) {
     params.max_histograms = 12;
   }
-  if (cparams.decoding_speed_tier >= 3) {
-    if (cparams.modular_mode) {
-    params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
-                             ? HistogramParams::LZ77Method::kRLE
-                         : cparams.speed_tier >= SpeedTier::kKitten
-                             ? HistogramParams::LZ77Method::kLZ77
-                             : HistogramParams::LZ77Method::kOptimal;
-    } else {
-	  params.lz77_method = HistogramParams::LZ77Method::kNone;
-	  // LZ77 significantly slows down encoding for VarDCT with
-	  // no benefit to density or decoding speed
-    }
+  if ((cparams.decoding_speed_tier >= 3 ||
+  cparams_.options.predictor = Predictor::Zero) && cparams.modular_mode) {
+	  params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
+		  ? HistogramParams::LZ77Method::kRLE
+		  : cparams.speed_tier >= SpeedTier::kKitten
+		  ? HistogramParams::LZ77Method::kLZ77
+		  : HistogramParams::LZ77Method::kOptimal;
   }
   return params;
 }
