@@ -1780,6 +1780,11 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.progressive_dc != 0 || frame_info.dc_level != 0) {
     return false;
   }
+  if (cparams.custom_progressive_mode ||
+      cparams.qprogressive_mode == Override::kOn ||
+      cparams.progressive_mode == Override::kOn) {
+    return false;
+  }
   if (cparams.resampling != 1 || cparams.ec_resampling != 1) {
     return false;
   }
