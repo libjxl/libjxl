@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Progressive VarDCT couldn't load progressively. (#4223)
   - Lossless Faster Decoding would create uncompressed files for levels 1 and 2,
     with levels 3 and 4 being slower instead of faster. (#4201)
+  - Density regression with Predictor Zero since v0.11. (#4225)
 
 ### Changed / clarified
   - Empty DHT markers are now valid for JPEG transcoding. (#2704)
