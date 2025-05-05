@@ -469,7 +469,7 @@ Status WriteICC(const Span<const uint8_t> icc, BitWriter* JXL_RESTRICT writer,
         enc[i]);
   }
   HistogramParams params;
-  params.lz77_method = enc.size() < 4096 ? HistogramParams::LZ77Method::kOptimal
+  params.lz77_method = enc.size() < 16384 ? HistogramParams::LZ77Method::kOptimal
                                          : HistogramParams::LZ77Method::kLZ77;
   EntropyEncodingData code;
   params.force_huffman = true;
