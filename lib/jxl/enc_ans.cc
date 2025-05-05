@@ -1302,7 +1302,7 @@ HistogramParams HistogramParams::ForModular(
     params.max_histograms = 12;
   }
   if ((cparams.decoding_speed_tier >= 3 ||
-  cparams_.options.predictor = Predictor::Zero) && cparams.modular_mode) {
+  cparams_.options.predictor == Predictor::Zero) && cparams.modular_mode) {
 	  params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
 		  ? HistogramParams::LZ77Method::kRLE
 		  : cparams.speed_tier >= SpeedTier::kKitten
