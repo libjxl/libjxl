@@ -986,8 +986,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
             idc = inputjpeg[base] + 1024 / qt_dc[c];
           }
           if (c == 1) {
-            dc_counts[std::min(static_cast<uint32_t>(idc + 1024),
-                               static_cast<uint32_t>(2047))]++;
+            dc_counts[std::min<uint32_t>(idc + 1024, 2047)]++;
           }
           total_dc[c]++;
           fdc[bx >> hshift] = idc * dcquantization_r[c];
@@ -1042,7 +1041,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
                            qt[1] + qt[2] + qt[3] + qt[4] + qt[5])) -
                        7;
   // up to 8 buckets, based on luma only
-  num_thresholds = std::min(std::max(num_thresholds, 1), 7);
+  num_thresholds = jxl::Clamp1(num_thresholds, 1, 7);
   size_t cumsum = 0;
   size_t cut = total_dc[1] / (num_thresholds + 1);
   for (int j = 0; j < 2048; j++) {
