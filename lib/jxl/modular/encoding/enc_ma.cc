@@ -703,10 +703,10 @@ std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
   if (samples.empty()) return {};
   int min = *std::min_element(samples.begin(), samples.end());
   constexpr int kRange = 512;
-  min = std::min(std::max(min, -kRange), kRange);
+  min = jxl::Clamp1(min, -kRange, kRange);
   std::vector<uint32_t> counts(2 * kRange + 1);
   for (int s : samples) {
-    uint32_t sample_offset = std::min(std::max(s, -kRange), kRange) - min;
+    uint32_t sample_offset = jxl::Clamp1(s, -kRange, kRange) - min;
     counts[sample_offset]++;
   }
   std::vector<int32_t> thresholds = QuantizeHistogram(counts, num_chunks);

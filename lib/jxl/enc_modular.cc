@@ -287,11 +287,11 @@ float EstimateCost(const Image& img) {
         pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
         pixel_type_w top = (y ? *(r + x - onerow) : left);
         pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
-        size_t maxdiff = std::max(std::max(left, top), topleft) -
-                         std::min(std::min(left, top), topleft);
+        size_t max_diff =
+            std::max({left, top, topleft}) - std::min({left, top, topleft});
         size_t ctx = 0;
         for (uint32_t c : cutoffs) {
-          ctx += (c > maxdiff) ? 1 : 0;
+          ctx += (c > max_diff) ? 1 : 0;
         }
         pixel_type res = r[x] - ClampedGradient(top, left, topleft);
         uint32_t token;
