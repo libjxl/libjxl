@@ -476,8 +476,7 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
   return true;
 }
 
-Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
-                                    BitReader* JXL_RESTRICT* br,
+Status FrameDecoder::ProcessACGroup(size_t ac_group_id, PassesReaders& br,
                                     size_t num_passes, size_t thread,
                                     bool force_draw, bool dc_only) {
   size_t group_dim = frame_dim_.group_dim;
@@ -501,7 +500,7 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
     JXL_RETURN_IF_ERROR(group_dec_caches_[thread].InitOnce(
         memory_manager, frame_header_.passes.num_passes, dec_state_->used_acs));
     JXL_RETURN_IF_ERROR(DecodeGroup(
-        frame_header_, br, num_passes, ac_group_id, dec_state_,
+        frame_header_, br.data(), num_passes, ac_group_id, dec_state_,
         &group_dec_caches_[thread], thread, render_pipeline_input,
         decoded_->jpeg_data.get(), decoded_passes_per_ac_group_[ac_group_id],
         force_draw, dc_only, &should_run_pipeline));
@@ -520,12 +519,13 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
     bool modular_pass_ready = true;
     JXL_DEBUG_V(2, "Decoding modular in group %d pass %d",
                 static_cast<int>(ac_group_id), static_cast<int>(i));
-    if (i < pass0 + num_passes) {
+    if (i < pass0 + num_passes) {  // i.e. i - pass0 < num_passes
+      BitReader* r = br[i - pass0];
+      JXL_ENSURE(r);
       JXL_DEBUG_V(2, "Bit reader position: %" PRIuS " / %" PRIuS,
-                  br[i - pass0]->TotalBitsConsumed(),
-                  br[i - pass0]->TotalBytes() * kBitsPerByte);
+                  r->TotalBitsConsumed(), r->TotalBytes() * kBitsPerByte);
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
-          frame_header_, mrect, br[i - pass0], minShift, maxShift,
+          frame_header_, mrect, r, minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i),
           /*zerofill=*/false, dec_state_, &render_pipeline_input,
           /*allow_truncated=*/false, &modular_pass_ready));
@@ -708,7 +708,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
         return true;
       }
       size_t first_pass = decoded_passes_per_ac_group_[g];
-      BitReader* JXL_RESTRICT readers[kMaxNumPasses];
+      PassesReaders readers = {};
       for (size_t i = 0; i < desired_num_ac_passes[g]; i++) {
         JXL_ENSURE(ac_group_sec[g][first_pass + i] != num);
         readers[i] = sections[ac_group_sec[g][first_pass + i]].br;
@@ -774,7 +774,7 @@ Status FrameDecoder::Flush() {
         // This group was drawn already, nothing to do.
         return true;
       }
-      BitReader* JXL_RESTRICT readers[kMaxNumPasses] = {};
+      PassesReaders readers = {};
       JXL_RETURN_IF_ERROR(ProcessACGroup(
           g, readers, /*num_passes=*/0, GetStorageLocation(thread, g),
           /*force_draw=*/true, /*dc_only=*/!decoded_ac_global_));

@@ -35,13 +35,13 @@ namespace {
 using hwy::HWY_NAMESPACE::IfThenZeroElse;
 
 struct OpLinear {
-  explicit OpLinear(const OutputEncodingInfo&) {}
+  explicit OpLinear(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {}
 };
 
 struct OpRgb {
-  explicit OpRgb(const OutputEncodingInfo&) {}
+  explicit OpRgb(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
@@ -83,7 +83,7 @@ struct OpHlg {
 };
 
 struct Op709 {
-  explicit Op709(const OutputEncodingInfo&) {}
+  explicit Op709(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {

@@ -908,7 +908,7 @@ StatusOr<size_t> EntropyEncodingData::BuildAndStoreEntropyCodes(
   }
   if (use_prefix_code) {
     for (const auto& histo : clustered_histograms) {
-      size_t alphabet_size = std::max(size_t(1), histo.alphabet_size());
+      size_t alphabet_size = std::max<size_t>(1, histo.alphabet_size());
       if (writer) {
         StoreVarLenUint16(alphabet_size - 1, writer);
       } else {

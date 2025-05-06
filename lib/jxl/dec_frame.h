@@ -10,6 +10,7 @@
 #include <jxl/types.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -241,12 +242,14 @@ class FrameDecoder {
   }
 
  private:
+  typedef std::array<BitReader*, kMaxNumPasses> PassesReaders;
+
   Status ProcessDCGlobal(BitReader* br);
   Status ProcessDCGroup(size_t dc_group_id, BitReader* br);
   Status FinalizeDC();
   Status AllocateOutput();
   Status ProcessACGlobal(BitReader* br);
-  Status ProcessACGroup(size_t ac_group_id, BitReader* JXL_RESTRICT* br,
+  Status ProcessACGroup(size_t ac_group_id, PassesReaders& br,
                         size_t num_passes, size_t thread, bool force_draw,
                         bool dc_only);
   void MarkSections(const SectionInfo* sections, size_t num,

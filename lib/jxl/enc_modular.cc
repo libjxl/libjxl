@@ -1507,8 +1507,8 @@ int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
       PredictNoTreeWP(w, qrow + x, onerow, x, y, Predictor::Weighted, wp_state);
   svalue -= pred.guess;
   if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
-  int residual = roundf(svalue);
-  if (residual > 2 || residual < -2) residual = roundf(svalue * 0.5) * 2;
+  int residual = std::round(svalue);
+  if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5f) * 2;
   return residual + pred.guess;
 }
 
@@ -1519,8 +1519,8 @@ int QuantizeGradient(const int32_t* qrow, size_t onerow, size_t c, size_t x,
       PredictNoTreeNoWP(w, qrow + x, onerow, x, y, Predictor::Gradient);
   svalue -= pred.guess;
   if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
-  int residual = roundf(svalue);
-  if (residual > 2 || residual < -2) residual = roundf(svalue * 0.5) * 2;
+  int residual = std::round(svalue);
+  if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5f) * 2;
   return residual + pred.guess;
 }
 
@@ -1633,15 +1633,15 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = roundf(row[x] * inv_factor);
+            quant_row[x] = std::round(row[x] * inv_factor);
           }
         } else {
           int32_t* quant_row_y =
               stream_images_[stream_id].channel[0].plane.Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
             quant_row[x] =
-                roundf((row[x] - quant_row_y[x] * (y_factor * cfl_factor)) *
-                       inv_factor);
+                std::round((row[x] - quant_row_y[x] * (y_factor * cfl_factor)) *
+                           inv_factor);
           }
         }
       }
@@ -1663,7 +1663,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         int32_t* quant_row = ch.plane.Row(y);
         const float* row = rect.ConstPlaneRow(dc, c, y);
         for (size_t x = 0; x < xs; x++) {
-          quant_row[x] = roundf(row[x] * inv_factor);
+          quant_row[x] = std::round(row[x] * inv_factor);
         }
       }
     }

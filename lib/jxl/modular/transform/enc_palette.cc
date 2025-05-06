@@ -492,7 +492,7 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
             color_with_error[c] =
                 p_in[c][x] + (palette_iteration_data.final_run ? 1 : 0) *
                                  diffusion_multiplier * error_row[0][c][x + 2];
-            color[c] = Clamp1(lroundf(color_with_error[c]), 0l,
+            color[c] = Clamp1(lround(color_with_error[c]), 0l,
                               (1l << input.bitdepth) - 1);
           }
 

@@ -980,7 +980,7 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
   const float c1 = 0.059588212153340203f;
   const float c2 = 0.10599497107315753f;
   const float c3base = 0.97;
-  const float c3 = pow(c3base, clamped_butteraugli);
+  const float c3 = std::pow(c3base, clamped_butteraugli);
   const float c4 = 1.247544678665836f;
   const float context_weight = c1 + c2 * clamped_butteraugli;
   for (size_t by = 0; by < frame_dim.ysize_blocks; by++) {

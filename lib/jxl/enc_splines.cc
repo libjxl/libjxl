@@ -51,8 +51,8 @@ void EncodeAllStartingPoints(const std::vector<Spline::Point>& points,
   int64_t last_x = 0;
   int64_t last_y = 0;
   for (size_t i = 0; i < points.size(); i++) {
-    const int64_t x = lroundf(points[i].x);
-    const int64_t y = lroundf(points[i].y);
+    const int64_t x = std::lround(points[i].x);
+    const int64_t y = std::lround(points[i].y);
     if (i == 0) {
       tokens->emplace_back(kStartingPositionContext, x);
       tokens->emplace_back(kStartingPositionContext, y);
