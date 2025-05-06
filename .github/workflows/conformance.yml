@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@c6295a65d1254861815972266d5933fd6e532bdf # v2.11.1
+      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
       with:
         egress-policy: audit
 
@@ -82,9 +82,6 @@ jobs:
           - name: SVE2_128
             os: ubuntu-24.04-arm
             cflags: -DHWY_DISABLED_TARGETS=HWY_SVE2_128-1
-          - name: SVE_256
-            os: ubuntu-24.04-arm
-            cflags: -DHWY_DISABLED_TARGETS=HWY_SVE_256-1
           - name: SVE2
             os: ubuntu-24.04-arm
             cflags: -DHWY_DISABLED_TARGETS=HWY_SVE2-1
@@ -98,7 +95,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@c6295a65d1254861815972266d5933fd6e532bdf # v2.11.1
+      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
       with:
         egress-policy: audit
 
@@ -169,10 +166,10 @@ jobs:
       fail-fast: false
       matrix:
         name: [level5, level10]
-        target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN, SVE2_128, SVE_256, SVE2, SVE, NEON_WITHOUT_AES]
+        target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN, SVE2_128, SVE2, SVE, NEON_WITHOUT_AES]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@c6295a65d1254861815972266d5933fd6e532bdf # v2.11.1
+      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
       with:
         egress-policy: audit
 
@@ -220,7 +217,7 @@ jobs:
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests

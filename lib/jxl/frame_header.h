@@ -381,7 +381,7 @@ struct FrameHeader : public Fields {
   mutable bool all_default;
 
   // Always present
-  FrameEncoding encoding;
+  FrameEncoding encoding = FrameEncoding::kModular;
   // Some versions of UBSAN complain in VisitFrameType if not initialized.
   FrameType frame_type = FrameType::kRegularFrame;
 

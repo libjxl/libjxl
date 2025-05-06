@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_CODEC_IN_OUT_H_
-#define LIB_JXL_CODEC_IN_OUT_H_
+#ifndef LIB_EXTRAS_CODEC_IN_OUT_H_
+#define LIB_EXTRAS_CODEC_IN_OUT_H_
 
 // Holds inputs/outputs for decoding/encoding images.
 
@@ -111,4 +111,4 @@ class CodecInOut {
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_CODEC_IN_OUT_H_
+#endif  // LIB_EXTRAS_CODEC_IN_OUT_H_

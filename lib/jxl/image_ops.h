@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <limits>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
@@ -78,9 +79,8 @@ Status ConvertPlaneAndClamp(const Rect& rect_from, const Plane<T>& from,
     const T* JXL_RESTRICT row_from = rect_from.ConstRow(from, y);
     U* JXL_RESTRICT row_to = rect_to.Row(to, y);
     for (size_t x = 0; x < rect_to.xsize(); ++x) {
-      row_to[x] =
-          std::min<M>(std::max<M>(row_from[x], std::numeric_limits<U>::min()),
-                      std::numeric_limits<U>::max());
+      row_to[x] = jxl::Clamp1<M>(row_from[x], std::numeric_limits<U>::min(),
+                                 std::numeric_limits<U>::max());
     }
   }
   return true;
