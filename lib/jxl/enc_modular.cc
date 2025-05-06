@@ -287,11 +287,11 @@ float EstimateCost(const Image& img) {
         pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
         pixel_type_w top = (y ? *(r + x - onerow) : left);
         pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
-        size_t maxdiff = std::max(std::max(left, top), topleft) -
-                         std::min(std::min(left, top), topleft);
+        size_t max_diff =
+            std::max({left, top, topleft}) - std::min({left, top, topleft});
         size_t ctx = 0;
         for (uint32_t c : cutoffs) {
-          ctx += (c > maxdiff) ? 1 : 0;
+          ctx += (c > max_diff) ? 1 : 0;
         }
         pixel_type res = r[x] - ClampedGradient(top, left, topleft);
         uint32_t token;
@@ -476,38 +476,43 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
   // Progressive lossless only benefits from levels 2 and higher
   // Lower levels of faster decoding can outperform higher tiers
   // depending on the PC
-  if (cparams_.responsive == 1 && cparams_.IsLossless() && cparams_.decoding_speed_tier == 1) {
+  if (cparams_.responsive == 1 && cparams_.IsLossless() &&
+      cparams_.decoding_speed_tier == 1) {
     cparams_.decoding_speed_tier = 2;
   }
   if (cparams_.responsive == 1 && cparams_.IsLossless()) {
-      //RCT selection seems bugged with Squeeze, YCoCg works well.
-      if (cparams_.colorspace < 0) {
-          cparams_.colorspace = 6;
-      }
+    // RCT selection seems bugged with Squeeze, YCoCg works well.
+    if (cparams_.colorspace < 0) {
+      cparams_.colorspace = 6;
+    }
   }
 
   if (cparams_.ModularPartIsLossless()) {
     switch (cparams_.decoding_speed_tier) {
       case 0:
+        cparams_.options.fast_decode_multiplier = 1.001f;
         break;
-      case 1: // No Weighted predictor
+      case 1:  // No Weighted predictor
+        cparams_.options.fast_decode_multiplier = 1.005f;
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
         break;
-      case 2: { // No Weighted predictor and Group size 0 defined in enc_frame.cc
+      case 2: {  // No Weighted predictor and Group size 0 defined in
+                 // enc_frame.cc
+        cparams_.options.fast_decode_multiplier = 1.015f;
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
         break;
       }
-      case 3: { // Gradient only, Group size 0, and Fast MA tree
+      case 3: {  // Gradient only, Group size 0, and Fast MA tree
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kGradientOnly;
         cparams_.options.predictor = Predictor::Gradient;
         break;
       }
-      default: { // Gradient only, Group size 0, and No MA tree
+      default: {  // Gradient only, Group size 0, and No MA tree
         cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kGradientOnly;
         cparams_.options.predictor = Predictor::Gradient;
         cparams_.options.nb_repeats = 0;
-          // Disabling MA Trees sometimes doesn't increase decode speed
-          // depending on PC
+        // Disabling MA Trees sometimes doesn't increase decode speed
+        // depending on PC
         break;
       }
     }
@@ -528,7 +533,8 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
   }
 
   cparams_.options.splitting_heuristics_node_threshold =
-      82 + 14 * static_cast<int>(cparams_.speed_tier);
+      75 + 14 * static_cast<int>(cparams_.speed_tier) +
+      10 * cparams_.decoding_speed_tier;
 
   {
     // Set properties.
@@ -619,9 +625,9 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       // multipliers in lossy mode.
       cparams_.options.predictor = Predictor::Variable;
     } else if (cparams_.responsive || cparams_.lossy_palette) {
-    // zero predictor for Squeeze residues and lossy palette indices
-    // TODO: Try adding 'Squeezed' predictor set, with the most
-    // common predictors used by Variable in squeezed images, including none.
+      // zero predictor for Squeeze residues and lossy palette indices
+      // TODO: Try adding 'Squeezed' predictor set, with the most
+      // common predictors used by Variable in squeezed images, including none.
       cparams_.options.predictor = Predictor::Zero;
     } else if (!cparams_.IsLossless()) {
       // If not responsive and lossy. TODO(veluca): use near_lossless instead?
@@ -636,7 +642,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       // just gradient predictor in thunder mode
       cparams_.options.predictor = Predictor::Gradient;
     }
-   } else {
+  } else {
     if (cparams_.lossy_palette) cparams_.options.predictor = Predictor::Zero;
   }
   if (!cparams_.ModularPartIsLossless()) {
@@ -1396,7 +1402,8 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
-      if (!(cparams.responsive && (cparams.decoding_speed_tier >= 1 || cparams.IsLossless()))) {
+      if (!(cparams.responsive &&
+            (cparams.decoding_speed_tier >= 1 || cparams.IsLossless()))) {
         channel_color_percent = cparams.channel_colors_percent;
       }
       try_palettes(gi, max_bitdepth, maxval, cparams, channel_color_percent);
@@ -1413,7 +1420,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     Transform sg(TransformId::kRCT);
     sg.begin_c = gi.nb_meta_channels;
     size_t nb_rcts_to_try = 0;
-      switch (cparams.speed_tier) {
+    switch (cparams.speed_tier) {
       case SpeedTier::kLightning:
       case SpeedTier::kThunder:
       case SpeedTier::kFalcon:
