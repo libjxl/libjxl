@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
@@ -89,7 +90,7 @@ struct TreeSamples {
   void AllSamplesDone() { dedup_table_ = std::vector<uint32_t>(); }
 
   uint32_t QuantizeProperty(uint32_t prop, pixel_type v) const {
-    v = std::min(std::max(v, -kPropertyRange), kPropertyRange) + kPropertyRange;
+    v = jxl::Clamp1(v, -kPropertyRange, kPropertyRange) + kPropertyRange;
     return property_mapping[prop][v];
   }
 
