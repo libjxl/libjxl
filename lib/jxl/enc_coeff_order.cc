@@ -70,7 +70,7 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
                          uint32_t current_used_orders,
                          coeff_order_t* JXL_RESTRICT order) {
   JxlMemoryManager* memory_manager = ac_strategy.memory_manager();
-  std::vector<int32_t> num_zeros(kCoeffOrderMaxSize);
+  std::vector<int64_t> num_zeros(kCoeffOrderMaxSize);
   // If compressing at high speed and only using 8x8 DCTs, only consider a
   // subset of blocks.
   double block_fraction = 1.0f;
@@ -154,7 +154,7 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
   struct PosAndCount {
     uint32_t pos;
     // Saving index breaks the ties for non-stable sort
-    uint32_t count_and_idx;
+    uint64_t count_and_idx;
   };
   size_t mem_bytes = AcStrategy::kMaxCoeffArea * sizeof(PosAndCount);
   JXL_ASSIGN_OR_RETURN(auto mem,
@@ -206,9 +206,11 @@ Status ComputeCoeffOrder(SpeedTier speed, const ACImage& ac_image,
         pos_and_val[i].pos = pos;
         // We don't care for the exact number -> quantize number of zeros,
         // to get less permuted order.
-        uint32_t count = num_zeros[offset + pos] * inv_sqrt_sz + 0.1f;
-        // Actually, limit is sqrt(1<<16), but we don't care
-        JXL_DASSERT(count < (1u << 16));
+        uint64_t count = num_zeros[offset + pos] * inv_sqrt_sz + 0.1f;
+        // Worst case: all dct8x8, all zeroes: count <= nb_pixels/64/8
+        // nb_pixels is limited to 2^40 (Level 10 limit)
+        // so count is limited to 2^31
+        JXL_DASSERT(count < (uint64_t{1} << 48));
         pos_and_val[i].count_and_idx = (count << 16) | i;
       }
 
@@ -262,15 +264,13 @@ Status EncodePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
   JxlMemoryManager* memory_manager = writer->memory_manager();
   std::vector<std::vector<Token>> tokens(1);
   JXL_RETURN_IF_ERROR(TokenizePermutation(order, skip, size, tokens.data()));
-  std::vector<uint8_t> context_map;
   EntropyEncodingData codes;
   JXL_ASSIGN_OR_RETURN(
-      size_t cost, BuildAndEncodeHistograms(
-                       memory_manager, HistogramParams(), kPermutationContexts,
-                       tokens, &codes, &context_map, writer, layer, aux_out));
+      size_t cost, BuildAndEncodeHistograms(memory_manager, HistogramParams(),
+                                            kPermutationContexts, tokens,
+                                            &codes, writer, layer, aux_out));
   (void)cost;
-  JXL_RETURN_IF_ERROR(
-      WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteTokens(tokens[0], codes, 0, writer, layer, aux_out));
   return true;
 }
 
@@ -317,16 +317,14 @@ Status EncodeCoeffOrders(uint16_t used_orders,
   }
   // Do not write anything if no order is used.
   if (used_orders != 0) {
-    std::vector<uint8_t> context_map;
     EntropyEncodingData codes;
     JXL_ASSIGN_OR_RETURN(
-        size_t cost,
-        BuildAndEncodeHistograms(memory_manager, HistogramParams(),
-                                 kPermutationContexts, tokens, &codes,
-                                 &context_map, writer, layer, aux_out));
+        size_t cost, BuildAndEncodeHistograms(memory_manager, HistogramParams(),
+                                              kPermutationContexts, tokens,
+                                              &codes, writer, layer, aux_out));
     (void)cost;
     JXL_RETURN_IF_ERROR(
-        WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out));
+        WriteTokens(tokens[0], codes, 0, writer, layer, aux_out));
   }
   return true;
 }

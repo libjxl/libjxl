@@ -22,6 +22,8 @@ env:
   CONFORMANCE_REPO_HASH: a3ee00672dd1b58c2b5a7d5e8b9e4a7b9e53ec1e
   LIBJXL_VERSION: "0.12.0"
   LIBJXL_ABI_VERSION: "0.12"
+  SDE_ID: "813591"
+  SDE_VERSION: "9.33.0-2024-01-07"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -34,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
       with:
         egress-policy: audit
 
@@ -79,11 +81,21 @@ jobs:
             build_type: asan
           - name: SVE2_128
             os: ubuntu-24.04-arm
+            cflags: -DHWY_DISABLED_TARGETS=HWY_SVE2_128-1
+          - name: SVE2
+            os: ubuntu-24.04-arm
+            cflags: -DHWY_DISABLED_TARGETS=HWY_SVE2-1
+          - name: SVE
+            os: ubuntu-24.04-arm
+            cflags: -DHWY_DISABLED_TARGETS=HWY_SVE-1
+          - name: NEON_WITHOUT_AES
+            os: ubuntu-24.04-arm
+            cflags: -DHWY_DISABLED_TARGETS=HWY_NEON_WITHOUT_AES-1
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
       with:
         egress-policy: audit
 
@@ -132,7 +144,7 @@ jobs:
         cp build/lib/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
         cp build/lib/libjxl_cms.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
         cp build/lib/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-    - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: conformance_binary-${{ matrix.name }}
         path: |
@@ -149,32 +161,15 @@ jobs:
     name: CfT ${{ matrix.name }} / ${{ matrix.target }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     needs: [warmup, build]
-    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
+    runs-on: ${{ (startsWith(matrix.target, 'SVE') || startsWith(matrix.target, 'NEON')) && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
         name: [level5, level10]
-        target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN, SVE2_128]
-        include:
-          - name: level5
-            target: AVX3
-            sde_id: '813591'
-            sde_version: 9.33.0-2024-01-07
-            emulator: 'sde/sde64 -spr --'
-          - name: level10
-            target: AVX3
-            sde_id: '813591'
-            sde_version: 9.33.0-2024-01-07
-            emulator: 'sde/sde64 -spr --'
-          - name: level5
-            target: SVE2_128
-            os: ubuntu-24.04-arm
-          - name: level10
-            target: SVE2_128
-            os: ubuntu-24.04-arm
+        target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN, SVE2_128, SVE2, SVE, NEON_WITHOUT_AES]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
       with:
         egress-policy: audit
 
@@ -190,20 +185,20 @@ jobs:
         sudo ./tools/scripts/install_deps.sh conformance
 
     - name: Cache SDE
-      if: ${{ matrix.sde_id }}
+      if: ${{ matrix.target == 'AVX3' }}
       uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ${{ github.workspace }}/sde
-        key: sde-${{ matrix.sde_id }}
-    - name: Download SDE ${{ matrix.sde_version }}
-      if: ${{ matrix.sde_id }}
+        key: sde-${{ env.SDE_ID }}
+    - name: Download SDE ${{ env.SDE_VERSION }}
+      if: ${{ matrix.target == 'AVX3' }}
       run: |
         mkdir -p sde
         cd sde
         SDE_ARCHIVE=sde.tar.xz
         if [ ! -f "${SDE_ARCHIVE}" ]; then
           curl -L --show-error -o "${SDE_ARCHIVE}" \
-            https://downloadmirror.intel.com/${{ matrix.sde_id }}/sde-external-${{ matrix.sde_version }}-lin.tar.xz
+            https://downloadmirror.intel.com/${{ env.SDE_ID }}/sde-external-${{ env.SDE_VERSION }}-lin.tar.xz
         fi
         tar --strip-components=1 -xJf "${SDE_ARCHIVE}"
         cd ..
@@ -222,23 +217,36 @@ jobs:
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests
       run: |
+        HERE=`pwd`
+        export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${HERE}
+        TARGET=${{ matrix.target }}
+
         chmod +x djxl
         ln -s libjxl.so.${{ env.LIBJXL_VERSION }} libjxl.so.${{ env.LIBJXL_ABI_VERSION }}
         ln -s libjxl_cms.so.${{ env.LIBJXL_VERSION }} libjxl_cms.so.${{ env.LIBJXL_ABI_VERSION }}
         ln -s libjxl_threads.so.${{ env.LIBJXL_VERSION }} libjxl_threads.so.${{ env.LIBJXL_ABI_VERSION }}
-        export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:`pwd`
-        ${{ matrix.emulator }} `pwd`/djxl -V | tee djxl_version.txt
-        TARGET=${{ matrix.target }}
+
+        EMULATOR=
+        if [[ $TARGET == AVX3 ]]; then
+          EMULATOR="sde/sde64 -spr --"
+        elif [[ $TARGET == SVE_256 ]]; then
+          EMULATOR="qemu-aarch64-static -cpu max,sve-default-vector-length=32"
+        elif [[ $TARGET == SVE* ]]; then
+          EMULATOR="qemu-aarch64-static -cpu max,sve-default-vector-length=16"
+        fi
+
+        ${EMULATOR} ${HERE}/djxl -V | tee djxl_version.txt
         if [[ $TARGET == *_ASAN ]]; then
           grep -q ' ASAN ' djxl_version.txt || exit 1
           TARGET=${TARGET%_ASAN}
         fi
         grep -q _${TARGET}_ djxl_version.txt || exit 1
-        ${{ matrix.emulator }} python conformance.py \
-          --decoder=`pwd`/djxl \
-          --corpus=`pwd`/conformance/testcases/main_${{ matrix.name }}.txt
+
+        python conformance.py \
+          --decoder="${EMULATOR} ${HERE}/djxl" \
+          --corpus=${HERE}/conformance/testcases/main_${{ matrix.name }}.txt

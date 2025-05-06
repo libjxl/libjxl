@@ -116,15 +116,12 @@ Status PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
   }
 
   EntropyEncodingData codes;
-  std::vector<uint8_t> context_map;
   JXL_ASSIGN_OR_RETURN(
-      size_t cost,
-      BuildAndEncodeHistograms(memory_manager, HistogramParams(),
-                               kNumPatchDictionaryContexts, tokens, &codes,
-                               &context_map, writer, layer, aux_out));
+      size_t cost, BuildAndEncodeHistograms(memory_manager, HistogramParams(),
+                                            kNumPatchDictionaryContexts, tokens,
+                                            &codes, writer, layer, aux_out));
   (void)cost;
-  JXL_RETURN_IF_ERROR(
-      WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteTokens(tokens[0], codes, 0, writer, layer, aux_out));
   return true;
 }
 

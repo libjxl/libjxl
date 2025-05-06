@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
@@ -89,16 +90,12 @@ struct TreeSamples {
   void AllSamplesDone() { dedup_table_ = std::vector<uint32_t>(); }
 
   uint32_t QuantizeProperty(uint32_t prop, pixel_type v) const {
-    v = std::min(std::max(v, -kPropertyRange), kPropertyRange) + kPropertyRange;
+    v = jxl::Clamp1(v, -kPropertyRange, kPropertyRange) + kPropertyRange;
     return property_mapping[prop][v];
   }
 
   // Swaps samples in position a and b. Does nothing if a == b.
   void Swap(size_t a, size_t b);
-
-  // Cycles samples: a -> b -> c -> a. We assume a <= b <= c, so that we can
-  // just call Swap(a, b) if b==c.
-  void ThreeShuffle(size_t a, size_t b, size_t c);
 
  private:
   // TODO(veluca): as the total number of properties and predictors are known

@@ -13,15 +13,16 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
@@ -284,12 +285,14 @@ Status ProcessFrame(CodecInOut* image, float preserve_saturation,
 
   JXL_RETURN_IF_ERROR(GamutMap(image, preserve_saturation, pool));
 
-  ColorEncoding rec2020_srgb = linear_rec2020;
-  rec2020_srgb.Tf().SetTransferFunction(TransferFunction::kSRGB);
-  JXL_RETURN_IF_ERROR(rec2020_srgb.CreateICC());
+  ColorEncoding displayP3;
+  JXL_RETURN_IF_ERROR(displayP3.SetWhitePointType(WhitePoint::kD65));
+  JXL_RETURN_IF_ERROR(displayP3.SetPrimariesType(Primaries::kP3));
+  displayP3.Tf().SetTransferFunction(TransferFunction::kSRGB);
+  JXL_RETURN_IF_ERROR(displayP3.CreateICC());
   JXL_RETURN_IF_ERROR(
-      image->Main().TransformTo(rec2020_srgb, *JxlGetDefaultCms(), pool));
-  image->metadata.m.color_encoding = rec2020_srgb;
+      image->Main().TransformTo(displayP3, *JxlGetDefaultCms(), pool));
+  image->metadata.m.color_encoding = displayP3;
   return true;
 }
 
@@ -307,10 +310,18 @@ int main(int argc, const char** argv) {
       &preserve_saturation, &jpegxl::tools::ParseFloat, 0);
   const char* input_filename = nullptr;
   auto input_filename_option = parser.AddPositionalOption(
-      "input", true, "input image", &input_filename, 0);
+      "input", true, "HDR input image (PNG or PPM in Rec.2100 PQ)",
+      &input_filename, 0);
   const char* output_filename = nullptr;
   auto output_filename_option = parser.AddPositionalOption(
-      "output", true, "output image", &output_filename, 0);
+      "output_sdr", true, "SDR output image (any format, will be DisplayP3)",
+      &output_filename, 0);
+  const char* output_hdr_filename = nullptr;
+  auto output_hdr_filename_option =
+      parser.AddPositionalOption("output_hdr", false,
+                                 "HDR output image (raw rgba1010102, P3PQ),\n  "
+                                 "  For use with ultrahdr_app.",
+                                 &output_hdr_filename, 0);
 
   if (!parser.Parse(argc, argv)) {
     fprintf(stderr, "See -h for help.\n");
@@ -351,6 +362,40 @@ int main(int argc, const char** argv) {
                      "ConvertImage3FToPackedPixelFile failed.");
   JPEGXL_TOOLS_CHECK(jxl::Encode(ppf, output_filename, &encoded, pool.get()));
   JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
+
+  if (parser.GetOption(output_hdr_filename_option)->matched()) {
+    std::vector<uint8_t> encoded;
+    JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
+    JPEGXL_TOOLS_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints,
+                                         image.get(), pool.get()));
+    jxl::ColorEncoding p3pq;
+    JXL_RETURN_IF_ERROR(p3pq.SetWhitePointType(jxl::WhitePoint::kD65));
+    JXL_RETURN_IF_ERROR(p3pq.SetPrimariesType(jxl::Primaries::kP3));
+    p3pq.Tf().SetTransferFunction(jxl::TransferFunction::kPQ);
+    JXL_RETURN_IF_ERROR(p3pq.CreateICC());
+    JXL_RETURN_IF_ERROR(
+        image->Main().TransformTo(p3pq, *JxlGetDefaultCms(), pool.get()));
+    jxl::Image3F color = std::move(*image->Main().color());
+    FILE* out = fopen(output_hdr_filename, "wb");
+    for (size_t y = 0; y < color.ysize(); y++) {
+      float* const JXL_RESTRICT rows[3] = {
+          color.PlaneRow(0, y), color.PlaneRow(1, y), color.PlaneRow(2, y)};
+      for (size_t x = 0; x < color.xsize(); x++) {
+        int R = std::max(0.f, std::min(1023.f, rows[0][x] * 1023.f + 0.5f));
+        int G = std::max(0.f, std::min(1023.f, rows[1][x] * 1023.f + 0.5f));
+        int B = std::max(0.f, std::min(1023.f, rows[2][x] * 1023.f + 0.5f));
+        uint32_t RGB10 = (B << 20) | (G << 10) | R;
+        fwrite(&RGB10, 4, 1, out);
+      }
+    }
+    fclose(out);
+    printf("cjpegli %s input_sdr.jpg\n", output_filename);
+    printf("ultrahdr_app -m 0 -a 5 -t 2 -C 1 -w %" PRIuS " -h %" PRIuS
+           " -c 1 -R 1 -s 1 -Q 95 -M 1 -L 2000 -p %s -i input_sdr.jpg -z "
+           "output_ultrahdr.jpg\n",
+           color.xsize(), color.ysize(), output_hdr_filename);
+  }
+
   return EXIT_SUCCESS;
 }
 

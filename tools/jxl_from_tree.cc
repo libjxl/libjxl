@@ -20,10 +20,10 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/codec_in_out.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
@@ -460,6 +460,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Rec2100") {
     JXL_RETURN_IF_ERROR(
         io.metadata.m.color_encoding.SetPrimariesType(jxl::Primaries::k2100));
+  } else if (t == "P3") {
+    JXL_RETURN_IF_ERROR(
+        io.metadata.m.color_encoding.SetPrimariesType(jxl::Primaries::kP3));
   } else if (t == "16BitBuffers") {
     io.metadata.m.modular_16_bit_buffer_sufficient = true;
   } else {

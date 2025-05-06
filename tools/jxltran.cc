@@ -5,10 +5,13 @@
 
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
+#include <jxl/encode.h>
+#include <jxl/encode_cxx.h>
 
 #include <string>
 #include <vector>
 
+#include "lib/jxl/encode_internal.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 
@@ -26,6 +29,11 @@ struct Args {
 
     cmdline->AddHelpText("\nFile format options:", 0);
 
+    cmdline->AddOptionFlag('\0', "pack",
+                           "Pack a JPEG XL codestream"
+                           " into a file in the container file format.",
+                           &pack, &SetBooleanTrue);
+
     cmdline->AddOptionFlag('\0', "extract",
                            "Extract the JPEG XL codestream"
                            " from a file in the container file format.",
@@ -35,8 +43,47 @@ struct Args {
   const char* file_in = nullptr;
   const char* file_out = nullptr;
 
+  bool pack = false;
   bool extract = false;
 };
+
+bool validateArgs(Args const& args) {
+  if (!args.file_out) {
+    fprintf(stderr, "No output file specified.\n");
+    return false;
+  }
+
+  if (args.pack && args.extract) {
+    fprintf(stderr, "--pack and --extract options are mutually exclusive\n");
+    return false;
+  }
+
+  return true;
+}
+
+JxlEncoderStatus addHeaderBoxes(JxlEncoder& enc) {
+  constexpr std::array<unsigned char, 4> kSignatureHeader = {0xd, 0xa, 0x87,
+                                                             0xa};
+  JxlEncoderStatus status =
+      JxlEncoderAddBox(&enc, "JXL ", kSignatureHeader.data(),
+                       kSignatureHeader.size(), /*compress_box=*/false);
+  if (status != JXL_ENC_SUCCESS) {
+    fprintf(stderr, "Failed to add codestream box\n");
+    return JXL_ENC_ERROR;
+  }
+
+  constexpr std::array<unsigned char, 12> kFileTypeHeader = {
+      'j', 'x', 'l', ' ', 0, 0, 0, 0, 'j', 'x', 'l', ' '};
+
+  status = JxlEncoderAddBox(&enc, "ftyp", kFileTypeHeader.data(),
+                            kFileTypeHeader.size(), /*compress_box=*/false);
+  if (status != JXL_ENC_SUCCESS) {
+    fprintf(stderr, "Failed to add codestream box\n");
+    return JXL_ENC_ERROR;
+  }
+
+  return JXL_ENC_SUCCESS;
+}
 
 JxlDecoderStatus apply_file_format_options(
     std::vector<uint8_t> const& input_bytes,
@@ -67,7 +114,20 @@ JxlDecoderStatus apply_file_format_options(
     static constexpr uint32_t kChunkSize = 65536;
     output_bytes = std::make_shared<std::vector<uint8_t>>();
     auto& codestream = *output_bytes;
-    uint32_t already_written_bytes = 0;
+    size_t already_written_bytes = 0;
+    size_t start_of_last_codestream_box = 0;
+
+    JxlBoxType type;
+
+    uint32_t jxlc, jxll, jxlp;
+    // these aren't hardcoded because
+    // they're in native endian order
+    memcpy(&jxlc, "jxlc", sizeof(jxlc));
+    memcpy(&jxll, "jxll", sizeof(jxll));
+    memcpy(&jxlp, "jxlp", sizeof(jxlp));
+
+    uint32_t box = 0;
+    uint8_t level = 5;
 
     for (;;) {
       status = JxlDecoderProcessInput(dec.get());
@@ -78,18 +138,27 @@ JxlDecoderStatus apply_file_format_options(
         fprintf(stderr, "Error, already provided all input\n");
         return JXL_DEC_ERROR;
       } else if (status == JXL_DEC_BOX) {
-        JxlBoxType type;
         status = JxlDecoderGetBoxType(dec.get(), type, /*decompressed=*/false);
         if (status != JXL_DEC_SUCCESS) {
           fprintf(stderr, "Error, failed to get box type\n");
           return JXL_DEC_ERROR;
         }
-        if (!memcmp(type, "jxlc", 4)) {
-          codestream.resize(kChunkSize);
-          JxlDecoderSetBoxBuffer(dec.get(), codestream.data(),
-                                 codestream.size());
+        memcpy(&box, type, sizeof(box));
+        if (box == jxlc || box == jxlp) {
+          codestream.resize(codestream.size() + kChunkSize);
+          JxlDecoderSetBoxBuffer(dec.get(),
+                                 codestream.data() + already_written_bytes,
+                                 codestream.size() - already_written_bytes);
+          start_of_last_codestream_box = already_written_bytes;
+        } else if (box == jxll) {
+          JxlDecoderSetBoxBuffer(dec.get(), &level, 1);
         }
       } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+        if (box == jxll) {
+          fprintf(stderr, "jxll box too large");
+          JxlDecoderReleaseBoxBuffer(dec.get());
+          continue;
+        }
         size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
         already_written_bytes += kChunkSize - remaining;
         codestream.resize(codestream.size() + kChunkSize);
@@ -97,15 +166,80 @@ JxlDecoderStatus apply_file_format_options(
                                codestream.data() + already_written_bytes,
                                codestream.size() - already_written_bytes);
       } else if (status == JXL_DEC_BOX_COMPLETE) {
-        if (!codestream.empty()) {
+        if (box == jxlc || box == jxlp) {
           size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
           codestream.resize(codestream.size() - remaining);
+          if (box == jxlp) {
+            // Remove jxlp's indices from the codestream
+            // TODO: Warn about malformed files, like missing or unordered jxlp
+            //       or even mixed jxlp and jxlc boxes.
+            codestream.erase(
+                codestream.begin() + start_of_last_codestream_box,
+                codestream.begin() + start_of_last_codestream_box + 4);
+          }
+          already_written_bytes = codestream.size();
+        } else if (box == jxll) {
+          JxlDecoderReleaseBoxBuffer(dec.get());
+          if (level > 5) {
+            fprintf(stderr,
+                    "Warning: extracting raw codestream that"
+                    "is greater than level 5\n");
+          }
         }
+      } else if (status == JXL_DEC_SUCCESS) {
         return JXL_DEC_SUCCESS;
       } else {
         fprintf(stderr, "Unknown decoder status\n");
         return JXL_DEC_ERROR;
       }
+    }
+  }
+
+  if (args.pack) {
+    if (signature != JXL_SIG_CODESTREAM) {
+      fprintf(stderr, "Input file is not a codestream file\n");
+      return JXL_DEC_ERROR;
+    }
+
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    JxlEncoderStatus status = JxlEncoderUseBoxes(enc.get());
+    if (status != JXL_ENC_SUCCESS) {
+      fprintf(stderr, "Failed to call JxlEncoderUseBoxes\n");
+      return JXL_DEC_ERROR;
+    }
+
+    // This prevents the encoder to write header boxes, we control everything
+    // ourselves.
+    enc->wrote_bytes = true;
+
+    status = addHeaderBoxes(*enc.get());
+    if (status != JXL_ENC_SUCCESS) {
+      fprintf(stderr, "Failed to add header boxes\n");
+      return JXL_DEC_ERROR;
+    }
+
+    status = JxlEncoderAddBox(enc.get(), "jxlc", input_bytes.data(),
+                              input_bytes.size(), /*compress_box=*/false);
+    if (status != JXL_ENC_SUCCESS) {
+      fprintf(stderr, "Failed to add codestream box\n");
+      return JXL_DEC_ERROR;
+    }
+
+    JxlEncoderCloseInput(enc.get());
+
+    output_bytes = std::make_shared<std::vector<uint8_t>>();
+    auto& container = *output_bytes;
+
+    // 12 bytes for "JXL ", 20 bytes for "ftyp" and 12 bytes for the maximal
+    // header size of jxlc.
+    container.resize(input_bytes.size() + 12 + 20 + 12);
+    auto data = container.data();
+    auto available = container.size();
+    status = JxlEncoderProcessOutput(enc.get(), &data, &available);
+    container.resize(container.size() - available);
+    if (status != JXL_ENC_SUCCESS) {
+      fprintf(stderr, "Failed to encode file\n");
+      return JXL_DEC_ERROR;
     }
   }
 
@@ -130,8 +264,7 @@ int JxlTranMain(int argc, const char* argv[]) {
     return EXIT_SUCCESS;
   }
 
-  if (!args.file_out) {
-    fprintf(stderr, "No output file specified.\n");
+  if (!validateArgs(args)) {
     return EXIT_FAILURE;
   }
 

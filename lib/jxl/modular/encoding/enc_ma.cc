@@ -116,57 +116,22 @@ IntersectionType BoxIntersects(StaticPropRange needle, StaticPropRange haystack,
 }
 
 void SplitTreeSamples(TreeSamples &tree_samples, size_t begin, size_t pos,
-                      size_t end, size_t prop) {
-  auto cmp = [&](size_t a, size_t b) {
-    return static_cast<int32_t>(tree_samples.Property(prop, a)) -
-           static_cast<int32_t>(tree_samples.Property(prop, b));
-  };
-  Rng rng(0);
-  while (end > begin + 1) {
-    {
-      size_t pivot = rng.UniformU(begin, end);
-      tree_samples.Swap(begin, pivot);
+                      size_t end, size_t prop, uint32_t val) {
+  size_t begin_pos = begin;
+  size_t end_pos = pos;
+  do {
+    while (begin_pos < pos && tree_samples.Property(prop, begin_pos) <= val) {
+      ++begin_pos;
     }
-    size_t pivot_begin = begin;
-    size_t pivot_end = pivot_begin + 1;
-    for (size_t i = begin + 1; i < end; i++) {
-      JXL_DASSERT(i >= pivot_end);
-      JXL_DASSERT(pivot_end > pivot_begin);
-      int32_t cmp_result = cmp(i, pivot_begin);
-      if (cmp_result < 0) {  // i < pivot, move pivot forward and put i before
-                             // the pivot.
-        tree_samples.ThreeShuffle(pivot_begin, pivot_end, i);
-        pivot_begin++;
-        pivot_end++;
-      } else if (cmp_result == 0) {
-        tree_samples.Swap(pivot_end, i);
-        pivot_end++;
-      }
+    while (end_pos < end && tree_samples.Property(prop, end_pos) > val) {
+      ++end_pos;
     }
-    JXL_DASSERT(pivot_begin >= begin);
-    JXL_DASSERT(pivot_end > pivot_begin);
-    JXL_DASSERT(pivot_end <= end);
-    for (size_t i = begin; i < pivot_begin; i++) {
-      JXL_DASSERT(cmp(i, pivot_begin) < 0);
+    if (begin_pos < pos && end_pos < end) {
+      tree_samples.Swap(begin_pos, end_pos);
     }
-    for (size_t i = pivot_end; i < end; i++) {
-      JXL_DASSERT(cmp(i, pivot_begin) > 0);
-    }
-    for (size_t i = pivot_begin; i < pivot_end; i++) {
-      JXL_DASSERT(cmp(i, pivot_begin) == 0);
-    }
-    // We now have that [begin, pivot_begin) is < pivot, [pivot_begin,
-    // pivot_end) is = pivot, and [pivot_end, end) is > pivot.
-    // If pos falls in the first or the last interval, we continue in that
-    // interval; otherwise, we are done.
-    if (pivot_begin > pos) {
-      end = pivot_begin;
-    } else if (pivot_end < pos) {
-      begin = pivot_end;
-    } else {
-      break;
-    }
-  }
+    ++begin_pos;
+    ++end_pos;
+  } while (begin_pos < pos && end_pos < end);
 }
 
 void FindBestSplit(TreeSamples &tree_samples, float threshold,
@@ -452,7 +417,8 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       // Split node and try to split children.
       MakeSplitNode(pos, p, dequant, best->lpred, 0, best->rpred, 0, tree);
       // "Sort" according to winning property
-      SplitTreeSamples(tree_samples, begin, best->pos, end, best->prop);
+      SplitTreeSamples(tree_samples, begin, best->pos, end, best->prop,
+                       best->val);
       if (p >= kNumStaticProperties) {
         used_properties |= 1 << best->prop;
       }
@@ -708,47 +674,27 @@ void TreeSamples::Swap(size_t a, size_t b) {
   std::swap(sample_counts[a], sample_counts[b]);
 }
 
-void TreeSamples::ThreeShuffle(size_t a, size_t b, size_t c) {
-  if (b == c) {
-    Swap(a, b);
-    return;
-  }
-
-  for (auto &r : residuals) {
-    auto tmp = r[a];
-    r[a] = r[c];
-    r[c] = r[b];
-    r[b] = tmp;
-  }
-  for (auto &p : props) {
-    auto tmp = p[a];
-    p[a] = p[c];
-    p[c] = p[b];
-    p[b] = tmp;
-  }
-  auto tmp = sample_counts[a];
-  sample_counts[a] = sample_counts[c];
-  sample_counts[c] = sample_counts[b];
-  sample_counts[b] = tmp;
-}
-
 namespace {
 std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
                                        size_t num_chunks) {
-  if (histogram.empty()) return {};
+  if (histogram.empty() || num_chunks == 0) return {};
+  uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
+  if (sum == 0) return {};
   // TODO(veluca): selecting distinct quantiles is likely not the best
   // way to go about this.
   std::vector<int32_t> thresholds;
-  uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
   uint64_t cumsum = 0;
   uint64_t threshold = 1;
-  for (size_t i = 0; i + 1 < histogram.size(); i++) {
+  for (size_t i = 0; i < histogram.size(); i++) {
     cumsum += histogram[i];
-    if (cumsum >= threshold * sum / num_chunks) {
+    if (cumsum * num_chunks >= threshold * sum) {
       thresholds.push_back(i);
-      while (cumsum > threshold * sum / num_chunks) threshold++;
+      while (cumsum * num_chunks >= threshold * sum) threshold++;
     }
   }
+  JXL_DASSERT(thresholds.size() <= num_chunks);
+  // last value collects all histogram and is not really a threshold
+  thresholds.pop_back();
   return thresholds;
 }
 
@@ -757,10 +703,10 @@ std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
   if (samples.empty()) return {};
   int min = *std::min_element(samples.begin(), samples.end());
   constexpr int kRange = 512;
-  min = std::min(std::max(min, -kRange), kRange);
+  min = jxl::Clamp1(min, -kRange, kRange);
   std::vector<uint32_t> counts(2 * kRange + 1);
   for (int s : samples) {
-    uint32_t sample_offset = std::min(std::max(s, -kRange), kRange) - min;
+    uint32_t sample_offset = jxl::Clamp1(s, -kRange, kRange) - min;
     counts[sample_offset]++;
   }
   std::vector<int32_t> thresholds = QuantizeHistogram(counts, num_chunks);
@@ -913,6 +859,7 @@ void TreeSamples::PreQuantizeProperties(
                  compact_properties[i][mapped]) {
         mapped++;
       }
+      JXL_DASSERT(mapped < 256);
       // property_mapping[i] of a value V is `mapped` if
       // compact_properties[i][mapped] <= j and
       // compact_properties[i][mapped-1] > j
