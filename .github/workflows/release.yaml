@@ -28,7 +28,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -106,7 +106,9 @@ jobs:
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
+      permissions:
+        contents: write
+      uses: actions/upload-release-asset
       with:
         files: ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
         repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -233,7 +235,9 @@ jobs:
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
+      permissions:
+        contents: write
+      uses: actions/upload-release-asset
       with:
         files: ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
         repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -382,7 +386,9 @@ jobs:
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
+      permissions:
+        contents: write
+      uses: actions/upload-release-asset
       with:
         files: jxl-${{matrix.triplet}}.zip
         repo-token: ${{ secrets.GITHUB_TOKEN }}

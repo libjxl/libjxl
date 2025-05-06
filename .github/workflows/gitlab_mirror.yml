@@ -3,7 +3,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# Workflow for building and running tests.
+# Workflow for mirroring the github libjxl repo to the wg1 gitlab repo
 
 name: Mirror to GitLab
 
@@ -21,8 +21,6 @@ permissions:
 
 jobs:
   mirror:
-    permissions:
-      contents: write  # for Git to git push
     if: github.repository_owner == 'libjxl'
     runs-on: ubuntu-latest
 
