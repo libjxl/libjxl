@@ -687,9 +687,9 @@ std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
   uint64_t threshold = 1;
   for (size_t i = 0; i < histogram.size(); i++) {
     cumsum += histogram[i];
-    if (cumsum * num_chunks >= threshold * sum) {
+    if (cumsum >= threshold * sum / num_chunks) {
       thresholds.push_back(i);
-      while (cumsum * num_chunks >= threshold * sum) threshold++;
+      while (cumsum > threshold * sum / num_chunks) threshold++;
     }
   }
   JXL_DASSERT(thresholds.size() <= num_chunks);
