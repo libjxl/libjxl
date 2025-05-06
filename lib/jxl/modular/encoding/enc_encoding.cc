@@ -300,8 +300,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
             x, y, channel.w, top, left, topright, topleft, toptop, &properties,
             offset);
         uint32_t pos =
-            kPropRangeFast + std::min(std::max(-kPropRangeFast, properties[0]),
-                                      kPropRangeFast - 1);
+            kPropRangeFast +
+            jxl::Clamp1(properties[0], -kPropRangeFast, kPropRangeFast - 1);
         uint32_t ctx_id = tree_lut->context_lookup[pos];
         int32_t residual = r[x] - guess;
         *tokenp++ = Token(ctx_id, PackSigned(residual));

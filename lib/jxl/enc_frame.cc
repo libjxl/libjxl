@@ -1038,7 +1038,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
     int num_thresholds = (CeilLog2Nonzero(total_dc[i]) - 12) / 2;
     // up to 3 buckets per channel:
     // dark/medium/bright, yellow/unsat/blue, green/unsat/red
-    num_thresholds = std::min(std::max(num_thresholds, 0), 2);
+    num_thresholds = jxl::Clamp1(num_thresholds, 0, 2);
     size_t cumsum = 0;
     size_t cut = total_dc[i] / (num_thresholds + 1);
     for (int j = 0; j < 2048; j++) {

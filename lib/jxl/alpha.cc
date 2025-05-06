@@ -8,11 +8,12 @@
 #include <algorithm>
 #include <cstring>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 
 namespace jxl {
 
-static float Clamp(float x) { return std::max(std::min(1.0f, x), 0.0f); }
+static float Clamp(float x) { return jxl::Clamp1(x, 0.0f, 1.0f); }
 
 void PerformAlphaBlending(const AlphaBlendingInputLayer& bg,
                           const AlphaBlendingInputLayer& fg,
