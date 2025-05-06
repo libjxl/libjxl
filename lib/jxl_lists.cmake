@@ -143,7 +143,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/compressed_dc.h
   jxl/convolve-inl.h
   jxl/convolve.h
-  jxl/convolve_separable5.cc
   jxl/convolve_slow.cc
   jxl/convolve_symmetric5.cc
   jxl/dct-inl.h
@@ -325,6 +324,7 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
   jxl/enc_context_map.h
+  jxl/enc_convolve_separable5.cc
   jxl/enc_debug_image.cc
   jxl/enc_debug_image.h
   jxl/enc_detect_dots.cc
