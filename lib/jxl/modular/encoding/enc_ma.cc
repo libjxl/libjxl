@@ -677,24 +677,26 @@ void TreeSamples::Swap(size_t a, size_t b) {
 namespace {
 std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
                                        size_t num_chunks) {
+  // 1) Safety guards
   if (histogram.empty() || num_chunks == 0) return {};
   uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
   if (sum == 0) return {};
-  // TODO(veluca): selecting distinct quantiles is likely not the best
-  // way to go about this.
   std::vector<int32_t> thresholds;
+  thresholds.reserve(num_chunks - 1);
   uint64_t cumsum = 0;
-  uint64_t threshold = 1;
-  for (size_t i = 0; i < histogram.size(); i++) {
+  uint64_t next_quantile = 1;  // we’re looking to hit 1/num_chunks, 2/num_chunks, …
+  // 2) Single‐pass, multiply‐only check, early out
+  for (size_t i = 0; i < histogram.size() && next_quantile < num_chunks; ++i) {
     cumsum += histogram[i];
-    if (cumsum >= threshold * sum / num_chunks) {
-      thresholds.push_back(i);
-      while (cumsum > threshold * sum / num_chunks) threshold++;
+    // multiply‐only equivalent of:
+    //    cumsum >= (next_quantile/num_chunks) * sum
+    if (cumsum * num_chunks >= next_quantile * sum) {
+      thresholds.push_back(static_cast<int32_t>(i));
+      ++next_quantile;  // move on to the *next* quantile
     }
   }
   JXL_DASSERT(thresholds.size() <= num_chunks);
-  // last value collects all histogram and is not really a threshold
-  thresholds.pop_back();
+  // We will have pushed exactly (num_chunks−1) thresholds
   return thresholds;
 }
 
