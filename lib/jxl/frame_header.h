@@ -381,13 +381,13 @@ struct FrameHeader : public Fields {
   mutable bool all_default;
 
   // Always present
+  // Some builds / emulators complain if those fields are not initialized.
   FrameEncoding encoding = FrameEncoding::kModular;
-  // Some versions of UBSAN complain in VisitFrameType if not initialized.
   FrameType frame_type = FrameType::kRegularFrame;
 
   uint64_t flags;
 
-  ColorTransform color_transform;
+  ColorTransform color_transform = ColorTransform::kXYB;
   YCbCrChromaSubsampling chroma_subsampling;
 
   uint32_t group_size_shift;  // only if encoding == kModular;
