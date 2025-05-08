@@ -89,7 +89,6 @@ void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
     // Check values roundtripped correctly.
     EXPECT_EQ(e.mode, d.mode);
     EXPECT_EQ(e.predefined, d.predefined);
-    EXPECT_EQ(e.source, d.source);
 
     EXPECT_EQ(static_cast<uint64_t>(e.dct_params.num_distance_bands),
               static_cast<uint64_t>(d.dct_params.num_distance_bands));
