@@ -5,8 +5,6 @@
 
 // Fast SIMD floating-point (I)DCT, any power of two.
 
-#include <type_traits>
-
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 

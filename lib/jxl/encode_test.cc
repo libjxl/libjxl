@@ -27,12 +27,14 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/c_callback_support.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"

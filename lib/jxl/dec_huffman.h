@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/huffman_table.h"
 

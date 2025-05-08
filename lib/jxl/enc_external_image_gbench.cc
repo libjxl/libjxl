@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "benchmark/benchmark.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/image_bundle.h"

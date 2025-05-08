@@ -5,11 +5,10 @@
 
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
 
-#include <inttypes.h>
-#include <string.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include "lib/jxl/base/common.h"

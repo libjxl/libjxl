@@ -8,7 +8,6 @@
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
-#include <cmath>
 #include <cstdlib>
 #include <vector>
 

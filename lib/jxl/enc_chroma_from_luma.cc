@@ -8,7 +8,6 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
-#include <cfloat>
 #include <cmath>
 #include <cstdlib>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
@@ -16,6 +15,7 @@
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/enc_bit_writer.h"

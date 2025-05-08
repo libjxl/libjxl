@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 #include <hwy/tests/hwy_gtest.h>
-#include <iterator>
 #include <numeric>
 #include <utility>
 #include <vector>

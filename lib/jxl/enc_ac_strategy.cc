@@ -17,6 +17,7 @@
 #include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/quant_weights.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_ac_strategy.cc"

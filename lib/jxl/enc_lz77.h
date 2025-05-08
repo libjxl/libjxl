@@ -6,7 +6,7 @@
 #ifndef LIB_JXL_ENC_LZ77_H_
 #define LIB_JXL_ENC_LZ77_H_
 
-#include <cstdint>
+#include <cstddef>
 #include <vector>
 
 #include "lib/jxl/dec_ans.h"
