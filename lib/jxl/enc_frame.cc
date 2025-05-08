@@ -2488,7 +2488,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     return JXL_FAILURE("Too many levels of progressive DC");
   }
 
-  if (cparams.butteraugli_distance != 0 &&
+  if (cparams.modular_mode == false &&
       cparams.butteraugli_distance < kMinButteraugliDistance) {
     return JXL_FAILURE("Butteraugli distance is too low (%f)",
                        cparams.butteraugli_distance);
