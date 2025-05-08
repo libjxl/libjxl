@@ -31,6 +31,7 @@
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"

@@ -6,7 +6,6 @@
 #include "lib/jxl/enc_cluster.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -25,7 +24,6 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/fast_math-inl.h"
-#include "lib/jxl/enc_ans.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {

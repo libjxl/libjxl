@@ -8,12 +8,13 @@
 
 // Encoder-only parameter needed for ANS entropy encoding methods.
 
-#include <stdint.h>
-#include <stdlib.h>
-
+#include <cstdint>
+#include <cstdlib>
 #include <vector>
 
 #include "lib/jxl/ans_common.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
 
