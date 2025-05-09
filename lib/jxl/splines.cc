@@ -79,7 +79,7 @@ float ContinuousIDCT(const Dct32& dct, const float t) {
 
 template <typename DF>
 void DrawSegment(DF df, const SplineSegment& segment, const bool add,
-                 const size_t y, const size_t x, float* JXL_RESTRICT rows[3]) {
+                 const size_t y, const size_t x, const size_t row_x0, float* JXL_RESTRICT rows[3]) {
   Rebind<int32_t, DF> di;
   const auto inv_sigma = Set(df, segment.inv_sigma);
   const auto half = Set(df, 0.5f);
@@ -98,8 +98,8 @@ void DrawSegment(DF df, const SplineSegment& segment, const bool add,
           Mul(one_dimensional_factor, one_dimensional_factor));
   for (size_t c = 0; c < 3; ++c) {
     const auto cm = Set(df, add ? segment.color[c] : -segment.color[c]);
-    const auto in = LoadU(df, rows[c] + x);
-    StoreU(MulAdd(cm, local_intensity, in), df, rows[c] + x);
+    const auto in = LoadU(df, rows[c] + x - row_x0);
+    StoreU(MulAdd(cm, local_intensity, in), df, rows[c] + x - row_x0);
   }
 }
 
@@ -112,10 +112,10 @@ void DrawSegment(const SplineSegment& segment, const bool add, const size_t y,
       x1, std::llround(segment.center_x + segment.maximum_distance) + 1);
   HWY_FULL(float) df;
   for (; x + static_cast<ssize_t>(Lanes(df)) <= x1; x += Lanes(df)) {
-    DrawSegment(df, segment, add, y, x, rows);
+    DrawSegment(df, segment, add, y, x, x0, rows);
   }
   for (; x < x1; ++x) {
-    DrawSegment(HWY_CAPPED(float, 1)(), segment, add, y, x, rows);
+    DrawSegment(HWY_CAPPED(float, 1)(), segment, add, y, x, x0, rows);
   }
 }
 
