@@ -867,7 +867,7 @@ StatusOr<size_t> EntropyEncodingData::BuildAndStoreEntropyCodes(
       }
     } else {
       JXL_ENSURE(encoding_info.empty());
-      fill(context_map.begin(), context_map.end(), 0);
+      std::fill(context_map.begin(), context_map.end(), 0);
       size_t max_symbol = 0;
       for (const Histogram& h : builder) {
         max_symbol = std::max(h.counts.size(), max_symbol);
