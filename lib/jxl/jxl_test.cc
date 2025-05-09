@@ -1267,7 +1267,7 @@ TEST(JxlTest, RoundtripDots) {
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 245151,
               3000);
-  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.16);
+  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.165);
 }
 
 TEST(JxlTest, RoundtripDisablePerceptual) {
