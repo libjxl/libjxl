@@ -31,8 +31,8 @@ static constexpr size_t kLog2NumQuantModes = 3;
 struct DctQuantWeightParams {
   static constexpr size_t kLog2MaxDistanceBands = 4;
   static constexpr size_t kMaxDistanceBands = 1 + (1 << kLog2MaxDistanceBands);
-  typedef std::array<std::array<float, kMaxDistanceBands>, 3>
-      DistanceBandsArray;
+  using DistanceBandsArray =
+      std::array<std::array<float, kMaxDistanceBands>, 3>;
 
   size_t num_distance_bands = 0;
   DistanceBandsArray distance_bands = {};
@@ -69,11 +69,11 @@ struct QuantEncodingInternal {
   template <Mode mode>
   struct Tag {};
 
-  typedef std::array<std::array<float, 3>, 3> IdWeights;
-  typedef std::array<std::array<float, 6>, 3> DCT2Weights;
-  typedef std::array<std::array<float, 2>, 3> DCT4Multipliers;
-  typedef std::array<std::array<float, 9>, 3> AFVWeights;
-  typedef std::array<float, 3> DCT4x8Multipliers;
+  using IdWeights = std::array<std::array<float, 3>, 3>;
+  using DCT2Weights = std::array<std::array<float, 6>, 3>;
+  using DCT4Multipliers = std::array<std::array<float, 2>, 3>;
+  using AFVWeights = std::array<std::array<float, 9>, 3>;
+  using DCT4x8Multipliers = std::array<float, 3>;
 
   template <size_t A>
   static constexpr QuantEncodingInternal Library() {
@@ -353,9 +353,8 @@ class DequantMatrices {
 
   static const QuantEncoding* Library();
 
-  typedef std::array<QuantEncodingInternal,
-                     kNumPredefinedTables * kNumQuantTables>
-      DequantLibraryInternal;
+  using DequantLibraryInternal =
+      std::array<QuantEncodingInternal, kNumPredefinedTables * kNumQuantTables>;
   // Return the array of library kNumPredefinedTables QuantEncoding entries as
   // a constexpr array. Use Library() to obtain a pointer to the copy in the
   // .cc file.

@@ -1818,7 +1818,7 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
                            const StreamingTestParam& p,
                            const JxlBasicInfo& basic_info,
                            size_t number_extra_channels, bool streaming) {
-    JxlEncoderStruct* enc = frame_settings->enc;
+    JxlEncoder* enc = frame_settings->enc;
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
     if (p.fast_lossless()) {
       EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -2091,7 +2091,7 @@ TEST(EncoderTest, CMYK) {
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
   JxlEncoderPtr enc_ptr = JxlEncoderMake(nullptr);
-  JxlEncoderStruct* enc = enc_ptr.get();
+  JxlEncoder* enc = enc_ptr.get();
   ASSERT_NE(nullptr, enc);
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
