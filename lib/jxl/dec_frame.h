@@ -243,7 +243,7 @@ class FrameDecoder {
   }
 
  private:
-  typedef std::array<BitReader*, kMaxNumPasses> PassesReaders;
+  using PassesReaders = std::array<BitReader*, kMaxNumPasses>;
 
   Status ProcessDCGlobal(BitReader* br);
   Status ProcessDCGroup(size_t dc_group_id, BitReader* br);

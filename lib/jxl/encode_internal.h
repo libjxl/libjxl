@@ -66,13 +66,13 @@ Codestream boxes are used, the offset is counted within the concatenated
 codestream, bytes from box headers or non-codestream boxes are not counted.
 */
 
-typedef struct JxlEncoderFrameIndexBoxEntryStruct {
+struct JxlEncoderFrameIndexBoxEntry {
   bool to_be_indexed;
   uint32_t duration;
   uint64_t OFFi;
-} JxlEncoderFrameIndexBoxEntry;
+};
 
-typedef struct JxlEncoderFrameIndexBoxStruct {
+struct JxlEncoderFrameIndexBox {
   // We always need to record the first frame entry, so presence of the
   // first entry alone is not an indication if it was requested to be
   // stored.
@@ -115,11 +115,11 @@ typedef struct JxlEncoderFrameIndexBoxStruct {
     e.duration = duration;
     entries.push_back(e);
   }
-} JxlEncoderFrameIndexBox;
+};
 
 // The encoder options (such as quality, compression speed, ...) for a single
 // frame, but not encoder-wide options such as box-related options.
-typedef struct JxlEncoderFrameSettingsValuesStruct {
+struct JxlEncoderFrameSettingsValues {
   // lossless is a separate setting from cparams because it is a combination
   // setting that overrides multiple settings inside of cparams.
   bool lossless;
@@ -130,9 +130,9 @@ typedef struct JxlEncoderFrameSettingsValuesStruct {
   JxlBitDepth image_bit_depth;
   bool frame_index_box = false;
   jxl::AuxOut* aux_out = nullptr;
-} JxlEncoderFrameSettingsValues;
+};
 
-typedef std::array<uint8_t, 4> BoxType;
+using BoxType = std::array<uint8_t, 4>;
 
 // Utility function that makes a BoxType from a string literal. The string must
 // have 4 characters, a 5th null termination character is optional.
@@ -594,8 +594,8 @@ jxl::Status AppendData(JxlEncoderOutputProcessorWrapper& output_processor,
 
 // Internal use only struct, can only be initialized correctly by
 // JxlEncoderCreate.
-struct JxlEncoderStruct {
-  JxlEncoderStruct() : output_processor(&memory_manager) {}
+struct JxlEncoder {
+  JxlEncoder() : output_processor(&memory_manager) {}
   JxlMemoryManager memory_manager;
   jxl::MemoryManagerUniquePtr<jxl::ThreadPool> thread_pool{
       nullptr, jxl::MemoryManagerDeleteHelper(&memory_manager)};
@@ -676,12 +676,12 @@ struct JxlEncoderStruct {
                                     const BoxContents& contents);
 };
 
-struct JxlEncoderFrameSettingsStruct {
+struct JxlEncoderFrameSettings {
   JxlEncoder* enc;
   jxl::JxlEncoderFrameSettingsValues values;
 };
 
-struct JxlEncoderStatsStruct {
+struct JxlEncoderStats {
   std::unique_ptr<jxl::AuxOut> aux_out;
 };
 

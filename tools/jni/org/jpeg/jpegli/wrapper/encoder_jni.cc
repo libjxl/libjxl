@@ -108,7 +108,7 @@ struct DestinationManager {
   }
 };
 
-typedef std::array<jint, 33> Config;
+using Config = std::array<jint, 33>;
 
 class Encoder {
  public:
