@@ -1261,13 +1261,13 @@ TEST(JxlTest, RoundtripDots) {
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
   cparams.AddOption(JXL_ENC_FRAME_SETTING_DOTS, 1);
-  cparams.distance = 0.04;
+  cparams.distance = 0.05;
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 276166,
-              4000);
-  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.14);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 245151,
+              3000);
+  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.165);
 }
 
 TEST(JxlTest, RoundtripDisablePerceptual) {
@@ -1708,8 +1708,8 @@ TEST(JxlTest, RoundtripProgressive) {
 
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 71544,
-              750);
-  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.4);
+              500);
+  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.3);
 }
 
 TEST(JxlTest, RoundtripProgressiveLevel2Slow) {

@@ -1530,10 +1530,13 @@ JxlEncoderStatus JxlEncoderSetFrameDistance(
                          "Distance has to be in [0.0..25.0] (corresponding to "
                          "quality in [0.0..100.0])");
   }
-  if (distance > 0.f && distance < 0.01f) {
-    distance = 0.01f;
+  if (distance > 0.f && distance < jxl::kMinButteraugliDistance) {
+    distance = jxl::kMinButteraugliDistance;
   }
   frame_settings->values.cparams.butteraugli_distance = distance;
+  if (distance == 0.f) {
+    return JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+  }
   return JxlErrorOrStatus::Success();
 }
 

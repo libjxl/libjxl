@@ -135,7 +135,7 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
           std::max(static_cast<int>(SpeedTier::kTortoise),
                    static_cast<int>(cparams.speed_tier) - 1));
       cparams.butteraugli_distance =
-          std::max(kMinButteraugliDistance,
+          std::max(kMinButteraugliDistance * 0.02f,
                    enc_state->cparams.butteraugli_distance * 0.02f);
     } else {
       cparams.max_error_mode = true;
