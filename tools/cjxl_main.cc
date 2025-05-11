@@ -678,6 +678,17 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
   params->alpha_distance = alpha_distance_set ? args->alpha_distance : 0;
 }
 
+// Set progressive options before processing flags
+if (args->progressive) {
+  args->qprogressive_ac = true;
+  if (args->progressive_dc = -1) {
+    args->progressive_dc = 1;
+  }
+  args->group_order = 1;
+  args->responsive = 1;
+  responsive_set = true;
+}
+
 void ProcessFlags(const jxl::extras::Codec codec,
                   const jxl::extras::PackedPixelFile& ppf,
                   const std::vector<uint8_t>* jpeg_bytes,
@@ -798,12 +809,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
               });
   ProcessFlag("progressive_ac", static_cast<int64_t>(args->progressive_ac),
               JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC, params);
-
-  if (args->progressive) {
-    args->qprogressive_ac = true;
-    args->responsive = 1;
-    responsive_set = true;
-  }
+  
   if (responsive_set) {
     ProcessFlag("responsive", args->responsive,
                 JXL_ENC_FRAME_SETTING_RESPONSIVE, params);
