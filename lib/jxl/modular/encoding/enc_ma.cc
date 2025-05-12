@@ -373,7 +373,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
           bool zero_entropy_side = rcost == 0 || lcost == 0;
 
           SplitInfo &best_ref =
-              prop < kNumStaticProperties
+              tree_samples.PropertyFromIndex(prop) < kNumStaticProperties
                   ? (zero_entropy_side ? best_split_static_constant
                                        : best_split_static)
                   : (adds_wp ? best_split_nonstatic : best_split_nowp);
