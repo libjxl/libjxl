@@ -942,9 +942,10 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
   }
   std::vector<std::vector<size_t>> histo(9, std::vector<size_t>(kNumEPFVals));
   std::vector<size_t> totals(9, 1);
-  const float c5 = 0.007620386618483585f;
-  const float c6 = 0.0083224805679680686f;
-  const float c7 = 0.99663939685686753;
+  static const float c5 = 0.008;
+  static const float c6 = 0.0082;
+  static const float c7 = 1.0;
+  const float favor_no_smoothing = c7 - c5 * clamped_butteraugli;
   for (size_t by = 0; by < frame_dim.ysize_blocks; by++) {
     uint8_t* JXL_RESTRICT out_row = epf_sharpness.Row(by);
     uint8_t* JXL_RESTRICT prev_row = epf_sharpness.Row(by > 0 ? by - 1 : 0);
@@ -958,7 +959,7 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       for (uint8_t val : epf_steps) {
         float error = error_images[val].Row(by)[bx];
         if (val == 0) {
-          error *= c7 - c5 * clamped_butteraugli;
+	  error *= favor_no_smoothing;
         }
         if (error < best_error) {
           best_val = val;
@@ -980,7 +981,7 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
   }
   const float c1 = 0.059588212153340203f;
   const float c2 = 0.10599497107315753f;
-  const float c3base = 0.97;
+  const float c3base = 0.94;
   const float c3 = std::pow(c3base, clamped_butteraugli);
   const float c4 = 1.247544678665836f;
   const float context_weight = c1 + c2 * clamped_butteraugli;
