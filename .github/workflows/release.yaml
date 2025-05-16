@@ -379,10 +379,9 @@ jobs:
 
     - name: Package release zip
       if: github.event_name == 'release'
-      shell: 'powershell'
       run: |
-        Compress-Archive -Path prefix\bin\*, prefix\lib\* `
-          -DestinationPath jxl-${{matrix.triplet}}.zip
+        cd prefix
+        C:\"Program Files"\7-Zip\7z.exe a ../jxl-${{matrix.triplet}}.7z bin/* lib/*
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
@@ -390,5 +389,5 @@ jobs:
         contents: write
       uses: actions/upload-release-asset
       with:
-        files: jxl-${{matrix.triplet}}.zip
+        files: jxl-${{matrix.triplet}}.7z
         repo-token: ${{ secrets.GITHUB_TOKEN }}
