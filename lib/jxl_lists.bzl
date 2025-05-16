@@ -302,6 +302,8 @@ libjxl_dec_sources = [
 libjxl_enc_sources = [
     "jxl/butteraugli/butteraugli.cc",
     "jxl/butteraugli/butteraugli.h",
+    "jxl/convolve_separable5.cc",
+    "jxl/convolve_separable7.cc",
     "jxl/enc_ac_strategy.cc",
     "jxl/enc_ac_strategy.h",
     "jxl/enc_adaptive_quantization.cc",
@@ -388,6 +390,8 @@ libjxl_enc_sources = [
     "jxl/enc_xyb.h",
     "jxl/encode.cc",
     "jxl/encode_internal.h",
+    "jxl/gauss_blur.cc",
+    "jxl/gauss_blur.h",
     "jxl/jpeg/enc_jpeg_data.cc",
     "jxl/jpeg/enc_jpeg_data.h",
     "jxl/jpeg/enc_jpeg_data_reader.cc",
