@@ -197,12 +197,12 @@ TEST(ModularTest, RoundtripLossy) {
   size_t compressed_size;
   JXL_EXPECT_OK(
       Roundtrip(io.get(), cparams, dparams, io_out.get(), _, &compressed_size));
-  EXPECT_LE(compressed_size, 30000u);
+  EXPECT_LE(compressed_size, 23000u);
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io->frames, io_out->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
-      2.3);
+      3.0);
 }
 
 TEST(ModularTest, RoundtripLossy16) {
@@ -227,12 +227,12 @@ TEST(ModularTest, RoundtripLossy16) {
   size_t compressed_size;
   JXL_EXPECT_OK(
       Roundtrip(io.get(), cparams, dparams, io_out.get(), _, &compressed_size));
-  EXPECT_LE(compressed_size, 300u);
+  EXPECT_LE(compressed_size, 230u);
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io->frames, io_out->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
-      1.6);
+      1.8);
 }
 
 TEST(ModularTest, RoundtripExtraProperties) {

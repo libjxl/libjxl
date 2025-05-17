@@ -81,7 +81,9 @@ const float squeeze_luma_factor =
     1.1;  // for easy tweaking of the balance between luma (or anything
           // non-chroma) and chroma (decrease this number for higher quality
           // luma)
-const float squeeze_quality_factor_xyb = 4.8f;
+const float squeeze_quality_factor_xyb = 4.0f;
+const float squeeze_quality_factor_y = 1.5f;
+
 const float squeeze_xyb_qtable[3][16] = {
     {163.84, 81.92, 40.96, 20.48, 10.24, 5.12, 2.56, 1.28, 0.64, 0.32, 0.16,
      0.08, 0.04, 0.02, 0.01, 0.005},  // Y
@@ -962,7 +964,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     std::vector<float> quantizers;
     for (size_t i = 0; i < 3; i++) {
       float dist = cparams_.butteraugli_distance;
-      quantizers.push_back(quantizer * dist * bitdepth_correction);
+      quantizers.push_back(quantizer * powf(dist, 1.2) * bitdepth_correction);
     }
     for (size_t i = 0; i < extra_channels.size(); i++) {
       int ec_bitdepth =
@@ -990,9 +992,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
       if (nb_chans > 2 && i >= gi.channel.size() - 4 && cparams_.responsive) {
         component = 1;
       }
+      component = ch.component;
       if (cparams_.color_transform == ColorTransform::kXYB && component < 3) {
         q = quantizers[component] * squeeze_quality_factor_xyb *
             squeeze_xyb_qtable[component][shift];
+        if (component == 0) q *= squeeze_quality_factor_y;
       } else {
         if (cparams_.colorspace != 0 && component > 0 && component < 3) {
           q = quantizers[component] * squeeze_quality_factor *
