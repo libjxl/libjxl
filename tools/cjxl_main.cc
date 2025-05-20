@@ -678,17 +678,6 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
   params->alpha_distance = alpha_distance_set ? args->alpha_distance : 0;
 }
 
-// Set progressive options before processing flags
-if (args->progressive) {
-  args->qprogressive_ac = true;
-  if (args->progressive_dc = -1) {
-    args->progressive_dc = 1;
-  }
-  args->group_order = 1;
-  args->responsive = 1;
-  responsive_set = true;
-}
-
 void ProcessFlags(const jxl::extras::Codec codec,
                   const jxl::extras::PackedPixelFile& ppf,
                   const std::vector<uint8_t>* jpeg_bytes,
@@ -775,6 +764,19 @@ void ProcessFlags(const jxl::extras::Codec codec,
 
   SetDistanceFromFlags(cmdline, args, params, codec);
 
+  bool responsive_set = cmdline->GetOption(args->opt_responsive_id)->matched();
+  
+  // Set progressive options before processing flags
+  if (args->progressive) {
+    args->qprogressive_ac = true;
+    if (args->progressive_dc == -1) {
+      args->progressive_dc = 1;
+    }
+    args->group_order = jxl::Override::kOn;
+    args->responsive = 1;
+    responsive_set = true;
+  }
+
   if (args->group_order != jxl::Override::kOn &&
       (args->center_x != -1 || args->center_y != -1)) {
     std::cerr << "Invalid flag combination. Setting --center_x or --center_y "
@@ -799,8 +801,6 @@ void ProcessFlags(const jxl::extras::Codec codec,
               });
 
   // Progressive/responsive mode settings.
-  bool responsive_set = cmdline->GetOption(args->opt_responsive_id)->matched();
-
   ProcessFlag("progressive_dc", args->progressive_dc,
               JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, params,
               [](int64_t x) -> std::string {
