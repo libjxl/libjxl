@@ -489,7 +489,7 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
   }
   float loss_scalar =
       pow(GetLane(SumOfLanes(df8, loss)) / (num_blocks * kDCTBlockSize),
-          1.0 / 8.0) *
+          1.0f / 8.0f) *
       (num_blocks * kDCTBlockSize) / quant_norm16;
   entropy *= entropy_mul;
   entropy += config.info_loss_multiplier * loss_scalar;
@@ -572,7 +572,7 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
          tx.type == AcStrategyType::IDENTITY) &&
         butteraugli_target < 5.0) {
       static const float kFavor2X2AtHighQuality = 0.4;
-      float weight = pow((5.0f - butteraugli_target) / 5.0f, 2.0);
+      float weight = pow((5.0f - butteraugli_target) / 5.0f, 2.0f);
       entropy_mul -= kFavor2X2AtHighQuality * weight;
     }
     if ((tx.type != AcStrategyType::DCT && tx.type != AcStrategyType::DCT2X2 &&
