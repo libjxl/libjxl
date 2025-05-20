@@ -152,11 +152,10 @@ void DequantLane(Vec<D> scaled_dequant_x, Vec<D> scaled_dequant_y,
 }
 
 template <ACType ac_type>
-void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
-                  float x_dm_multiplier, float b_dm_multiplier, Vec<D> x_cc_mul,
-                  Vec<D> b_cc_mul, AcStrategyType kind, size_t size,
-                  const Quantizer& quantizer, size_t covered_blocks,
-                  const size_t* sbx,
+void DequantBlock(float inv_global_scale, int quant, float x_dm_multiplier,
+                  float b_dm_multiplier, Vec<D> x_cc_mul, Vec<D> b_cc_mul,
+                  AcStrategyType kind, size_t size, const Quantizer& quantizer,
+                  size_t covered_blocks, const size_t* sbx,
                   const float* JXL_RESTRICT* JXL_RESTRICT dc_row,
                   size_t dc_stride, const float* JXL_RESTRICT biases,
                   ACPtr qblock[3], float* JXL_RESTRICT block,
@@ -175,7 +174,7 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
                          qblock, block);
   }
   for (size_t c = 0; c < 3; c++) {
-    LowestFrequenciesFromDC(acs.Strategy(), dc_row[c] + sbx[c], dc_stride,
+    LowestFrequenciesFromDC(kind, dc_row[c] + sbx[c], dc_stride,
                             block + c * size, scratch);
   }
 }
@@ -431,7 +430,7 @@ Status DecodeGroupImpl(const FrameHeader& frame_header,
           HWY_ALIGN float* const block = group_dec_cache->dec_group_block;
           // Dequantize and add predictions.
           dequant_block(
-              acs, inv_global_scale, row_quant[bx], dec_state->x_dm_multiplier,
+              inv_global_scale, row_quant[bx], dec_state->x_dm_multiplier,
               dec_state->b_dm_multiplier, x_cc_mul, b_cc_mul, acs.Strategy(),
               size, dec_state->shared->quantizer,
               acs.covered_blocks_y() * acs.covered_blocks_x(), sbx, dc_rows,
