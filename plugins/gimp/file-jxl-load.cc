@@ -26,7 +26,7 @@
 namespace jxl {
 
 bool SetJpegXlOutBuffer(
-    std::unique_ptr<JxlDecoderStruct, JxlDecoderDestroyStruct> *dec,
+    std::unique_ptr<JxlDecoder, JxlDecoderDestroyStruct> *dec,
     JxlPixelFormat *format, size_t *buffer_size, gpointer *pixels_buffer_1) {
   if (JXL_DEC_SUCCESS !=
       JxlDecoderImageOutBufferSize(dec->get(), format, buffer_size)) {
