@@ -587,9 +587,10 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
   if (!ppf->metadata.exif.empty()) {
     // Verify that Exif box has a valid TIFF header at the specified offset.
     // Discard bytes preceding the header.
-    if (ppf->metadata.exif.size() >= 4) {
+    // 16 = 4 + 12 = offset + min EXIF payload.
+    if (ppf->metadata.exif.size() >= 16) {
       uint32_t offset = LoadBE32(ppf->metadata.exif.data());
-      if (offset <= ppf->metadata.exif.size() - 8) {
+      if (offset <= ppf->metadata.exif.size() - 16) {
         std::vector<uint8_t> exif(ppf->metadata.exif.begin() + 4 + offset,
                                   ppf->metadata.exif.end());
         bool bigendian;

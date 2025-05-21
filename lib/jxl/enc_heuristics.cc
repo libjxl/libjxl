@@ -853,6 +853,7 @@ StatusOr<Image3F> ReconstructImage(
   return std::move(*decoded.color());
 }
 
+  
 float ComputeBlockL2Distance(const Image3F& a, const Image3F& b,
                              const ImageF& mask1x1, size_t by, size_t bx) {
   Rect rect(bx * kBlockDim, by * kBlockDim, kBlockDim, kBlockDim, a.xsize(),
@@ -874,8 +875,8 @@ float ComputeBlockL2Distance(const Image3F& a, const Image3F& b,
       float mask = row_mask[x];
       float mask2 = mask * mask;
       for (int i = 0; i < 3; ++i) {
-        float diff = row_a[i][x] - row_b[i][x];
-        err2[i] += mask2 * diff * diff;
+	float diff = row_a[i][x] - row_b[i][x];
+	err2[i] += mask2 * diff * diff;
       }
     }
   }
@@ -936,16 +937,13 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       float* error_row = error_images[val].Row(by);
       for (size_t bx = 0; bx < frame_dim.xsize_blocks; bx++) {
         error_row[bx] = ComputeBlockL2Distance(
-            orig_opsin, decoded, initial_quant_masking1x1, by, bx);
+	    orig_opsin, decoded, initial_quant_masking1x1, by, bx);
       }
     }
   }
   std::vector<std::vector<size_t>> histo(9, std::vector<size_t>(kNumEPFVals));
   std::vector<size_t> totals(9, 1);
-  static const float c5 = 0.008;
-  static const float c6 = 0.0082;
-  static const float c7 = 1.0;
-  const float favor_no_smoothing = c7 - c5 * clamped_butteraugli;
+  static const float kFavorNoSmoothing = 0.99;
   for (size_t by = 0; by < frame_dim.ysize_blocks; by++) {
     uint8_t* JXL_RESTRICT out_row = epf_sharpness.Row(by);
     uint8_t* JXL_RESTRICT prev_row = epf_sharpness.Row(by > 0 ? by - 1 : 0);
@@ -959,15 +957,14 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       for (uint8_t val : epf_steps) {
         float error = error_images[val].Row(by)[bx];
         if (val == 0) {
-	  error *= favor_no_smoothing;
+	  error *= kFavorNoSmoothing;
         }
         if (error < best_error) {
           best_val = val;
           best_error = error;
         }
       }
-      if (best_error <
-          (1.0 - c6 * clamped_butteraugli) * std::min(top_error, left_error)) {
+      if (best_error < std::min(top_error, left_error)) {
         out_row[bx] = best_val;
       } else if (top_error < left_error) {
         out_row[bx] = top_val;
@@ -979,12 +976,10 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       ++totals[context];
     }
   }
-  const float c1 = 0.059588212153340203f;
-  const float c2 = 0.10599497107315753f;
-  const float c3base = 0.94;
-  const float c3 = std::pow(c3base, clamped_butteraugli);
-  const float c4 = 1.247544678665836f;
-  const float context_weight = c1 + c2 * clamped_butteraugli;
+  const float c3base = 0.98017198824148288;
+  const float c3clamp = 0.85970338919928291;
+  const float c3 = std::max(c3clamp, std::pow(c3base, clamped_butteraugli));
+  static const float c5 = 0.1087690359555803;
   float mul[3 * 3 * 3] = {0};
   for (uint8_t top_val : epf_steps) {
     for (uint8_t left_val : epf_steps) {
@@ -992,8 +987,8 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
         int context = epf_steps_lut[top_val] * 3 + epf_steps_lut[left_val];
         const auto& ctx_histo = histo[context];
         const int mulix = epf_steps_lut[val] + 3 * context;
-        mul[mulix] = 1.0 / (c4 + std::log1p(ctx_histo[val] * context_weight /
-                                            totals[context]));
+        mul[mulix] = 1.0 / (1.0 + c5 * std::log1p(ctx_histo[val] /
+						  totals[context]) / clamped_butteraugli);
         if (val == 0) {
           mul[mulix] *= c3;
         }
