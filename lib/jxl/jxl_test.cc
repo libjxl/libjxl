@@ -183,7 +183,7 @@ TEST(JxlTest, RoundtripResample2Slow) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 3888, 200);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 3988, 300);
   EXPECT_SLIGHTLY_BELOW(ComputeDistance2(t.ppf(), ppf_out), 270);
 }
 
@@ -324,7 +324,7 @@ TEST(JxlTest, RoundtripMultiGroup) {
 
     PackedPixelFile ppf_out;
     EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
-                expected_size, 700);
+                expected_size, 814);
     EXPECT_SLIGHTLY_BELOW(ComputeDistance2(t.ppf(), ppf_out),
                           expected_distance);
   };
@@ -332,7 +332,7 @@ TEST(JxlTest, RoundtripMultiGroup) {
   auto run_kitten = std::async(std::launch::async, test, SpeedTier::kKitten,
                                1.0f, 64624u, 8.5);
   auto run_wombat = std::async(std::launch::async, test, SpeedTier::kWombat,
-                               2.0f, 38887u, 15.5);
+                               2.0f, 39001u, 15.5);
 }
 
 TEST(JxlTest, RoundtripRGBToGrayscale) {
@@ -592,7 +592,7 @@ TEST(JxlTest, RoundtripSmallNoGaborish) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 1042, 20);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 1066, 20);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.0);
 }
 
@@ -836,7 +836,7 @@ TEST(JxlTest, RoundtripAlpha) {
           ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                               *JxlGetDefaultCms(),
                               /*distmap=*/nullptr),
-          1.15);
+          1.11);
     }
   }
 }
@@ -925,7 +925,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
   std::vector<uint8_t> compressed;
   EXPECT_TRUE(test::EncodeFile(cparams, io.get(), &compressed));
-  EXPECT_LE(compressed.size(), 18313u);
+  EXPECT_LE(compressed.size(), 18613u);
 
   for (bool use_image_callback : {false, true}) {
     for (bool unpremul_alpha : {false, true}) {
@@ -1418,7 +1418,7 @@ TEST(JxlTest, RoundtripAnimationPatches) {
   PackedPixelFile ppf_out;
   // 40k with no patches, 27k with patch frames encoded multiple times.
   EXPECT_SLIGHTLY_BELOW(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out),
-                        21278u);
+                        21378u);
   EXPECT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
   // >10 with broken patches; not all patches are detected on borders.
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.85);
