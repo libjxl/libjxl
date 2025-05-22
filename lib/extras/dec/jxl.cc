@@ -24,6 +24,7 @@
 #include "lib/extras/common.h"
 #include "lib/extras/dec/color_description.h"
 #include "lib/extras/packed_image.h"
+#include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/exif.h"
@@ -135,7 +136,8 @@ void UpdateBitDepth(JxlBitDepth bit_depth, JxlDataType data_type, T* info) {
 
 bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
                     const JXLDecompressParams& dparams, size_t* decoded_bytes,
-                    PackedPixelFile* ppf, std::vector<uint8_t>* jpeg_bytes) {
+                    PackedPixelFile* ppf, std::vector<uint8_t>* jpeg_bytes,
+                    const SizeConstraints* constraints) {
   JxlSignature sig = JxlSignatureCheck(bytes, bytes_size);
   // silently return false if this is not a JXL file
   if (sig == JXL_SIG_INVALID) return false;
@@ -235,6 +237,7 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
   uint32_t progression_index = 0;
   bool codestream_done = jpeg_bytes == nullptr && accepted_formats.empty();
   BoxProcessor boxes(dec);
+  uint64_t total_pixel_count = 0;
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec);
     if (status == JXL_DEC_ERROR) {
@@ -320,6 +323,10 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
     } else if (status == JXL_DEC_BASIC_INFO) {
       if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec, &ppf->info)) {
         fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
+        return false;
+      }
+      if (!VerifyDimensions(constraints, ppf->xsize(), ppf->ysize())) {
+        fprintf(stderr, "Image too big\n");
         return false;
       }
       if (accepted_formats.empty()) continue;
@@ -422,6 +429,14 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
       }
     } else if (status == JXL_DEC_FRAME) {
+      if (!VerifyDimensions(constraints, ppf->xsize(), ppf->ysize())) {
+        fprintf(stderr, "Image too big\n");
+        return false;
+      }
+      total_pixel_count += static_cast<uint64_t>(ppf->xsize()) * ppf->ysize();
+      if (constraints && (total_pixel_count > constraints->dec_max_pixels)) {
+        return JXL_FAILURE("Image too big");
+      }
       auto frame_or = jxl::extras::PackedFrame::Create(ppf->info.xsize,
                                                        ppf->info.ysize, format);
       JXL_ASSIGN_OR_QUIT(jxl::extras::PackedFrame frame,

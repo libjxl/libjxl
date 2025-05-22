@@ -18,6 +18,8 @@
 #include <string>
 #include <vector>
 
+#include "lib/extras/size_constraints.h"
+
 namespace jxl {
 namespace extras {
 
@@ -66,7 +68,8 @@ struct JXLDecompressParams {
 bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
                     const JXLDecompressParams& dparams, size_t* decoded_bytes,
                     PackedPixelFile* ppf,
-                    std::vector<uint8_t>* jpeg_bytes = nullptr);
+                    std::vector<uint8_t>* jpeg_bytes = nullptr,
+                    const SizeConstraints* constraints = nullptr);
 
 }  // namespace extras
 }  // namespace jxl
