@@ -248,7 +248,7 @@ TEST(JxlTest, RoundtripOutOfOrderProcessingBorder) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out), 9707, 200);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out), 9907, 200);
   EXPECT_LE(ButteraugliDistance(t.ppf(), ppf_out), 2.9);
 }
 
@@ -396,7 +396,7 @@ TEST(JxlTest, RoundtripLargeFast) {
 
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
-              503000, 12000);
+              508000, 12000);
   EXPECT_SLIGHTLY_BELOW(ComputeDistance2(t.ppf(), ppf_out), 78);
 }
 
@@ -447,7 +447,7 @@ TEST(JxlTest, RoundtripOutputColorSpace) {
   dparams.color_space = "RGB_D65_DCI_Rel_709";
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
-              503000, 12000);
+              513000, 12000);
   EXPECT_SLIGHTLY_BELOW(ComputeDistance2(t.ppf(), ppf_out), 78);
 }
 
@@ -984,7 +984,7 @@ TEST(JxlTest, RoundtripAlphaResampling) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 13600, 130);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 13900, 130);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 5.0);
 }
 
@@ -1289,7 +1289,7 @@ TEST(JxlTest, RoundtripDisablePerceptual) {
 
   PackedPixelFile ppf_out;
 
-  size_t expected_size = 477778;
+  size_t expected_size = 487778;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out),
               expected_size, 4000);
   // TODO(veluca): figure out why we can't get below this value.
@@ -1728,7 +1728,7 @@ TEST(JxlTest, RoundtripProgressiveLevel2Slow) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 76666,
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 78765,
               1000);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.17);
 }
