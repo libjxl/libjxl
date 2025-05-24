@@ -28,7 +28,7 @@ class BitReader;
 
 static constexpr float kDesiredRenderingDistance = 1.f;
 
-typedef std::array<float, 32> Dct32;
+using Dct32 = std::array<float, 32>;
 
 enum SplineEntropyContexts : size_t {
   kQuantizationAdjustmentContext = 0,

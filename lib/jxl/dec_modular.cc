@@ -31,6 +31,7 @@
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/quant_weights.h"
+#include "lib/jxl/quantizer.h"
 #include "lib/jxl/render_pipeline/render_pipeline.h"
 
 #undef HWY_TARGET_INCLUDE

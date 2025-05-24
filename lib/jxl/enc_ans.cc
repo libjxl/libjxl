@@ -9,11 +9,11 @@
 #include <jxl/types.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -22,7 +22,6 @@
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
@@ -35,6 +34,7 @@
 #include "lib/jxl/enc_lz77.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/modular/options.h"
 
 namespace jxl {
 
@@ -162,7 +162,7 @@ class ANSEncodingHistogram {
         break;
     }
 
-    // Sanity check
+      // Sanity check
 #if JXL_IS_DEBUG_BUILD
     JXL_ENSURE(histo.counts.size() == result.counts_.size());
     ANSHistBin total = 0;  // Used only in assert.
@@ -867,7 +867,7 @@ StatusOr<size_t> EntropyEncodingData::BuildAndStoreEntropyCodes(
       }
     } else {
       JXL_ENSURE(encoding_info.empty());
-      fill(context_map.begin(), context_map.end(), 0);
+      std::fill(context_map.begin(), context_map.end(), 0);
       size_t max_symbol = 0;
       for (const Histogram& h : builder) {
         max_symbol = std::max(h.counts.size(), max_symbol);
@@ -908,7 +908,7 @@ StatusOr<size_t> EntropyEncodingData::BuildAndStoreEntropyCodes(
   }
   if (use_prefix_code) {
     for (const auto& histo : clustered_histograms) {
-      size_t alphabet_size = std::max(size_t(1), histo.alphabet_size());
+      size_t alphabet_size = std::max<size_t>(1, histo.alphabet_size());
       if (writer) {
         StoreVarLenUint16(alphabet_size - 1, writer);
       } else {
@@ -1281,10 +1281,10 @@ HistogramParams HistogramParams::ForModular(
         cparams.speed_tier > SpeedTier::kThunder
             ? HistogramParams::ANSHistogramStrategy::kFast
             : HistogramParams::ANSHistogramStrategy::kApproximate;
-	  params.lz77_method = cparams.modular_mode &&
-		  cparams.speed_tier <= SpeedTier::kHare
-		  ? HistogramParams::LZ77Method::kRLE
-		  : HistogramParams::LZ77Method::kNone;
+    params.lz77_method =
+        cparams.modular_mode && cparams.speed_tier <= SpeedTier::kHare
+            ? HistogramParams::LZ77Method::kRLE
+            : HistogramParams::LZ77Method::kNone;
     // Near-lossless DC, as well as modular mode, require choosing hybrid uint
     // more carefully.
     if ((!extra_dc_precision.empty() && extra_dc_precision[0] != 0) ||
@@ -1302,12 +1302,13 @@ HistogramParams HistogramParams::ForModular(
     params.max_histograms = 12;
   }
   if ((cparams.decoding_speed_tier >= 3 ||
-  cparams.options.predictor == Predictor::Zero) && cparams.modular_mode) {
-	  params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
-		  ? HistogramParams::LZ77Method::kRLE
-		  : cparams.speed_tier >= SpeedTier::kKitten
-		  ? HistogramParams::LZ77Method::kLZ77
-		  : HistogramParams::LZ77Method::kOptimal;
+       cparams.options.predictor == Predictor::Zero) &&
+      cparams.modular_mode) {
+    params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
+                             ? HistogramParams::LZ77Method::kRLE
+                         : cparams.speed_tier >= SpeedTier::kKitten
+                             ? HistogramParams::LZ77Method::kLZ77
+                             : HistogramParams::LZ77Method::kOptimal;
   }
   return params;
 }

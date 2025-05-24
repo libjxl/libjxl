@@ -24,6 +24,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_splines.h"
@@ -287,56 +288,26 @@ TEST(SplinesTest, DuplicatePoints) {
                                            color_correlation));
 }
 
-TEST(SplinesTest, Drawing) {
+TEST(SplinesTest, Golden) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   auto io_expected = jxl::make_unique<jxl::CodecInOut>(memory_manager);
-  const std::vector<uint8_t> orig = ReadTestData("jxl/splines.pfm");
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), io_expected.get(),
+  const std::vector<uint8_t> bytes_expected = ReadTestData("jxl/splines.png");
+  ASSERT_TRUE(SetFromBytes(Bytes(bytes_expected), io_expected.get(),
                            /*pool=*/nullptr));
-
-  std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
-                                            {10, 40}, {150, 25},  {120, 300}};
-  // Use values that survive quant/decorellation roundtrip.
-  const Spline spline{
-      control_points,
-      /*color_dct=*/
-      {Dct32{0.4989345073699951171875000f, 0.4997999966144561767578125f},
-       Dct32{0.4772970676422119140625000f, 0.f, 0.5250000357627868652343750f},
-       Dct32{-0.0176776945590972900390625f, 0.4900000095367431640625000f,
-             0.5250000357627868652343750f}},
-      /*sigma_dct=*/
-      {0.9427147507667541503906250f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
-       0.6665999889373779296875000f}};
-  std::vector<Spline> spline_data = {spline};
-  std::vector<QuantizedSpline> quantized_splines;
-  std::vector<Spline::Point> starting_points;
-  for (const Spline& ospline : spline_data) {
-    JXL_ASSIGN_OR_QUIT(
-        QuantizedSpline qspline,
-        QuantizedSpline::Create(ospline, kQuantizationAdjustment, kYToX, kYToB),
-        "Failed to create QuantizedSpline.");
-    quantized_splines.emplace_back(std::move(qspline));
-    starting_points.push_back(spline.control_points.front());
-  }
-  Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
-                  std::move(starting_points));
-
-  JXL_TEST_ASSIGN_OR_DIE(Image3F image,
-                         Image3F::Create(memory_manager, 320, 320));
-  ZeroFillImage(&image);
-  ASSERT_TRUE(splines.InitializeDrawCache(image.xsize(), image.ysize(),
-                                          color_correlation));
-  splines.AddTo(&image, Rect(image));
-
   auto io_actual = jxl::make_unique<jxl::CodecInOut>(memory_manager);
-  JXL_TEST_ASSIGN_OR_DIE(Image3F image2,
-                         Image3F::Create(memory_manager, 320, 320));
-  ASSERT_TRUE(CopyImageTo(image, &image2));
-  ASSERT_TRUE(
-      io_actual->SetFromImage(std::move(image2), ColorEncoding::SRGB()));
-  ASSERT_TRUE(io_actual->frames[0].TransformTo(io_expected->Main().c_current(),
-                                               *JxlGetDefaultCms()));
+  // jxl/splines.jxl is produced from jxl/splines.tree
+  const std::vector<uint8_t> bytes_actual = ReadTestData("jxl/splines.jxl");
+  ASSERT_TRUE(test::DecodeFile({}, Bytes(bytes_actual), io_actual.get()));
 
+  // Clamp. There is slightly negative DC component in blue channel.
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t y = 0; y < io_actual->ysize(); ++y) {
+      float* const JXL_RESTRICT row = io_actual->Main().color()->PlaneRow(c, y);
+      for (size_t x = 0; x < io_actual->xsize(); ++x) {
+        row[x] = Clamp1(row[x], 0.f, 1.f);
+      }
+    }
+  }
   JXL_TEST_ASSERT_OK(VerifyRelativeError(*io_expected->Main().color(),
                                          *io_actual->Main().color(), 1e-2f,
                                          1e-1f, _));

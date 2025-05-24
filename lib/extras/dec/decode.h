@@ -8,6 +8,8 @@
 
 // Facade for image decoders (PNG, PNM, ...).
 
+#include <jxl/memory_manager.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -51,7 +53,8 @@ Codec CodecFromPath(const std::string& path,
 Status DecodeBytes(Span<const uint8_t> bytes, const ColorHints& color_hints,
                    extras::PackedPixelFile* ppf,
                    const SizeConstraints* constraints = nullptr,
-                   Codec* orig_codec = nullptr);
+                   Codec* orig_codec = nullptr,
+                   JxlMemoryManager* memory_manager = nullptr);
 
 }  // namespace extras
 }  // namespace jxl

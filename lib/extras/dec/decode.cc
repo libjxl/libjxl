@@ -6,6 +6,7 @@
 #include "lib/extras/dec/decode.h"
 
 #include <jxl/codestream_header.h>
+#include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
 #include <algorithm>
@@ -115,7 +116,8 @@ std::string ListOfDecodeCodecs() {
 
 Status DecodeBytes(const Span<const uint8_t> bytes,
                    const ColorHints& color_hints, extras::PackedPixelFile* ppf,
-                   const SizeConstraints* constraints, Codec* orig_codec) {
+                   const SizeConstraints* constraints, Codec* orig_codec,
+                   JxlMemoryManager* memory_manager) {
   if (bytes.size() < kMinBytes) return JXL_FAILURE("Too few bytes");
 
   *ppf = extras::PackedPixelFile();
@@ -135,14 +137,15 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
       return Codec::kPNM;
     }
     JXLDecompressParams dparams = {};
+    dparams.memory_manager = memory_manager;
     for (const uint32_t num_channels : {1, 2, 3, 4}) {
       dparams.accepted_formats.push_back(
           {num_channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, /*align=*/0});
     }
     dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
     size_t decoded_bytes;
-    if (DecodeImageJXL(bytes.data(), bytes.size(), dparams, &decoded_bytes,
-                       ppf) &&
+    if (DecodeImageJXL(bytes.data(), bytes.size(), dparams, &decoded_bytes, ppf,
+                       nullptr, constraints) &&
         ApplyColorHints(color_hints, true, ppf->info.num_color_channels == 1,
                         ppf)) {
       return Codec::kJXL;

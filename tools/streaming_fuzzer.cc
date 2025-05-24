@@ -120,30 +120,38 @@ struct FuzzSpec {
     // TODO(eustas): allow dimensions to be 130k
     spec.xsize = uint32_t{u16()} + 1;
     spec.ysize = uint32_t{u16()} + 1;
-    constexpr uint64_t kMaxSize = 1 << 24;
-    if (spec.xsize * uint64_t{spec.ysize} > kMaxSize) {
-      spec.ysize = kMaxSize / spec.xsize;
-    }
     spec.grayscale = b1();
     spec.alpha = b1();
     spec.bit_depth = u8() % 16 + 1;
     // constants chosen so to cover the entire 0.01 - 25 range.
-    spec.distance = u8() % 2 ? 0.0 : 0.01 + 0.00038132 * u16();
-
-    Check(spec.float_options[2].flag ==
-          JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT);
-    Check(spec.int_options[15].flag == JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM);
-    if (spec.distance != 0 || spec.int_options[15].value == 0) {
-      spec.float_options[2].possible_values[1] = 1;
-    }
+    bool lossless = ((u8() % 2) == 1);
+    spec.distance = lossless ? 0.0 : 0.01 + 0.00038132 * u16();
 
     spec.num_threads = u8();
 
     for (auto& int_opt : spec.int_options) {
       int_opt.value = u8() % (int_opt.max - int_opt.min + 1) + int_opt.min;
     }
+
+    Check(spec.int_options[15].flag == JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM);
+    if (!lossless || spec.int_options[15].value == 0) {
+      Check(spec.float_options[2].flag ==
+            JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT);
+      spec.float_options[2].possible_values[1] = 1;
+    }
+
     for (auto& float_opt : spec.float_options) {
       float_opt.value = float_opt.possible_values[u8() % 4];
+    }
+
+    Check(spec.int_options[7].flag == JXL_ENC_FRAME_SETTING_MODULAR);
+    bool modular = (spec.int_options[7].value == 1);
+    Check(spec.int_options[18].flag == JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR);
+    bool slow_predictor = (spec.int_options[18].value >= 14);
+    const uint64_t kMaxSize =
+        (modular && slow_predictor) ? (1 << 23) : (1 << 24);
+    if (spec.xsize * uint64_t{spec.ysize} > kMaxSize) {
+      spec.ysize = kMaxSize / spec.xsize;
     }
 
     for (auto& x : spec.pixel_data) {
@@ -155,7 +163,8 @@ struct FuzzSpec {
     }
 
     if (false) {
-      fprintf(stderr, "Image size: %d X %d\n", spec.xsize, spec.ysize);
+      fprintf(stderr, "Image size: %d X %d, d=%f\n", spec.xsize, spec.ysize,
+              spec.distance);
       for (auto& int_opt : spec.int_options) {
         fprintf(stderr, "%s = %d\n", int_opt.name.c_str(), int_opt.value);
       }
@@ -202,7 +211,8 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
   basic_info.xsize = spec.xsize;
   basic_info.ysize = spec.ysize;
   basic_info.bits_per_sample = spec.bit_depth;
-  basic_info.uses_original_profile = JXL_FALSE;
+  bool lossless = (spec.distance == 0.0f);
+  basic_info.uses_original_profile = TO_JXL_BOOL(lossless);
   uint32_t nchan = basic_info.num_color_channels;
   if (spec.alpha) {
     nchan += 1;

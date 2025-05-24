@@ -7,6 +7,7 @@
 #include <jxl/decode_cxx.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
+#include <jxl/types.h>
 
 #include <string>
 #include <vector>
@@ -64,9 +65,9 @@ bool validateArgs(Args const& args) {
 JxlEncoderStatus addHeaderBoxes(JxlEncoder& enc) {
   constexpr std::array<unsigned char, 4> kSignatureHeader = {0xd, 0xa, 0x87,
                                                              0xa};
-  JxlEncoderStatus status =
-      JxlEncoderAddBox(&enc, "JXL ", kSignatureHeader.data(),
-                       kSignatureHeader.size(), /*compress_box=*/false);
+  JxlEncoderStatus status = JxlEncoderAddBox(
+      &enc, "JXL ", kSignatureHeader.data(), kSignatureHeader.size(),
+      /*compress_box=*/TO_JXL_BOOL(false));
   if (status != JXL_ENC_SUCCESS) {
     fprintf(stderr, "Failed to add codestream box\n");
     return JXL_ENC_ERROR;
@@ -76,7 +77,8 @@ JxlEncoderStatus addHeaderBoxes(JxlEncoder& enc) {
       'j', 'x', 'l', ' ', 0, 0, 0, 0, 'j', 'x', 'l', ' '};
 
   status = JxlEncoderAddBox(&enc, "ftyp", kFileTypeHeader.data(),
-                            kFileTypeHeader.size(), /*compress_box=*/false);
+                            kFileTypeHeader.size(),
+                            /*compress_box=*/TO_JXL_BOOL(false));
   if (status != JXL_ENC_SUCCESS) {
     fprintf(stderr, "Failed to add codestream box\n");
     return JXL_ENC_ERROR;
@@ -219,7 +221,8 @@ JxlDecoderStatus apply_file_format_options(
     }
 
     status = JxlEncoderAddBox(enc.get(), "jxlc", input_bytes.data(),
-                              input_bytes.size(), /*compress_box=*/false);
+                              input_bytes.size(),
+                              /*compress_box=*/TO_JXL_BOOL(false));
     if (status != JXL_ENC_SUCCESS) {
       fprintf(stderr, "Failed to add codestream box\n");
       return JXL_DEC_ERROR;
@@ -233,7 +236,7 @@ JxlDecoderStatus apply_file_format_options(
     // 12 bytes for "JXL ", 20 bytes for "ftyp" and 12 bytes for the maximal
     // header size of jxlc.
     container.resize(input_bytes.size() + 12 + 20 + 12);
-    auto data = container.data();
+    auto* data = container.data();
     auto available = container.size();
     status = JxlEncoderProcessOutput(enc.get(), &data, &available);
     container.resize(container.size() - available);

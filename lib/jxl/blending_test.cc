@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/packed_image.h"

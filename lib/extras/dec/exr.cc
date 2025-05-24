@@ -161,6 +161,10 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   ++image_size.x;
   ++image_size.y;
 
+  if (!VerifyDimensions<uint32_t>(constraints, image_size.x, image_size.y)) {
+    return JXL_FAILURE("image too big");
+  }
+
   ppf->info.xsize = image_size.x;
   ppf->info.ysize = image_size.y;
   ppf->info.num_color_channels = 3;

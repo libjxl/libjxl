@@ -13,6 +13,11 @@
 #ifndef JXL_VERSION_H_
 #define JXL_VERSION_H_
 
+#if defined(JPEGXL_MAJOR_VERSION) || defined(JPEGXL_MINOR_VERSION) || \
+    defined(JPEGXL_PATCH_VERSION)
+#error JPEGXL_VERSION is already defined
+#endif
+
 #define JPEGXL_MAJOR_VERSION @JPEGXL_MAJOR_VERSION@ ///< JPEG XL Major version
 #define JPEGXL_MINOR_VERSION @JPEGXL_MINOR_VERSION@ ///< JPEG XL Minor version
 #define JPEGXL_PATCH_VERSION @JPEGXL_PATCH_VERSION@ ///< JPEG XL Patch version

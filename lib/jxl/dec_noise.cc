@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <utility>
 
 #include "lib/jxl/base/status.h"

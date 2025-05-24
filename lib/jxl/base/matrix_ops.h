@@ -16,10 +16,10 @@
 
 namespace jxl {
 
-typedef std::array<float, 3> Vector3;
-typedef std::array<double, 3> Vector3d;
-typedef std::array<Vector3, 3> Matrix3x3;
-typedef std::array<Vector3d, 3> Matrix3x3d;
+using Vector3 = std::array<float, 3>;
+using Vector3d = std::array<double, 3>;
+using Matrix3x3 = std::array<Vector3, 3>;
+using Matrix3x3d = std::array<Vector3d, 3>;
 
 // Computes C = A * B, where A, B, C are 3x3 matrices.
 template <typename Matrix>

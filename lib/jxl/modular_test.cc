@@ -19,6 +19,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/codec_in_out.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
@@ -29,6 +30,7 @@
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_bit_reader.h"
@@ -375,8 +377,8 @@ TEST_P(ModularTestParam, RoundtripLossless) {
       const float* in = io->Main().color()->PlaneRow(c, y);
       const float* out = io2->Main().color()->PlaneRow(c, y);
       for (size_t x = 0; x < xsize; x++) {
-        uint32_t uin = std::lroundf(in[x] * factor);
-        uint32_t uout = std::lroundf(out[x] * factor);
+        uint32_t uin = std::lround(in[x] * factor);
+        uint32_t uout = std::lround(out[x] * factor);
         // check that the integer values are identical
         if (uin != uout) different++;
       }

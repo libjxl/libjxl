@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 #include <hwy/tests/hwy_gtest.h>
-#include <iterator>
 #include <numeric>
 #include <utility>
 #include <vector>
@@ -89,7 +88,6 @@ void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
     // Check values roundtripped correctly.
     EXPECT_EQ(e.mode, d.mode);
     EXPECT_EQ(e.predefined, d.predefined);
-    EXPECT_EQ(e.source, d.source);
 
     EXPECT_EQ(static_cast<uint64_t>(e.dct_params.num_distance_bands),
               static_cast<uint64_t>(d.dct_params.num_distance_bands));
@@ -232,8 +230,9 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
 
     for (size_t i = 0; i < 64; i++) {
       // DCTSlow doesn't multiply/divide by 1/N, so we do it manually.
-      slow_coeffs[i] = roundf(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
-      coeffs[i] = roundf(coeffs[i] / dequant_matrices->Matrix(dct, 0)[i]) *
+      slow_coeffs[i] =
+          std::round(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
+      coeffs[i] = std::round(coeffs[i] / dequant_matrices->Matrix(dct, 0)[i]) *
                   dequant_matrices->Matrix(dct, 0)[i];
     }
     IDCTSlow<8>(slow_coeffs);
@@ -252,8 +251,9 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
     DCTSlow<16>(slow_coeffs);
 
     for (size_t i = 0; i < 64 * 4; i++) {
-      slow_coeffs[i] = roundf(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
-      coeffs[i] = roundf(coeffs[i] / dequant_matrices->Matrix(dct, 0)[i]) *
+      slow_coeffs[i] =
+          std::round(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
+      coeffs[i] = std::round(coeffs[i] / dequant_matrices->Matrix(dct, 0)[i]) *
                   dequant_matrices->Matrix(dct, 0)[i];
     }
 

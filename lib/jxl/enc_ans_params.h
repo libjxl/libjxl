@@ -8,12 +8,13 @@
 
 // Encoder-only parameter needed for ANS entropy encoding methods.
 
-#include <stdint.h>
-#include <stdlib.h>
-
+#include <cstdint>
+#include <cstdlib>
 #include <vector>
 
 #include "lib/jxl/ans_common.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
 
@@ -101,9 +102,12 @@ struct HistogramParams {
 };
 
 struct Histogram {
-  Histogram(size_t length = 0) {
+  Histogram() = default;
+
+  explicit Histogram(size_t length) {
     counts.resize(DivCeil(length, kRounding) * kRounding);
   }
+
   // Create flat histogram
   static Histogram Flat(int length, int total_count) {
     Histogram flat;
