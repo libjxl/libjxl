@@ -44,6 +44,15 @@ class Parser {
     pos_ += 2;
 
     switch (type) {
+      case '1':
+        return JXL_FAILURE("ascii pbm not supported");
+
+      case '2':
+        return JXL_FAILURE("ascii pgm not supported");
+
+      case '3':
+        return JXL_FAILURE("ascii ppm not supported");
+
       case '4':
         return JXL_FAILURE("pbm not supported");
 

@@ -38,6 +38,8 @@ enum class Codec : uint32_t {
   kJXL
 };
 
+Codec DetectCodec(const Span<const uint8_t>& bytes);
+
 bool CanDecode(Codec codec);
 
 std::string ListOfDecodeCodecs();
