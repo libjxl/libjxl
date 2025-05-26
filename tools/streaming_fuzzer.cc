@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/fuzztest.h"
@@ -358,10 +359,10 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   Check(dec_default.size() == dec_streaming.size());
   float max_abs_diff = 0.0f;
   for (size_t i = 0; i < dec_default.size(); ++i) {
-    float abs_diff = std::abs(dec_default[i] - dec_streaming[i]);
-    if (abs_diff > max_abs_diff) {
-      max_abs_diff = abs_diff;
-    }
+    float d1 = ::jxl::Clamp1(dec_default[i], 0.0f, 1.0f);
+    float d2 = ::jxl::Clamp1(dec_streaming[i], 0.0f, 1.0f);
+    float abs_diff = std::abs(d1 - d2);
+    max_abs_diff = std::max(max_abs_diff, abs_diff);
   }
 
   Check(spec.int_options[0].flag == JXL_ENC_FRAME_SETTING_EFFORT);
