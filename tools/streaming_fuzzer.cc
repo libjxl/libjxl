@@ -120,10 +120,6 @@ struct FuzzSpec {
     // TODO(eustas): allow dimensions to be 130k
     spec.xsize = uint32_t{u16()} + 1;
     spec.ysize = uint32_t{u16()} + 1;
-    constexpr uint64_t kMaxSize = 1 << 24;
-    if (spec.xsize * uint64_t{spec.ysize} > kMaxSize) {
-      spec.ysize = kMaxSize / spec.xsize;
-    }
     spec.grayscale = b1();
     spec.alpha = b1();
     spec.bit_depth = u8() % 16 + 1;
@@ -146,6 +142,16 @@ struct FuzzSpec {
 
     for (auto& float_opt : spec.float_options) {
       float_opt.value = float_opt.possible_values[u8() % 4];
+    }
+
+    Check(spec.int_options[7].flag == JXL_ENC_FRAME_SETTING_MODULAR);
+    bool modular = (spec.int_options[7].value == 1);
+    Check(spec.int_options[18].flag == JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR);
+    bool slow_predictor = (spec.int_options[18].value >= 14);
+    const uint64_t kMaxSize =
+        (modular && slow_predictor) ? (1 << 23) : (1 << 24);
+    if (spec.xsize * uint64_t{spec.ysize} > kMaxSize) {
+      spec.ysize = kMaxSize / spec.xsize;
     }
 
     for (auto& x : spec.pixel_data) {
