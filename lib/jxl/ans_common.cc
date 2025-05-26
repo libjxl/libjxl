@@ -15,18 +15,6 @@
 
 namespace jxl {
 
-std::vector<int32_t> CreateFlatHistogram(int length, int total_count) {
-  JXL_DASSERT(length > 0);
-  JXL_DASSERT(length <= total_count);
-  const int count = total_count / length;
-  std::vector<int32_t> result(length, count);
-  const int rem_counts = total_count % length;
-  for (int i = 0; i < rem_counts; ++i) {
-    ++result[i];
-  }
-  return result;
-}
-
 // First, all trailing non-occurring symbols are removed from the distribution;
 // if this leaves the distribution empty, a placeholder symbol with max weight
 // is  added. This ensures that the resulting distribution sums to total table

@@ -120,14 +120,14 @@ struct JPEGScanInfo {
   // block (if nonzero), indexed by block index.
   // All of these symbols can be omitted without changing the pixel values, but
   // some jpeg encoders put these at the end of blocks.
-  typedef struct {
+  struct ExtraZeroRunInfo {
     uint32_t block_idx;
     uint32_t num_extra_zero_runs;
-  } ExtraZeroRunInfo;
+  };
   std::vector<ExtraZeroRunInfo> extra_zero_runs;
 };
 
-typedef int16_t coeff_t;
+using coeff_t = int16_t;
 
 // Represents one component of a jpeg file.
 struct JPEGComponent {

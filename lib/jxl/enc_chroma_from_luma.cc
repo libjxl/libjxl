@@ -8,7 +8,6 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
-#include <cfloat>
 #include <cmath>
 #include <cstdlib>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
@@ -16,6 +15,7 @@
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/enc_bit_writer.h"
@@ -181,7 +181,7 @@ int32_t FindBestMultiplier(const float* values_m, const float* values_s,
   } else {
     x = 0;
   }
-  return std::max(-128.0f, std::min(127.0f, roundf(x)));
+  return jxl::Clamp1(std::round(x), -128.0f, 127.0f);
 }
 
 Status InitDCStorage(JxlMemoryManager* memory_manager, size_t num_blocks,

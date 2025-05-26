@@ -460,6 +460,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Rec2100") {
     JXL_RETURN_IF_ERROR(
         io.metadata.m.color_encoding.SetPrimariesType(jxl::Primaries::k2100));
+  } else if (t == "P3") {
+    JXL_RETURN_IF_ERROR(
+        io.metadata.m.color_encoding.SetPrimariesType(jxl::Primaries::kP3));
   } else if (t == "16BitBuffers") {
     io.metadata.m.modular_16_bit_buffer_sufficient = true;
   } else {
@@ -508,7 +511,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   };
   if (!ParseNode(tok, tree, spline_data, cparams, width, height, *io, have_next,
                  x0, y0)) {
-    return 1;
+    return JXL_FAILURE("Failed to ParseNode");
   }
 
   if (tree_out) {
@@ -579,7 +582,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     cparams.manual_noise.clear();
     if (!ParseNode(tok, tree, spline_data, cparams, width, height, *io,
                    have_next, x0, y0)) {
-      return 1;
+      return JXL_FAILURE("Failed to ParseNode");
     }
     cparams.custom_fixed_tree = tree;
     JXL_ASSIGN_OR_RETURN(Image3F image,

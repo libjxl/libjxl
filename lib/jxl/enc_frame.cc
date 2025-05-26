@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -95,7 +94,7 @@ Status ParamsPostInit(CompressParams* p) {
   if (!p->manual_xyb_factors.empty() && p->manual_xyb_factors.size() != 3) {
     return JXL_FAILURE("Invalid number of XYB quantization factors");
   }
-  if (!p->modular_mode && p->butteraugli_distance == 0.0) {
+  if (!p->modular_mode && p->butteraugli_distance < kMinButteraugliDistance) {
     p->butteraugli_distance = kMinButteraugliDistance;
   }
   if (p->original_butteraugli_distance == -1.0) {
@@ -106,9 +105,13 @@ Status ParamsPostInit(CompressParams* p) {
     // For very low bit rates, using 2x2 resampling gives better results on
     // most photographic images, with an adjusted butteraugli score chosen to
     // give roughly the same amount of bits per pixel.
-    if (!p->already_downsampled && p->butteraugli_distance >= 20) {
+    if (!p->already_downsampled && p->butteraugli_distance >= 10) {
+      // TODO(Jonnyawsom3): Explore 4x4 resampling at distance 25. Lower bpp
+      // but results are inconsistent and images under 4K become far too blurry.
       p->resampling = 2;
-      p->butteraugli_distance = 6 + ((p->butteraugli_distance - 20) * 0.25);
+      // Adding 0.25 balances photo with non-photo, shifting towards lower bpp
+      // to avoid large overshoot while maintaining quality equal to before.
+      p->butteraugli_distance = (p->butteraugli_distance * 0.25) + 0.25;
     }
   }
   if (p->ec_resampling <= 0) {
@@ -331,12 +334,21 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
   if (cparams.modular_mode) {
     frame_header->encoding = FrameEncoding::kModular;
     if (cparams.modular_group_size_shift == -1) {
-      frame_header->group_size_shift = 1;
+      // By default, use the smallest group size for faster decoding 2
+      // and higher. Greatly speeds up decoding via multithreading at
+      // the cost of density.
+      if (cparams.decoding_speed_tier >= 2 ||
+        // Force decoding speed to tier 2 for progressive lossless.
+        (cparams.decoding_speed_tier >= 1 && cparams.responsive == 1
+        && cparams.IsLossless())) {
+        frame_header->group_size_shift = 0;
       // no point using groups when only one group is full and the others are
       // less than half full: multithreading will not really help much, while
       // compression does suffer
-      if (xsize <= 400 && ysize <= 400) {
+      } else if (xsize <= 400 && ysize <= 400) {
         frame_header->group_size_shift = 2;
+      } else {
+        frame_header->group_size_shift = 1;
       }
     } else {
       frame_header->group_size_shift = cparams.modular_group_size_shift;
@@ -589,7 +601,7 @@ struct PixelStatsForChromacityAdjustment {
         xmax = std::max(xmax, std::abs(diff_b - diff_prev));
         ymax = std::max(ymax, std::abs(diff_b - diff_prev_row));
         if (exposed_b >= 0) {
-          exposed_b *= fabs(cur_b - prev) + fabs(cur_b - prev_row);
+          exposed_b *= std::abs(cur_b - prev) + std::abs(cur_b - prev_row);
           eb = std::max(eb, exposed_b);
         }
       }
@@ -710,10 +722,10 @@ Status DownsampleColorChannels(const CompressParams& cparams,
     // TODO(lode): use the regular DownsampleImage, or adapt to the custom
     // coefficients, if there is are custom upscaling coefficients in
     // CustomTransformData
-    if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-      // TODO(lode): DownsampleImage2_Iterative is currently too slow to
-      // be used for squirrel, make it faster, and / or enable it only for
-      // kitten.
+    if (cparams.speed_tier <= SpeedTier::kGlacier) {
+      // TODO(Jonnyawsom3): Until optimized, enabled only for Glacier and
+      // TectonicPlate. It's an 80% slowdown and downsampling is only active
+      // at high distances by default anyway, making improvements negligible.
       JXL_RETURN_IF_ERROR(DownsampleImage2_Iterative(opsin));
     } else {
       JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(opsin));
@@ -1025,7 +1037,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
     int num_thresholds = (CeilLog2Nonzero(total_dc[i]) - 12) / 2;
     // up to 3 buckets per channel:
     // dark/medium/bright, yellow/unsat/blue, green/unsat/red
-    num_thresholds = std::min(std::max(num_thresholds, 0), 2);
+    num_thresholds = jxl::Clamp1(num_thresholds, 0, 2);
     size_t cumsum = 0;
     size_t cut = total_dc[i] / (num_thresholds + 1);
     for (int j = 0; j < 2048; j++) {
@@ -1258,14 +1270,13 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
         BuildAndEncodeHistograms(
             memory_manager, hist_params,
             num_histogram_groups * shared.block_ctx_map.NumACContexts(),
-            enc_state->passes[i].ac_tokens, &enc_state->passes[i].codes,
-            &enc_state->passes[i].context_map, writer, LayerType::Ac, aux_out));
+            enc_state->passes[i].ac_tokens, &enc_state->passes[i].codes, writer,
+            LayerType::Ac, aux_out));
     (void)cost;
   }
 
   return true;
 }
-
 Status EncodeGroups(const FrameHeader& frame_header,
                     PassesEncoderState* enc_state,
                     ModularFrameEncoder* enc_modular, ThreadPool* pool,
@@ -1627,8 +1638,12 @@ Status ComputeEncodingData(
   }
 
   if (!enc_state.streaming_mode) {
+    // If checks pass here, a Global MA tree is used.
     if (cparams.speed_tier < SpeedTier::kTortoise ||
-        !cparams.ModularPartIsLossless() || cparams.responsive ||
+        !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
+        (cparams.responsive == 1 && !cparams.IsLossless()) ||
+        // Allow Local trees for progressive lossless but not lossy.
+        (cparams.buffering && cparams.responsive < 0) ||
         !cparams.custom_fixed_tree.empty()) {
       // Use local trees if doing lossless modular, unless at very slow speeds.
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
@@ -1763,12 +1778,22 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.progressive_dc != 0 || frame_info.dc_level != 0) {
     return false;
   }
+  if (cparams.custom_progressive_mode ||
+      cparams.qprogressive_mode == Override::kOn ||
+      cparams.progressive_mode == Override::kOn) {
+    return false;
+  }
   if (cparams.resampling != 1 || cparams.ec_resampling != 1) {
+    return false;
+  }
+  if (cparams.lossy_palette) {
     return false;
   }
   if (cparams.max_error_mode) {
     return false;
   }
+  // Progressive lossless uses Local MA trees, but requires a full
+  // buffer to compress well, so no special check.
   if (!cparams.ModularPartIsLossless() || cparams.responsive > 0) {
     if (metadata.m.num_extra_channels > 0 || cparams.modular_mode) {
       return false;
@@ -1912,11 +1937,10 @@ Status OutputGroups(std::vector<std::unique_ptr<BitWriter>>&& group_codes,
   return true;
 }
 
-void RemoveUnusedHistograms(std::vector<uint8_t>& context_map,
-                            EntropyEncodingData& codes) {
+void RemoveUnusedHistograms(EntropyEncodingData& codes) {
   std::vector<int> remap(256, -1);
   std::vector<uint8_t> inv_remap;
-  for (uint8_t& context : context_map) {
+  for (uint8_t& context : codes.context_map) {
     const uint8_t histo_ix = context;
     if (remap[histo_ix] == -1) {
       remap[histo_ix] = inv_remap.size();
@@ -1927,6 +1951,7 @@ void RemoveUnusedHistograms(std::vector<uint8_t>& context_map,
   EntropyEncodingData new_codes;
   new_codes.use_prefix_code = codes.use_prefix_code;
   new_codes.lz77 = codes.lz77;
+  new_codes.context_map = std::move(codes.context_map);
   for (uint8_t histo_idx : inv_remap) {
     new_codes.encoding_info.emplace_back(
         std::move(codes.encoding_info[histo_idx]));
@@ -1970,10 +1995,8 @@ Status OutputAcGlobal(PassesEncoderState& enc_state,
                           &writer, LayerType::Order, aux_out));
     // Fix up context map and entropy codes to remove any fix histograms that
     // were not selected by clustering.
-    RemoveUnusedHistograms(enc_state.passes[i].context_map,
-                           enc_state.passes[i].codes);
-    JXL_RETURN_IF_ERROR(EncodeHistograms(enc_state.passes[i].context_map,
-                                         enc_state.passes[i].codes, &writer,
+    RemoveUnusedHistograms(enc_state.passes[i].codes);
+    JXL_RETURN_IF_ERROR(EncodeHistograms(enc_state.passes[i].codes, &writer,
                                          LayerType::Ac, aux_out));
   }
   JXL_RETURN_IF_ERROR(writer.WithMaxBits(8, LayerType::Ac, aux_out, [&] {
@@ -2462,7 +2485,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     return JXL_FAILURE("Too many levels of progressive DC");
   }
 
-  if (cparams.butteraugli_distance != 0 &&
+  if (cparams.modular_mode == false &&
       cparams.butteraugli_distance < kMinButteraugliDistance) {
     return JXL_FAILURE("Butteraugli distance is too low (%f)",
                        cparams.butteraugli_distance);

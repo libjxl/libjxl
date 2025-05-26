@@ -12,7 +12,6 @@
 #include <cstdint>
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/status.h"
 
 namespace jxl {
 // Encodes non-negative (X) into (2 * X), negative (-X) into (2 * X - 1)
@@ -29,7 +28,8 @@ constexpr uint32_t PackSigned(int32_t value)
 // convenience its type is `size_t` (i.e. `uint32_t` or `uint64_t`).
 constexpr int32_t UnpackSigned(size_t value)
     JXL_NO_SANITIZE("unsigned-integer-overflow") {
-  JXL_DASSERT((value & 0xFFFFFFFF) == value);  // no-op in 32-bit build
+  // TODO(Ivan): fails in C++11 mode, restore with a guard?
+  // JXL_DASSERT((value & 0xFFFFFFFF) == value);  // no-op in 32-bit build
   return static_cast<int32_t>((value >> 1) ^ (((~value) & 1) - 1));
 }
 

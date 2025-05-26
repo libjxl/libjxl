@@ -31,6 +31,7 @@
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
@@ -116,15 +117,12 @@ Status PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
   }
 
   EntropyEncodingData codes;
-  std::vector<uint8_t> context_map;
   JXL_ASSIGN_OR_RETURN(
-      size_t cost,
-      BuildAndEncodeHistograms(memory_manager, HistogramParams(),
-                               kNumPatchDictionaryContexts, tokens, &codes,
-                               &context_map, writer, layer, aux_out));
+      size_t cost, BuildAndEncodeHistograms(memory_manager, HistogramParams(),
+                                            kNumPatchDictionaryContexts, tokens,
+                                            &codes, writer, layer, aux_out));
   (void)cost;
-  JXL_RETURN_IF_ERROR(
-      WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteTokens(tokens[0], codes, 0, writer, layer, aux_out));
   return true;
 }
 
@@ -211,13 +209,13 @@ struct PatchColorspaceInfo {
   }
 
   int Quantize(float val, size_t c) {
-    return truncf(ScaleForQuantization(val, c));
+    return std::trunc(ScaleForQuantization(val, c));
   }
 
   bool is_similar_v(const float v1[3], const float v2[3], float threshold) {
     float distance = 0;
     for (size_t c = 0; c < 3; c++) {
-      distance += std::fabs(v1[c] - v2[c]) * kChannelWeights[c];
+      distance += std::abs(v1[c] - v2[c]) * kChannelWeights[c];
     }
     return distance <= threshold;
   }

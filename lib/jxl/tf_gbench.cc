@@ -119,7 +119,8 @@ HWY_EXPORT(BM_PQSlowDFE);
 HWY_EXPORT(BM_PQSlowEFD);
 
 float SRGB_pow(float _, float x) {
-  return x < 0.0031308f ? 12.92f * x : 1.055f * powf(x, 1.0f / 2.4f) - 0.055f;
+  return x < 0.0031308f ? 12.92f * x
+                        : 1.055f * std::pow(x, 1.0f / 2.4f) - 0.055f;
 }
 
 void BM_FastSRGB(benchmark::State& state) {

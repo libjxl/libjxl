@@ -300,8 +300,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
             x, y, channel.w, top, left, topright, topleft, toptop, &properties,
             offset);
         uint32_t pos =
-            kPropRangeFast + std::min(std::max(-kPropRangeFast, properties[0]),
-                                      kPropRangeFast - 1);
+            kPropRangeFast +
+            jxl::Clamp1(properties[0], -kPropRangeFast, kPropRangeFast - 1);
         uint32_t ctx_id = tree_lut->context_lookup[pos];
         int32_t residual = r[x] - guess;
         *tokenp++ = Token(ctx_id, PackSigned(residual));
@@ -759,13 +759,12 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
 
   // Write tree
   EntropyEncodingData code;
-  std::vector<uint8_t> context_map;
-  JXL_ASSIGN_OR_RETURN(size_t cost,
-                       BuildAndEncodeHistograms(
-                           memory_manager, options.histogram_params,
-                           kNumTreeContexts, tree_tokens, &code, &context_map,
-                           &writer, LayerType::ModularTree, aux_out));
-  JXL_RETURN_IF_ERROR(WriteTokens(tree_tokens[0], code, context_map, 0, &writer,
+  JXL_ASSIGN_OR_RETURN(
+      size_t cost,
+      BuildAndEncodeHistograms(memory_manager, options.histogram_params,
+                               kNumTreeContexts, tree_tokens, &code, &writer,
+                               LayerType::ModularTree, aux_out));
+  JXL_RETURN_IF_ERROR(WriteTokens(tree_tokens[0], code, 0, &writer,
                                   LayerType::ModularTree, aux_out));
 
   size_t image_width = 0;
@@ -777,16 +776,14 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
 
   // Write data
   code = {};
-  context_map.clear();
   HistogramParams histo_params = options.histogram_params;
   histo_params.image_widths.push_back(image_width);
   JXL_ASSIGN_OR_RETURN(
       cost, BuildAndEncodeHistograms(memory_manager, histo_params,
                                      (tree.size() + 1) / 2, tokens, &code,
-                                     &context_map, &writer, layer, aux_out));
+                                     &writer, layer, aux_out));
   (void)cost;
-  JXL_RETURN_IF_ERROR(
-      WriteTokens(tokens[0], code, context_map, 0, &writer, layer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteTokens(tokens[0], code, 0, &writer, layer, aux_out));
 
   bits = writer.BitsWritten() - bits;
   JXL_DEBUG_V(4,

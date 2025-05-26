@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
@@ -116,7 +117,7 @@ class NoiseHistogram {
  private:
   template <typename T>
   T ClampX(const T x) const {
-    return std::min(std::max(static_cast<T>(0), x), static_cast<T>(kBins - 1));
+    return jxl::Clamp1<T>(x, 0, kBins - 1);
   }
   size_t Index(const float x) const { return ClampX(static_cast<int>(x)); }
 

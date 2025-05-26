@@ -64,7 +64,7 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
           static_cast<uint64_t>(im.xsize()), static_cast<uint64_t>(im.ysize()));
 
   // A segment of uninitialized pixels in a row, in the format [first, second).
-  typedef std::pair<size_t, size_t> PixelSegment;
+  using PixelSegment = std::pair<size_t, size_t>;
 
   // Helper class to merge and print a list of rows of PixelSegment that may be
   // the same over big ranges of rows. This compacts the output to ranges of

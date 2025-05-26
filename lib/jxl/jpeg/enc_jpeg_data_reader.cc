@@ -5,11 +5,10 @@
 
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
 
-#include <inttypes.h>
-#include <string.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include "lib/jxl/base/common.h"
@@ -226,7 +225,12 @@ bool ProcessDHT(const uint8_t* data, const size_t len, JpegReadMode mode,
   JXL_JPEG_VERIFY_LEN(2);
   size_t marker_len = ReadUint16(data, pos);
   if (marker_len == 2) {
-    return JXL_FAILURE("DHT marker: no Huffman table found");
+    // Empty DHT marker. Useless but does seem to occur in the wild.
+    // We represent this situation with a dummy all-zeroes Huffman table.
+    JPEGHuffmanCode huff;
+    huff.is_last = true;
+    jpg->huffman_code.push_back(huff);
+    return true;
   }
   while (*pos < start_pos + marker_len) {
     JXL_JPEG_VERIFY_LEN(1 + kJpegHuffmanMaxBitLength);

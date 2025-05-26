@@ -213,7 +213,7 @@ struct CompressArgs {
         "rendering intent\n"
         "      -x color_space=RGB_D65_202_Rel_PeQ is Rec.2100 PQ with relative "
         "rendering intent\n"
-        "    Shorthands: sRGB, DisplayP3, Rec2100PQ, Rec2100HLG\n"
+        "    Shorthands: sRGB, DisplayP3, Adobe98, Rec2100PQ, Rec2100HLG\n"
         "    The key 'icc_pathname' refers to a binary file containing an ICC "
         "profile.\n"
         "    The keys 'exif', 'xmp', and 'jumbf' refer to a binary file "
@@ -764,6 +764,19 @@ void ProcessFlags(const jxl::extras::Codec codec,
 
   SetDistanceFromFlags(cmdline, args, params, codec);
 
+  bool responsive_set = cmdline->GetOption(args->opt_responsive_id)->matched();
+  
+  // Set progressive options before processing flags
+  if (args->progressive) {
+    args->qprogressive_ac = true;
+    if (args->progressive_dc == -1) {
+      args->progressive_dc = 1;
+    }
+    args->group_order = jxl::Override::kOn;
+    args->responsive = 1;
+    responsive_set = true;
+  }
+
   if (args->group_order != jxl::Override::kOn &&
       (args->center_x != -1 || args->center_y != -1)) {
     std::cerr << "Invalid flag combination. Setting --center_x or --center_y "
@@ -788,8 +801,6 @@ void ProcessFlags(const jxl::extras::Codec codec,
               });
 
   // Progressive/responsive mode settings.
-  bool responsive_set = cmdline->GetOption(args->opt_responsive_id)->matched();
-
   ProcessFlag("progressive_dc", args->progressive_dc,
               JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, params,
               [](int64_t x) -> std::string {
@@ -798,12 +809,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
               });
   ProcessFlag("progressive_ac", static_cast<int64_t>(args->progressive_ac),
               JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC, params);
-
-  if (args->progressive) {
-    args->qprogressive_ac = true;
-    args->responsive = 1;
-    responsive_set = true;
-  }
+  
   if (responsive_set) {
     ProcessFlag("responsive", args->responsive,
                 JXL_ENC_FRAME_SETTING_RESPONSIVE, params);

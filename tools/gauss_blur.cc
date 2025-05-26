@@ -434,7 +434,7 @@ RecursiveGaussian CreateRecursiveGaussian(double sigma) {
   RecursiveGaussian rg;
   constexpr double kPi = 3.141592653589793238;
 
-  const double radius = roundf(3.2795 * sigma + 0.2546);  // (57), "N"
+  const double radius = std::round(3.2795 * sigma + 0.2546);  // (57), "N"
 
   // Table I, first row
   const double pi_div_2r = kPi / (2.0 * radius);

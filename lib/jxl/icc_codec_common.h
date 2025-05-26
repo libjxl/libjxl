@@ -20,7 +20,7 @@ class PaddedBytes;
 
 static constexpr size_t kICCHeaderSize = 128;
 
-typedef std::array<uint8_t, 4> Tag;
+using Tag = std::array<uint8_t, 4>;
 
 static const Tag kAcspTag = {{'a', 'c', 's', 'p'}};
 static const Tag kBkptTag = {{'b', 'k', 'p', 't'}};

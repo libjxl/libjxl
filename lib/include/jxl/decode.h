@@ -81,7 +81,7 @@ JXL_EXPORT JxlSignature JxlSignatureCheck(const uint8_t* buf, size_t len);
  * Allocated and initialized with @ref JxlDecoderCreate().
  * Cleaned up and deallocated with @ref JxlDecoderDestroy().
  */
-typedef struct JxlDecoderStruct JxlDecoder;
+typedef struct JxlDecoder JxlDecoder;
 
 /**
  * Creates an instance of @ref JxlDecoder and initializes it.

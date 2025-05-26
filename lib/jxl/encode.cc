@@ -395,9 +395,9 @@ size_t WriteBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
 }  // namespace jxl
 
 template <typename WriteBox>
-jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
-                                        bool unbounded, size_t box_max_size,
-                                        const WriteBox& write_box) {
+jxl::Status JxlEncoder::AppendBox(const jxl::BoxType& type, bool unbounded,
+                                  size_t box_max_size,
+                                  const WriteBox& write_box) {
   size_t current_position = output_processor.CurrentPosition();
   bool large_box = false;
   size_t box_header_size = 0;
@@ -437,8 +437,8 @@ jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
 }
 
 template <typename BoxContents>
-jxl::Status JxlEncoderStruct::AppendBoxWithContents(
-    const jxl::BoxType& type, const BoxContents& contents) {
+jxl::Status JxlEncoder::AppendBoxWithContents(const jxl::BoxType& type,
+                                              const BoxContents& contents) {
   size_t size = std::end(contents) - std::begin(contents);
   return AppendBox(type, /*unbounded=*/false, size,
                    [&]() { return AppendData(output_processor, contents); });
@@ -756,7 +756,7 @@ void FastLosslessRunnerAdapter(void* void_ticket, void* opaque,
 
 }  // namespace
 
-jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
+jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
   jxl::PaddedBytes header_bytes{&memory_manager};
 
   jxl::JxlEncoderQueuedInput& input = input_queue[0];
@@ -1530,10 +1530,13 @@ JxlEncoderStatus JxlEncoderSetFrameDistance(
                          "Distance has to be in [0.0..25.0] (corresponding to "
                          "quality in [0.0..100.0])");
   }
-  if (distance > 0.f && distance < 0.01f) {
-    distance = 0.01f;
+  if (distance > 0.f && distance < jxl::kMinButteraugliDistance) {
+    distance = jxl::kMinButteraugliDistance;
   }
   frame_settings->values.cparams.butteraugli_distance = distance;
+  if (distance == 0.f) {
+    return JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+  }
   return JxlErrorOrStatus::Success();
 }
 

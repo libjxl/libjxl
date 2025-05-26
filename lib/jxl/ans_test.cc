@@ -15,6 +15,7 @@
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/test_memory_manager.h"
@@ -37,7 +38,6 @@ void RoundtripTestcase(int n_histograms, int alphabet_size,
     return true;
   }));
 
-  std::vector<uint8_t> context_map;
   EntropyEncodingData codes;
   std::vector<std::vector<Token>> input_values_vec;
   input_values_vec.push_back(input_values);
@@ -45,10 +45,10 @@ void RoundtripTestcase(int n_histograms, int alphabet_size,
   JXL_TEST_ASSIGN_OR_DIE(
       size_t cost,
       BuildAndEncodeHistograms(memory_manager, HistogramParams(), n_histograms,
-                               input_values_vec, &codes, &context_map, &writer,
+                               input_values_vec, &codes, &writer,
                                LayerType::Header, nullptr));
   (void)cost;
-  ASSERT_TRUE(WriteTokens(input_values_vec[0], codes, context_map, 0, &writer,
+  ASSERT_TRUE(WriteTokens(input_values_vec[0], codes, 0, &writer,
                           LayerType::Header, nullptr));
 
   // Magic bytes + padding
@@ -68,7 +68,7 @@ void RoundtripTestcase(int n_histograms, int alphabet_size,
   ANSCode decoded_codes;
   ASSERT_TRUE(DecodeHistograms(memory_manager, &br, n_histograms,
                                &decoded_codes, &dec_context_map));
-  ASSERT_EQ(dec_context_map, context_map);
+  ASSERT_EQ(dec_context_map, codes.context_map);
   JXL_TEST_ASSIGN_OR_DIE(ANSSymbolReader reader,
                          ANSSymbolReader::Create(&decoded_codes, &br));
 
@@ -216,7 +216,6 @@ void TestCheckpointing(bool ans, bool lz77) {
     input_values[0].emplace_back(0, i % 4);
   }
 
-  std::vector<uint8_t> context_map;
   EntropyEncodingData codes;
   HistogramParams params;
   params.lz77_method = lz77 ? HistogramParams::LZ77Method::kLZ77
@@ -227,12 +226,12 @@ void TestCheckpointing(bool ans, bool lz77) {
   {
     auto input_values_copy = input_values;
     JXL_TEST_ASSIGN_OR_DIE(
-        size_t cost, BuildAndEncodeHistograms(
-                         memory_manager, params, 1, input_values_copy, &codes,
-                         &context_map, &writer, LayerType::Header, nullptr));
+        size_t cost,
+        BuildAndEncodeHistograms(memory_manager, params, 1, input_values_copy,
+                                 &codes, &writer, LayerType::Header, nullptr));
     (void)cost;
-    ASSERT_TRUE(WriteTokens(input_values_copy[0], codes, context_map, 0,
-                            &writer, LayerType::Header, nullptr));
+    ASSERT_TRUE(WriteTokens(input_values_copy[0], codes, 0, &writer,
+                            LayerType::Header, nullptr));
     writer.ZeroPadToByte();
   }
 
@@ -247,7 +246,7 @@ void TestCheckpointing(bool ans, bool lz77) {
     ANSCode decoded_codes;
     ASSERT_TRUE(DecodeHistograms(memory_manager, &br, 1, &decoded_codes,
                                  &dec_context_map));
-    ASSERT_EQ(dec_context_map, context_map);
+    ASSERT_EQ(dec_context_map, codes.context_map);
     JXL_TEST_ASSIGN_OR_DIE(ANSSymbolReader reader,
                            ANSSymbolReader::Create(&decoded_codes, &br));
 

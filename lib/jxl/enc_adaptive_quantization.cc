@@ -523,10 +523,10 @@ struct AdaptiveQuantizationImpl {
             0.25f * (row_in2[x] + row_in1[x] + row_in[x1] + row_in[x2]);
         const float gammac = RatioOfDerivativesOfCubicRootToSimpleGamma(
             row_in[x] + match_gamma_offset);
-        float diff = fabs(gammac * (row_in[x] - base));
+        float diff = std::abs(gammac * (row_in[x] - base));
         static const double kScaler = 1.0;
         diff *= kScaler;
-        diff = log1p(diff);
+        diff = std::log1p(diff);
         static const float kMul = 1.0;
         static const float kOffset = 0.01;
         mask1x1_out[x] = kMul / (diff + kOffset);
