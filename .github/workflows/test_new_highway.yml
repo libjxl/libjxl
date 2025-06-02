@@ -51,7 +51,7 @@ jobs:
           git checkout ${{ matrix.tag }}
       - name: Update deps.sh
         run: |
-          NEWHASH=`git submodule status third_party/highway | cut -d' ' -f1 | cut -c2-`
+          NEWHASH=`git -C third_party/highway rev-parse HEAD`
           sed -i "s/\(THIRD_PARTY_HIGHWAY=\"\)[^\"]*/\1$NEWHASH/" deps.sh
       - name: Commit
         run: |

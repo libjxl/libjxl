@@ -149,10 +149,13 @@ struct FuzzSpec {
     bool modular = (spec.int_options[7].value == 1);
     Check(spec.int_options[18].flag == JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR);
     bool slow_predictor = (spec.int_options[18].value >= 14);
-    const uint64_t kMaxSize =
-        (modular && slow_predictor) ? (1 << 23) : (1 << 24);
+    uint64_t kMaxSizeFactor = 16;
+    if (modular && slow_predictor) kMaxSizeFactor /= 2;
+    if (sizeof(size_t) == 4) kMaxSizeFactor /= 1.5;
+    const uint64_t kMaxSize = kMaxSizeFactor * (1 << 20);
     if (spec.xsize * uint64_t{spec.ysize} > kMaxSize) {
       spec.ysize = kMaxSize / spec.xsize;
+      Check(spec.ysize > 0);
     }
 
     for (auto& x : spec.pixel_data) {
