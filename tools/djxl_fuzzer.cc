@@ -345,7 +345,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
         }
         decode_callback_data.xsize = frame_header.layer_info.xsize;
         decode_callback_data.ysize = frame_header.layer_info.ysize;
-        size_t num_pixels = static_cast<size_t>(frame_header.layer_info.xsize) * frame_header.layer_info.ysize;
+        size_t num_pixels = static_cast<size_t>(frame_header.layer_info.xsize) *
+                            frame_header.layer_info.ysize;
         if (num_pixels > max_pixels) return false;
         if (!spec.coalescing) {
           decode_callback_data.called_rows.clear();
