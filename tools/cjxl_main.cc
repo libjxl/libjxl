@@ -765,7 +765,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   SetDistanceFromFlags(cmdline, args, params, codec);
 
   bool responsive_set = cmdline->GetOption(args->opt_responsive_id)->matched();
-  
+
   // Set progressive options before processing flags
   if (args->progressive) {
     args->qprogressive_ac = true;
@@ -809,7 +809,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
               });
   ProcessFlag("progressive_ac", static_cast<int64_t>(args->progressive_ac),
               JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC, params);
-  
+
   if (responsive_set) {
     ProcessFlag("responsive", args->responsive,
                 JXL_ENC_FRAME_SETTING_RESPONSIVE, params);

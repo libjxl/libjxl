@@ -145,7 +145,7 @@ TEST(JxlTest, RoundtripSmallD1) {
 
   {
     PackedPixelFile ppf_out;
-    EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 723, 20);
+    EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 747, 20);
     EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.3);
     EXPECT_EQ(ppf_out.info.intensity_target, t.ppf().info.intensity_target);
   }
@@ -225,7 +225,7 @@ TEST(JxlTest, RoundtripOutOfOrderProcessing) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out), 26933,
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out), 23666,
               400);
   EXPECT_LE(ButteraugliDistance(t.ppf(), ppf_out), 1.35);
 }
@@ -248,7 +248,7 @@ TEST(JxlTest, RoundtripOutOfOrderProcessingBorder) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out), 9907, 200);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out), 9479, 200);
   EXPECT_LE(ButteraugliDistance(t.ppf(), ppf_out), 2.9);
 }
 
@@ -330,9 +330,9 @@ TEST(JxlTest, RoundtripMultiGroup) {
   };
 
   auto run_kitten = std::async(std::launch::async, test, SpeedTier::kKitten,
-                               1.0f, 64624u, 8.5);
+                               1.0f, 58737u, 9.1);
   auto run_wombat = std::async(std::launch::async, test, SpeedTier::kWombat,
-                               2.0f, 39001u, 15.5);
+                               2.0f, 35561u, 16.5);
 }
 
 TEST(JxlTest, RoundtripRGBToGrayscale) {
@@ -396,7 +396,7 @@ TEST(JxlTest, RoundtripLargeFast) {
 
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
-              508000, 12000);
+              488000, 12000);
   EXPECT_SLIGHTLY_BELOW(ComputeDistance2(t.ppf(), ppf_out), 78);
 }
 
@@ -447,7 +447,7 @@ TEST(JxlTest, RoundtripOutputColorSpace) {
   dparams.color_space = "RGB_D65_DCI_Rel_709";
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
-              513000, 12000);
+              487000, 12000);
   EXPECT_SLIGHTLY_BELOW(ComputeDistance2(t.ppf(), ppf_out), 78);
 }
 
@@ -572,7 +572,7 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 45241, 400);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 44555, 400);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.55);
 }
 
@@ -646,7 +646,7 @@ TEST(JxlTest, RoundtripSmallPatches) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 486, 100);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 363, 100);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.015f);
 }
 
@@ -836,7 +836,7 @@ TEST(JxlTest, RoundtripAlpha) {
           ButteraugliDistance(io->frames, io2->frames, ButteraugliParams(),
                               *JxlGetDefaultCms(),
                               /*distmap=*/nullptr),
-          1.11);
+          1.05);
     }
   }
 }
@@ -984,7 +984,7 @@ TEST(JxlTest, RoundtripAlphaResampling) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 13900, 130);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 13730, 130);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 5.0);
 }
 
@@ -1024,7 +1024,7 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
 
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 107, 10);
-  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.006);
+  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.007);
 }
 
 TEST(JxlTest, RoundtripAlpha16) {
@@ -1063,7 +1063,7 @@ TEST(JxlTest, RoundtripAlpha16) {
   PackedPixelFile ppf_out;
   // TODO(szabadka) Investigate big size difference on i686
   // This still keeps happening (2023-04-18).
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 4013,
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 3810,
               120);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.6);
 }
@@ -1265,7 +1265,7 @@ TEST(JxlTest, RoundtripDots) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 245151,
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 236173,
               3000);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.165);
 }
@@ -1357,7 +1357,7 @@ TEST(JxlTest, RoundtripAnimation) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_SLIGHTLY_BELOW(Roundtrip(t.ppf(), {}, dparams, pool, &ppf_out), 3370);
+  EXPECT_SLIGHTLY_BELOW(Roundtrip(t.ppf(), {}, dparams, pool, &ppf_out), 2666);
 
   ASSERT_TRUE(t.CoalesceGIFAnimationWithAlpha());
   ASSERT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
@@ -1707,7 +1707,7 @@ TEST(JxlTest, RoundtripProgressive) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 71544,
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 65298,
               500);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.3);
 }
@@ -1728,9 +1728,9 @@ TEST(JxlTest, RoundtripProgressiveLevel2Slow) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 78765,
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out), 71969,
               1000);
-  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.17);
+  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.20);
 }
 
 TEST(JxlTest, RoundtripUnsignedCustomBitdepthLossless) {

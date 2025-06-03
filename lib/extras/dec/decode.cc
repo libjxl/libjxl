@@ -181,7 +181,6 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
   return true;
 }
 
-
 template <size_t N, size_t L>
 bool CheckSignatures(const Span<const uint8_t>& bytes,
                      const std::array<std::array<uint8_t, L>, N>& signatures) {
