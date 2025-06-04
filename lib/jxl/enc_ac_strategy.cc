@@ -445,7 +445,9 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
 
     {
       float masku_lut[3] = {
-	12.0, 0.0, 4.0,
+          12.0,
+          0.0,
+          4.0,
       };
       auto masku_off = Set(df8, masku_lut[c]);
       auto lossc = Zero(df8);
@@ -462,9 +464,9 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
                                       ix * kBlockDim + dx);
               if (x + ix * 8 + dx + Lanes(df8) <= config.mask1x1_xsize) {
                 auto masku =
-		  Add(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
-						     y + iy * 8 + dy)),
-		      masku_off);
+                    Add(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
+                                                       y + iy * 8 + dy)),
+                        masku_off);
                 in = Mul(masku, in);
                 in = Mul(in, in);
                 in = Mul(in, in);

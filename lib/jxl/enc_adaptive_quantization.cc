@@ -222,8 +222,8 @@ V BlueModulation(const D d, const size_t x, const size_t y,
                  const ImageF& planex, const ImageF& planey,
                  const ImageF& planeb, const Rect& rect, const V out_val) {
   auto sum = Zero(d);
-  static const float kLimit = 0.027121074570634722;
-  static const float kOffset = 0.084381641171960495;
+  static const float kLimit = 0.010474084867598155;
+  static const float kOffset = 0.0031994768654636393;
   for (size_t dy = 0; dy < 8; ++dy) {
     const float* JXL_RESTRICT row_in_x = rect.ConstRow(planex, y + dy) + x;
     const float* JXL_RESTRICT row_in_y = rect.ConstRow(planey, y + dy) + x;
@@ -238,7 +238,7 @@ V BlueModulation(const D d, const size_t x, const size_t y,
                                Min(Sub(p_b, p_y_effective), Set(d, kLimit))));
     }
   }
-  static const float kMul = 0.14207000358439159;
+  static const float kMul = 0.90590804735610064;
   sum = SumOfLanes(d, sum);
   float scalar_sum = GetLane(sum);
   // If it is all blue, don't boost the quantization.
@@ -247,7 +247,7 @@ V BlueModulation(const D d, const size_t x, const size_t y,
   if (scalar_sum >= 32 * kLimit) {
     scalar_sum = 64 * kLimit - scalar_sum;
   }
-  static const float kMaxLimit = 15.398788439047934f;
+  static const float kMaxLimit = 15.463398341612438;
   if (scalar_sum >= kMaxLimit * kLimit) {
     scalar_sum = kMaxLimit * kLimit;
   }
@@ -335,11 +335,11 @@ void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
     const HWY_CAPPED(float, kBlockDim) df;
     for (size_t ix = rect_out.x0(); ix < rect_out.x1(); ix++) {
       size_t x = ix * 8;
-      auto out_val = Set(df, row_out[ix]);
-      out_val = ComputeMask(df, out_val);
-      out_val = HfModulation(df, x, y, xyb_y, rect_in, out_val);
-      out_val = GammaModulation(df, x, y, xyb_x, xyb_y, rect_in, out_val);
-      out_val = BlueModulation(df, x, y, xyb_x, xyb_y, xyb_b, rect_in, out_val);
+      auto mask_val = ComputeMask(df, Set(df, row_out[ix]));
+      mask_val = GammaModulation(df, x, y, xyb_x, xyb_y, rect_in, mask_val);
+      auto out_val = HfModulation(df, x, y, xyb_y, rect_in, mask_val);
+      out_val = Min(out_val, BlueModulation(df, x, y, xyb_x, xyb_y, xyb_b,
+                                            rect_in, mask_val));
       // We want multiplicative quantization field, so everything
       // until this point has been modulating the exponent.
       row_out[ix] = FastPow2f(GetLane(out_val) * 1.442695041f) * mul + add;
@@ -648,11 +648,8 @@ Status Blur1x1Masking(JxlMemoryManager* memory_manager, ThreadPool* pool,
   // Before blurring it contains an image of absolute value of the
   // Laplacian of the intensity channel.
   static const float kFilterMask1x1[5] = {
-      static_cast<float>(0.25647067633737227),
-      static_cast<float>(0.2050056912354399075),
-      static_cast<float>(0.154082048668497307),
-      static_cast<float>(0.08149576591362004441),
-      static_cast<float>(0.0512750104812308467),
+      0.364911248234571,   0.05, 0.16888880219733757,
+      0.22106918336976511, 0.30656350405423149,
   };
   double sum =
       1.0 + 4 * (kFilterMask1x1[0] + kFilterMask1x1[1] + kFilterMask1x1[2] +
@@ -850,7 +847,7 @@ StatusOr<ImageF> TileDistMap(const ImageF& distmap, int tile_size, int margin,
 
 const float kDcQuantPow = 0.83f;
 const float kDcQuant = 1.095924047623553f;
-const float kAcQuant = 0.725f;
+const float kAcQuant = 0.765f;
 
 // Computes the decoded image for a given set of compression parameters.
 StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,
