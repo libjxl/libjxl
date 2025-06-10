@@ -795,7 +795,24 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
     }
     if (have_alpha) {
       output->Write(2, 0b01);  // One extra channel
-      output->Write(1, 1);     // ... all_default (ie. 8-bit alpha)
+      if (frame->bitdepth == 8) {
+        output->Write(1, 1); // ... all_default (ie. 8-bit alpha)
+      } else {
+        output->Write(1, 0); // not d_alpha
+        output->Write(2, 0); // type = kAlpha
+        output->Write(1, 0); // not float
+        if (frame->bitdepth == 10) {
+          output->Write(2, 0b01); // bit_depth.bits_per_sample = 10
+        } else if (frame->bitdepth == 12) {
+          output->Write(2, 0b10); // bit_depth.bits_per_sample = 12
+        } else {
+          output->Write(2, 0b11); // 1 + u(6)
+          output->Write(6, frame->bitdepth - 1);
+        }
+        output->Write(2, 0); // dim_shift = 0
+        output->Write(2, 0); // name_len = 0
+        output->Write(1, 0); // alpha_associated = 0
+      }
     } else {
       output->Write(2, 0b00);  // No extra channel
     }
