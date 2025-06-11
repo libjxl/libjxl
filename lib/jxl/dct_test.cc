@@ -10,6 +10,7 @@
 #include <numeric>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/test_memory_manager.h"
@@ -299,6 +300,18 @@ void TestSlowInverse(float accuracy, size_t start = 0, size_t end = N * N) {
 }
 
 template <size_t ROWS, size_t COLS>
+JXL_NOINLINE void NoinlineScaledDCT(float* x, float* coeffs,
+                                    float* scratch_space) {
+  ComputeScaledDCT<ROWS, COLS>()(DCTFrom(x, COLS), coeffs, scratch_space);
+}
+
+template <size_t ROWS, size_t COLS>
+JXL_NOINLINE void NoinlineScaledIDCT(float* coeffs, float* out,
+                                     float* scratch_space) {
+  ComputeScaledIDCT<ROWS, COLS>()(coeffs, DCTTo(out, COLS), scratch_space);
+}
+
+template <size_t ROWS, size_t COLS>
 void TestRectInverseT(float accuracy) {
   constexpr size_t kBlockSize = ROWS * COLS;
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
@@ -325,8 +338,8 @@ void TestRectInverseT(float accuracy) {
     memset(coeffs, 0, kBlockSize * sizeof(float));
     memset(scratch_space, 0, 5 * kBlockSize * sizeof(float));
 
-    ComputeScaledDCT<ROWS, COLS>()(DCTFrom(x, COLS), coeffs, scratch_space);
-    ComputeScaledIDCT<ROWS, COLS>()(coeffs, DCTTo(out, COLS), scratch_space);
+    NoinlineScaledDCT<ROWS, COLS>(x, coeffs, scratch_space);
+    NoinlineScaledIDCT<ROWS, COLS>(coeffs, out, scratch_space);
 
     for (size_t k = 0; k < kBlockSize; ++k) {
       EXPECT_NEAR(out[k], (k == i) ? 1.0f : 0.0f, accuracy)
@@ -391,8 +404,8 @@ void TestRectTransposeT(float accuracy) {
       constexpr size_t OUT_ROWS = ROWS < COLS ? ROWS : COLS;
       constexpr size_t OUT_COLS = ROWS < COLS ? COLS : ROWS;
 
-      ComputeScaledDCT<ROWS, COLS>()(DCTFrom(x1, COLS), coeffs1, scratch_space);
-      ComputeScaledDCT<COLS, ROWS>()(DCTFrom(x2, ROWS), coeffs2, scratch_space);
+      NoinlineScaledDCT<ROWS, COLS>(x1, coeffs1, scratch_space);
+      NoinlineScaledDCT<COLS, ROWS>(x2, coeffs2, scratch_space);
 
       for (size_t x = 0; x < OUT_COLS; ++x) {
         for (size_t y = 0; y < OUT_ROWS; ++y) {
