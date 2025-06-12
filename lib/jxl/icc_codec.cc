@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
@@ -363,10 +364,10 @@ Status ICCReader::Init(BitReader* reader) {
 }
 
 Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
-  ANSSymbolReader::Checkpoint checkpoint;
+  auto checkpoint = jxl::make_unique<ANSSymbolReader::Checkpoint>();
   size_t saved_i = 0;
   auto save = [&]() {
-    ans_reader_.Save(&checkpoint);
+    ans_reader_.Save(checkpoint.get());
     bits_to_skip_ = reader->TotalBitsConsumed() - used_bits_base_;
     saved_i = i_;
   };
@@ -375,7 +376,7 @@ Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
     Status status = CheckEOI(reader);
     if (!status) {
       // not enough bytes.
-      ans_reader_.Restore(checkpoint);
+      ans_reader_.Restore(*checkpoint);
       i_ = saved_i;
       return status;
     }

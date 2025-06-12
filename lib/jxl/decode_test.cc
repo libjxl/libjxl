@@ -728,36 +728,36 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
         writer.Write(8, 0x0a);
 
         // SizeHeader
-        jxl::CodecMetadata metadata;
-        EXPECT_TRUE(metadata.size.Set(xsize, ysize));
-        EXPECT_TRUE(WriteSizeHeader(metadata.size, &writer,
+        auto metadata = jxl::make_unique<jxl::CodecMetadata>();
+        EXPECT_TRUE(metadata->size.Set(xsize, ysize));
+        EXPECT_TRUE(WriteSizeHeader(metadata->size, &writer,
                                     jxl::LayerType::Header, nullptr));
 
         if (!metadata_default) {
-          metadata.m.SetUintSamples(bits_per_sample);
-          metadata.m.orientation = orientation;
-          metadata.m.SetAlphaBits(alpha_bits);
-          metadata.m.xyb_encoded = xyb_encoded;
+          metadata->m.SetUintSamples(bits_per_sample);
+          metadata->m.orientation = orientation;
+          metadata->m.SetAlphaBits(alpha_bits);
+          metadata->m.xyb_encoded = xyb_encoded;
           if (alpha_bits != 0) {
-            metadata.m.extra_channel_info[0].name = "alpha_test";
+            metadata->m.extra_channel_info[0].name = "alpha_test";
           }
         }
 
         if (!icc_profile.empty()) {
           jxl::IccBytes copy = icc_profile;
-          EXPECT_TRUE(metadata.m.color_encoding.SetICC(std::move(copy),
-                                                       JxlGetDefaultCms()));
+          EXPECT_TRUE(metadata->m.color_encoding.SetICC(std::move(copy),
+                                                        JxlGetDefaultCms()));
         }
 
-        EXPECT_TRUE(jxl::Bundle::Write(metadata.m, &writer,
+        EXPECT_TRUE(jxl::Bundle::Write(metadata->m, &writer,
                                        jxl::LayerType::Header, nullptr));
-        metadata.transform_data.nonserialized_xyb_encoded =
-            metadata.m.xyb_encoded;
-        EXPECT_TRUE(jxl::Bundle::Write(metadata.transform_data, &writer,
+        metadata->transform_data.nonserialized_xyb_encoded =
+            metadata->m.xyb_encoded;
+        EXPECT_TRUE(jxl::Bundle::Write(metadata->transform_data, &writer,
                                        jxl::LayerType::Header, nullptr));
 
         if (!icc_profile.empty()) {
-          EXPECT_TRUE(metadata.m.color_encoding.WantICC());
+          EXPECT_TRUE(metadata->m.color_encoding.WantICC());
           EXPECT_TRUE(jxl::WriteICC(jxl::Span<const uint8_t>(icc_profile),
                                     &writer, jxl::LayerType::Header, nullptr));
         }
@@ -3883,25 +3883,25 @@ void AnalyzeCodestream(const std::vector<uint8_t>& data,
   // Analyze the unboxed codestream.
   jxl::BitReader br(jxl::Bytes(codestream.data(), codestream.size()));
   ASSERT_EQ(br.ReadFixedBits<16>(), 0x0AFF);
-  jxl::CodecMetadata metadata;
-  ASSERT_TRUE(ReadSizeHeader(&br, &metadata.size));
-  ASSERT_TRUE(ReadImageMetadata(&br, &metadata.m));
+  auto metadata = jxl::make_unique<jxl::CodecMetadata>();
+  ASSERT_TRUE(ReadSizeHeader(&br, &metadata->size));
+  ASSERT_TRUE(ReadImageMetadata(&br, &metadata->m));
   streampos->basic_info =
       add_offset(br.TotalBitsConsumed() / jxl::kBitsPerByte);
-  metadata.transform_data.nonserialized_xyb_encoded = metadata.m.xyb_encoded;
-  ASSERT_TRUE(jxl::Bundle::Read(&br, &metadata.transform_data));
-  if (metadata.m.color_encoding.WantICC()) {
+  metadata->transform_data.nonserialized_xyb_encoded = metadata->m.xyb_encoded;
+  ASSERT_TRUE(jxl::Bundle::Read(&br, &metadata->transform_data));
+  if (metadata->m.color_encoding.WantICC()) {
     std::vector<uint8_t> icc;
     ASSERT_TRUE(jxl::test::ReadICC(&br, &icc));
     ASSERT_TRUE(!icc.empty());
-    metadata.m.color_encoding.SetICCRaw(std::move(icc));
+    metadata->m.color_encoding.SetICCRaw(std::move(icc));
   }
   ASSERT_TRUE(br.JumpToByteBoundary());
-  bool has_preview = metadata.m.have_preview;
+  bool has_preview = metadata->m.have_preview;
   while (br.TotalBitsConsumed() < br.TotalBytes() * jxl::kBitsPerByte) {
     FramePositions p;
     p.frame_start = add_offset(br.TotalBitsConsumed() / jxl::kBitsPerByte);
-    jxl::FrameHeader frame_header(&metadata);
+    jxl::FrameHeader frame_header(metadata.get());
     if (has_preview) {
       frame_header.nonserialized_is_preview = true;
       has_preview = false;

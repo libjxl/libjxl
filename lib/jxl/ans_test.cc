@@ -250,12 +250,12 @@ void TestCheckpointing(bool ans, bool lz77) {
     JXL_TEST_ASSIGN_OR_DIE(ANSSymbolReader reader,
                            ANSSymbolReader::Create(&decoded_codes, &br));
 
-    ANSSymbolReader::Checkpoint checkpoint;
+    auto checkpoint = jxl::make_unique<ANSSymbolReader::Checkpoint>();
     size_t br_pos = 0;
     constexpr size_t kInterval = ANSSymbolReader::kMaxCheckpointInterval - 2;
     for (size_t i = 0; i < input_values[0].size(); i++) {
       if (i % kInterval == 0 && i > 0) {
-        reader.Restore(checkpoint);
+        reader.Restore(*checkpoint);
         ASSERT_TRUE(br.Close());
         br = BitReader(writer.GetSpan());
         br.SkipBits(br_pos);
@@ -267,7 +267,7 @@ void TestCheckpointing(bool ans, bool lz77) {
         }
       }
       if (i % kInterval == 0) {
-        reader.Save(&checkpoint);
+        reader.Save(checkpoint.get());
         br_pos = br.TotalBitsConsumed();
       }
       Token symbol = input_values[0][i];

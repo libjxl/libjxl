@@ -438,20 +438,20 @@ void WriteHeaders(BitWriter* writer, size_t xsize, size_t ysize) {
     writer->Write(8, kCodestreamMarker);
     return true;
   }));
-  CodecMetadata metadata;
-  EXPECT_TRUE(metadata.size.Set(xsize, ysize));
+  auto metadata = jxl::make_unique<CodecMetadata>();
+  EXPECT_TRUE(metadata->size.Set(xsize, ysize));
   EXPECT_TRUE(
-      WriteSizeHeader(metadata.size, writer, LayerType::Header, nullptr));
-  metadata.m.color_encoding = ColorEncoding::LinearSRGB(/*is_gray=*/true);
-  metadata.m.xyb_encoded = false;
-  metadata.m.SetUintSamples(31);
+      WriteSizeHeader(metadata->size, writer, LayerType::Header, nullptr));
+  metadata->m.color_encoding = ColorEncoding::LinearSRGB(/*is_gray=*/true);
+  metadata->m.xyb_encoded = false;
+  metadata->m.SetUintSamples(31);
   EXPECT_TRUE(
-      WriteImageMetadata(metadata.m, writer, LayerType::Header, nullptr));
-  metadata.transform_data.nonserialized_xyb_encoded = metadata.m.xyb_encoded;
-  EXPECT_TRUE(Bundle::Write(metadata.transform_data, writer, LayerType::Header,
+      WriteImageMetadata(metadata->m, writer, LayerType::Header, nullptr));
+  metadata->transform_data.nonserialized_xyb_encoded = metadata->m.xyb_encoded;
+  EXPECT_TRUE(Bundle::Write(metadata->transform_data, writer, LayerType::Header,
                             nullptr));
   writer->ZeroPadToByte();
-  FrameHeader frame_header(&metadata);
+  FrameHeader frame_header(metadata.get());
   frame_header.encoding = FrameEncoding::kModular;
   frame_header.loop_filter.gab = false;
   frame_header.loop_filter.epf_iters = 0;
