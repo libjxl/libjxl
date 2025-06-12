@@ -889,7 +889,7 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // ringing next to sky etc. Optimization will find smaller numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
-  const float entropy_mul16X8 = 1.24;
+  const float entropy_mul16X8 = 1.21;
   const float entropy_mul16X16 = 1.34;
   const float entropy_mul16X32 = 1.49;
   const float entropy_mul32X32 = 1.48;
