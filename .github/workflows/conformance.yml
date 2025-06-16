@@ -245,7 +245,12 @@ jobs:
           grep -q ' ASAN ' djxl_version.txt || exit 1
           TARGET=${TARGET%_ASAN}
         fi
-        grep -q _${TARGET}_ djxl_version.txt || exit 1
+
+        # Old HWY versions does not report selected target
+        SELECTED=_
+        grep -E "(\[|,)_.*_(,|\])" djxl_version.txt || SELECTED=
+
+        grep -q ${SELECTED}${TARGET}${SELECTED} djxl_version.txt || exit 1
 
         python conformance.py \
           --decoder="${EMULATOR} ${HERE}/djxl" \
