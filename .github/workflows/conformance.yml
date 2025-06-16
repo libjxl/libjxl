@@ -129,7 +129,7 @@ jobs:
       run: |
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
-        CC=clang CXX=clang++ CMAKE_FLAGS="${{ matrix.cflags }}" \
+        CC=clang CXX=clang++ CMAKE_FLAGS="${{ matrix.cflags }} -DHWY_BROKEN_TARGETS=0" \
         SKIP_TEST=1 TARGETS="hwy_list_targets tools/djxl" \
         ./ci.sh ${{ matrix.build_type || 'release' }} \
           -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
