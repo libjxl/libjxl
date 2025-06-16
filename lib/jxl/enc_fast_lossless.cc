@@ -3749,8 +3749,8 @@ bool detect_palette(const unsigned char* r, size_t width,
     for (int i = 0; i < 8; i++) index[i] = pixel_hash(p[i]);
     for (int i = 0; i < 8; i++) {
       collided |= (palette[index[i]] != 0 && p[i] != palette[index[i]]);
+      palette[index[i]] = p[i];
     }
-    for (int i = 0; i < 8; i++) palette[index[i]] = p[i];
   }
   for (; x < width; x++) {
     uint32_t p = 0;
