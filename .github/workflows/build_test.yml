@@ -260,7 +260,7 @@ jobs:
         MODE="${{ matrix.mode }}"
         BUILD_TESTS=$([ "${WILL_TEST}" == "true" ] && echo "ON" || echo "OFF")
         [[ -n "${MODE}" ]] || MODE="${{ matrix.name }}"
-        SKIP_TEST=1 TARGETS=all CMAKE_CXX_FLAGS='${{ matrix.cxxflags }}' \
+        SKIP_TEST=1 TARGETS=all CMAKE_CXX_FLAGS='${{ matrix.cxxflags }}' CMAKE_FLAGS='-DHWY_BROKEN_TARGETS=0' \
         ./ci.sh ${MODE} \
           -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
