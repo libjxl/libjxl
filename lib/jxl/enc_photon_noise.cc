@@ -90,7 +90,7 @@ NoiseParams SimulatePhotonNoise(const size_t xsize, const size_t ysize,
                     * std::sqrt(2.f)  // red_noise + green_noise
                     * 1.13f  // standard deviation of a plane of generated noise
                     ),
-               0.f, 1.f);
+               0.f, kNoiseLutMax);
   }
 
   return params;

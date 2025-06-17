@@ -197,7 +197,7 @@ struct LossFunction {
 };
 
 void OptimizeNoiseParameters(const std::vector<NoiseLevel>& noise_level,
-                             NoiseParams* noise_params) {
+                             NoiseParams* noise_params, float mul) {
   constexpr double kMaxError = 1e-3;
   static const double kPrecision = 1e-8;
   static const int kMaxIter = 40;
@@ -217,8 +217,14 @@ void OptimizeNoiseParameters(const std::vector<NoiseLevel>& noise_level,
   parameter_vector = optimize::OptimizeWithScaledConjugateGradientMethod(
       loss_function, parameter_vector, kPrecision, kMaxIter);
 
-  OptimizeArray df = parameter_vector;
-  float loss = loss_function.Compute(parameter_vector, &df,
+  // Clamp here to account codestream limits.
+  for (size_t i = 0; i < parameter_vector.size(); i++) {
+    parameter_vector[i] =
+        jxl::Clamp1<float>(parameter_vector[i] * mul, 0.0f, kNoiseLutMax);
+  }
+
+  OptimizeArray unused;
+  float loss = loss_function.Compute(parameter_vector, &unused,
                                      /*skip_regularization=*/true) /
                noise_level.size();
 
@@ -229,7 +235,7 @@ void OptimizeNoiseParameters(const std::vector<NoiseLevel>& noise_level,
   }
 
   for (size_t i = 0; i < parameter_vector.size(); i++) {
-    noise_params->lut[i] = std::max(parameter_vector[i], 0.0);
+    noise_params->lut[i] = parameter_vector[i];
   }
 }
 
@@ -355,10 +361,7 @@ Status GetNoiseParameter(const Image3F& opsin, NoiseParams* noise_params,
   std::vector<NoiseLevel> nl =
       GetNoiseLevel(opsin, sad_scores, sad_threshold, block_s);
 
-  OptimizeNoiseParameters(nl, noise_params);
-  for (float& i : noise_params->lut) {
-    i *= quality_coef * 1.4;
-  }
+  OptimizeNoiseParameters(nl, noise_params, quality_coef * 1.4f);
   return noise_params->HasAny();
 }
 
