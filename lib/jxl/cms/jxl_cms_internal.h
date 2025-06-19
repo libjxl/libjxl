@@ -866,9 +866,13 @@ static inline bool CloseEnough(double a, double b) {
   return std::abs(a - b) < 3e-5;
 }
 
-static std::string ColorEncodingDescriptionImpl(const JxlColorEncoding& c) {
-  // Return short names for the most common color spaces
-  if (c.color_space == JXL_COLOR_SPACE_RGB) {
+static std::string ColorEncodingDescriptionImpl(const JxlColorEncoding& c,
+                                                bool uniquename) {
+  // Return short names for the most common color spaces.
+  // These names are returned regardless of rendering intent, and also there is
+  // some tolerance regarding primaries and transfer function, so different
+  // ColorEncodings can return the same short name.
+  if (c.color_space == JXL_COLOR_SPACE_RGB && !uniquename) {
     if (c.white_point == JXL_WHITE_POINT_D65) {
       if (c.transfer_function == JXL_TRANSFER_FUNCTION_SRGB) {
         if (c.primaries == JXL_PRIMARIES_SRGB) return "sRGB";
@@ -1000,7 +1004,7 @@ static Status MaybeCreateProfileImpl(const JxlColorEncoding& c,
   size_t tag_offset = 0;
   size_t tag_size = 0;
 
-  CreateICCMlucTag(ColorEncodingDescriptionImpl(c), &tags);
+  CreateICCMlucTag(ColorEncodingDescriptionImpl(c, false), &tags);
   FinalizeICCTag(&tags, &tag_offset, &tag_size);
   AddToICCTagTable("desc", tag_offset, tag_size, &tagtable, &offsets);
 
@@ -1156,8 +1160,8 @@ static Status MaybeCreateProfileImpl(const JxlColorEncoding& c,
 // Returns a representation of the ColorEncoding fields (not icc).
 // Example description: "RGB_D65_SRG_Rel_Lin"
 static JXL_MAYBE_UNUSED std::string ColorEncodingDescription(
-    const JxlColorEncoding& c) {
-  return detail::ColorEncodingDescriptionImpl(c);
+    const JxlColorEncoding& c, bool uniquename = true) {
+  return detail::ColorEncodingDescriptionImpl(c, uniquename);
 }
 
 // NOTE: for XYB colorspace, the created profile can be used to transform a
