@@ -160,7 +160,7 @@ if(JPEGXL_ENABLE_TOOLS)
     list(APPEND INTERNAL_TOOL_BINARIES cjpegli djpegli)
   endif()
 
-  add_executable(jxlinfo jxlinfo.c)
+  add_executable(jxlinfo jxlinfo.cc)
   target_link_libraries(jxlinfo jxl jxl_extras_nocodec-internal)
   list(APPEND TOOL_BINARIES jxlinfo)
 
