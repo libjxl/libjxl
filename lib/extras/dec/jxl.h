@@ -31,6 +31,8 @@ struct JXLDecompressParams {
 
   // Requested output color space description.
   std::string color_space;
+  // Requested output color space description in case of CMYK images.
+  std::string color_space_for_cmyk;
   // If set, performs tone mapping to this intensity target luminance.
   float display_nits = 0.0;
   // Whether spot colors are rendered on the image.

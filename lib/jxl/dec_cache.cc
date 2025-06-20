@@ -343,6 +343,11 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         }
       }
       linear = false;
+    } else {
+      auto cms_stage = GetCmsStage(output_encoding_info, false);
+      if (cms_stage) {
+        JXL_RETURN_IF_ERROR(builder.AddStage(std::move(cms_stage)));
+      }
     }
     (void)linear;
 
