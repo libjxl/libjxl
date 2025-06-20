@@ -1089,7 +1089,7 @@ int main(int argc, char** argv) {
       const double t0 = jxl::Now();
       jxl::Status status = jxl::extras::DecodeBytes(
           jxl::Bytes(image_data), args.color_hints_proxy.target, &ppf, nullptr,
-          &codec);
+          &codec, nullptr, /*coalescing=*/false);
 
       if (!status) {
         std::cerr << "Getting pixel data failed.\n";

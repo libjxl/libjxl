@@ -604,7 +604,9 @@ int main(int argc, const char* argv[]) {
       size_t nlayers = args.output_extra_channels
                            ? 1 + encoded_image.extra_channel_bitstreams.size()
                            : 1;
-      size_t nframes = args.output_frames ? encoded_image.bitstreams.size() : 1;
+      size_t nframes = (args.output_frames || !args.coalescing)
+                           ? encoded_image.bitstreams.size()
+                           : 1;
       for (size_t i = 0; i < nlayers; ++i) {
         for (size_t j = 0; j < nframes; ++j) {
           const std::vector<uint8_t>& bitstream =

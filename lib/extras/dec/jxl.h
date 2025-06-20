@@ -38,7 +38,7 @@ struct JXLDecompressParams {
   // Whether to keep or undo the orientation given in the header.
   bool keep_orientation = false;
   // Coalescing or not
-  bool coalescing = false;
+  bool coalescing = true;
 
   // If runner_opaque is set, the decoder uses this parallel runner.
   JxlParallelRunner runner;
