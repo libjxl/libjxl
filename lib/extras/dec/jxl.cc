@@ -219,6 +219,11 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       fprintf(stderr, "JxlDecoderSetUnpremultiplyAlpha failed\n");
       return false;
     }
+    if (JXL_DEC_SUCCESS !=
+        JxlDecoderSetCoalescing(dec, TO_JXL_BOOL(dparams.coalescing))) {
+      fprintf(stderr, "JxlDecoderSetCoalescing failed\n");
+      return false;
+    }
     if (dparams.display_nits > 0 &&
         JXL_DEC_SUCCESS !=
             JxlDecoderSetDesiredIntensityTarget(dec, dparams.display_nits)) {
@@ -437,11 +442,14 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       if (constraints && (total_pixel_count > constraints->dec_max_pixels)) {
         return JXL_FAILURE("Image too big");
       }
-      auto frame_or = jxl::extras::PackedFrame::Create(ppf->info.xsize,
-                                                       ppf->info.ysize, format);
+      JxlFrameHeader fh;
+      if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &fh)) {
+        fprintf(stderr, "JxlDecoderGetFrameHeader failed\n");
+        return false;
+      }
       JXL_ASSIGN_OR_QUIT(jxl::extras::PackedFrame frame,
                          jxl::extras::PackedFrame::Create(
-                             ppf->info.xsize, ppf->info.ysize, format),
+                             fh.layer_info.xsize, fh.layer_info.ysize, format),
                          "Failed to create image frame.");
       if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &frame.frame_info)) {
         fprintf(stderr, "JxlDecoderGetFrameHeader failed\n");
@@ -556,7 +564,8 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       for (auto& eci : ppf->extra_channels_info) {
         JXL_ASSIGN_OR_QUIT(jxl::extras::PackedImage image,
                            jxl::extras::PackedImage::Create(
-                               ppf->info.xsize, ppf->info.ysize, ec_format),
+                               frame.frame_info.layer_info.xsize,
+                               frame.frame_info.layer_info.ysize, ec_format),
                            "Failed to create extra channel image.");
         frame.extra_channels.emplace_back(std::move(image));
         auto& ec = frame.extra_channels.back();
