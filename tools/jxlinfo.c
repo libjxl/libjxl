@@ -27,12 +27,14 @@ static void PrintColorEncoding(const JxlColorEncoding* color_encoding) {
       "", "",    "",        "sRGB", "", "", "PQ", "DCI", "HLG"};
   const char* const ri_string[4] = {"Perceptual", "Relative", "Saturation",
                                     "Absolute"};
+
   printf("%s, ", cs_string[(*color_encoding).color_space]);
-  printf("%s, ", wp_string[(*color_encoding).white_point]);
+  printf("%s", wp_string[(*color_encoding).white_point]);
   if ((*color_encoding).white_point == JXL_WHITE_POINT_CUSTOM) {
-    printf("white_point(x=%f,y=%f), ", (*color_encoding).white_point_xy[0],
+    printf(" white_point(x=%f,y=%f), ", (*color_encoding).white_point_xy[0],
            (*color_encoding).white_point_xy[1]);
   }
+  printf(", ");
   if ((*color_encoding).color_space == JXL_COLOR_SPACE_RGB ||
       (*color_encoding).color_space == JXL_COLOR_SPACE_UNKNOWN) {
     printf("%s primaries", pr_string[(*color_encoding).primaries]);
