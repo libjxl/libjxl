@@ -8,18 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
-  - Corrupted images when using effort 1 lossless. (#4027)
-  - Extremely tall/wide images failed to encode using modular. (#3937)
-  - Progressive VarDCT couldn't load progressively. (#4223)
+  - LZ77 runs that crossed entropy-coded streams within the same section
+    would fail to decode. #4298
+  - Images could be corrupted when encoding effort 1 lossless. (#4027 and #4291)
+  - Extremely high quality lossy would not conform to Level 5. (#4238)
+  - Density regression with Predictor Zero since v0.11. (#4225)
+  - Progressive VarDCT encoding would create non-progressive files. (#4223)
   - Lossless Faster Decoding would create uncompressed files for levels 1 and 2,
     with levels 3 and 4 being slower instead of faster. (#4201)
-  - Density regression with Predictor Zero since v0.11. (#4225)
+  - Lossy Delta Palette encoding now works on images larger than 2048*2048. (#4201)
+  - Extremely tall/wide images failed to encode using modular. (#3937)
+  - Empty DHT markers no longer cause JPEG transcoding to fail. (#2704)
 
 ### Changed / clarified
-  - Empty DHT markers are now valid for JPEG transcoding. (#2704)
+  - Using `-p` in cjxl will now encode a more progressive image at the cost
+    of encode speed. `--patches 0` can be used to significantly improve encode speed
+    or `--progressive_dc 0` can be used to return to old behaviour.
+  - Progressive lossless is now 30-40% smaller on average and
+    can utilize multithreaded encoding. (#4201)
   - Resampling 2 is now enabled at distance 10 and is up to 10x faster below
-     effort 10, by using a faster downsampling method. (#4147)
-  - Progressive lossless is now 30-40% smaller on average and can utilize multithreading. (#4201)
+    effort 10, by using a faster downsampling method. (#4147)
 
 ## [0.11.1] - 2024-11-26
 
