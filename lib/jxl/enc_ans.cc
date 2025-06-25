@@ -1301,15 +1301,17 @@ HistogramParams HistogramParams::ForModular(
   if (cparams.decoding_speed_tier >= 2) {
     params.max_histograms = 12;
   }
-  if ((cparams.decoding_speed_tier >= 3 ||
-       cparams.options.predictor == Predictor::Zero) &&
-      cparams.modular_mode) {
-    params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
-                             ? HistogramParams::LZ77Method::kRLE
-                         : cparams.speed_tier >= SpeedTier::kKitten
-                             ? HistogramParams::LZ77Method::kLZ77
-                             : HistogramParams::LZ77Method::kOptimal;
-  }
+    // No predictor requires LZ77 to compress residuals.
+    // Effort 3 and lower have forced predictors, so kNone is set.
+    if (cparams.options.predictor == Predictor::Zero && cparams.modular_mode) {
+        params.lz77_method = cparams.speed_tier >= SpeedTier::kFalcon
+            ? HistogramParams::LZ77Method::kNone
+            : cparams.speed_tier >= SpeedTier::kHare
+            ? HistogramParams::LZ77Method::kRLE
+            : cparams.speed_tier >= SpeedTier::kKitten
+            ? HistogramParams::LZ77Method::kLZ77
+            : HistogramParams::LZ77Method::kOptimal;
+    }
   return params;
 }
 }  // namespace jxl
