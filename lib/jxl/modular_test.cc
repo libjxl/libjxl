@@ -97,6 +97,58 @@ JXL_TSAN_SLOW_TEST(ModularTest, RoundtripLosslessGroups1024) {
   TestLosslessGroups(3);
 }
 
+void TestLarge(size_t dim, size_t co_dim, size_t group_size_shift) {
+  for (bool wide : {true, false}) {
+    size_t w = dim;
+    size_t h = co_dim;
+    if (!wide) std::swap(w, h);
+    TestImage t;
+    ASSERT_TRUE(t.SetDimensions(w, h));
+    JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
+    frame.ZeroFill();
+    extras::JXLCompressParams cparams;
+    cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, group_size_shift);
+    cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);
+    cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR, 1);
+    extras::JXLDecompressParams dparams;
+    extras::PackedPixelFile ppf_out;
+    size_t compressed_size =
+        Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
+    EXPECT_LE(compressed_size, 16384);
+  }
+}
+
+TEST(ModularTest, LargeGss0) {
+  TestLarge(514 * 1024, 1, 0);
+}
+
+TEST(ModularTest, LargeGss1) {
+  TestLarge(514 * 1024, 1, 1);
+}
+
+TEST(ModularTest, LargeGss2) {
+  TestLarge(514 * 1024, 1, 2);
+}
+
+TEST(ModularTest, LargeGss3) {
+  TestLarge(514 * 1024, 1, 3);
+}
+
+TEST(ModularTest, LargeDcGss0) {
+  TestLarge(129 * 1024, 64, 0);
+}
+
+/* DISABLED: uses 10+GiB memory */
+/*
+TEST(ModularTest, LargeDcGss1) {
+  TestLarge(514 * 1024, 64, 1);
+}
+
+TEST(ModularTest, LargeDcGss2) {
+  TestLarge(2051 * 1024, 64, 2);
+}
+*/
+
 TEST(ModularTest, RoundtripLosslessCustomWpPermuteRCT) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
