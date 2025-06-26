@@ -372,8 +372,8 @@ bool DecompressJxlReconstructJPEG(const jpegxl::tools::DecompressArgs& args,
 bool DecompressJxlToPackedPixelFile(
     const jpegxl::tools::DecompressArgs& args,
     const std::vector<uint8_t>& compressed,
-    const std::vector<JxlPixelFormat>& accepted_formats, void* runner,
-    jxl::extras::PackedPixelFile* ppf, size_t* decoded_bytes,
+    const std::vector<JxlPixelFormat>& accepted_formats, bool accepts_cmyk,
+    void* runner, jxl::extras::PackedPixelFile* ppf, size_t* decoded_bytes,
     jpegxl::tools::SpeedStats* stats) {
   jxl::extras::JXLDecompressParams dparams;
   dparams.max_downsampling = args.downsampling;
@@ -384,7 +384,7 @@ bool DecompressJxlToPackedPixelFile(
   dparams.runner = JxlThreadParallelRunner;
   dparams.runner_opaque = runner;
   dparams.allow_partial_input = args.allow_partial_files;
-  dparams.color_space_for_cmyk = "sRGB";
+  if (!accepts_cmyk) dparams.color_space_for_cmyk = "sRGB";
   if (args.bits_per_sample == 0) {
     dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   } else if (args.bits_per_sample > 0) {
@@ -529,6 +529,7 @@ int main(int argc, const char* argv[]) {
   if (decode_to_pixels) {
     std::vector<JxlPixelFormat> accepted_formats;
     std::unique_ptr<jxl::extras::Encoder> encoder;
+    bool accepts_cmyk = false;
     if (!filename_out.empty()) {
       encoder = jxl::extras::Encoder::FromExtension(extension);
       if (encoder == nullptr) {
@@ -546,6 +547,7 @@ int main(int argc, const char* argv[]) {
       if (args.alpha_blend) {
         AddFormatsWithAlphaChannel(&accepted_formats);
       }
+      accepts_cmyk = encoder->AcceptsCmyk();
     }
     if (filename_out.empty()) {
       // Decoding to pixels only, fill in float pixel formats
@@ -560,8 +562,8 @@ int main(int argc, const char* argv[]) {
     size_t decoded_bytes = 0;
     for (size_t i = 0; i < num_reps; ++i) {
       if (!DecompressJxlToPackedPixelFile(args, compressed, accepted_formats,
-                                          runner.get(), &ppf, &decoded_bytes,
-                                          &stats)) {
+                                          accepts_cmyk, runner.get(), &ppf,
+                                          &decoded_bytes, &stats)) {
         fprintf(stderr, "DecompressJxlToPackedPixelFile failed\n");
         return EXIT_FAILURE;
       }
