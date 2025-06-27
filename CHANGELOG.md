@@ -8,16 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
-  - LZ77 runs that crossed entropy-coded streams within the same section
-    would fail to decode. #4298
+  - Encoder would hang with specific parameters on images containing more than 256 groups. (#4302)
+  - Decoding would fail with LZ77 runs that crossed entropy-coded streams
+    within the same section. (#4298)
   - Images could be corrupted when encoding effort 1 lossless. (#4027 and #4291)
   - Extremely high quality lossy would not conform to Level 5. (#4238)
   - Density regression with Predictor Zero since v0.11. (#4225)
   - Progressive VarDCT encoding would create non-progressive files. (#4223)
   - Lossless Faster Decoding would create uncompressed files for levels 1 and 2,
-    with levels 3 and 4 being slower instead of faster. (#4201)
+    with levels 3 and 4 being slower. (#4201)
   - Lossy Delta Palette encoding now works on images larger than 2048*2048. (#4201)
-  - Extremely tall/wide images failed to encode using modular. (#3937)
+  - Extremely tall/wide images failed to encode using modular. (#3937 and #4308)
   - Empty DHT markers no longer cause JPEG transcoding to fail. (#2704)
 
 ### Changed / clarified
