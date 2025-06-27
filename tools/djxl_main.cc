@@ -176,6 +176,10 @@ struct DecompressArgs {
                            "Disables rendering of spot colors.",
                            &render_spotcolors, &SetBooleanFalse, 2);
 
+    cmdline->AddOptionFlag('\0', "no_coalescing",
+                           "Disables coalescing of layers.", &coalescing,
+                           &SetBooleanFalse, 2);
+
     cmdline->AddOptionValue('\0', "preview_out", "FILENAME",
                             "If specified, writes the preview image to this "
                             "file.",
@@ -250,6 +254,7 @@ struct DecompressArgs {
   size_t jpeg_quality = 95;
   bool use_sjpeg = false;
   bool render_spotcolors = true;
+  bool coalescing = true;
   bool output_extra_channels = false;
   bool output_frames = false;
   std::string preview_out;
@@ -381,6 +386,7 @@ bool DecompressJxlToPackedPixelFile(
   dparams.display_nits = args.display_nits;
   dparams.color_space = args.color_space;
   dparams.render_spotcolors = args.render_spotcolors;
+  dparams.coalescing = args.coalescing;
   dparams.runner = JxlThreadParallelRunner;
   dparams.runner_opaque = runner;
   dparams.allow_partial_input = args.allow_partial_files;
@@ -598,7 +604,9 @@ int main(int argc, const char* argv[]) {
       size_t nlayers = args.output_extra_channels
                            ? 1 + encoded_image.extra_channel_bitstreams.size()
                            : 1;
-      size_t nframes = args.output_frames ? encoded_image.bitstreams.size() : 1;
+      size_t nframes = (args.output_frames || !args.coalescing)
+                           ? encoded_image.bitstreams.size()
+                           : 1;
       for (size_t i = 0; i < nlayers; ++i) {
         for (size_t j = 0; j < nframes; ++j) {
           const std::vector<uint8_t>& bitstream =
