@@ -60,6 +60,8 @@
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/enc_transform.h"
+#include "lib/jxl/modular/transform/squeeze.h"
+#include "lib/jxl/modular/transform/squeeze_params.h"
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/pack_signed.h"
 #include "lib/jxl/passes_state.h"
@@ -936,6 +938,29 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (!groupwise && cparams_.responsive && !gi.channel.empty() &&
       max_bitdepth + 2 < level_max_bitdepth) {
     Transform t(TransformId::kSqueeze);
+    // Check if default squeeze parameters are ok.
+    std::vector<SqueezeParams> params;
+    DefaultSqueezeParameters(&params, gi);
+    // If image is smaller than group_dim, then default squeeze parameters
+    // are not going too far. Else, channel size don't turn zero. Thus we only
+    // check if tile does not go to zero-dim.
+    size_t shift_cap = 7 + frame_header.group_size_shift;
+    size_t hshift = 0;
+    size_t vshift = 0;
+    for (size_t i = 0; i < params.size(); ++i) {
+      if (params[i].horizontal) {
+        hshift++;
+      } else {
+        vshift++;
+      }
+      size_t dc_boost = (std::min(hshift, vshift) >= 3) ? 3 : 0;
+      // In case we squeeze too much, truncate squeeze script.
+      if (std::max(hshift, vshift) > shift_cap + dc_boost) {
+        params.resize(i - 1);
+        t.squeezes = params;
+        break;
+      }
+    }
     do_transform(gi, t, weighted::Header(), pool);
     max_bitdepth += 2;
   }
