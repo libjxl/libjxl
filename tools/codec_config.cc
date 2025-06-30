@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <hwy/base.h>
 #include <hwy/per_target.h>
 #include <hwy/targets.h>
 #include <string>
