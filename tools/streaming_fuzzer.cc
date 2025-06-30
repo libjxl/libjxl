@@ -14,6 +14,7 @@
 #include <jxl/types.h>
 
 #include <array>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
