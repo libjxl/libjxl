@@ -7,6 +7,7 @@
 #define LIB_JXL_MODULAR_ENCODING_ENC_MA_H_
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
