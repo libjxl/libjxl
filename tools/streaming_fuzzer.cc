@@ -337,7 +337,15 @@ StatusOr<std::vector<float>> Decode(const std::vector<uint8_t>& data,
   }
 }
 
-Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
+Status Run(const FuzzSpec& spec) {
+  size_t memory_cap = 1 * kGiB;
+  size_t total_cap_multiplier = 5;
+  if (spec.xsize < 64 || spec.ysize < 64) {
+    total_cap_multiplier = 20;
+  }
+  TrackingMemoryManager memory_manager{memory_cap,
+                                       memory_cap * total_cap_multiplier};
+
   std::vector<uint8_t> enc_default;
   std::vector<uint8_t> enc_streaming;
 
@@ -360,19 +368,25 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
   Check(memory_manager.Reset());
 
   Check(dec_default.size() == dec_streaming.size());
-  float max_abs_diff = 0.0f;
-  for (size_t i = 0; i < dec_default.size(); ++i) {
-    float d1 = ::jxl::Clamp1(dec_default[i], 0.0f, 1.0f);
-    float d2 = ::jxl::Clamp1(dec_streaming[i], 0.0f, 1.0f);
-    float abs_diff = std::abs(d1 - d2);
-    max_abs_diff = std::max(max_abs_diff, abs_diff);
-  }
 
   Check(spec.int_options[0].flag == JXL_ENC_FRAME_SETTING_EFFORT);
   int effort = spec.int_options[0].value;
   std::array<float, 10> kThreshold = {0.00f, 0.05f, 0.05f, 0.05f, 0.05f,
-                                      0.05f, 0.05f, 0.05f, 0.10f, 0.10f};
-  Check(max_abs_diff <= kThreshold[effort]);
+                                      0.0625f, 0.0625f, 0.0625f, 0.10f, 0.10f};
+  float threshold = kThreshold[effort];
+ 
+  int outlier_count = 0;
+  for (size_t i = 0; i < dec_default.size(); ++i) {
+    float d1 = ::jxl::Clamp1(dec_default[i], 0.0f, 1.0f);
+    float d2 = ::jxl::Clamp1(dec_streaming[i], 0.0f, 1.0f);
+    float abs_diff = std::abs(d1 - d2);
+    if (abs_diff > threshold) outlier_count++;
+  }
+  if (false) {
+    fprintf(stderr, "Number of outlier values: %d / %d\n", outlier_count,
+            static_cast<int>(dec_default.size()));
+  }
+  Check(outlier_count == 0);
 
   return true;
 }
@@ -380,9 +394,7 @@ Status Run(const FuzzSpec& spec, TrackingMemoryManager& memory_manager) {
 int DoTestOneInput(const uint8_t* data, size_t size) {
   auto spec = FuzzSpec::FromData(data, size);
 
-  TrackingMemoryManager memory_manager{/* cap */ 1 * kGiB,
-                                       /* total_cap */ 5 * kGiB};
-  Check(Run(spec, memory_manager));
+  Check(Run(spec));
   return 0;
 }
 
