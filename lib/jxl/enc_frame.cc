@@ -344,7 +344,11 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
         frame_header->group_size_shift = 0;
       // no point using groups when only one group is full and the others are
       // less than half full: multithreading will not really help much, while
-      // compression does suffer
+      // compression does suffer; but no reason to have group larger than image.
+      } else if (xsize <= 128 && ysize <= 128) {
+        frame_header->group_size_shift = 0;
+      } else if (xsize <= 256 && ysize <= 256) {
+        frame_header->group_size_shift = 1;
       } else if (xsize <= 400 && ysize <= 400) {
         frame_header->group_size_shift = 2;
       } else {
