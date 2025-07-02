@@ -82,9 +82,11 @@ void Consume(const T& entry) {
 // it in one shot.
 bool DecodeJpegXl(const uint8_t* jxl, size_t size,
                   JxlMemoryManager* memory_manager, size_t max_pixels,
-                  const FuzzSpec& spec, std::vector<uint8_t>* pixels,
-                  std::vector<uint8_t>* jpeg, size_t* xsize, size_t* ysize,
+                  size_t max_total_pixels, const FuzzSpec& spec,
+                  std::vector<uint8_t>* pixels, std::vector<uint8_t>* jpeg,
+                  size_t* xsize, size_t* ysize,
                   std::vector<uint8_t>* icc_profile) {
+  size_t total_pixels = 0;
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
   // itself is already multithreaded.
   size_t num_threads =
@@ -348,6 +350,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
         size_t num_pixels = static_cast<size_t>(frame_header.layer_info.xsize) *
                             frame_header.layer_info.ysize;
         if (num_pixels > max_pixels) return false;
+        if (total_pixels > max_total_pixels) return false;
+        total_pixels += num_pixels;
         if (!spec.coalescing) {
           decode_callback_data.called_rows.clear();
         }
@@ -576,13 +580,14 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   size_t xsize;
   size_t ysize;
   size_t max_pixels = 1 << 21;
+  size_t max_total_pixels = 5 * max_pixels;
 
   TrackingMemoryManager memory_manager{/* cap */ 1 * kGiB,
                                        /* total_cap */ 5 * kGiB};
   const auto targets = hwy::SupportedAndGeneratedTargets();
   hwy::SetSupportedTargetsForTest(targets[getFlag(targets.size() - 1)]);
-  DecodeJpegXl(data, size, memory_manager.get(), max_pixels, spec, &pixels,
-               &jpeg, &xsize, &ysize, &icc);
+  DecodeJpegXl(data, size, memory_manager.get(), max_pixels, max_total_pixels,
+               spec, &pixels, &jpeg, &xsize, &ysize, &icc);
   hwy::SetSupportedTargetsForTest(0);
   Check(memory_manager.Reset());
 
