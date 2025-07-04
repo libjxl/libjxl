@@ -348,12 +348,12 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       }
       // Only set extra channel buffer if it is provided non-interleaved.
       for (size_t i = 0; i < pframe.extra_channels.size(); ++i) {
-        if (JXL_ENC_SUCCESS !=
-            JxlEncoderSetExtraChannelBuffer(settings, &ppixelformat,
-                                            pframe.extra_channels[i].pixels(),
-                                            pframe.extra_channels[i].stride *
-                                                pframe.extra_channels[i].ysize,
-                                            num_interleaved_alpha + i)) {
+        if (JXL_ENC_SUCCESS != JxlEncoderSetExtraChannelBuffer(
+                                   settings, &pframe.extra_channels[i].format,
+                                   pframe.extra_channels[i].pixels(),
+                                   pframe.extra_channels[i].stride *
+                                       pframe.extra_channels[i].ysize,
+                                   num_interleaved_alpha + i)) {
           fprintf(stderr, "JxlEncoderSetExtraChannelBuffer() failed.\n");
           return false;
         }
