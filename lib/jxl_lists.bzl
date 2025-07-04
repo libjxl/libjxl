@@ -365,6 +365,8 @@ libjxl_enc_sources = [
     "jxl/enc_lz77.h",
     "jxl/enc_modular.cc",
     "jxl/enc_modular.h",
+    "jxl/enc_modular_simd.cc",
+    "jxl/enc_modular_simd.h",
     "jxl/enc_noise.cc",
     "jxl/enc_noise.h",
     "jxl/enc_optimize.h",
