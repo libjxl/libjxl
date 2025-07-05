@@ -26,14 +26,10 @@ add_executable(viewer WIN32
   viewer_window.h
   viewer_window.ui
 )
-target_include_directories(viewer PRIVATE
-  $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
-  "${PROJECT_SOURCE_DIR}"
-)
+target_include_directories(viewer PRIVATE "${PROJECT_SOURCE_DIR}")
 target_link_libraries(viewer
   Qt6::Widgets
   icc_detect
   jxl
   jxl_threads
-  lcms2
 )

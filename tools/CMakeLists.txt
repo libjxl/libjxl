@@ -4,9 +4,11 @@
 # license that can be found in the LICENSE file.
 
 # ICC detection library used by the comparison and viewer tools.
+# We require Qt 6.8 for the various color management improvements introduced in that version.
+set(JPEGXL_QT_VERSION_REQUIRED 6.8)
 if(JPEGXL_ENABLE_VIEWERS)
 if(WIN32)
-  find_package(Qt6 QUIET COMPONENTS Widgets)
+  find_package(Qt6 "${JPEGXL_QT_VERSION_REQUIRED}" QUIET COMPONENTS Widgets)
   if (NOT Qt6_FOUND)
     message(WARNING "Qt6 was not found.")
   else()
@@ -22,7 +24,7 @@ if(WIN32)
     endif()  # JPEGXL_DEP_LICENSE_DIR
   endif()
 elseif(APPLE)
-  find_package(Qt6 QUIET COMPONENTS Widgets)
+  find_package(Qt6 "${JPEGXL_QT_VERSION_REQUIRED}" QUIET COMPONENTS Widgets)
   if (Qt6_FOUND)
     add_library(icc_detect STATIC EXCLUDE_FROM_ALL
       icc_detect/icc_detect_empty.cc
@@ -34,7 +36,7 @@ elseif(APPLE)
     message(WARNING "APPLE: Qt6 was not found.")
   endif()
 else()
-  find_package(Qt6 QUIET COMPONENTS Widgets)
+  find_package(Qt6 "${JPEGXL_QT_VERSION_REQUIRED}" QUIET COMPONENTS Widgets)
   find_package(ECM QUIET NO_MODULE)
   if (NOT Qt6_FOUND OR NOT ECM_FOUND)
     if (NOT Qt6_FOUND)

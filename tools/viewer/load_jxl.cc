@@ -11,40 +11,13 @@
 #include <jxl/types.h>
 #include <stdint.h>
 
+#include <QColorSpace>
+#include <QColorTransform>
 #include <QElapsedTimer>
 #include <QFile>
 
-#define CMS_NO_REGISTER_KEYWORD 1
-#include "lcms2.h"
-#undef CMS_NO_REGISTER_KEYWORD
-
 namespace jpegxl {
 namespace tools {
-
-namespace {
-
-struct CmsProfileCloser {
-  void operator()(const cmsHPROFILE profile) const {
-    if (profile != nullptr) {
-      cmsCloseProfile(profile);
-    }
-  }
-};
-using CmsProfileUniquePtr =
-    std::unique_ptr<std::remove_pointer<cmsHPROFILE>::type, CmsProfileCloser>;
-
-struct CmsTransformDeleter {
-  void operator()(const cmsHTRANSFORM transform) const {
-    if (transform != nullptr) {
-      cmsDeleteTransform(transform);
-    }
-  }
-};
-using CmsTransformUniquePtr =
-    std::unique_ptr<std::remove_pointer<cmsHTRANSFORM>::type,
-                    CmsTransformDeleter>;
-
-}  // namespace
 
 QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
                     qint64* elapsed_ns, bool* usedRequestedProfile) {
@@ -101,53 +74,39 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderGetICCProfileSize(
                 dec.get(), JXL_COLOR_PROFILE_TARGET_DATA, &icc_size));
-  std::vector<uint8_t> icc_profile(icc_size);
+  QByteArray icc_profile(icc_size, Qt::Initialization::Uninitialized);
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
                                  dec.get(), JXL_COLOR_PROFILE_TARGET_DATA,
-                                 icc_profile.data(), icc_profile.size()));
+                                 reinterpret_cast<uint8_t*>(icc_profile.data()),
+                                 icc_profile.size()));
 
-  std::vector<float> float_pixels(pixel_count * 4);
+  auto float_pixels = std::make_unique<float[]>(pixel_count * 4);
   EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
   EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderSetImageOutBuffer(dec.get(), &format, float_pixels.data(),
+            JxlDecoderSetImageOutBuffer(dec.get(), &format, float_pixels.get(),
                                         pixel_count * 4 * sizeof(float)));
   EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
 
-  std::vector<uint16_t> uint16_pixels(pixel_count * 4);
-  const thread_local cmsContext context = cmsCreateContext(nullptr, nullptr);
-  EXPECT_TRUE(context != nullptr);
-  const CmsProfileUniquePtr jxl_profile(cmsOpenProfileFromMemTHR(
-      context, icc_profile.data(), icc_profile.size()));
-  EXPECT_TRUE(jxl_profile != nullptr);
-  CmsProfileUniquePtr target_profile(cmsOpenProfileFromMemTHR(
-      context, targetIccProfile.data(), targetIccProfile.size()));
+  float* qimage_data = float_pixels.release();
+  QImage result(
+      reinterpret_cast<const uchar*>(qimage_data), info.xsize, info.ysize,
+      info.alpha_premultiplied ? QImage::Format_RGBA32FPx4_Premultiplied
+                               : QImage::Format_RGBA32FPx4,
+      [](void* info) { delete[] reinterpret_cast<float*>(info); }, qimage_data);
+
+  QColorSpace source_colorspace = QColorSpace::fromIccProfile(icc_profile);
+  QColorSpace target_colorspace = QColorSpace::fromIccProfile(targetIccProfile);
   if (usedRequestedProfile != nullptr) {
-    *usedRequestedProfile = (target_profile != nullptr);
+    *usedRequestedProfile = target_colorspace.isValidTarget();
   }
-  if (target_profile == nullptr) {
-    target_profile.reset(cmsCreate_sRGBProfileTHR(context));
+  if (!target_colorspace.isValidTarget()) {
+    target_colorspace = QColorSpace::SRgb;
   }
-  EXPECT_TRUE(target_profile != nullptr);
-  CmsTransformUniquePtr transform(cmsCreateTransformTHR(
-      context, jxl_profile.get(), TYPE_RGBA_FLT, target_profile.get(),
-      TYPE_RGBA_16, INTENT_RELATIVE_COLORIMETRIC, cmsFLAGS_COPY_ALPHA));
-  EXPECT_TRUE(transform != nullptr);
-  cmsDoTransform(transform.get(), float_pixels.data(), uint16_pixels.data(),
-                 pixel_count);
+  QColorTransform transform =
+      source_colorspace.transformationToColorSpace(target_colorspace);
+  result.applyColorTransform(transform, QImage::Format_RGBA64_Premultiplied);
   if (elapsed_ns != nullptr) *elapsed_ns = timer.nsecsElapsed();
 
-  QImage result(info.xsize, info.ysize,
-                info.alpha_premultiplied ? QImage::Format_RGBA64_Premultiplied
-                                         : QImage::Format_RGBA64);
-
-  for (int y = 0; y < result.height(); ++y) {
-    QRgba64* const row = reinterpret_cast<QRgba64*>(result.scanLine(y));
-    const uint16_t* const data = uint16_pixels.data() + result.width() * y * 4;
-    for (int x = 0; x < result.width(); ++x) {
-      row[x] = qRgba64(data[4 * x + 0], data[4 * x + 1], data[4 * x + 2],
-                       data[4 * x + 3]);
-    }
-  }
   return result;
 }
 
