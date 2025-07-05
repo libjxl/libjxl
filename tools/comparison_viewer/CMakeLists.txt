@@ -24,16 +24,12 @@ add_library(image_loading STATIC
   image_loading.cc
   image_loading.h
 )
-target_include_directories(image_loading PRIVATE
-  $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
-)
 target_link_libraries(image_loading PUBLIC
   Qt6::Widgets
   jxl-internal
   jxl_threads
   jxl_extras-internal
   jxl_tool
-  lcms2
 )
 
 add_executable(compare_codecs WIN32
