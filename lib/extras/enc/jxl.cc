@@ -90,6 +90,15 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
         fprintf(stderr, "JxlEncoderSetExtraChannelInfo() failed.\n");
         return false;
       }
+      const auto& ec_name = ppf.extra_channels_info[i].name;
+      if (!ec_name.empty() && false) {
+        if (JXL_ENC_SUCCESS !=
+            JxlEncoderSetExtraChannelName(enc, num_interleaved_alpha + i,
+                                          ec_name.c_str(), ec_name.size())) {
+          fprintf(stderr, "JxlEncoderSetExtraChannelName() failed.\n");
+          return false;
+        }
+      }
     }
   }
   return true;
