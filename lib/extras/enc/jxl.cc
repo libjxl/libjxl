@@ -91,7 +91,7 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
         return false;
       }
       const auto& ec_name = ppf.extra_channels_info[i].name;
-      if (!ec_name.empty() && false) {
+      if (!ec_name.empty()) {
         if (JXL_ENC_SUCCESS !=
             JxlEncoderSetExtraChannelName(enc, num_interleaved_alpha + i,
                                           ec_name.c_str(), ec_name.size())) {
