@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
-  - Encoder would hang with specific parameters on images containing more than 256 groups. (#4302)
+  - CMYK JXL files would not decode to PNG correctly. (#4301)
+  - Encoder would hang with specific parameters on images containing
+    more than 256 groups. (#4302)
   - Decoding would fail with LZ77 runs that crossed entropy-coded streams
     within the same section. (#4298)
   - Images could be corrupted when encoding effort 1 lossless. (#4027 and #4291)
@@ -22,13 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Empty DHT markers no longer cause JPEG transcoding to fail. (#2704)
 
 ### Changed / clarified
+  - Significant improvements to EXR input handling. Now supports float32,
+    multilayer and per-channel bitdepth. (#4312)
+  - Layered JXL files are no longer coalesed when re-encoding with cjxl, and can now
+    be decoded to seperate PNG/PAM files with djxl by using `--no_coalescing`. (#4299)
   - Using `-p` in cjxl will now encode a more progressive image at the cost
     of encode speed. `--patches 0` can be used to significantly improve encode speed
-    or `--progressive_dc 0` can be used to return to old behaviour.
+    or `--progressive_dc 0` can be used to return to old behaviour. (#4258)
   - Progressive lossless is now 30-40% smaller on average and
     can utilize multithreaded encoding. (#4201)
-  - Resampling 2 is now enabled at distance 10 and is up to 10x faster below
-    effort 10, by using a faster downsampling method. (#4147)
+  - Resampling 2 is now enabled at distance 10, and is up to 10x faster below
+    effort 10 by using a faster downsampling method. (#4147)
 
 ## [0.11.1] - 2024-11-26
 
