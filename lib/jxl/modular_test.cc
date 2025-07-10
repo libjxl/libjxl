@@ -84,7 +84,8 @@ void TestLosslessGroups(size_t group_size_shift) {
   size_t compressed_size =
       Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
   EXPECT_LE(compressed_size, 280000u);
-  EXPECT_EQ(0.0f, test::ComputeDistance2(t.ppf(), ppf_out));
+  float disntance2 = test::ComputeDistance2(t.ppf(), ppf_out);
+  EXPECT_EQ(0.0f, disntance2);
 }
 
 TEST(ModularTest, RoundtripLosslessGroups128) { TestLosslessGroups(0); }
