@@ -26,6 +26,7 @@
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans_params.h"
+#include "lib/jxl/enc_ans_simd.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_cluster.h"
 #include "lib/jxl/enc_context_map.h"
@@ -34,7 +35,9 @@
 #include "lib/jxl/enc_lz77.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/simd_util.h"
 
 namespace jxl {
 
@@ -694,7 +697,7 @@ Histogram HistogramFromSymbolInfo(
 }  // namespace
 
 Status EntropyEncodingData::ChooseUintConfigs(
-    const HistogramParams& params,
+    JxlMemoryManager* memory_manager, const HistogramParams& params,
     const std::vector<std::vector<Token>>& tokens,
     std::vector<Histogram>& clustered_histograms) {
   // Set sane default `log_alpha_size`.
@@ -756,7 +759,8 @@ Status EntropyEncodingData::ChooseUintConfigs(
         HybridUintConfig(11, 0, 0),  // direct coding
         HybridUintConfig(12, 0, 0),  // direct coding
     };
-  } else if (params.uint_method == HistogramParams::HybridUintMethod::kFast) {
+  } else {
+    JXL_DASSERT(params.uint_method == HistogramParams::HybridUintMethod::kFast);
     configs = {
         HybridUintConfig(4, 2, 0),  // default
         HybridUintConfig(4, 1, 2),  // add parity but less msb
@@ -765,69 +769,122 @@ Status EntropyEncodingData::ChooseUintConfigs(
     };
   }
 
-  std::vector<float> costs(clustered_histograms.size(),
-                           std::numeric_limits<float>::max());
-  std::vector<uint32_t> extra_bits(clustered_histograms.size());
-  std::vector<uint8_t> is_valid(clustered_histograms.size());
+  size_t num_histo = clustered_histograms.size();
+  std::vector<uint8_t> is_valid(num_histo);
+  std::vector<size_t> histo_volume(2 * num_histo);
+  std::vector<size_t> histo_offset(2 * num_histo + 1);
+  std::vector<uint32_t> max_value_per_histo(2 * num_histo);
+
+  // TODO(veluca): do not ignore lz77 commands.
+
+  for (const auto& stream : tokens) {
+    for (const auto& token : stream) {
+      size_t histo = context_map[token.context];
+      histo_volume[histo + (token.is_lz77_length ? num_histo : 0)]++;
+    }
+  }
+  size_t max_histo_volume = 0;
+  for (size_t h = 0; h < 2 * num_histo; ++h) {
+    max_histo_volume = std::max(max_histo_volume, histo_volume[h]);
+    histo_offset[h + 1] = histo_offset[h] + histo_volume[h];
+  }
+
+  const size_t max_vec_size = MaxVectorSize();
+  std::vector<uint32_t> transposed(histo_offset[num_histo * 2] + max_vec_size);
+  {
+    std::vector<size_t> next_offset = histo_offset;  // copy
+    for (const auto& stream : tokens) {
+      for (const auto& token : stream) {
+        size_t histo =
+            context_map[token.context] + (token.is_lz77_length ? num_histo : 0);
+        transposed[next_offset[histo]++] = token.value;
+      }
+    }
+  }
+  for (size_t h = 0; h < 2 * num_histo; ++h) {
+    max_value_per_histo[h] =
+        MaxValue(transposed.data() + histo_offset[h], histo_volume[h]);
+  }
+  uint32_t max_lz77 = 0;
+  for (size_t h = num_histo; h < 2 * num_histo; ++h) {
+    max_lz77 = std::max(max_lz77, MaxValue(transposed.data() + histo_offset[h],
+                                           histo_volume[h]));
+  }
+
   // Wider histograms are assigned max cost in PopulationCost anyway
   // and therefore will not be used
   size_t max_alpha = ANS_MAX_ALPHABET_SIZE;
-  for (HybridUintConfig cfg : configs) {
-    std::fill(is_valid.begin(), is_valid.end(), true);
-    std::fill(extra_bits.begin(), extra_bits.end(), 0);
 
-    for (auto& histo : clustered_histograms) {
-      histo.Clear();
-    }
-    for (const auto& stream : tokens) {
-      for (const auto& token : stream) {
-        // TODO(veluca): do not ignore lz77 commands.
-        if (token.is_lz77_length) continue;
-        size_t histo = context_map[token.context];
-        if (!is_valid[histo]) continue;
+  JXL_ASSIGN_OR_RETURN(
+      AlignedMemory tmp,
+      AlignedMemory::Create(memory_manager, (max_histo_volume + max_vec_size) *
+                                                sizeof(uint32_t)));
+  for (size_t h = 0; h < num_histo; h++) {
+    float best_cost = std::numeric_limits<float>::max();
+    for (HybridUintConfig cfg : configs) {
+      uint32_t max_v = max_value_per_histo[h];
+      size_t capacity;
+      {
         uint32_t tok, nbits, bits;
-        cfg.Encode(token.value, &tok, &nbits, &bits);
+        cfg.Encode(max_v, &tok, &nbits, &bits);
+        tok |= cfg.LsbMask();
         if (tok >= max_alpha || (lz77.enabled && tok >= lz77.min_symbol)) {
-          is_valid[histo] = JXL_FALSE;
-          continue;
+          continue;  // Not valid config for this context
         }
-        extra_bits[histo] += nbits;
-        clustered_histograms[histo].Add(tok);
+        capacity = tok + 1;
       }
-    }
 
-    for (size_t i = 0; i < clustered_histograms.size(); i++) {
-      if (!is_valid[i]) continue;
-      JXL_ASSIGN_OR_RETURN(float cost,
-                           clustered_histograms[i].ANSPopulationCost());
-      cost += extra_bits[i];
-      // add signaling cost of the hybriduintconfig itself
+      Histogram histo;
+      histo.EnsureCapacity(capacity);
+      size_t len = histo_volume[h];
+      uint32_t* data = transposed.data() + histo_offset[h];
+      size_t extra_bits = EstimateTokenCost(data, len, cfg, tmp);
+      uint32_t* tmp_tokens = tmp.address<uint32_t>();
+      for (size_t i = 0; i < len; ++i) {
+        histo.FastAdd(tmp_tokens[i]);
+      }
+      histo.Condition();
+      JXL_ASSIGN_OR_RETURN(float cost, histo.ANSPopulationCost());
+      cost += extra_bits;
+      // Add signaling cost of the hybriduintconfig itself.
       cost += CeilLog2Nonzero(cfg.split_exponent + 1);
       cost += CeilLog2Nonzero(cfg.split_exponent - cfg.msb_in_token + 1);
-      if (cost < costs[i]) {
-        uint_config[i] = cfg;
-        costs[i] = cost;
+      if (cost < best_cost) {
+        uint_config[h] = cfg;
+        best_cost = cost;
+        clustered_histograms[h].swap(histo);
       }
     }
   }
 
-  // Rebuild histograms.
-  for (auto& histo : clustered_histograms) {
-    histo.Clear();
+  size_t max_tok = 0;
+  for (size_t h = 0; h < num_histo; ++h) {
+    Histogram& histo = clustered_histograms[h];
+    max_tok = std::max(max_tok, histo.MaxSymbol());
+    size_t len = histo_volume[num_histo + h];
+    if (len == 0) continue;  // E.g. when lz77 not enabled
+    size_t max_histo_tok = max_value_per_histo[num_histo + h];
+    uint32_t tok, nbits, bits;
+    lz77.length_uint_config.Encode(max_histo_tok, &tok, &nbits, &bits);
+    tok |= lz77.length_uint_config.LsbMask();
+    tok += lz77.min_symbol;
+    histo.EnsureCapacity(tok + 1);
+    uint32_t* data = transposed.data() + histo_offset[num_histo + h];
+    uint32_t unused =
+        EstimateTokenCost(data, len, lz77.length_uint_config, tmp);
+    (void)unused;
+    uint32_t* tmp_tokens = tmp.address<uint32_t>();
+    for (size_t i = 0; i < len; ++i) {
+      histo.FastAdd(tmp_tokens[i] + lz77.min_symbol);
+    }
+    histo.Condition();
+    max_tok = std::max(max_tok, histo.MaxSymbol());
   }
+
   // `log_alpha_size - 5` is encoded in the header, so min is 5.
   size_t log_size = 5;
-  for (const auto& stream : tokens) {
-    for (const auto& token : stream) {
-      uint32_t tok, nbits, bits;
-      size_t histo = context_map[token.context];
-      (token.is_lz77_length ? lz77.length_uint_config : uint_config[histo])
-          .Encode(token.value, &tok, &nbits, &bits);
-      tok += token.is_lz77_length ? lz77.min_symbol : 0;
-      clustered_histograms[histo].Add(tok);
-      while (tok >= (1u << log_size)) ++log_size;
-    }
-  }
+  while (max_tok >= (1u << log_size)) ++log_size;
+
   size_t max_log_alpha_size = use_prefix_code ? PREFIX_MAX_BITS : 8;
   JXL_ENSURE(log_size <= max_log_alpha_size);
 
@@ -894,7 +951,8 @@ StatusOr<size_t> EntropyEncodingData::BuildAndStoreEntropyCodes(
     }
   }
 
-  JXL_RETURN_IF_ERROR(ChooseUintConfigs(params, tokens, clustered_histograms));
+  JXL_RETURN_IF_ERROR(
+      ChooseUintConfigs(memory_manager, params, tokens, clustered_histograms));
 
   SizeWriter size_writer;  // Used if writer == nullptr to estimate costs.
   size_t cost = use_prefix_code ? 1 : 3;
