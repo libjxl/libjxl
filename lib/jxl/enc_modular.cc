@@ -466,18 +466,25 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
   }
 
   if (cparams_.ModularPartIsLossless()) {
+    const auto disable_wp = [this] () {
+        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+        if (cparams_.options.predictor == Predictor::Weighted) {
+          // Predictor::Best turns to Predictor::Gradient anyways.
+          cparams_.options.predictor = Predictor::Gradient;
+        }
+    };
     switch (cparams_.decoding_speed_tier) {
       case 0:
         cparams_.options.fast_decode_multiplier = 1.001f;
         break;
       case 1:  // No Weighted predictor
         cparams_.options.fast_decode_multiplier = 1.005f;
-        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+        disable_wp();
         break;
       case 2: {  // No Weighted predictor and Group size 0 defined in
                  // enc_frame.cc
         cparams_.options.fast_decode_multiplier = 1.015f;
-        cparams_.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+        disable_wp();
         break;
       }
       case 3: {  // Gradient only, Group size 0, and Fast MA tree
