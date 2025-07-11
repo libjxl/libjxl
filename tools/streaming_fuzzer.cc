@@ -129,7 +129,7 @@ struct FuzzSpec {
     bool lossless = ((u8() % 2) == 1);
     spec.distance = lossless ? 0.0 : 0.01 + 0.00038132 * u16();
 
-    spec.num_threads = u8();
+    spec.num_threads = u8() & 0xF;
 
     for (auto& int_opt : spec.int_options) {
       int_opt.value = u8() % (int_opt.max - int_opt.min + 1) + int_opt.min;
@@ -167,8 +167,8 @@ struct FuzzSpec {
     }
 
     if (false) {
-      fprintf(stderr, "Image size: %d X %d, d=%f\n", spec.xsize, spec.ysize,
-              spec.distance);
+      fprintf(stderr, "Image size: %d X %d, d=%f, num_threads: %d\n",
+              spec.xsize, spec.ysize, spec.distance, spec.num_threads);
       for (auto& int_opt : spec.int_options) {
         fprintf(stderr, "%s = %d\n", int_opt.name.c_str(), int_opt.value);
       }
