@@ -47,6 +47,7 @@ using hwy::HWY_NAMESPACE::Not;
 using hwy::HWY_NAMESPACE::Set;
 using hwy::HWY_NAMESPACE::ShiftLeft;
 using hwy::HWY_NAMESPACE::ShiftRight;
+using hwy::HWY_NAMESPACE::Store;
 using hwy::HWY_NAMESPACE::StoreU;
 using hwy::HWY_NAMESPACE::Sub;
 using hwy::HWY_NAMESPACE::Xor;
@@ -132,6 +133,9 @@ StatusOr<float> EstimateCost(const Image& img) {
   auto extra_bits_lanes = Zero(du);
   for (const Channel& ch : img.channel) {
     if (ch.h == 0 || ch.w == 0) continue;
+    for (auto& h : histo) {
+      h.EnsureCapacity(32 * 4);
+    }
     const pixel_type* JXL_RESTRICT r = ch.Row(0);
     const pixel_type* JXL_RESTRICT last = primer;
     primer[0] = 0;
@@ -159,7 +163,7 @@ StatusOr<float> EstimateCost(const Image& img) {
       last = r + x + Lanes(di) - 1;
     }
     for (size_t x = 0; x < ch.w; x++) {
-      histo[0].Add(token_row[x]);
+      histo[0].FastAdd(token_row[x]);
     }
     for (size_t y = 1; y < ch.h; y++) {
       r = ch.Row(y);
@@ -210,10 +214,11 @@ StatusOr<float> EstimateCost(const Image& img) {
       }
       for (size_t x = 0; x < ch.w; x++) {
         size_t ctx = ctx_map[max_diff_row[x]];
-        histo[ctx].Add(token_row[x]);
+        histo[ctx].FastAdd(token_row[x]);
       }
     }
     for (auto& h : histo) {
+      h.Condition();
       float f_cost = h.ShannonEntropy();
       size_t i_cost = f_cost;
       histo_cost += i_cost;
