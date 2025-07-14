@@ -1467,7 +1467,10 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       if (nb_rcts_to_try == 0) break;
       sg.rct_type = i;
       nb_rcts_to_try--;
-      if (do_transform(gi, sg, weighted::Header())) {
+      // no-op rct_type; use as baseline cost
+      if (i == 0) {
+        JXL_ASSIGN_OR_RETURN(best_cost, EstimateCost(gi));
+      } else if (do_transform(gi, sg, weighted::Header())) {
         JXL_ASSIGN_OR_RETURN(float cost, EstimateCost(gi));
         if (cost < best_cost) {
           best_rct = i;
@@ -1479,8 +1482,10 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       }
     }
     // Apply the best RCT to the image for future encoding.
-    sg.rct_type = best_rct;
-    do_transform(gi, sg, weighted::Header());
+    if (best_rct != 0) {
+      sg.rct_type = best_rct;
+      do_transform(gi, sg, weighted::Header());
+    }
   } else {
     // No need to try anything, just use the default options.
   }
