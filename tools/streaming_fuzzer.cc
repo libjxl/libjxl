@@ -129,7 +129,7 @@ struct FuzzSpec {
     bool lossless = ((u8() % 2) == 1);
     spec.distance = lossless ? 0.0 : 0.01 + 0.00038132 * u16();
 
-    spec.num_threads = u8();
+    spec.num_threads = u8() & 0xF;
 
     for (auto& int_opt : spec.int_options) {
       int_opt.value = u8() % (int_opt.max - int_opt.min + 1) + int_opt.min;
@@ -150,12 +150,11 @@ struct FuzzSpec {
     bool modular = (spec.int_options[7].value == 1);
     Check(spec.int_options[18].flag == JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR);
     bool slow_predictor = (spec.int_options[18].value >= 14);
-    uint64_t kMaxSizeFactor = 16;
-    if (modular && slow_predictor) kMaxSizeFactor /= 2;
-    if (sizeof(size_t) == 4) kMaxSizeFactor /= 1.5;
-    const uint64_t kMaxSize = kMaxSizeFactor * (1 << 20);
-    if (spec.xsize * uint64_t{spec.ysize} > kMaxSize) {
-      spec.ysize = kMaxSize / spec.xsize;
+    uint64_t max_size = 16 << 20;
+    if (modular && slow_predictor) max_size /= 2;
+    if (sizeof(size_t) == 4) max_size /= 1.5;
+    if (spec.xsize * uint64_t{spec.ysize} > max_size) {
+      spec.ysize = max_size / spec.xsize;
       Check(spec.ysize > 0);
     }
 
@@ -168,8 +167,8 @@ struct FuzzSpec {
     }
 
     if (false) {
-      fprintf(stderr, "Image size: %d X %d, d=%f\n", spec.xsize, spec.ysize,
-              spec.distance);
+      fprintf(stderr, "Image size: %d X %d, d=%f, num_threads: %d\n",
+              spec.xsize, spec.ysize, spec.distance, spec.num_threads);
       for (auto& int_opt : spec.int_options) {
         fprintf(stderr, "%s = %d\n", int_opt.name.c_str(), int_opt.value);
       }
