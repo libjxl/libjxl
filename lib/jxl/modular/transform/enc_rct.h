@@ -14,8 +14,11 @@
 
 namespace jxl {
 
-Status FwdRCT(Image &input, size_t begin_c, size_t rct_type, ThreadPool *pool);
+Status FwdRct(Image& input, size_t begin_c, size_t rct_type, ThreadPool* pool);
 
+Status FwdRct(const std::array<const Channel*, 3>& in,
+              const std::array<Channel*, 3>& out, size_t rct_type,
+              ThreadPool* pool);
 }  // namespace jxl
 
 #endif  // LIB_JXL_MODULAR_TRANSFORM_ENC_RCT_H_

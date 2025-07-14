@@ -61,6 +61,7 @@
 #include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/enc_rct.h"
 #include "lib/jxl/modular/transform/enc_transform.h"
 #include "lib/jxl/modular/transform/squeeze.h"
 #include "lib/jxl/modular/transform/squeeze_params.h"
@@ -1426,8 +1427,6 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       gi.channel.size() - gi.nb_meta_channels >= 3 &&
       cparams.responsive == JXL_FALSE && do_color &&
       cparams.speed_tier <= SpeedTier::kHare) {
-    Transform sg(TransformId::kRCT);
-    sg.begin_c = gi.nb_meta_channels;
     size_t nb_rcts_to_try = 0;
     switch (cparams.speed_tier) {
       case SpeedTier::kLightning:
@@ -1456,33 +1455,53 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     }
     float best_cost = std::numeric_limits<float>::max();
     size_t best_rct = 0;
+    bool need_to_restore = (nb_rcts_to_try > 1);
+    std::vector<Channel> orig;
+    orig.reserve(3);
     // These should be 19 actually different transforms; the remaining ones
     // are equivalent to one of these (note that the first two are do-nothing
     // and YCoCg) modulo channel reordering (which only matters in the case of
     // MA-with-prev-channels-properties) and/or sign (e.g. RmG vs GmR)
-    for (int i : {0 * 7 + 0, 0 * 7 + 6, 0 * 7 + 5, 1 * 7 + 3, 3 * 7 + 5,
-                  5 * 7 + 5, 1 * 7 + 5, 2 * 7 + 5, 1 * 7 + 1, 0 * 7 + 4,
-                  1 * 7 + 2, 2 * 7 + 1, 2 * 7 + 2, 2 * 7 + 3, 4 * 7 + 4,
-                  4 * 7 + 5, 0 * 7 + 2, 0 * 7 + 1, 0 * 7 + 3}) {
+    for (int rct_type : {0 * 7 + 0, 0 * 7 + 6, 0 * 7 + 5, 1 * 7 + 3, 3 * 7 + 5,
+                         5 * 7 + 5, 1 * 7 + 5, 2 * 7 + 5, 1 * 7 + 1, 0 * 7 + 4,
+                         1 * 7 + 2, 2 * 7 + 1, 2 * 7 + 2, 2 * 7 + 3, 4 * 7 + 4,
+                         4 * 7 + 5, 0 * 7 + 2, 0 * 7 + 1, 0 * 7 + 3}) {
       if (nb_rcts_to_try == 0) break;
-      sg.rct_type = i;
       nb_rcts_to_try--;
       // no-op rct_type; use as baseline cost
-      if (i == 0) {
+      if (rct_type == 0) {
         JXL_ASSIGN_OR_RETURN(best_cost, EstimateCost(gi));
-      } else if (do_transform(gi, sg, weighted::Header())) {
+        for (size_t c = 0; c < 3; ++c) {
+          Channel& genuine = gi.channel[gi.nb_meta_channels + c];
+          JXL_ASSIGN_OR_RETURN(
+              Channel ch,
+              Channel::Create(genuine.memory_manager(), genuine.w, genuine.h,
+                              genuine.hshift, genuine.vshift));
+          orig.emplace_back(std::move(ch));
+          genuine.plane.Swap(orig[c].plane);
+        }
+      } else {
+        std::array<const Channel*, 3> in = {&orig[0], &orig[1], &orig[2]};
+        std::array<Channel*, 3> out = {&gi.channel[gi.nb_meta_channels + 0],
+                                       &gi.channel[gi.nb_meta_channels + 1],
+                                       &gi.channel[gi.nb_meta_channels + 2]};
+        JXL_RETURN_IF_ERROR(FwdRct(in, out, rct_type, /* pool */ nullptr));
         JXL_ASSIGN_OR_RETURN(float cost, EstimateCost(gi));
         if (cost < best_cost) {
-          best_rct = i;
+          best_rct = rct_type;
           best_cost = cost;
         }
-        Transform t = gi.transform.back();
-        JXL_RETURN_IF_ERROR(t.Inverse(gi, weighted::Header(), nullptr));
-        gi.transform.pop_back();
+      }
+    }
+    if (need_to_restore) {
+      for (size_t c = 0; c < 3; ++c) {
+        gi.channel[gi.nb_meta_channels + c].plane.Swap(orig[c].plane);
       }
     }
     // Apply the best RCT to the image for future encoding.
     if (best_rct != 0) {
+      Transform sg(TransformId::kRCT);
+      sg.begin_c = gi.nb_meta_channels;
       sg.rct_type = best_rct;
       do_transform(gi, sg, weighted::Header());
     }
