@@ -505,11 +505,9 @@ Status TreeSamples::SetPredictor(Predictor predictor,
     predictors = {predictor};
   }
   if (wp_tree_mode == ModularOptions::TreeMode::kNoWP) {
-    auto wp_it =
-        std::find(predictors.begin(), predictors.end(), Predictor::Weighted);
-    if (wp_it != predictors.end()) {
-      predictors.erase(wp_it);
-    }
+    predictors.erase(
+        std::remove(predictors.begin(), predictors.end(), Predictor::Weighted),
+        predictors.end());
   }
   residuals.resize(predictors.size());
   return true;
