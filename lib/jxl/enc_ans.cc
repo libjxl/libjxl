@@ -383,7 +383,13 @@ class ANSEncodingHistogram {
   // same table
   using CountsArray =
       std::array<std::array<CountsEntropy, ANS_TAB_SIZE>, ANS_LOG_TAB_SIZE>;
-  static const CountsArray allowed_counts;
+  using CountsIndex =
+      std::array<std::array<uint16_t, ANS_TAB_SIZE>, ANS_LOG_TAB_SIZE>;
+  struct AllowedCounts {
+    CountsArray array;
+    CountsIndex index;
+  };
+  static const AllowedCounts allowed_counts;
 
   // Returns the difference between largest count that can be represented and is
   // smaller than "count" and smallest representable count larger than "count".
@@ -417,7 +423,8 @@ class ANSEncodingHistogram {
     // balancing bin, step of size (1 << ANS_LOG_TAB_SIZE - 1) is not possible
     int64_t balance_inc[ANS_LOG_TAB_SIZE - 1] = {};
     int64_t balance_dec[ANS_LOG_TAB_SIZE - 1] = {};
-    const auto& ac = allowed_counts[shift];
+    const auto& ac = allowed_counts.array[shift];
+    const auto& ai = allowed_counts.index[shift];
     // TODO(ivan) separate cases of shift >= 11 - all steps are 1 there, and
     // possibly 10 - all relevant steps are 2.
     // Total entropy change by a step: increase/decrease in current bin
@@ -468,10 +475,7 @@ class ANSEncodingHistogram {
       counts_[n] = count;
       rest -= count;
       if (target > 1.0) {
-        size_t count_ind = 0;
-        // TODO(ivan) binary search instead of linear?
-        while (ac[count_ind].count != count) ++count_ind;
-        bins.push_back({freq, count_ind, n});
+        bins.push_back({freq, ai[count], n});
       }
     }
 
@@ -571,34 +575,36 @@ const AEH::Lg2LUT AEH::lg2 = [] {
   return lg2;
 }();
 
-const AEH::CountsArray AEH::allowed_counts = [] {
-  CountsArray allowed_counts = {};
+const AEH::AllowedCounts AEH::allowed_counts = [] {
+  AllowedCounts result;
 
-  for (uint32_t shift = 0; shift < allowed_counts.size(); ++shift) {
-    auto& ac = allowed_counts[shift];
-    for (uint32_t i = 1; i < ac.size(); ++i) {
-      int32_t cnt = i & ~((1 << SmallestIncrementLog(i, shift)) - 1);
-      ac[cnt].count = cnt;
+  for (uint32_t shift = 0; shift < result.array.size(); ++shift) {
+    auto& ac = result.array[shift];
+    auto& ai = result.index[shift];
+    ANSHistBin last = ~0;
+    size_t slot = 0;
+    for (int32_t i = ac.size() - 1; i >= 0; --i) {
+      int32_t curr = i & ~((1 << SmallestIncrementLog(i, shift)) - 1);
+      if (curr == last) continue;
+      last = curr;
+      ac[slot].count = curr;
+      ai[curr] = slot;
+      if (curr == 0) {
+        // Guards against non-possible steps:
+        // at max value [0] - 0 (by init), at min value - max
+        ac[slot].delta_lg2 = std::numeric_limits<int32_t>::max();
+      } else if (slot > 0) {
+        ANSHistBin prev = ac[slot - 1].count;
+        ac[slot].delta_lg2 = round(ldexp(
+            log2(static_cast<double>(prev) / curr) / ANS_LOG_TAB_SIZE, 31));
+        ac[slot].step_log = FloorLog2Nonzero<uint32_t>(prev - curr);
+        prev = curr;
+      }
+      slot++;
     }
-    std::sort(ac.begin(), ac.end(),
-              [](const CountsEntropy& a, const CountsEntropy& b) {
-                return a.count > b.count;
-              });
-    int ind = 1;
-    while (ac[ind].count > 0) {
-      ac[ind].delta_lg2 = round(
-          ldexp(log2(static_cast<double>(ac[ind - 1].count) / ac[ind].count) /
-                    ANS_LOG_TAB_SIZE,
-                31));
-      ac[ind].step_log =
-          FloorLog2Nonzero<uint32_t>(ac[ind - 1].count - ac[ind].count);
-      ++ind;
-    }
-    // Guards against non-possible steps:
-    // at max value [0] - 0 (by init), at min value - max
-    ac[ind].delta_lg2 = std::numeric_limits<int32_t>::max();
   }
-  return allowed_counts;
+
+  return result;
 }();
 
 }  // namespace
