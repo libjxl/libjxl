@@ -89,6 +89,8 @@ struct HybridUintConfig {
     }
   }
 
+  JXL_INLINE uint32_t LsbMask() const { return (1 << lsb_in_token) - 1; }
+
   explicit HybridUintConfig(uint32_t split_exponent = 4,
                             uint32_t msb_in_token = 2,
                             uint32_t lsb_in_token = 0)
