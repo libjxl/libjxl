@@ -152,19 +152,22 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
 
   std::vector<uint8_t> extra_channel_pixels;
 
+  struct CalledRow {
+    std::vector<int> delta;
+    // Use the pixel values.
+    uint32_t value = 0;
+  };
+
   // Callback function used when decoding with use_callback.
   struct DecodeCallbackData {
     JxlBasicInfo info;
     size_t xsize = 0;
     size_t ysize = 0;
-    std::mutex called_rows_mutex;
+    std::unique_ptr<std::mutex[]> called_rows_mutex;
     // For each row stores the segments of the row being called. For each row
     // the sum of all the int values in the map up to [i] (inclusive) tell how
     // many times a callback included the pixel i of that row.
-    std::vector<std::map<uint32_t, int>> called_rows;
-
-    // Use the pixel values.
-    uint32_t value = 0;
+    std::vector<CalledRow> called_rows;
   };
   DecodeCallbackData decode_callback_data;
   auto decode_callback = +[](void* opaque, size_t x, size_t y,
@@ -176,10 +179,11 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
     if (num_pixels && !pixels) abort();
     // Keep track of the segments being called by the callback.
     {
-      const std::lock_guard<std::mutex> lock(data->called_rows_mutex);
-      data->called_rows[y][x]++;
-      data->called_rows[y][x + num_pixels]--;
-      data->value += *static_cast<const uint8_t*>(pixels);
+      const std::lock_guard<std::mutex> lock(data->called_rows_mutex.get()[y]);
+      auto& called_row = data->called_rows[y];
+      called_row.delta[x]++;
+      called_row.delta[x + num_pixels]--;
+      called_row.value += *static_cast<const uint8_t*>(pixels);
     }
   };
 
@@ -355,7 +359,14 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
         if (!spec.coalescing) {
           decode_callback_data.called_rows.clear();
         }
+        decode_callback_data.called_rows_mutex =
+            jxl::make_unique<std::mutex[]>(decode_callback_data.ysize);
         decode_callback_data.called_rows.resize(decode_callback_data.ysize);
+        for (size_t y = 0; y < decode_callback_data.ysize; ++y) {
+          decode_callback_data.called_rows[y].delta.clear();
+          decode_callback_data.called_rows[y].delta.resize(
+              decode_callback_data.xsize + 1);
+        }
         Consume(frame_header);
         std::vector<char> frame_name(frame_header.name_length + 1);
         if (JXL_DEC_SUCCESS != JxlDecoderGetFrameName(dec.get(),
@@ -467,16 +478,11 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
       if (seen_need_image_out && spec.use_callback && spec.coalescing) {
         // Check that the callback sent all the pixels
         for (uint32_t y = 0; y < decode_callback_data.ysize; y++) {
-          // Check that each row was at least called once.
-          if (decode_callback_data.called_rows[y].empty()) abort();
-          uint32_t last_idx = 0;
-          int calls = 0;
-          for (auto it : decode_callback_data.called_rows[y]) {
-            if (it.first > last_idx) {
-              if (static_cast<uint32_t>(calls) != 1) abort();
-            }
-            calls += it.second;
-            last_idx = it.first;
+          const auto& deltas = decode_callback_data.called_rows[y].delta;
+          if (deltas[0] != 1) abort();
+          if (deltas[decode_callback_data.xsize] != -1) abort();
+          for (size_t i = 1; i < decode_callback_data.xsize; ++i) {
+            if (deltas[i] != 0) abort();
           }
         }
       }
@@ -490,16 +496,11 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
       if (seen_need_image_out && spec.use_callback && spec.coalescing) {
         // Check that the callback sent all the pixels
         for (uint32_t y = 0; y < decode_callback_data.ysize; y++) {
-          // Check that each row was at least called once.
-          if (decode_callback_data.called_rows[y].empty()) abort();
-          uint32_t last_idx = 0;
-          int calls = 0;
-          for (auto it : decode_callback_data.called_rows[y]) {
-            if (it.first > last_idx) {
-              if (static_cast<uint32_t>(calls) != num_frames) abort();
-            }
-            calls += it.second;
-            last_idx = it.first;
+          const auto& deltas = decode_callback_data.called_rows[y].delta;
+          if (deltas[0] != static_cast<int>(num_frames)) abort();
+          if (deltas[decode_callback_data.xsize] != -1) abort();
+          for (size_t i = 1; i < decode_callback_data.xsize; ++i) {
+            if (deltas[i] != 0) abort();
           }
         }
       }
