@@ -195,12 +195,14 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     std::vector<int32_t> counts(max_symbols * num_predictors);
     std::vector<uint32_t> tot_extra_bits(num_predictors);
     for (size_t pred = 0; pred < num_predictors; pred++) {
+      size_t extra_bits = 0;
       for (size_t i = begin; i < end; i++) {
-        counts[pred * max_symbols + tree_samples.Token(pred, i)] +=
-            tree_samples.Count(i);
-        tot_extra_bits[pred] +=
-            tree_samples.NBits(pred, i) * tree_samples.Count(i);
+        const ResidualToken& rt = tree_samples.RToken(pred, i);
+        size_t count = tree_samples.Count(i);
+        counts[pred * max_symbols + rt.tok] += count;
+        extra_bits += rt.nbits * count;
       }
+      tot_extra_bits[pred] = extra_bits;
     }
 
     float base_bits;
@@ -300,9 +302,10 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
           for (size_t i = begin; i < end; i++) {
             size_t p = tree_samples.Property(prop, i);
             size_t cnt = tree_samples.Count(i);
-            size_t sym = tree_samples.Token(pred, i);
+            const ResidualToken& rt = tree_samples.RToken(pred, i);
+            size_t sym = rt.tok;
             count_increase[p * max_symbols + sym] += cnt;
-            extra_bits_increase[p] += tree_samples.NBits(pred, i) * cnt;
+            extra_bits_increase[p] += rt.nbits * cnt;
           }
           memcpy(counts_above.data(), counts.data() + pred * max_symbols,
                  max_symbols * sizeof counts_above[0]);
