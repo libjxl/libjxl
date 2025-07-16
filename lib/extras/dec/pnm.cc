@@ -593,7 +593,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
         for (auto& p : ec_out) {
           // FIX: Используем frame->extra_channels вместо ec
           // - Validate extra channel position
-          // Используем первый extra channel как эталон, так как все имеют одинаковый размер
+          // Using the first extra channel dimensions, since all of them should have the same size.
           if (!frame->extra_channels.empty()) {
             size_t ec_offset = (p - reinterpret_cast<uint8_t*>(frame->extra_channels[0].pixels()));
             if (ec_offset + pwidth > frame->extra_channels[0].pixels_size) {
