@@ -591,7 +591,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
         pos += frame->color.pixel_stride();
         
         for (auto& p : ec_out) {
-          // FIX: Используем frame->extra_channels вместо ec
+          // FIX: Using frame->extra_channels instead of ec
           // - Validate extra channel position
           // Using the first extra channel dimensions, since all of them should have the same size.
           if (!frame->extra_channels.empty()) {
