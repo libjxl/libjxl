@@ -319,7 +319,8 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
     screenshot_area_seeds.fetch_add(found);
     return true;
   };
-  if (pw >= 3 && ph >= 3) {
+  bool can_have_seeds = ((pw >= 3) && (ph >= 3));
+  if (can_have_seeds) {
     JXL_RETURN_IF_ERROR(RunOnPool(pool, 1, ph - 2, ThreadPool::NoInit,
                                   process_row, "IsScreenshotLike"));
   }
@@ -362,15 +363,17 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
   queue.reserve(2 * num_seeds * kPatchSide * kPatchSide);
   size_t queue_front = 0;
   // TODO(eustas): coalesce neighbours, leave only border.
-  for (size_t py = 1; py < ph - 1; py++) {
-    uint8_t* JXL_RESTRICT screenshot_row = is_screenshot_like.Row(py);
-    for (size_t px = 1; px < pw - 1; px++) {
-      if (!screenshot_row[px]) continue;
-      for (size_t y = py * kPatchSide; y < (py + 1) * kPatchSide; ++y) {
-        for (size_t x = px * kPatchSide; x < (px + 1) * kPatchSide; ++x) {
-          XY p = {x, y};
-          queue.emplace_back(p, p);
-          is_bg(p) = 1;
+  if (can_have_seeds) {
+    for (size_t py = 1; py < ph - 1; py++) {
+      uint8_t* JXL_RESTRICT screenshot_row = is_screenshot_like.Row(py);
+      for (size_t px = 1; px < pw - 1; px++) {
+        if (!screenshot_row[px]) continue;
+        for (size_t y = py * kPatchSide; y < (py + 1) * kPatchSide; ++y) {
+          for (size_t x = px * kPatchSide; x < (px + 1) * kPatchSide; ++x) {
+            XY p = {x, y};
+            queue.emplace_back(p, p);
+            is_bg(p) = 1;
+          }
         }
       }
     }
