@@ -6,6 +6,7 @@
 #ifndef LIB_JXL_MODULAR_TRANSFORM_ENC_RCT_H_
 #define LIB_JXL_MODULAR_TRANSFORM_ENC_RCT_H_
 
+#include <array>
 #include <cstddef>
 
 #include "lib/jxl/base/data_parallel.h"

@@ -6,6 +6,10 @@
 #ifndef LIB_JXL_ENC_MODULAR_SIMD_H_
 #define LIB_JXL_ENC_MODULAR_SIMD_H_
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/modular/modular_image.h"
 
