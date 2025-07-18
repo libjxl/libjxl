@@ -34,6 +34,9 @@ using ::jpegxl::tools::TrackingMemoryManager;
 using ::jxl::Status;
 using ::jxl::StatusOr;
 
+constexpr size_t kMemoryCap = kGiB;  // enough for 85.3MPx without overhead
+constexpr size_t kBaseMaxSize = 16 << 20;  // 16MPx
+
 void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
   if (!ok) {
     fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
@@ -152,12 +155,19 @@ struct FuzzSpec {
     bool modular = (spec.int_options[7].value == 1);
     Check(spec.int_options[18].flag == JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR);
     bool slow_predictor = (spec.int_options[18].value >= 14);
-    uint64_t max_size = 16 << 20;
+    uint64_t max_size = kBaseMaxSize;
     if (modular && slow_predictor) max_size /= 2;
     if (sizeof(size_t) == 4) max_size /= 1.5;
-    if (spec.xsize * uint64_t{spec.ysize} > max_size) {
-      spec.ysize = max_size / spec.xsize;
+    constexpr size_t group_dim = 256;
+    uint64_t in_mem_xsize = jxl::RoundUpTo(spec.xsize, group_dim);
+    if (in_mem_xsize * spec.ysize > max_size) {
+      spec.ysize = max_size / in_mem_xsize;
       Check(spec.ysize > 0);
+    }
+    uint64_t in_mem_ysize = jxl::RoundUpTo(spec.ysize, group_dim);
+    if (spec.xsize * in_mem_ysize > max_size) {
+      spec.xsize = max_size / in_mem_ysize;
+      Check(spec.xsize > 0);
     }
 
     for (auto& x : spec.pixel_data) {
@@ -295,8 +305,9 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
   return buf;
 }
 
-StatusOr<std::vector<float>> Decode(const std::vector<uint8_t>& data,
-                                    TrackingMemoryManager& memory_manager) {
+Status Decode(const std::vector<uint8_t>& data,
+                                    TrackingMemoryManager& memory_manager,
+                                    std::vector<float>& pixels) {
   // Multi-threaded parallel runner.
   auto dec = JxlDecoderMake(memory_manager.get());
   Check(JxlDecoderSubscribeEvents(dec.get(),
@@ -306,7 +317,7 @@ StatusOr<std::vector<float>> Decode(const std::vector<uint8_t>& data,
   JxlBasicInfo info;
   JxlPixelFormat format = {3, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
 
-  std::vector<float> pixels;
+  pixels.clear();
 
   JxlDecoderSetInput(dec.get(), data.data(), data.size());
   JxlDecoderCloseInput(dec.get());
@@ -326,7 +337,7 @@ StatusOr<std::vector<float>> Decode(const std::vector<uint8_t>& data,
       Check(JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels_buffer,
                                         pixels_buffer_size) == JXL_DEC_SUCCESS);
     } else if (status == JXL_DEC_FULL_IMAGE || status == JXL_DEC_SUCCESS) {
-      return pixels;
+      return true;
     } else {
       // TODO(eustas): update when API will provide OOM status.
       if (memory_manager.seen_oom) {
@@ -339,8 +350,8 @@ StatusOr<std::vector<float>> Decode(const std::vector<uint8_t>& data,
   }
 }
 
-Status Run(const FuzzSpec& spec) {
-  size_t memory_cap = 1 * kGiB;
+void Run(const FuzzSpec& spec) {
+  size_t memory_cap = kMemoryCap;
   size_t total_cap_multiplier = 5;
   if (spec.xsize < 64 || spec.ysize < 64) {
     total_cap_multiplier = 20;
@@ -360,13 +371,14 @@ Status Run(const FuzzSpec& spec) {
     return true;
   };
   // It is fine, if encoder OOMs.
-  if (!encode()) return true;
+  if (!encode()) return;
 
   // It is NOT OK, if decoder OOMs - it should not consume more than encoder.
-  JXL_ASSIGN_OR_RETURN(auto dec_default, Decode(enc_default, memory_manager));
+  std::vector<float> dec_default;
+  Check(Decode(enc_default, memory_manager, dec_default));
   Check(memory_manager.Reset());
-  JXL_ASSIGN_OR_RETURN(auto dec_streaming,
-                       Decode(enc_streaming, memory_manager));
+  std::vector<float> dec_streaming;
+  Check(Decode(enc_streaming, memory_manager, dec_streaming));
   Check(memory_manager.Reset());
 
   Check(dec_default.size() == dec_streaming.size());
@@ -389,14 +401,12 @@ Status Run(const FuzzSpec& spec) {
             static_cast<int>(dec_default.size()));
   }
   Check(outlier_count == 0);
-
-  return true;
 }
 
 int DoTestOneInput(const uint8_t* data, size_t size) {
   auto spec = FuzzSpec::FromData(data, size);
 
-  Check(Run(spec));
+  Run(spec);
   return 0;
 }
 
