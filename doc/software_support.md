@@ -70,6 +70,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Image Toolbox (supported since 2.6.0)](https://github.com/T8RIN/ImageToolbox)
 - [JPEG XL Toolbox by SUIKA LTD](https://apps.apple.com/app/jpeg-xl-toolbox/id6470681357)
 - [RawTherapee (since 5.11)](https://github.com/Beep6581/RawTherapee); Currently only opening of JXL files is supported. [Exporting is expected for the 6.0 release](https://github.com/Beep6581/RawTherapee/pull/7097)
+- [Oculante](https://github.com/woelper/oculante)
 
 ## Image viewers
 
@@ -81,6 +82,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi/releases/tag/v0.12.1)
 - [XnView](https://www.xnview.com/en/)
 - [tev](https://github.com/Tom94/tev)
+- [Oculante](https://github.com/woelper/oculante)
 - Any viewer based on Qt, KDE, GDK-pixbuf, EFL, ImageMagick, libvips or imlib2 (see above)
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
   - GTK viewers: Eye of Gnome (eog), gThumb, Geeqie
