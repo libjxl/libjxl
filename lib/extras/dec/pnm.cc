@@ -547,7 +547,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
   }
   if (ec_out.empty()) {
     const bool flipped_y = header.bits_per_sample == 32;  // PFMs are flipped
-    // - Validate buffer size before processing rows
+    // Validate buffer size before processing rows
     size_t required_size = frame->color.stride * header.ysize;
     if (frame->color.pixels_size < required_size) {
       return JXL_FAILURE("Invalid buffer size for PNM image");
@@ -558,7 +558,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
       const uint8_t* row_in = &pos[y_in * frame->color.stride];
       uint8_t* row_out = &out[y * frame->color.stride];
       
-      // - Validate row boundaries before memcpy
+      // Validate row boundaries before memcpy
       size_t src_offset = row_in - pos;
       size_t dst_offset = row_out - out;
       if (src_offset + frame->color.stride > frame->color.pixels_size || 
@@ -571,7 +571,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
   } else {
     JXL_RETURN_IF_ERROR(PackedImage::ValidateDataType(data_type));
     size_t pwidth = PackedImage::BitsPerChannel(data_type) / 8;
-    // - Validate total pixel buffer size
+    // Validate total pixel buffer size
     size_t required_pixels = header.xsize * header.ysize * 
                              frame->color.pixel_stride();
     if (frame->color.pixels_size < required_pixels) {
@@ -580,7 +580,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
     
     for (size_t y = 0; y < header.ysize; ++y) {
       for (size_t x = 0; x < header.xsize; ++x) {
-        // - Validate current pixel position
+        // Validate current pixel position
         size_t current_offset = (out - reinterpret_cast<uint8_t*>(frame->color.pixels()));
         if (current_offset + frame->color.pixel_stride() > frame->color.pixels_size) {
           return JXL_FAILURE("Pixel write out of bounds");
@@ -592,7 +592,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
         
         for (auto& p : ec_out) {
           // FIX: Using frame->extra_channels instead of ec
-          // - Validate extra channel position
+          // Validate extra channel position
           // Using the first extra channel dimensions, since all of them should have the same size.
           if (!frame->extra_channels.empty()) {
             size_t ec_offset = (p - reinterpret_cast<uint8_t*>(frame->extra_channels[0].pixels()));
