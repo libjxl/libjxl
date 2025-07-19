@@ -424,8 +424,8 @@ class ANSEncodingHistogram {
     };
     // Penalties corresponding to different step sizes - entropy decrease in
     // balancing bin, step of size (1 << ANS_LOG_TAB_SIZE - 1) is not possible
-    int64_t balance_inc[ANS_LOG_TAB_SIZE - 1] = {};
-    int64_t balance_dec[ANS_LOG_TAB_SIZE - 1] = {};
+    std::array<int64_t, ANS_LOG_TAB_SIZE - 1> balance_inc = {};
+    std::array<int64_t, ANS_LOG_TAB_SIZE - 1> balance_dec = {};
     const auto& ac = allowed_counts.array[shift];
     const auto& ai = allowed_counts.index[shift];
     // TODO(ivan) separate cases of shift >= 11 - all steps are 1 there, and
@@ -586,6 +586,9 @@ const AEH::AllowedCounts AEH::allowed_counts = [] {
     auto& ai = result.index[shift];
     ANSHistBin last = ~0;
     size_t slot = 0;
+    // TODO(eustas): are those "default" values relevant?
+    ac[0].delta_lg2 = 0;
+    ac[0].step_log = 0;
     for (int32_t i = ac.size() - 1; i >= 0; --i) {
       int32_t curr = i & ~((1 << SmallestIncrementLog(i, shift)) - 1);
       if (curr == last) continue;

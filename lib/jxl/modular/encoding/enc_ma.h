@@ -21,6 +21,11 @@
 
 namespace jxl {
 
+struct ResidualToken {
+  uint8_t tok;
+  uint8_t nbits;
+};
+
 // Struct to collect all the data needed to build a tree.
 struct TreeSamples {
   bool HasSamples() const {
@@ -35,8 +40,10 @@ struct TreeSamples {
   Status SetProperties(const std::vector<uint32_t> &properties,
                        ModularOptions::TreeMode wp_tree_mode);
 
+  const ResidualToken &RToken(size_t pred, size_t i) const {
+    return residuals[pred][i];
+  }
   size_t Token(size_t pred, size_t i) const { return residuals[pred][i].tok; }
-  size_t NBits(size_t pred, size_t i) const { return residuals[pred][i].nbits; }
   size_t Count(size_t i) const { return sample_counts[i]; }
   size_t PredictorIndex(Predictor predictor) const {
     const auto predictor_elem =
@@ -113,10 +120,6 @@ struct TreeSamples {
   // properties and counts in a single vector to improve locality.
   // A first attempt at doing this actually results in much slower encoding,
   // possibly because of the more complex addressing.
-  struct ResidualToken {
-    uint8_t tok;
-    uint8_t nbits;
-  };
   // Residual information: token and number of extra bits, per predictor.
   std::vector<std::vector<ResidualToken>> residuals;
   // Number of occurrences of each sample.

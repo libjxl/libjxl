@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -37,11 +38,13 @@ using ::jxl::BitReader;
 using ::jxl::Span;
 #endif
 
-void Check(bool ok) {
+void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
   if (!ok) {
+    fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
     JXL_CRASH();
   }
 }
+#define Check(OK) CheckImpl((OK), #OK, __FILE__, __LINE__)
 
 int DoTestOneInput(const uint8_t* data, size_t size) {
 #if defined(JXL_ICC_FUZZER_ONLY_WRITE)
