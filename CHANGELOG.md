@@ -24,10 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Empty DHT markers no longer cause JPEG transcoding to fail. (#2704)
 
 ### Changed / clarified
+  - Numerous speed/memory usage improvements. (#4322, #4330, #4332 and #4341)
   - Significant improvements to EXR input handling. Now supports float32,
     multilayer and per-channel bitdepth. (#4312)
-  - Layered JXL files are no longer coalesed when re-encoding with cjxl, and can now
-    be decoded to seperate PNG/PAM files with djxl by using `--no_coalescing`. (#4299)
+  - Layered JXL files are no longer coalesced when re-encoding with cjxl, and can now
+    be decoded to separate PNG/PAM files with djxl by using `--no_coalescing`. (#4299)
   - Using `-p` in cjxl will now encode a more progressive image at the cost
     of encode speed. `--patches 0` can be used to significantly improve encode speed
     or `--progressive_dc 0` can be used to return to old behaviour. (#4258)
