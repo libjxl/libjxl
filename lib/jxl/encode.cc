@@ -1308,6 +1308,7 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
     JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &channel_info);
     channel_info.bits_per_sample = info->alpha_bits;
     channel_info.exponent_bits_per_sample = info->alpha_exponent_bits;
+    channel_info.alpha_premultiplied = info->alpha_premultiplied;
     if (JxlEncoderSetExtraChannelInfo(enc, 0, &channel_info)) {
       return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                            "Problem setting extra channel info for alpha");
