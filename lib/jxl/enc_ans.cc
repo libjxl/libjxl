@@ -599,6 +599,7 @@ const AEH::AllowedCounts AEH::allowed_counts = [] {
         // Guards against non-possible steps:
         // at max value [0] - 0 (by init), at min value - max
         ac[slot].delta_lg2 = std::numeric_limits<int32_t>::max();
+        ac[slot].step_log = 0;
       } else if (slot > 0) {
         ANSHistBin prev = ac[slot - 1].count;
         ac[slot].delta_lg2 = round(ldexp(

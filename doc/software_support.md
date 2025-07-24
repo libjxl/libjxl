@@ -81,6 +81,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi/releases/tag/v0.12.1)
 - [XnView](https://www.xnview.com/en/)
 - [tev](https://github.com/Tom94/tev)
+- [Oculante](https://github.com/woelper/oculante)
 - Any viewer based on Qt, KDE, GDK-pixbuf, EFL, ImageMagick, libvips or imlib2 (see above)
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
   - GTK viewers: Eye of Gnome (eog), gThumb, Geeqie
