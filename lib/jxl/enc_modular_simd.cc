@@ -110,6 +110,9 @@ StatusOr<float> EstimateCost(const Image& img) {
   const auto kMaxDiffCap = Set(du, estimate_cost_detail::kLastThreshold - 1);
   const auto kLanes = Set(du, Lanes(du));
   const auto kIota = Iota(du, 0);
+  const auto kLargeThreshold = Set(du, (1 << 22) - 1);
+  constexpr size_t kLargeShiftVal = 10;
+  const auto kLargeShift = Set(du, kLargeShiftVal);
 
   size_t max_w = 0;
   for (const Channel& ch : img.channel) {
@@ -148,9 +151,13 @@ StatusOr<float> EstimateCost(const Image& img) {
       const auto ures = BitCast(du, Sub(central, left));
       const auto packed =
           Xor(ShiftLeft<1>(ures), Sub(ShiftRight<31>(Not(ures)), kOne));
+      const auto is_large = Gt(packed, kLargeThreshold);
+      const auto packed_shifted = ShiftRight<kLargeShiftVal>(packed);
       const auto not_literal = Ge(packed, kSplit);
-      const auto v = BitCast(du, ConvertTo(df, packed));
-      const auto eb = Sub(ShiftRight<23>(v), kExpOffset2);
+      const auto packed_fixed = IfThenElse(is_large, packed_shifted, packed);
+      const auto v = BitCast(du, ConvertTo(df, packed_fixed));
+      const auto eb_raw = Sub(ShiftRight<23>(v), kExpOffset2);
+      const auto eb = IfThenElse(is_large, Add(eb_raw, kLargeShift), eb_raw);
       const auto token = Add(Add(kTokenBias, Mul(eb, kTokenMul)),
                              And(ShiftRight<21>(v), kMsbMask));
       const auto tail_mask = Lt(pos, last_pos);
@@ -197,9 +204,13 @@ StatusOr<float> EstimateCost(const Image& img) {
         const auto ures = BitCast(du, Sub(central, prediction));
         const auto packed =
             Xor(ShiftLeft<1>(ures), Sub(ShiftRight<31>(Not(ures)), kOne));
+        const auto is_large = Gt(packed, kLargeThreshold);
+        const auto packed_shifted = ShiftRight<kLargeShiftVal>(packed);
         const auto not_literal = Ge(packed, kSplit);
-        const auto v = BitCast(du, ConvertTo(df, packed));
-        const auto eb = Sub(ShiftRight<23>(v), kExpOffset2);
+        const auto packed_fixed = IfThenElse(is_large, packed_shifted, packed);
+        const auto v = BitCast(du, ConvertTo(df, packed_fixed));
+        const auto eb_raw = Sub(ShiftRight<23>(v), kExpOffset2);
+        const auto eb = IfThenElse(is_large, Add(eb_raw, kLargeShift), eb_raw);
         const auto token = Add(Add(kTokenBias, Mul(eb, kTokenMul)),
                                And(ShiftRight<21>(v), kMsbMask));
         const auto tail_mask = Lt(pos, last_pos);
