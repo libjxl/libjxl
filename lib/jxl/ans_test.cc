@@ -336,8 +336,7 @@ TEST_P(AnsSimdTest, EstimateTokenCost) {
   constexpr size_t kNumItems = 8 * 1024 * 1024;
   std::vector<uint32_t> in;
   std::vector<uint32_t> expected_out;
-  in.reserve(kNumItems + 327690);
-  expected_out.reserve(kNumItems + 327690);
+  in.reserve(kNumItems + 311306 + 1024);
   uint32_t expected_eb = 0;
   for (size_t i = 0; i < kNumItems; ++i) {
     in.push_back(i);
@@ -345,17 +344,18 @@ TEST_P(AnsSimdTest, EstimateTokenCost) {
   for (size_t b = 23; b <= 31; ++b) {
     size_t base = 1 << b;
     for (size_t k = base - 16384; k <= base + 16384; ++k) {
-      in.push_back(k); 
+      in.push_back(k);
     }
   }
   for (size_t n = 0; n <= 16384; ++n) {
     in.push_back(static_cast<uint32_t>(~0u) - n);
   }
+  expected_out.reserve(in.size() + 1024);
   for (size_t i = 0; i < in.size(); ++i) {
     uint32_t v = in[i];
     uint32_t tok, nbits, bits;
     cfg.Encode(v, &tok, &nbits, &bits);
-    expected_out[i] = tok;
+    expected_out.push_back(tok);
     expected_eb += nbits;
   }
 
