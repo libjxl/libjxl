@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
+  - `JxlBasicInfo.alpha_premultiplied` was not correctly forwarded. (#4357)
   - CMYK JXL files would not decode to PNG correctly. (#4301)
   - Encoder would hang with specific parameters on images containing
     more than 256 groups. (#4302)
