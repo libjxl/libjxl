@@ -324,6 +324,7 @@ class NumPyEncoder : public Encoder {
     }
     return formats;
   }
+  bool AcceptsCmyk() const override { return true; }
 };
 
 }  // namespace

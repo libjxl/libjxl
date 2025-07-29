@@ -195,12 +195,14 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     std::vector<int32_t> counts(max_symbols * num_predictors);
     std::vector<uint32_t> tot_extra_bits(num_predictors);
     for (size_t pred = 0; pred < num_predictors; pred++) {
+      size_t extra_bits = 0;
       for (size_t i = begin; i < end; i++) {
-        counts[pred * max_symbols + tree_samples.Token(pred, i)] +=
-            tree_samples.Count(i);
-        tot_extra_bits[pred] +=
-            tree_samples.NBits(pred, i) * tree_samples.Count(i);
+        const ResidualToken& rt = tree_samples.RToken(pred, i);
+        size_t count = tree_samples.Count(i);
+        counts[pred * max_symbols + rt.tok] += count;
+        extra_bits += rt.nbits * count;
       }
+      tot_extra_bits[pred] = extra_bits;
     }
 
     float base_bits;
@@ -228,7 +230,8 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
         break;
       }
       if (t == IntersectionType::kPartial) {
-        forced_split.val = tree_samples.QuantizeProperty(axis, val);
+        JXL_DASSERT(axis < kNumStaticProperties);
+        forced_split.val = tree_samples.QuantizeStaticProperty(axis, val);
         forced_split.prop = axis;
         forced_split.lcost = forced_split.rcost = base_bits / 2 - threshold;
         forced_split.lpred = forced_split.rpred = (*tree)[pos].predictor;
@@ -299,9 +302,10 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
           for (size_t i = begin; i < end; i++) {
             size_t p = tree_samples.Property(prop, i);
             size_t cnt = tree_samples.Count(i);
-            size_t sym = tree_samples.Token(pred, i);
+            const ResidualToken& rt = tree_samples.RToken(pred, i);
+            size_t sym = rt.tok;
             count_increase[p * max_symbols + sym] += cnt;
-            extra_bits_increase[p] += tree_samples.NBits(pred, i) * cnt;
+            extra_bits_increase[p] += rt.nbits * cnt;
           }
           memcpy(counts_above.data(), counts.data() + pred * max_symbols,
                  max_symbols * sizeof counts_above[0]);
@@ -504,11 +508,9 @@ Status TreeSamples::SetPredictor(Predictor predictor,
     predictors = {predictor};
   }
   if (wp_tree_mode == ModularOptions::TreeMode::kNoWP) {
-    auto wp_it =
-        std::find(predictors.begin(), predictors.end(), Predictor::Weighted);
-    if (wp_it != predictors.end()) {
-      predictors.erase(wp_it);
-    }
+    predictors.erase(
+        std::remove(predictors.begin(), predictors.end(), Predictor::Weighted),
+        predictors.end());
   }
   residuals.resize(predictors.size());
   return true;
@@ -524,15 +526,23 @@ Status TreeSamples::SetProperties(const std::vector<uint32_t> &properties,
     props_to_use = {static_cast<uint32_t>(kGradientProp)};
   }
   if (wp_tree_mode == ModularOptions::TreeMode::kNoWP) {
-    auto it = std::find(props_to_use.begin(), props_to_use.end(), kWPProp);
-    if (it != props_to_use.end()) {
-      props_to_use.erase(it);
-    }
+    props_to_use.erase(
+        std::remove(props_to_use.begin(), props_to_use.end(), kWPProp),
+        props_to_use.end());
   }
   if (props_to_use.empty()) {
     return JXL_FAILURE("Invalid property set configuration");
   }
-  props.resize(props_to_use.size());
+  num_static_props = 0;
+  // Check that if static properties present, then those are at the beginning.
+  for (size_t i = 0; i < props_to_use.size(); ++i) {
+    uint32_t prop = props_to_use[i];
+    if (prop < kNumStaticProperties) {
+      JXL_DASSERT(i == prop);
+      num_static_props++;
+    }
+  }
+  props.resize(props_to_use.size() - num_static_props);
   return true;
 }
 
@@ -590,6 +600,9 @@ void TreeSamples::PrepareForSamples(size_t extra_num_samples) {
   for (auto &res : residuals) {
     res.reserve(res.size() + extra_num_samples);
   }
+  for (size_t i = 0; i < num_static_props; ++i) {
+    static_props[i].reserve(static_props[i].size() + extra_num_samples);
+  }
   for (auto &p : props) {
     p.reserve(p.size() + extra_num_samples);
   }
@@ -605,6 +618,9 @@ size_t TreeSamples::Hash1(size_t a) const {
     h = h * constant + r[a].tok;
     h = h * constant + r[a].nbits;
   }
+  for (size_t i = 0; i < num_static_props; ++i) {
+    h = h * constant + static_props[i][a];
+  }
   for (const auto &p : props) {
     h = h * constant + p[a];
   }
@@ -613,6 +629,9 @@ size_t TreeSamples::Hash1(size_t a) const {
 size_t TreeSamples::Hash2(size_t a) const {
   constexpr uint64_t constant = 0x1e35a7bd1e35a7bd;
   uint64_t h = constant;
+  for (size_t i = 0; i < num_static_props; ++i) {
+    h = h * constant ^ static_props[i][a];
+  }
   for (const auto &p : props) {
     h = h * constant ^ p[a];
   }
@@ -630,6 +649,11 @@ bool TreeSamples::IsSameSample(size_t a, size_t b) const {
       ret = false;
     }
     if (r[a].nbits != r[b].nbits) {
+      ret = false;
+    }
+  }
+  for (size_t i = 0; i < num_static_props; ++i) {
+    if (static_props[i][a] != static_props[i][b]) {
       ret = false;
     }
   }
@@ -652,13 +676,17 @@ void TreeSamples::AddSample(pixel_type_w pixel, const Properties &properties,
     residuals[i].emplace_back(
         ResidualToken{static_cast<uint8_t>(tok), static_cast<uint8_t>(nbits)});
   }
-  for (size_t i = 0; i < props_to_use.size(); i++) {
-    props[i].push_back(QuantizeProperty(i, properties[props_to_use[i]]));
+  for (size_t i = 0; i < num_static_props; ++i) {
+    static_props[i].push_back(QuantizeStaticProperty(i, properties[i]));
+  }
+  for (size_t i = num_static_props; i < props_to_use.size(); i++) {
+    props[i - num_static_props].push_back(QuantizeProperty(i, properties[props_to_use[i]]));
   }
   sample_counts.push_back(1);
   num_samples++;
   if (AddToTableAndMerge(sample_counts.size() - 1)) {
     for (auto &r : residuals) r.pop_back();
+    for (size_t i = 0; i < num_static_props; ++i) static_props[i].pop_back();
     for (auto &p : props) p.pop_back();
     sample_counts.pop_back();
   }
@@ -668,6 +696,9 @@ void TreeSamples::Swap(size_t a, size_t b) {
   if (a == b) return;
   for (auto &r : residuals) {
     std::swap(r[a], r[b]);
+  }
+  for (size_t i = 0; i < num_static_props; ++i) {
+    std::swap(static_props[i][a], static_props[i][b]);
   }
   for (auto &p : props) {
     std::swap(p[a], p[b]);
@@ -713,6 +744,24 @@ std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
   std::vector<int32_t> thresholds = QuantizeHistogram(counts, num_chunks);
   for (auto &v : thresholds) v += min;
   return thresholds;
+}
+
+// `to[i]` is assigned value `v` conforming `from[v] <= i && from[v-1] > i`.
+// This is because the decision node in the tree splits on (property) > i,
+// hence everything that is not > of a threshold should be clustered
+// together.
+template <typename T>
+void QuantMap(const std::vector<int32_t> &from, std::vector<T> &to,
+              size_t num_pegs, int bias) {
+  to.resize(num_pegs);
+  size_t mapped = 0;
+  for (size_t i = 0; i < num_pegs; i++) {
+    while (mapped < from.size() && static_cast<int>(i) - bias > from[mapped]) {
+      mapped++;
+    }
+    JXL_DASSERT(static_cast<T>(mapped) == mapped);
+    to[i] = mapped;
+  }
 }
 }  // namespace
 
@@ -827,7 +876,7 @@ void TreeSamples::PreQuantizeProperties(
         47,   55,   63,   79,   95,   111,  127, 159, 191, 223, 255};
   };
 
-  property_mapping.resize(props_to_use.size());
+  property_mapping.resize(props_to_use.size() - num_static_props);
   for (size_t i = 0; i < props_to_use.size(); i++) {
     if (props_to_use[i] == 0) {
       compact_properties[i] = quantize_channel();
@@ -852,22 +901,12 @@ void TreeSamples::PreQuantizeProperties(
     } else {
       compact_properties[i] = quantize_diff_property();
     }
-    property_mapping[i].resize(kPropertyRange * 2 + 1);
-    size_t mapped = 0;
-    for (size_t j = 0; j < property_mapping[i].size(); j++) {
-      while (mapped < compact_properties[i].size() &&
-             static_cast<int>(j) - kPropertyRange >
-                 compact_properties[i][mapped]) {
-        mapped++;
-      }
-      JXL_DASSERT(mapped < 256);
-      // property_mapping[i] of a value V is `mapped` if
-      // compact_properties[i][mapped] <= j and
-      // compact_properties[i][mapped-1] > j
-      // This is because the decision node in the tree splits on (property) > j,
-      // hence everything that is not > of a threshold should be clustered
-      // together.
-      property_mapping[i][j] = mapped;
+    if (i < num_static_props) {
+      QuantMap(compact_properties[i], static_property_mapping[i],
+               kPropertyRange * 2 + 1, kPropertyRange);
+    } else {
+      QuantMap(compact_properties[i], property_mapping[i - num_static_props],
+               kPropertyRange * 2 + 1, kPropertyRange);
     }
   }
 }

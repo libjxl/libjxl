@@ -114,7 +114,8 @@ struct EntropyEncodingData {
       const Histogram& histogram, BitWriter* writer);
 
  private:
-  Status ChooseUintConfigs(const HistogramParams& params,
+  Status ChooseUintConfigs(JxlMemoryManager* memory_manager,
+                           const HistogramParams& params,
                            const std::vector<std::vector<Token>>& tokens,
                            std::vector<Histogram>& clustered_histograms);
 };

@@ -117,7 +117,7 @@ std::string ListOfDecodeCodecs() {
 Status DecodeBytes(const Span<const uint8_t> bytes,
                    const ColorHints& color_hints, extras::PackedPixelFile* ppf,
                    const SizeConstraints* constraints, Codec* orig_codec,
-                   JxlMemoryManager* memory_manager) {
+                   JxlMemoryManager* memory_manager, bool coalescing) {
   if (bytes.size() < kMinBytes) return JXL_FAILURE("Too few bytes");
 
   *ppf = extras::PackedPixelFile();
@@ -144,6 +144,7 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
     case Codec::kJXL: {
       JXLDecompressParams dparams = {};
       dparams.memory_manager = memory_manager;
+      dparams.coalescing = coalescing;
       for (const uint32_t num_channels : {1, 2, 3, 4}) {
         dparams.accepted_formats.push_back(
             {num_channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, /*align=*/0});
@@ -219,10 +220,11 @@ Codec DetectCodec(const Span<const uint8_t>& bytes) {
        {'P', '7'},
        {'P', 'F'},
        {'P', 'f'}}};
-  static const std::array<std::array<uint8_t, 4>, 4> kJpgSignatures = {{
+  static const std::array<std::array<uint8_t, 4>, 5> kJpgSignatures = {{
       {0xFF, 0xD8, 0xFF, 0xDB},
       {0xFF, 0xD8, 0xFF, 0xE0},
       {0xFF, 0xD8, 0xFF, 0xE1},
+      {0xFF, 0xD8, 0xFF, 0xE2},
       {0xFF, 0xD8, 0xFF, 0xEE},
   }};
   static const std::array<std::array<uint8_t, 9>, 1> kJxlBoxSignatures = {{
