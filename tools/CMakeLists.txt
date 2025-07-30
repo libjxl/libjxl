@@ -71,7 +71,9 @@ add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   tracking_memory_manager.cc
   ${JXL_CMS_OBJECTS}
 )
-target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
+# JPEGXL_INTERNAL_FLAGS is set inside lib/
+# target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
+target_compile_options(jxl_tool PRIVATE -DJPEGXL_COMPILER_ID="${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 target_include_directories(jxl_tool PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(jxl_tool PUBLIC jxl_base hwy)
 
