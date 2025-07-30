@@ -89,7 +89,7 @@ std::string SummaryStat(double value, const char* unit,
 
   char range[20] = {'\0'};
   if (s.min != s.max) {
-    snprintf(range, sizeof(range), " [%.2f, %.2f]", value_min, value_max);
+    snprintf(range, sizeof(range), " [%.3f, %.3f]", value_min, value_max);
   }
 
   snprintf(stat_str, sizeof(stat_str), "%s%.3f %s/s%s%s", s.type,
