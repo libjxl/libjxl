@@ -220,10 +220,11 @@ Codec DetectCodec(const Span<const uint8_t>& bytes) {
        {'P', '7'},
        {'P', 'F'},
        {'P', 'f'}}};
-  static const std::array<std::array<uint8_t, 4>, 4> kJpgSignatures = {{
+  static const std::array<std::array<uint8_t, 4>, 5> kJpgSignatures = {{
       {0xFF, 0xD8, 0xFF, 0xDB},
       {0xFF, 0xD8, 0xFF, 0xE0},
       {0xFF, 0xD8, 0xFF, 0xE1},
+      {0xFF, 0xD8, 0xFF, 0xE2},
       {0xFF, 0xD8, 0xFF, 0xEE},
   }};
   static const std::array<std::array<uint8_t, 9>, 1> kJxlBoxSignatures = {{
