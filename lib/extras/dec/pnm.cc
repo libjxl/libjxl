@@ -547,6 +547,13 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
   }
   if (ec_out.empty()) {
     const bool flipped_y = header.bits_per_sample == 32;  // PFMs are flipped
+    
+    // Validate output buffer size before processing rows
+    const size_t required_bytes = frame->color.stride * header.ysize;
+    if (frame->color.pixels_size < required_bytes) {
+      return JXL_FAILURE("Output buffer too small for PNM image");
+    }
+
     for (size_t y = 0; y < header.ysize; ++y) {
       size_t y_in = flipped_y ? header.ysize - 1 - y : y;
       const uint8_t* row_in = &pos[y_in * frame->color.stride];
@@ -556,6 +563,21 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
   } else {
     JXL_RETURN_IF_ERROR(PackedImage::ValidateDataType(data_type));
     size_t pwidth = PackedImage::BitsPerChannel(data_type) / 8;
+    
+    // Validate output buffer size before processing pixels
+    const size_t required_pixels = header.xsize * header.ysize * 
+                                   frame->color.pixel_stride();
+    if (frame->color.pixels_size < required_pixels) {
+      return JXL_FAILURE("Pixel buffer too small for PNM image");
+    }
+    
+    // Validate extra channels buffers
+    for (const auto& ec : frame->extra_channels) {
+      if (ec.pixels_size < required_pixels) {
+        return JXL_FAILURE("Extra channel buffer too small");
+      }
+    }
+
     for (size_t y = 0; y < header.ysize; ++y) {
       for (size_t x = 0; x < header.xsize; ++x) {
         memcpy(out, pos, frame->color.pixel_stride());
