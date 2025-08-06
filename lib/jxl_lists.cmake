@@ -306,6 +306,8 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_ans.cc
   jxl/enc_ans.h
   jxl/enc_ans_params.h
+  jxl/enc_ans_simd.cc
+  jxl/enc_ans_simd.h
   jxl/enc_aux_out.cc
   jxl/enc_aux_out.h
   jxl/enc_bit_writer.cc
@@ -362,6 +364,8 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_lz77.h
   jxl/enc_modular.cc
   jxl/enc_modular.h
+  jxl/enc_modular_simd.cc
+  jxl/enc_modular_simd.h
   jxl/enc_noise.cc
   jxl/enc_noise.h
   jxl/enc_optimize.h

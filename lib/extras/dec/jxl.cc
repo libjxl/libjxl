@@ -158,12 +158,14 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
 
   JxlColorEncoding color_encoding;
   size_t num_color_channels = 0;
+  bool set_colorspace = false;
   if (!dparams.color_space.empty()) {
     if (!jxl::ParseDescription(dparams.color_space, &color_encoding)) {
       fprintf(stderr, "Failed to parse color space %s.\n",
               dparams.color_space.c_str());
       return false;
     }
+    set_colorspace = true;
     num_color_channels =
         color_encoding.color_space == JXL_COLOR_SPACE_GRAY ? 1 : 3;
   }
@@ -217,6 +219,11 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
     if (JXL_DEC_SUCCESS != JxlDecoderSetUnpremultiplyAlpha(
                                dec, TO_JXL_BOOL(dparams.unpremultiply_alpha))) {
       fprintf(stderr, "JxlDecoderSetUnpremultiplyAlpha failed\n");
+      return false;
+    }
+    if (JXL_DEC_SUCCESS !=
+        JxlDecoderSetCoalescing(dec, TO_JXL_BOOL(dparams.coalescing))) {
+      fprintf(stderr, "JxlDecoderSetCoalescing failed\n");
       return false;
     }
     if (dparams.display_nits > 0 &&
@@ -367,6 +374,16 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           alpha_found = true;
           continue;
         }
+        if (eci.type == JXL_CHANNEL_BLACK && !set_colorspace &&
+            !dparams.color_space_for_cmyk.empty()) {
+          if (!jxl::ParseDescription(dparams.color_space_for_cmyk,
+                                     &color_encoding)) {
+            fprintf(stderr, "Failed to parse color space %s.\n",
+                    dparams.color_space_for_cmyk.c_str());
+            return false;
+          }
+          set_colorspace = true;
+        }
         std::string name(eci.name_length + 1, 0);
         if (JXL_DEC_SUCCESS !=
             JxlDecoderGetExtraChannelName(
@@ -378,19 +395,14 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         ppf->extra_channels_info.push_back({eci, i, name});
       }
     } else if (status == JXL_DEC_COLOR_ENCODING) {
-      if (!dparams.color_space.empty()) {
-        if (ppf->info.uses_original_profile) {
-          fprintf(stderr,
-                  "Warning: --color_space ignored because the image is "
-                  "not XYB encoded.\n");
-        } else {
-          JxlDecoderSetCms(dec, *JxlGetDefaultCms());
-          if (JXL_DEC_SUCCESS !=
-              JxlDecoderSetPreferredColorProfile(dec, &color_encoding)) {
-            fprintf(stderr, "Failed to set color space.\n");
-            return false;
-          }
+      if (set_colorspace) {
+        JxlDecoderSetCms(dec, *JxlGetDefaultCms());
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetOutputColorProfile(dec, &color_encoding, nullptr, 0)) {
+          fprintf(stderr, "Failed to set color space.\n");
+          return false;
         }
+        ppf->color_encoding = color_encoding;
       }
       size_t icc_size = 0;
       JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
@@ -412,6 +424,7 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       }
       ppf->primary_color_representation =
           PackedPixelFile::kColorEncodingIsPrimary;
+
       icc_size = 0;
       target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
       if (JXL_DEC_SUCCESS !=
@@ -428,6 +441,7 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         }
         ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
       }
+
     } else if (status == JXL_DEC_FRAME) {
       if (!VerifyDimensions(constraints, ppf->xsize(), ppf->ysize())) {
         fprintf(stderr, "Image too big\n");
@@ -437,11 +451,14 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       if (constraints && (total_pixel_count > constraints->dec_max_pixels)) {
         return JXL_FAILURE("Image too big");
       }
-      auto frame_or = jxl::extras::PackedFrame::Create(ppf->info.xsize,
-                                                       ppf->info.ysize, format);
+      JxlFrameHeader fh;
+      if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &fh)) {
+        fprintf(stderr, "JxlDecoderGetFrameHeader failed\n");
+        return false;
+      }
       JXL_ASSIGN_OR_QUIT(jxl::extras::PackedFrame frame,
                          jxl::extras::PackedFrame::Create(
-                             ppf->info.xsize, ppf->info.ysize, format),
+                             fh.layer_info.xsize, fh.layer_info.ysize, format),
                          "Failed to create image frame.");
       if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &frame.frame_info)) {
         fprintf(stderr, "JxlDecoderGetFrameHeader failed\n");
@@ -556,7 +573,8 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       for (auto& eci : ppf->extra_channels_info) {
         JXL_ASSIGN_OR_QUIT(jxl::extras::PackedImage image,
                            jxl::extras::PackedImage::Create(
-                               ppf->info.xsize, ppf->info.ysize, ec_format),
+                               frame.frame_info.layer_info.xsize,
+                               frame.frame_info.layer_info.ysize, ec_format),
                            "Failed to create extra channel image.");
         frame.extra_channels.emplace_back(std::move(image));
         auto& ec = frame.extra_channels.back();
