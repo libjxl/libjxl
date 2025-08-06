@@ -56,7 +56,7 @@ using hwy::HWY_NAMESPACE::VFromD;
 
 // 32x32 blue noise dithering pattern from
 // https://momentsingraphics.de/BlueNoise.html#Downloads
-// scaled to have an average of 0 and be fully contained in (-0.5, 0.5).
+// scaled to have an average of 0 and be fully contained in (0.49219 to -0.49219).
 const float kDither[1024] = {
     -0.26057, 0.32619, 0.21039, -0.03281, -0.10616, 0.16792, 0.43042, -0.48061
     -0.00965, -0.31075, 0.24899, -0.35322, -0.02509, -0.25285, 0.02895, 0.10230
