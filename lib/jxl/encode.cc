@@ -1362,13 +1362,14 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   }
   std::string level_message;
   int required_level = VerifyLevelSettings(enc, &level_message);
+  int verified_level = (required_level == -1) ? 10 : enc->codestream_level;
   if (required_level == -1 ||
       (static_cast<int>(enc->codestream_level) < required_level &&
        enc->codestream_level != -1)) {
     return JXL_API_ERROR(
         enc, JXL_ENC_ERR_API_USAGE, "%s",
         ("Codestream level verification for level " +
-         std::to_string(enc->codestream_level) + " failed: " + level_message)
+         std::to_string(verified_level) + " failed: " + level_message)
             .c_str());
   }
   return JxlErrorOrStatus::Success();
@@ -1468,13 +1469,14 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
   channel.spot_color[3] = info->spot_color[3];
   std::string level_message;
   int required_level = VerifyLevelSettings(enc, &level_message);
+  int verified_level = (required_level == -1) ? 10 : enc->codestream_level;
   if (required_level == -1 ||
       (static_cast<int>(enc->codestream_level) < required_level &&
        enc->codestream_level != -1)) {
     return JXL_API_ERROR(
         enc, JXL_ENC_ERR_API_USAGE, "%s",
         ("Codestream level verification for level " +
-         std::to_string(enc->codestream_level) + " failed: " + level_message)
+         std::to_string(verified_level) + " failed: " + level_message)
             .c_str());
   }
   return JxlErrorOrStatus::Success();
