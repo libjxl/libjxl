@@ -7,7 +7,19 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/memory_manager_internal.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -360,8 +372,8 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
   HWY_CAPPED(int32_t, kDCTBlockSize) di;
   const auto inv_qac = Set(df, quantizer.inv_quant_ac(*quant));
   for (size_t k = 0; k < kDCTBlockSize * xsize * ysize; k += Lanes(df)) {
-    const auto quant = Load(di, quantized + size + k);
-    const auto adj_quant = AdjustQuantBias(di, 1, quant, biases);
+    const auto oquant = Load(di, quantized + size + k);
+    const auto adj_quant = AdjustQuantBias(di, 1, oquant, biases);
     const auto dequantm = Load(df, dequant_matrix + k);
     Store(Mul(Mul(adj_quant, dequantm), inv_qac), df, inout + size + k);
   }
@@ -470,7 +482,7 @@ Status ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                                 scratch_space);
           }
           DCFromLowestFrequencies(acs.Strategy(), coeffs_in + size,
-                                  dc_rows[1] + bx, dc_stride);
+                                  dc_rows[1] + bx, dc_stride, scratch_space);
 
           QuantizeRoundtripYBlockAC(
               enc_state, size, enc_state->shared.quantizer, error_diffusion,
@@ -498,7 +510,7 @@ Status ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                             coeffs_in + c * size, &quant_ac,
                             quantized + c * size);
             DCFromLowestFrequencies(acs.Strategy(), coeffs_in + c * size,
-                                    dc_rows[c] + bx, dc_stride);
+                                    dc_rows[c] + bx, dc_stride, scratch_space);
           }
           row_quant_ac[bx] = quant_ac;
           for (size_t c = 0; c < 3; c++) {
@@ -549,10 +561,10 @@ Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
   }
   size_t context_offset =
       histogram_idx * enc_state.shared.block_ctx_map.NumACContexts();
-  JXL_RETURN_IF_ERROR(WriteTokens(
-      enc_state.passes[pass_idx].ac_tokens[group_idx],
-      enc_state.passes[pass_idx].codes, enc_state.passes[pass_idx].context_map,
-      context_offset, writer, LayerType::AcTokens, aux_out));
+  JXL_RETURN_IF_ERROR(
+      WriteTokens(enc_state.passes[pass_idx].ac_tokens[group_idx],
+                  enc_state.passes[pass_idx].codes, context_offset, writer,
+                  LayerType::AcTokens, aux_out));
 
   return true;
 }

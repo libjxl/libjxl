@@ -5,6 +5,9 @@
 
 // Misc utilities for SIMD operations
 
+#include <cstddef>
+#include <cstdint>
+
 #if defined(LIB_JXL_SIMD_UTIL_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_SIMD_UTIL_INL_H_
 #undef LIB_JXL_SIMD_UTIL_INL_H_

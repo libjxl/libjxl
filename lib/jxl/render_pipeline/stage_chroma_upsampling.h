@@ -5,14 +5,10 @@
 
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_CHROMA_UPSAMPLING_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_CHROMA_UPSAMPLING_H_
-#include <math.h>
-#include <stdint.h>
 
-#include <algorithm>
-#include <utility>
-#include <vector>
+#include <cstddef>
+#include <memory>
 
-#include "lib/jxl/loop_filter.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 namespace jxl {

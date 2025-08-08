@@ -14,6 +14,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
@@ -71,16 +72,16 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   }
   static ThreadPoolInternal pool(QThread::idealThreadCount());
 
-  CodecInOut decoded{jpegxl::tools::NoMemoryManager()};
+  auto decoded = jxl::make_unique<CodecInOut>(jpegxl::tools::NoMemoryManager());
   ColorHints color_hints;
   if (!sourceColorSpaceHint.isEmpty()) {
     color_hints.Add("color_space", sourceColorSpaceHint.toStdString());
   }
-  if (!loadFromFile(filename, color_hints, &decoded, pool.get())) {
+  if (!loadFromFile(filename, color_hints, decoded.get(), pool.get())) {
     return QImage();
   }
-  decoded.metadata.m.SetIntensityTarget(intensityTarget);
-  const ImageBundle& ib = decoded.Main();
+  decoded->metadata.m.SetIntensityTarget(intensityTarget);
+  const ImageBundle& ib = decoded->Main();
 
   ColorEncoding targetColorSpace;
   bool use_fallback_profile = true;
@@ -96,7 +97,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
     targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
   Image3F converted;
-  if (!ib.CopyTo(Rect(ib), targetColorSpace, *JxlGetDefaultCms(), &converted,
+  if (!ib.CopyTo(Rect{ib}, targetColorSpace, *JxlGetDefaultCms(), &converted,
                  pool.get())) {
     return QImage();
   }

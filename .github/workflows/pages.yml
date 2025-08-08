@@ -14,6 +14,9 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+  pull_request:
+    types: [opened, reopened, labeled, unlabeled, synchronize]
+
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
@@ -23,47 +26,49 @@ permissions:
 # Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
 # However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Single deploy job since we're just deploying
   deploy:
     environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      name: ${{ github.event_name != 'pull_request' && 'github-pages' || '' }}
+      url: ${{ github.event_name != 'pull_request' && steps.deployment.outputs.page_url || '' }}
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: true
           fetch-depth: 2
+
       - name: Install build deps
         run: |
-          sudo rm -f /var/lib/man-db/auto-update
-          sudo apt update
-          sudo apt install -y \
-            cmake \
-            doxygen \
-            graphviz
+          sudo ./tools/scripts/install_deps.sh docs
+
       - name: Sphinx dependencies
         run: |
-          pip3 install -r doc/sphinx/requirements.txt
+          pip install -r doc/sphinx/requirements.txt
+
       - name: Build
         run: |
-          cmake -B build . \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-            -DBUILD_TESTING=OFF
+          cmake -B build doc
           cmake --build build -- rtd-html
+
       - name: Setup Pages
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/configure-pages@v5
+
       - name: Upload artifact
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-pages-artifact@v3
         with:
           # Upload entire repository
           path: './build/rtd'
+
       - name: Deploy to GitHub Pages
+        if: ${{ github.event_name != 'pull_request' }}
         id: deployment
         uses: actions/deploy-pages@v4

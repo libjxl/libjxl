@@ -7,9 +7,9 @@
 #define LIB_JXL_CMS_TONE_MAPPING_H_
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
-#include <utility>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -18,13 +18,15 @@
 
 namespace jxl {
 
+using Range = std::array<float, 2>;
+
 class Rec2408ToneMapperBase {
  public:
-  explicit Rec2408ToneMapperBase(std::pair<float, float> source_range,
-                                 std::pair<float, float> target_range,
+  explicit Rec2408ToneMapperBase(const Range& source_range,
+                                 const Range& target_range,
                                  const Vector3& primaries_luminances)
-      : source_range_(std::move(source_range)),
-        target_range_(std::move(target_range)),
+      : source_range_(source_range),
+        target_range_(target_range),
         red_Y_(primaries_luminances[0]),
         green_Y_(primaries_luminances[1]),
         blue_Y_(primaries_luminances[2]) {}
@@ -32,7 +34,7 @@ class Rec2408ToneMapperBase {
   // TODO(eustas): test me
   void ToneMap(Color& rgb) const {
     const float luminance =
-        source_range_.second *
+        source_range_[1] *
         (red_Y_ * rgb[0] + green_Y_ * rgb[1] + blue_Y_ * rgb[2]);
     const float normalized_pq =
         std::min(1.f, (InvEOTF(luminance) - pq_mastering_min_) *
@@ -45,7 +47,7 @@ class Rec2408ToneMapperBase {
     const float e4 = e3 * pq_mastering_range_ + pq_mastering_min_;
     const float d4 =
         TF_PQ_Base::DisplayFromEncoded(/*display_intensity_target=*/1.0, e4);
-    const float new_luminance = Clamp1(d4, 0.f, target_range_.second);
+    const float new_luminance = Clamp1(d4, 0.f, target_range_[1]);
     const float min_luminance = 1e-6f;
     const bool use_cap = (luminance <= min_luminance);
     const float ratio = new_luminance / std::max(luminance, min_luminance);
@@ -71,28 +73,28 @@ class Rec2408ToneMapperBase {
            (-2 * t_b_3 + 3 * t_b_2) * max_lum_;
   }
 
-  const std::pair<float, float> source_range_;
-  const std::pair<float, float> target_range_;
+  const Range source_range_;
+  const Range target_range_;
   const float red_Y_;
   const float green_Y_;
   const float blue_Y_;
 
-  const float pq_mastering_min_ = InvEOTF(source_range_.first);
-  const float pq_mastering_max_ = InvEOTF(source_range_.second);
+  const float pq_mastering_min_ = InvEOTF(source_range_[0]);
+  const float pq_mastering_max_ = InvEOTF(source_range_[1]);
   const float pq_mastering_range_ = pq_mastering_max_ - pq_mastering_min_;
   const float inv_pq_mastering_range_ = 1.0f / pq_mastering_range_;
   // TODO(eustas): divide instead of inverse-multiply?
-  const float min_lum_ = (InvEOTF(target_range_.first) - pq_mastering_min_) *
-                         inv_pq_mastering_range_;
+  const float min_lum_ =
+      (InvEOTF(target_range_[0]) - pq_mastering_min_) * inv_pq_mastering_range_;
   // TODO(eustas): divide instead of inverse-multiply?
-  const float max_lum_ = (InvEOTF(target_range_.second) - pq_mastering_min_) *
-                         inv_pq_mastering_range_;
+  const float max_lum_ =
+      (InvEOTF(target_range_[1]) - pq_mastering_min_) * inv_pq_mastering_range_;
   const float ks_ = 1.5f * max_lum_ - 0.5f;
 
   const float inv_one_minus_ks_ = 1.0f / std::max(1e-6f, 1.0f - ks_);
 
-  const float normalizer_ = source_range_.second / target_range_.second;
-  const float inv_target_peak_ = 1.f / target_range_.second;
+  const float normalizer_ = source_range_[1] / target_range_[1];
+  const float inv_target_peak_ = 1.f / target_range_[1];
 };
 
 class HlgOOTF_Base {

@@ -3,8 +3,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/image.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/convolve_symmetric5.cc"
@@ -13,7 +21,7 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/rect.h"
-#include "lib/jxl/convolve-inl.h"
+#include "lib/jxl/image_ops.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {

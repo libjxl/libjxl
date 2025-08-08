@@ -6,14 +6,15 @@
 #include "lib/jpegli/adaptive_quantization.h"
 
 #include <jxl/types.h>
-#include <stddef.h>
-#include <stdlib.h>
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
-#include <string>
-#include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jpegli/adaptive_quantization.cc"
@@ -22,7 +23,6 @@
 
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/status.h"
 HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {
@@ -32,6 +32,7 @@ namespace {
 using hwy::HWY_NAMESPACE::AbsDiff;
 using hwy::HWY_NAMESPACE::Add;
 using hwy::HWY_NAMESPACE::And;
+using hwy::HWY_NAMESPACE::ApproximateReciprocal;
 using hwy::HWY_NAMESPACE::Div;
 using hwy::HWY_NAMESPACE::Floor;
 using hwy::HWY_NAMESPACE::GetLane;
@@ -194,9 +195,13 @@ V ComputeMask(const D d, const V out_val) {
 // mul and mul2 represent a scaling difference between jxl and butteraugli.
 const float kSGmul = 226.0480446705883f;
 const float kSGmul2 = 1.0f / 73.377132366608819f;
-const float kLog2 = 0.693147181f;
+
+// Multiplier for conversion of log2(x) result to ln(x).
+// print(1.0 / math.log2(math.e))
+constexpr float kInvLog2e = 0.6931471805599453;
+
 // Includes correction factor for std::log -> log2.
-const float kSGRetMul = kSGmul2 * 18.6580932135f * kLog2;
+const float kSGRetMul = kSGmul2 * 18.6580932135f * kInvLog2e;
 const float kSGVOffset = 7.14672470003f;
 
 template <bool invert, typename D, typename V>
@@ -210,8 +215,10 @@ V RatioOfDerivativesOfCubicRootToSimpleGamma(const D d, V v) {
   static const float kEpsilon = 1e-2;
   static const float kNumOffset = kEpsilon / kInputScaling / kInputScaling;
   static const float kNumMul = kSGRetMul * 3 * kSGmul;
-  static const float kVOffset = (kSGVOffset * kLog2 + kEpsilon) / kInputScaling;
-  static const float kDenMul = kLog2 * kSGmul * kInputScaling * kInputScaling;
+  static const float kVOffset =
+      (kSGVOffset * kInvLog2e + kEpsilon) / kInputScaling;
+  static const float kDenMul =
+      kInvLog2e * kSGmul * kInputScaling * kInputScaling;
 
   v = ZeroIfNegative(v);
   const auto num_mul = Set(d, kNumMul);
@@ -279,7 +286,7 @@ V GammaModulation(const D d, const size_t x, const size_t y,
   // ideally -1.0, but likely optimal correction adds some entropy, so slightly
   // less than that.
   // ln(2) constant folded in because we want std::log but have FastLog2f.
-  const auto kGamma = Set(d, -0.15526878023684174f * 0.693147180559945f);
+  const auto kGamma = Set(d, -0.15526878023684174f * kInvLog2e);
   return MulAdd(kGamma, FastLog2f(d, overall_ratio), out_val);
 }
 

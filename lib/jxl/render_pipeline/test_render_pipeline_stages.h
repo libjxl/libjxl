@@ -86,7 +86,7 @@ class Check0FinalStage : public RenderPipelineStage {
                     size_t thread_id) const final {
     for (size_t c = 0; c < input_rows.size(); c++) {
       for (size_t x = 0; x < xsize; x++) {
-        JXL_ENSURE(fabsf(GetInputRow(input_rows, c, 0)[x]) < 1e-8);
+        JXL_ENSURE(std::abs(GetInputRow(input_rows, c, 0)[x]) < 1e-8);
       }
     }
     return true;

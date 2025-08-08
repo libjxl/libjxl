@@ -24,9 +24,13 @@ constexpr uint32_t PackSigned(int32_t value)
 // Reverse to PackSigned, i.e. UnpackSigned(PackSigned(X)) == X.
 // (((~value) & 1) - 1) is either 0 or 0xFF...FF and it will have an expected
 // unsigned-integer-overflow.
-constexpr intptr_t UnpackSigned(size_t value)
+// NB: semantically `value` should have type `uint32_t`, but for efficiency and
+// convenience its type is `size_t` (i.e. `uint32_t` or `uint64_t`).
+constexpr int32_t UnpackSigned(size_t value)
     JXL_NO_SANITIZE("unsigned-integer-overflow") {
-  return static_cast<intptr_t>((value >> 1) ^ (((~value) & 1) - 1));
+  // TODO(Ivan): fails in C++11 mode, restore with a guard?
+  // JXL_DASSERT((value & 0xFFFFFFFF) == value);  // no-op in 32-bit build
+  return static_cast<int32_t>((value >> 1) ^ (((~value) & 1) - 1));
 }
 
 }  // namespace jxl

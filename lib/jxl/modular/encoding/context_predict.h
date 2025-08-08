@@ -41,11 +41,11 @@ struct Header : public Fields {
       visitor->SetDefault(this);
       return true;
     }
-    auto visit_p = [visitor](pixel_type val, pixel_type *p) {
+    auto visit_p = [visitor](pixel_type val, pixel_type *p) -> Status {
       uint32_t up = *p;
       JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(5, val, &up));
       *p = up;
-      return Status(true);
+      return true;
     };
     JXL_QUIET_RETURN_IF_ERROR(visit_p(16, &p1C));
     JXL_QUIET_RETURN_IF_ERROR(visit_p(10, &p2C));
@@ -322,17 +322,18 @@ class MATreeLookup {
   JXL_INLINE LookupResult Lookup(const Properties &properties) const {
     uint32_t pos = 0;
     while (true) {
-#define TRAVERSE_THE_TREE                                                      \
-  {                                                                            \
-    const FlatDecisionNode &node = nodes_[pos];                                \
-    if (node.property0 < 0) {                                                  \
-      return {node.childID, node.predictor, node.predictor_offset,             \
-              node.multiplier};                                                \
-    }                                                                          \
-    bool p0 = properties[node.property0] <= node.splitval0;                    \
-    uint32_t off0 = properties[node.properties[0]] <= node.splitvals[0];       \
-    uint32_t off1 = 2 | (properties[node.properties[1]] <= node.splitvals[1]); \
-    pos = node.childID + (p0 ? off1 : off0);                                   \
+#define TRAVERSE_THE_TREE                                                \
+  {                                                                      \
+    const FlatDecisionNode &node = nodes_[pos];                          \
+    if (node.property0 < 0) {                                            \
+      return {node.childID, node.predictor, node.predictor_offset,       \
+              node.multiplier};                                          \
+    }                                                                    \
+    bool p0 = properties[node.property0] <= node.splitval0;              \
+    uint32_t off0 = properties[node.properties[0]] <= node.splitvals[0]; \
+    uint32_t off1 =                                                      \
+        2 | int{properties[node.properties[1]] <= node.splitvals[1]};    \
+    pos = node.childID + (p0 ? off1 : off0);                             \
   }
 
       TRAVERSE_THE_TREE;

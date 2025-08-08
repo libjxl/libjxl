@@ -3,11 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <jxl/memory_manager.h>
-
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/enc_icc_codec.h"
@@ -38,11 +38,13 @@ using ::jxl::BitReader;
 using ::jxl::Span;
 #endif
 
-void Check(bool ok) {
+void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
   if (!ok) {
+    fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
     JXL_CRASH();
   }
 }
+#define Check(OK) CheckImpl((OK), #OK, __FILE__, __LINE__)
 
 int DoTestOneInput(const uint8_t* data, size_t size) {
 #if defined(JXL_ICC_FUZZER_ONLY_WRITE)
@@ -78,7 +80,7 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
     // fuzzer fail if not.
     Check(jxl::WriteICC(icc, &writer, jxl::LayerType::Header, nullptr));
   }
-#else  // JXL_ICC_FUZZER_SLOW_TEST
+#else   // JXL_ICC_FUZZER_SLOW_TEST
   if (read) {
     // Reading (unpredicting) parses the compressed format.
     PaddedBytes result{memory_manager.get()};

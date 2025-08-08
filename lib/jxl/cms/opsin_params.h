@@ -129,7 +129,7 @@ constexpr float ScaledA2BCorner() {
                       : (XYBCorner<x, y, b, 2>() + XYBCorner<x, y, b, 1>());
 }
 
-typedef std::array<float, 3> ColorCube0D;
+using ColorCube0D = std::array<float, 3>;
 template <size_t x, size_t y, size_t b>
 constexpr ColorCube0D UnscaledA2BCorner() {
   return {(ScaledA2BCorner<x, y, b, 0>() + kXYBOffset0) * kXYBScale0,
@@ -137,19 +137,19 @@ constexpr ColorCube0D UnscaledA2BCorner() {
           (ScaledA2BCorner<x, y, b, 2>() + kXYBOffset2) * kXYBScale2};
 }
 
-typedef std::array<ColorCube0D, 2> ColorCube1D;
+using ColorCube1D = std::array<ColorCube0D, 2>;
 template <size_t x, size_t y>
 constexpr ColorCube1D UnscaledA2BCubeXY() {
   return {UnscaledA2BCorner<x, y, 0>(), UnscaledA2BCorner<x, y, 1>()};
 }
 
-typedef std::array<ColorCube1D, 2> ColorCube2D;
+using ColorCube2D = std::array<ColorCube1D, 2>;
 template <size_t x>
 constexpr ColorCube2D UnscaledA2BCubeX() {
   return {UnscaledA2BCubeXY<x, 0>(), UnscaledA2BCubeXY<x, 1>()};
 }
 
-typedef std::array<ColorCube2D, 2> ColorCube3D;
+using ColorCube3D = std::array<ColorCube2D, 2>;
 constexpr ColorCube3D UnscaledA2BCube() {
   return {UnscaledA2BCubeX<0>(), UnscaledA2BCubeX<1>()};
 }

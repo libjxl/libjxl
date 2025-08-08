@@ -5,10 +5,16 @@
 
 #include <jxl/memory_manager.h>
 
+#include <utility>
+
 #include "benchmark/benchmark.h"
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/tone_mapping.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 #include "tools/no_memory_manager.h"
 
 namespace jxl {
@@ -40,18 +46,18 @@ static void BM_ToneMapping(benchmark::State& state) {
   for (auto _ : state) {
     (void)_;
     state.PauseTiming();
-    CodecInOut tone_mapping_input{memory_manager};
+    auto tone_mapping_input = jxl::make_unique<CodecInOut>(memory_manager);
     JXL_ASSIGN_OR_QUIT(
         Image3F color2,
         Image3F::Create(memory_manager, color.xsize(), color.ysize()),
         "Failed to allocate color plane");
     BM_CHECK(CopyImageTo(color, &color2));
     BM_CHECK(
-        tone_mapping_input.SetFromImage(std::move(color2), linear_rec2020));
-    tone_mapping_input.metadata.m.SetIntensityTarget(255);
+        tone_mapping_input->SetFromImage(std::move(color2), linear_rec2020));
+    tone_mapping_input->metadata.m.SetIntensityTarget(255);
     state.ResumeTiming();
 
-    BM_CHECK(ToneMapTo({0.1, 100}, &tone_mapping_input));
+    BM_CHECK(ToneMapTo({0.1, 100}, tone_mapping_input.get()));
   }
 
   state.SetItemsProcessed(state.iterations() * color.xsize() * color.ysize());

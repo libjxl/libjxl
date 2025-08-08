@@ -6,9 +6,19 @@
 #include "lib/jxl/enc_fields.h"
 
 #include <cinttypes>  // PRIu64
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/headers.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/quantizer.h"
 
 namespace jxl {
 

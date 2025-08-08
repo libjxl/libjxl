@@ -9,9 +9,6 @@
 // Common parameters that are needed for both the ANS entropy encoding and
 // decoding methods.
 
-#include <stdint.h>
-#include <stdlib.h>
-
 namespace jxl {
 
 // TODO(veluca): decide if 12 is the best constant here (valid range is up to

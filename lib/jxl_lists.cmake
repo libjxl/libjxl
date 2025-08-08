@@ -133,7 +133,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/blending.h
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
-  jxl/codec_in_out.h
   jxl/coeff_order.cc
   jxl/coeff_order.h
   jxl/coeff_order_fwd.h
@@ -144,7 +143,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/compressed_dc.h
   jxl/convolve-inl.h
   jxl/convolve.h
-  jxl/convolve_separable5.cc
   jxl/convolve_slow.cc
   jxl/convolve_symmetric5.cc
   jxl/dct-inl.h
@@ -308,6 +306,8 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_ans.cc
   jxl/enc_ans.h
   jxl/enc_ans_params.h
+  jxl/enc_ans_simd.cc
+  jxl/enc_ans_simd.h
   jxl/enc_aux_out.cc
   jxl/enc_aux_out.h
   jxl/enc_bit_writer.cc
@@ -326,6 +326,7 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
   jxl/enc_context_map.h
+  jxl/enc_convolve_separable5.cc
   jxl/enc_debug_image.cc
   jxl/enc_debug_image.h
   jxl/enc_detect_dots.cc
@@ -359,8 +360,12 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_image_bundle.h
   jxl/enc_linalg.cc
   jxl/enc_linalg.h
+  jxl/enc_lz77.cc
+  jxl/enc_lz77.h
   jxl/enc_modular.cc
   jxl/enc_modular.h
+  jxl/enc_modular_simd.cc
+  jxl/enc_modular_simd.h
   jxl/enc_noise.cc
   jxl/enc_noise.h
   jxl/enc_optimize.h
@@ -409,6 +414,7 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
 set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES
   extras/codec.cc
   extras/codec.h
+  extras/codec_in_out.h
   extras/hlg.cc
   extras/hlg.h
   extras/metrics.cc
@@ -446,6 +452,7 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
 
 set(JPEGXL_INTERNAL_GBENCH_SOURCES
   extras/tone_mapping_gbench.cc
+  jxl/dct_gbench.cc
   jxl/dec_external_image_gbench.cc
   jxl/enc_external_image_gbench.cc
   jxl/splines_gbench.cc
@@ -596,6 +603,7 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/data_parallel_test.cc
   jxl/dct_test.cc
   jxl/decode_test.cc
+  jxl/enc_bit_writer_test.cc
   jxl/enc_external_image_test.cc
   jxl/enc_gaborish_test.cc
   jxl/enc_linalg_test.cc

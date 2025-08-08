@@ -44,7 +44,7 @@ JXL_EXPORT uint32_t JxlEncoderVersion(void);
  * Allocated and initialized with @ref JxlEncoderCreate().
  * Cleaned up and deallocated with @ref JxlEncoderDestroy().
  */
-typedef struct JxlEncoderStruct JxlEncoder;
+typedef struct JxlEncoder JxlEncoder;
 
 /**
  * Settings and metadata for a single image frame. This includes encoder options
@@ -54,7 +54,7 @@ typedef struct JxlEncoderStruct JxlEncoder;
  * Cleaned up and deallocated when the encoder is destroyed with
  * @ref JxlEncoderDestroy().
  */
-typedef struct JxlEncoderFrameSettingsStruct JxlEncoderFrameSettings;
+typedef struct JxlEncoderFrameSettings JxlEncoderFrameSettings;
 
 /**
  * Return value for multiple encoder functions.
@@ -352,7 +352,7 @@ typedef enum {
    *
    * When using streaming input and output the encoder minimizes memory usage at
    * the cost of compression density. Also note that images produced with
-   * streaming mode might not be progressively decodeable.
+   * streaming mode might not be progressively decodable.
    */
   JXL_ENC_FRAME_SETTING_BUFFERING = 34,
 
@@ -1004,8 +1004,9 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
  * case metadata cannot be added.
  *
  * Each box generally has the following byte structure in the file:
- * - 4 bytes: box size including box header (Big endian. If set to 0, an
- *   8-byte 64-bit size follows instead).
+ * - 4 bytes: box size including box header (Big endian. If set to 1, an
+ *   8-byte 64-bit size follows instead. If set to 0, the box extends to the
+ *   end of the file.)
  * - 4 bytes: type, e.g. "JXL " for the signature box, "jxlc" for a codestream
  *   box.
  * - N bytes: box contents.
@@ -1505,6 +1506,8 @@ JXL_EXPORT float JxlEncoderDistanceFromQuality(float quality);
  * functions taking both a @ref JxlEncoder and a @ref JxlEncoderFrameSettings,
  * only @ref JxlEncoderFrameSettings created with this function for the same
  * encoder instance can be used.
+ *
+ * The returned value could be NULL in case of out of memory situatiton.
  *
  * @param enc encoder object.
  * @param source source options to copy initial values from, or NULL to get

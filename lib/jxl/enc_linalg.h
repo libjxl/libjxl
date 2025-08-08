@@ -12,9 +12,9 @@
 
 namespace jxl {
 
-typedef std::array<double, 2> Vector2;
+using Vector2 = std::array<double, 2>;
 // NB: matrix2x2[row][column]
-typedef std::array<Vector2, 2> Matrix2x2;
+using Matrix2x2 = std::array<Vector2, 2>;
 
 // A is symmetric, U is orthogonal, and A = U * Diagonal(diag) * Transpose(U).
 void ConvertToDiagonal(const Matrix2x2& A, Vector2& diag, Matrix2x2& U);

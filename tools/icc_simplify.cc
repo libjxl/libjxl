@@ -4,13 +4,18 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/color_encoding.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/dec/color_description.h"
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
@@ -54,7 +59,7 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
-  jxl::CodecInOut io{jpegxl::tools::NoMemoryManager()};
+  auto io = jxl::make_unique<jxl::CodecInOut>(jpegxl::tools::NoMemoryManager());
   std::vector<uint8_t> encoded;
   JxlColorEncoding c_descr;
   if (jpegxl::tools::ReadFile(input_filename, &encoded)) {
@@ -68,16 +73,16 @@ int main(int argc, const char** argv) {
       if (encoded[39] != 'p') icc_signature = false;
     }
 
-    if (!icc_signature || !io.metadata.m.color_encoding.SetICC(
+    if (!icc_signature || !io->metadata.m.color_encoding.SetICC(
                               jxl::IccBytes(encoded), JxlGetDefaultCms())) {
       JPEGXL_TOOLS_CHECK(
-          jxl::SetFromBytes(jxl::Bytes(encoded), {}, &io, pool.get()));
+          jxl::SetFromBytes(jxl::Bytes(encoded), {}, io.get(), pool.get()));
     }
   } else if (jxl::ParseDescription(input_filename, &c_descr)) {
-    JPEGXL_TOOLS_CHECK(io.metadata.m.color_encoding.FromExternal(c_descr));
+    JPEGXL_TOOLS_CHECK(io->metadata.m.color_encoding.FromExternal(c_descr));
   }
 
-  jxl::ColorEncoding c_out = io.metadata.m.color_encoding;
+  jxl::ColorEncoding c_out = io->metadata.m.color_encoding;
   JPEGXL_TOOLS_CHECK(c_out.CreateICC());
   JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, c_out.ICC()));
   return EXIT_SUCCESS;

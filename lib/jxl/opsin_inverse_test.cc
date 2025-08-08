@@ -6,11 +6,11 @@
 #include <jxl/cms.h>
 #include <jxl/memory_manager.h>
 
-#include <utility>
+#include <cstddef>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/rect.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_xyb.h"
@@ -26,26 +26,18 @@ namespace {
 
 TEST(OpsinInverseTest, LinearInverseInverts) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  constexpr size_t kDim = 128;
   JXL_TEST_ASSIGN_OR_DIE(Image3F linear,
-                         Image3F::Create(memory_manager, 128, 128));
+                         Image3F::Create(memory_manager, kDim, kDim));
   RandomFillImage(&linear, 0.0f, 1.0f);
+  JXL_TEST_ASSIGN_OR_DIE(Image3F opsin,
+                         Image3F::Create(memory_manager, kDim, kDim));
+  ASSERT_TRUE(CopyImageTo(linear, &opsin));
+  ASSERT_TRUE(ToXYB(ColorEncoding::LinearSRGB(), kDefaultIntensityTarget,
+                    nullptr, nullptr, &opsin, *JxlGetDefaultCms(), nullptr));
 
-  CodecInOut io{memory_manager};
-  io.metadata.m.SetFloat32Samples();
-  io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
-  JXL_TEST_ASSIGN_OR_DIE(Image3F linear2,
-                         Image3F::Create(memory_manager, 128, 128));
-  ASSERT_TRUE(CopyImageTo(linear, &linear2));
-  ASSERT_TRUE(
-      io.SetFromImage(std::move(linear2), io.metadata.m.color_encoding));
-  ThreadPool* null_pool = nullptr;
-  JXL_TEST_ASSIGN_OR_DIE(
-      Image3F opsin, Image3F::Create(memory_manager, io.xsize(), io.ysize()));
-  (void)ToXYB(io.Main(), null_pool, &opsin, *JxlGetDefaultCms());
-
-  JXL_TEST_ASSIGN_OR_DIE(
-      Image3F relinear,
-      Image3F::Create(memory_manager, io.xsize(), io.ysize()));
+  JXL_TEST_ASSIGN_OR_DIE(Image3F relinear,
+                         Image3F::Create(memory_manager, kDim, kDim));
 
   OpsinParams opsin_params;
   opsin_params.Init(/*intensity_target=*/255.0f);

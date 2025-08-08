@@ -5,8 +5,17 @@
 
 #include "lib/jxl/render_pipeline/stage_xyb.h"
 
+#include <cstddef>
+#include <cstdio>
+#include <memory>
+
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizers.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_xyb.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_xyb.cc"

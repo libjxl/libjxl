@@ -6,8 +6,12 @@
 #include "lib/jxl/enc_photon_noise.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/cms/opsin_params.h"
+#include "lib/jxl/noise.h"
 
 namespace jxl {
 
@@ -86,7 +90,7 @@ NoiseParams SimulatePhotonNoise(const size_t xsize, const size_t ysize,
                     * std::sqrt(2.f)  // red_noise + green_noise
                     * 1.13f  // standard deviation of a plane of generated noise
                     ),
-               0.f, 1.f);
+               0.f, kNoiseLutMax);
   }
 
   return params;

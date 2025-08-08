@@ -5,10 +5,14 @@
 
 #include "lib/jxl/enc_toc.h"
 
+#include <cstddef>
 #include <memory>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_coeff_order.h"
 #include "lib/jxl/field_encodings.h"

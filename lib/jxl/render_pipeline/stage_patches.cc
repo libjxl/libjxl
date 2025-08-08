@@ -9,7 +9,10 @@
 #include <memory>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_patch_dictionary.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 namespace jxl {

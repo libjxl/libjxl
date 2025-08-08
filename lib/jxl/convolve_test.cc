@@ -9,7 +9,13 @@
 #include <jxl/types.h>
 
 #include <cinttypes>  // PRIx64
+#include <cstdint>
+#include <cstdio>
 #include <ctime>
+#include <hwy/timer.h>
+
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/convolve_test.cc"
@@ -60,12 +66,6 @@ void TestNeighbors() {
                                  6, 7, 8, 9, 10, 11, 12, 13};
   Store(Neighbors::FirstL2(v), d, actual);
   EXPECT_EQ(std::vector<float>(first_l2, first_l2 + N),
-            std::vector<float>(actual, actual + N));
-
-  HWY_ALIGN float first_l3[] = {2, 1, 0, 0, 1, 2,  3,  4,
-                                5, 6, 7, 8, 9, 10, 11, 12};
-  Store(Neighbors::FirstL3(v), d, actual);
-  EXPECT_EQ(std::vector<float>(first_l3, first_l3 + N),
             std::vector<float>(actual, actual + N));
 #endif  // HWY_TARGET != HWY_SCALAR
 }

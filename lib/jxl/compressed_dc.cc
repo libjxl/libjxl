@@ -13,6 +13,10 @@
 #include <cstring>
 #include <vector>
 
+#include "lib/jxl/ac_context.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/modular/modular_image.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/compressed_dc.cc"
 #include <hwy/foreach_target.h>
@@ -238,8 +242,8 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
         float* row = rect.PlaneRow(dc, c, y);
         for (size_t x = 0; x < rect.xsize(); x += Lanes(di)) {
           const auto in_q = Load(di, quant_row + x);
-          const auto in = Mul(ConvertTo(df, in_q), fac);
-          Store(in, df, row + x);
+          const auto out = Mul(ConvertTo(df, in_q), fac);
+          Store(out, df, row + x);
         }
       }
     }

@@ -6,9 +6,13 @@
 #include "lib/jxl/enc_huffman.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_huffman_tree.h"
 
 namespace jxl {
@@ -125,9 +129,9 @@ void StoreSimpleHuffmanTree(const uint8_t* depths, size_t symbols[4],
 // depths = symbol depths
 Status StoreHuffmanTree(const uint8_t* depths, size_t num, BitWriter* writer) {
   // Write the Huffman tree into the compact representation.
-  std::unique_ptr<uint8_t[]> arena(new uint8_t[2 * num]);
-  uint8_t* huffman_tree = arena.get();
-  uint8_t* huffman_tree_extra_bits = arena.get() + num;
+  auto arena = jxl::make_uninitialized_vector<uint8_t>(2 * num);
+  uint8_t* huffman_tree = arena.data();
+  uint8_t* huffman_tree_extra_bits = arena.data() + num;
   size_t huffman_tree_size = 0;
   WriteHuffmanTree(depths, num, &huffman_tree_size, huffman_tree,
                    huffman_tree_extra_bits);

@@ -3,11 +3,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_ans_params.h"
+#include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/pack_signed.h"
 #include "lib/jxl/splines.h"
 
@@ -46,8 +51,8 @@ void EncodeAllStartingPoints(const std::vector<Spline::Point>& points,
   int64_t last_x = 0;
   int64_t last_y = 0;
   for (size_t i = 0; i < points.size(); i++) {
-    const int64_t x = lroundf(points[i].x);
-    const int64_t y = lroundf(points[i].y);
+    const int64_t x = std::lround(points[i].x);
+    const int64_t y = std::lround(points[i].y);
     if (i == 0) {
       tokens->emplace_back(kStartingPositionContext, x);
       tokens->emplace_back(kStartingPositionContext, y);
@@ -81,15 +86,13 @@ Status EncodeSplines(const Splines& splines, BitWriter* writer,
   }
 
   EntropyEncodingData codes;
-  std::vector<uint8_t> context_map;
   JXL_ASSIGN_OR_RETURN(
       size_t cost,
       BuildAndEncodeHistograms(writer->memory_manager(), histogram_params,
-                               kNumSplineContexts, tokens, &codes, &context_map,
-                               writer, layer, aux_out));
+                               kNumSplineContexts, tokens, &codes, writer,
+                               layer, aux_out));
   (void)cost;
-  JXL_RETURN_IF_ERROR(
-      WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteTokens(tokens[0], codes, 0, writer, layer, aux_out));
   return true;
 }
 

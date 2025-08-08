@@ -43,19 +43,17 @@ jobs:
               -DJPEGLI_LIBJPEG_LIBRARY_VERSION="8.2.2"
               -DJPEGLI_LIBJPEG_LIBRARY_SOVERSION="8"
             # Track static stack size on build and check it doesn't exceed 3 kB.
-            env_stack_size: 1
+            emit_stack_sizes: 1
             max_stack: 2400
             # Conformance tooling test requires numpy.
-            apt_pkgs: doxygen graphviz python3-numpy
+            # jpegli tests require imagemagick and libjpeg-turbo-progs
+            apt_pkgs: imagemagick libjpeg-turbo-progs python3-numpy
           - name: lowprecision
             mode: release
             run_bench: true
             test_in_pr: true
             cmake_args: -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
           - name: debug
-            # Runs on AVX3 CPUs require more stack than others. Make sure to
-            # test on AVX3-enabled CPUs when changing this value.
-            env_test_stack_size: 4000
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
@@ -67,7 +65,6 @@ jobs:
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
-            apt_pkgs: clang-18
             cc: clang-18
             cxx: clang++-18
           - name: asan
@@ -75,10 +72,9 @@ jobs:
           - name: tsan
             skip_install: true
           - name: coverage
-            env_test_stack_size: 2048
             skip_install: true
-            # TODO: understand why this does not work
-            ctest_args: -E 'test_jpegli_jni_wrapper'
+            disable_tests:
+              - test_jpegli_jni_wrapper # TODO: why this does not work?
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
@@ -100,6 +96,18 @@ jobs:
             apt_pkgs: liblcms2-dev
             # static build is impossible
             skip_install: true
+          # Build/test on arm64 CPU
+          - name: release:arm64
+            os: ubuntu-24.04-arm
+            mode: release
+            run_bench: true
+            test_in_pr: true
+          - name: release:arm64-lowprecision
+            os: ubuntu-24.04-arm
+            mode: release
+            run_bench: true
+            test_in_pr: true
+            cmake_args: -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
           # Build optimized for binary size, all features not needed for
           # reconstructing pixels is disabled.
           - name: release:minimal
@@ -110,86 +118,71 @@ jobs:
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
           # Builds with gcc in release mode
-          - name: release:gcc8
-            os: ubuntu-20.04
+          - name: release:gcc
+            os: ubuntu-latest
             mode: release
-            apt_pkgs: gcc-8 g++-8
-            cmake_args: >-
-              -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
-          # Builds with clang-7 in release mode
-          - name: release:clang-7
-            os: ubuntu-20.04
+            cc: gcc
+            cxx: g++
+          - name: release:gcc-old
+            os: ubuntu-24.04
             mode: release
-            skip_install: true
-            apt_pkgs: clang-7
-            cc: clang-7
-            cxx: clang++-7
+            cc: gcc
+            cxx: g++
+          - name: release:gcc-old-old
+            os: ubuntu-22.04
+            mode: release
+            cc: gcc
+            cxx: g++
+          # Builds with old clang in release mode
+          - name: release:clang-old
+            os: ubuntu-24.04
+            mode: release
+            cc: clang
+            cxx: clang++
+          - name: release:clang-old-old
+            os: ubuntu-22.04
+            mode: release
+            cc: clang
+            cxx: clang++
           - name: release:osx
             os: macos-latest
             mode: release
-            skip_install: true
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
-
+          - name: release:osx-15
+            os: macos-15
+            mode: release
+            test_stack_limit: 128
+            cmake_args: >-
+              -DCMAKE_FIND_FRAMEWORK=NEVER
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
-      STACK_SIZE: ${{ matrix.env_stack_size }}
-      TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
+      EMIT_STACK_SIZES: ${{ matrix.emit_stack_sizes }}
+      TEST_STACK_LIMIT: ${{ matrix.test_stack_limit }}
       WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
       WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
-      # Temporarily disable doc-building, re-enable when sphinx is working again.
-      # WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
-      WILL_DOC: false
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
-      JPEGXL_OPT_DBG: true
       FASTER_MSAN_BUILD: 1
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
       with:
         egress-policy: audit
 
-    - name: Install build deps Ubuntu
-      if: startsWith(matrix.os, 'macos-') == false
-      run: |
-        sudo rm -f /var/lib/man-db/auto-update
-        sudo apt update
-        sudo apt install -y \
-          ccache \
-          clang \
-          cmake \
-          graphviz \
-          imagemagick \
-          libbenchmark-dev \
-          libbenchmark-tools \
-          libbrotli-dev \
-          libgdk-pixbuf2.0-dev \
-          libgif-dev \
-          libgtest-dev \
-          libgtk2.0-dev  \
-          libjpeg-dev \
-          libjpeg-turbo-progs \
-          libopenexr-dev \
-          libpng-dev \
-          libwebp-dev \
-          ninja-build \
-          pkg-config \
-          xvfb \
-          ${{ matrix.apt_pkgs }} \
-        #
-        echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
-        echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
     - name: Install build deps MacOS
       if: startsWith(matrix.os, 'macos-')
       run: |
         # Should be already installed:
         #  brew install brotli giflib jpeg-turbo libpng zlib
         # Not required, since we skip building documentation
-        #  brew install doxygen
-        brew install binutils ccache coreutils google-benchmark googletest ninja sdl2
+        #  brew install doxygen graphviz
+        brew install binutils ccache coreutils googletest libavif ninja openexr sdl2 webp
+        if [[ "${WILL_BENCH}" == "true" ]]; then
+          brew install google-benchmark
+        fi
 
     - name: Checkout the source
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -197,16 +190,26 @@ jobs:
         submodules: true
         fetch-depth: 2
 
+    - name: Install build deps Ubuntu
+      if: startsWith(matrix.os, 'macos-') == false
+      run: |
+        INSTALL_BENCHMARK=''
+        if [[ "${WILL_BENCH}" == "true" ]]; then
+          if [[ "${WILL_TEST}" == "true" ]]; then
+            INSTALL_BENCHMARK=benchmark
+          else
+            exit 1
+          fi
+        fi
+        sudo ./tools/scripts/install_deps.sh build extras plugins ${INSTALL_BENCHMARK} -- ${{ matrix.apt_pkgs }}
+        echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
+        echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
+  
     - name: Setup the Homebrew prefixes
       if: startsWith(matrix.os, 'macos-')
       run: |
           CMAKE_PREFIX_PATH=`brew --prefix brotli`:`brew --prefix giflib`:`brew --prefix google-benchmark`:`brew --prefix jpeg-turbo`:`brew --prefix libpng`:`brew --prefix sdl2`:`brew --prefix zlib`
           echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
-
-    - name: Suppress doxygen target
-      if: matrix.name != 'release'
-      run: |
-        echo "TARGETS=all" >> $GITHUB_ENV
 
     - name: Setup the LLVM source path
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
@@ -217,7 +220,7 @@ jobs:
 
     - name: Cache LLVM sources
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a # v4.1.2
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
@@ -231,16 +234,6 @@ jobs:
         ref: llvmorg-18.1.3 # NB: 15.0.0 does not build ¯\_(ツ)_/¯
         path: llvm_root
 
-    - name: Sphinx dependencies
-      # Dependencies for sphinx HTML documentation
-      if: env.WILL_DOC == 'true'
-      run: |
-        pip3 install -r doc/sphinx/requirements.txt
-
-    - name: Install gcovr
-      if: env.WILL_COV == 'true'
-      run: pip install gcovr
-
     - name: Git environment
       id: git-env
       run: |
@@ -248,7 +241,7 @@ jobs:
       shell: bash
 
     - name: ccache
-      uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a # v4.1.2
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -264,17 +257,16 @@ jobs:
       run: |
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
-        mode="${{ matrix.mode }}"
-        build_tests=$([ "$WILL_TEST" == "true" ] && echo "ON" || echo "OFF")
-        [[ -n "${mode}" ]] || mode="${{ matrix.name }}"
-        ./ci.sh ${mode} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+        MODE="${{ matrix.mode }}"
+        BUILD_TESTS=$([ "${WILL_TEST}" == "true" ] && echo "ON" || echo "OFF")
+        [[ -n "${MODE}" ]] || MODE="${{ matrix.name }}"
+        SKIP_TEST=1 TARGETS=all CMAKE_CXX_FLAGS='${{ matrix.cxxflags }}' CMAKE_FLAGS='-DHWY_BROKEN_TARGETS=0' \
+        ./ci.sh ${MODE} \
+          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-          -DBUILD_TESTING=${build_tests} \
+          -DBUILD_TESTING=${BUILD_TESTS} \
           ${{ matrix.cmake_args }}
-      env:
-        SKIP_TEST: 1
-        CMAKE_CXX_FLAGS: ${{ matrix.cxxflags }}
 
     - name: Build stats
       if: env.WILL_BUILD == 'true'
@@ -299,6 +291,9 @@ jobs:
       run: |
         set -x
         sudo cmake --build build -- install
+        # GCC does not know how to refer to shared libraries properly
+        export CC=clang
+        export CXX=clang++
         cmake -Bbuild-example -Hexamples -G Ninja
         cmake --build build-example
         # Test that the built binaries run.
@@ -310,7 +305,13 @@ jobs:
     - name: Test ${{ matrix.mode }}
       if: env.WILL_TEST == 'true'
       run: |
-        ./ci.sh test ${{ matrix.ctest_args }}
+        disabled_tests="${{ join(matrix.disable_tests, '|') }}"
+        if [[ -z "${disabled_tests}" ]]; then
+          disabled_tests="bash_test";
+        else
+          disabled_tests="bash_test|${disabled_tests}";
+        fi
+        ./ci.sh test -E "${disabled_tests}"
 
     # Print the running time summary for the slowest tests.
     - name: Test runtime stats
@@ -318,10 +319,9 @@ jobs:
       run: |
         sort build/Testing/Temporary/CTestCostData.txt -k 3 -n | tail -n 20 || true
 
-    - name: Build HTML documentation (sphinx/readthetdocs)
-      if: env.WILL_DOC == 'true'
-      run: |
-        cmake --build build -- rtd-html
+    - name: Install gcovr
+      if: env.WILL_COV == 'true'
+      run: pip install gcovr
 
     - name: Coverage report
       if: env.WILL_COV == 'true'
@@ -330,7 +330,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@015f24e6818733317a2da2edd6290ab26238649a # v5.0.7
+      uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
       with:
         flags: unittests
         files: build/coverage.xml
@@ -348,4 +348,4 @@ jobs:
     - name: gbench check
       if: env.WILL_BENCH == 'true'
       run: |
-        ./ci.sh gbench --benchmark_min_time=0
+        ./ci.sh gbench --benchmark_min_time=0.5s

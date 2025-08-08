@@ -10,9 +10,16 @@
 #include <algorithm>
 #include <cinttypes>  // PRIu64
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <limits>
+#include <utility>
+#include <vector>
 
+#include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
@@ -21,6 +28,7 @@
 #include "lib/jxl/dct_scales.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/pack_signed.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -71,14 +79,16 @@ float ContinuousIDCT(const Dct32& dct, const float t) {
 
 template <typename DF>
 void DrawSegment(DF df, const SplineSegment& segment, const bool add,
-                 const size_t y, const size_t x, float* JXL_RESTRICT rows[3]) {
+                 const size_t y, const size_t x, const size_t x0,
+                 float* JXL_RESTRICT rows[3]) {
   Rebind<int32_t, DF> di;
   const auto inv_sigma = Set(df, segment.inv_sigma);
   const auto half = Set(df, 0.5f);
   const auto one_over_2s2 = Set(df, 0.353553391f);
   const auto sigma_over_4_times_intensity =
       Set(df, segment.sigma_over_4_times_intensity);
-  const auto dx = Sub(ConvertTo(df, Iota(di, x)), Set(df, segment.center_x));
+  const auto dx =
+      Sub(ConvertTo(df, Iota(di, x + x0)), Set(df, segment.center_x));
   const auto dy = Set(df, y - segment.center_y);
   const auto sqd = MulAdd(dx, dx, Mul(dy, dy));
   const auto distance = Sqrt(sqd);
@@ -96,18 +106,22 @@ void DrawSegment(DF df, const SplineSegment& segment, const bool add,
 }
 
 void DrawSegment(const SplineSegment& segment, const bool add, const size_t y,
-                 const ssize_t x0, ssize_t x1, float* JXL_RESTRICT rows[3]) {
-  ssize_t x = std::max<ssize_t>(
-      x0, std::llround(segment.center_x - segment.maximum_distance));
-  // one-past-the-end
-  x1 = std::min<ssize_t>(
-      x1, std::llround(segment.center_x + segment.maximum_distance) + 1);
-  HWY_FULL(float) df;
-  for (; x + static_cast<ssize_t>(Lanes(df)) <= x1; x += Lanes(df)) {
-    DrawSegment(df, segment, add, y, x, rows);
+                 const size_t x0, const size_t x1,
+                 float* JXL_RESTRICT rows[3]) {
+  ssize_t start = std::llround(segment.center_x - segment.maximum_distance);
+  ssize_t end = std::llround(segment.center_x + segment.maximum_distance);
+  if (end < static_cast<ssize_t>(x0) || start >= static_cast<ssize_t>(x1)) {
+    return;  // span does not intersect scan
   }
-  for (; x < x1; ++x) {
-    DrawSegment(HWY_CAPPED(float, 1)(), segment, add, y, x, rows);
+  size_t span_x0 = std::max<ssize_t>(x0, start) - x0;
+  size_t span_x1 = std::min<ssize_t>(x1, end + 1) - x0;  // exclusive
+  HWY_FULL(float) df;
+  size_t x = span_x0;
+  for (; x + Lanes(df) <= span_x1; x += Lanes(df)) {
+    DrawSegment(df, segment, add, y, x, x0, rows);
+  }
+  for (; x < span_x1; ++x) {
+    DrawSegment(HWY_CAPPED(float, 1)(), segment, add, y, x, x0, rows);
   }
 }
 
@@ -157,7 +171,7 @@ void DrawSegments(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
                   const bool add, const SplineSegment* segments,
                   const size_t* segment_indices,
                   const size_t* segment_y_start) {
-  float* JXL_RESTRICT rows[3] = {row_x - x0, row_y - x0, row_b - x0};
+  float* JXL_RESTRICT rows[3] = {row_x, row_y, row_b};
   for (size_t i = segment_y_start[y]; i < segment_y_start[y + 1]; i++) {
     DrawSegment(segments[segment_indices[i]], add, y, x0, x1, rows);
   }
@@ -237,13 +251,18 @@ Status DecodeAllStartingPoints(std::vector<Spline::Point>* const points,
   int64_t last_x = 0;
   int64_t last_y = 0;
   for (size_t i = 0; i < num_splines; i++) {
-    int64_t x =
+    size_t dx =
         reader->ReadHybridUint(kStartingPositionContext, br, context_map);
-    int64_t y =
+    size_t dy =
         reader->ReadHybridUint(kStartingPositionContext, br, context_map);
+    int64_t x;
+    int64_t y;
     if (i != 0) {
-      x = UnpackSigned(x) + last_x;
-      y = UnpackSigned(y) + last_y;
+      x = UnpackSigned(dx) + last_x;
+      y = UnpackSigned(dy) + last_y;
+    } else {
+      x = dx;
+      y = dy;
     }
     JXL_RETURN_IF_ERROR(ValidateSplinePointPos(x, y));
     points->emplace_back(static_cast<float>(x), static_cast<float>(y));
@@ -365,14 +384,14 @@ StatusOr<QuantizedSpline> QuantizedSpline::Create(
   QuantizedSpline result;
   result.control_points_.reserve(original.control_points.size() - 1);
   const Spline::Point& starting_point = original.control_points.front();
-  int previous_x = static_cast<int>(std::roundf(starting_point.x));
-  int previous_y = static_cast<int>(std::roundf(starting_point.y));
+  int previous_x = static_cast<int>(std::round(starting_point.x));
+  int previous_y = static_cast<int>(std::round(starting_point.y));
   int previous_delta_x = 0;
   int previous_delta_y = 0;
   for (auto it = original.control_points.begin() + 1;
        it != original.control_points.end(); ++it) {
-    const int new_x = static_cast<int>(std::roundf(it->x));
-    const int new_y = static_cast<int>(std::roundf(it->y));
+    const int new_x = static_cast<int>(std::round(it->x));
+    const int new_y = static_cast<int>(std::round(it->y));
     const int new_delta_x = new_x - previous_x;
     const int new_delta_y = new_y - previous_y;
     result.control_points_.emplace_back(new_delta_x - previous_delta_x,
@@ -387,7 +406,7 @@ StatusOr<QuantizedSpline> QuantizedSpline::Create(
     // Maximal int representable with float.
     constexpr float kMax = std::numeric_limits<int>::max() - 127;
     constexpr float kMin = -kMax;
-    return static_cast<int>(std::roundf(Clamp1(v, kMin, kMax)));
+    return static_cast<int>(std::round(Clamp1(v, kMin, kMax)));
   };
 
   const auto quant = AdjustedQuant(quantization_adjustment);
@@ -424,8 +443,8 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
 
   result.control_points.clear();
   result.control_points.reserve(control_points_.size() + 1);
-  float px = std::roundf(starting_point.x);
-  float py = std::roundf(starting_point.y);
+  float px = std::round(starting_point.x);
+  float py = std::round(starting_point.y);
   JXL_RETURN_IF_ERROR(ValidateSplinePointPos(px, py));
   int current_x = static_cast<int>(px);
   int current_y = static_cast<int>(py);

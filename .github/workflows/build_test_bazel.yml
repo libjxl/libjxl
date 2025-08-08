@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@0080882f6c36860b6ba35c610c98ce87d4e2f26f # v2.10.2
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           egress-policy: audit
 
@@ -45,8 +45,9 @@ jobs:
       - name: Patch
         run: |
           cd third_party/highway
-          git fetch origin 31fbbd7ce1e4179a32d86688cd67316556f582bf
-          git checkout 31fbbd7ce1e4179a32d86688cd67316556f582bf
+          # TODO(eustas): stick to deps.sh commit
+          git fetch origin 457c891775a7397bdb0376bb1031e6e027af1c48
+          git checkout 457c891775a7397bdb0376bb1031e6e027af1c48
           git apply ${{ github.workspace }}/.github/workflows/highway.patch
       - name: Build
         run: bazel build -c opt ...:all

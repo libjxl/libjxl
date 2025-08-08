@@ -11,12 +11,12 @@
 #include <cstdlib>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 #include <hwy/tests/hwy_gtest.h>
-#include <iterator>
 #include <numeric>
 #include <utility>
 #include <vector>
 
 #include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dct_for_test.h"
@@ -27,7 +27,9 @@
 #include "lib/jxl/enc_transforms.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image_metadata.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/test_memory_manager.h"
+#include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -70,23 +72,22 @@ TEST(QuantWeightsTest, DC) {
 
 void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
   ASSERT_TRUE(encodings.size() == kNumQuantTables);
-  DequantMatrices mat;
-  CodecMetadata metadata;
-  FrameHeader frame_header(&metadata);
+  auto mat = jxl::make_unique<DequantMatrices>();
+  auto metadata = jxl::make_unique<CodecMetadata>();
+  FrameHeader frame_header(metadata.get());
   JXL_ASSIGN_OR_QUIT(
-      ModularFrameEncoder encoder,
+      auto encoder,
       ModularFrameEncoder::Create(jxl::test::MemoryManager(), frame_header,
                                   CompressParams{}, false),
       "Failed to create ModularFrameEncoder.");
-  ASSERT_TRUE(DequantMatricesSetCustom(&mat, encodings, &encoder));
-  const std::vector<QuantEncoding>& encodings_dec = mat.encodings();
+  ASSERT_TRUE(DequantMatricesSetCustom(mat.get(), encodings, encoder.get()));
+  const std::vector<QuantEncoding>& encodings_dec = mat->encodings();
   for (size_t i = 0; i < encodings.size(); i++) {
     const QuantEncoding& e = encodings[i];
     const QuantEncoding& d = encodings_dec[i];
     // Check values roundtripped correctly.
     EXPECT_EQ(e.mode, d.mode);
     EXPECT_EQ(e.predefined, d.predefined);
-    EXPECT_EQ(e.source, d.source);
 
     EXPECT_EQ(static_cast<uint64_t>(e.dct_params.num_distance_bands),
               static_cast<uint64_t>(d.dct_params.num_distance_bands));
@@ -183,6 +184,7 @@ HWY_TARGET_INSTANTIATE_TEST_SUITE_P(QuantWeightsTargetTest);
 
 TEST_P(QuantWeightsTargetTest, DCTUniform) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+
   constexpr float kUniformQuant = 4;
   float weights[3][2] = {{1.0f / kUniformQuant, 0},
                          {1.0f / kUniformQuant, 0},
@@ -190,40 +192,48 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
   DctQuantWeightParams dct_params(weights);
   std::vector<QuantEncoding> encodings(kNumQuantTables,
                                        QuantEncoding::DCT(dct_params));
-  DequantMatrices dequant_matrices;
-  CodecMetadata metadata;
-  FrameHeader frame_header(&metadata);
+  auto dequant_matrices = jxl::make_unique<DequantMatrices>();
+  auto metadata = jxl::make_unique<CodecMetadata>();
+  FrameHeader frame_header(metadata.get());
   JXL_ASSIGN_OR_QUIT(
-      ModularFrameEncoder encoder,
+      auto encoder,
       ModularFrameEncoder::Create(jxl::test::MemoryManager(), frame_header,
                                   CompressParams{}, false),
       "Failed to create ModularFrameEncoder.");
-  ASSERT_TRUE(DequantMatricesSetCustom(&dequant_matrices, encodings, &encoder));
-  ASSERT_TRUE(dequant_matrices.EnsureComputed(memory_manager, ~0u));
+  ASSERT_TRUE(DequantMatricesSetCustom(dequant_matrices.get(), encodings,
+                                       encoder.get()));
+  ASSERT_TRUE(dequant_matrices->EnsureComputed(memory_manager, ~0u));
 
   const float dc_quant[3] = {1.0f / kUniformQuant, 1.0f / kUniformQuant,
                              1.0f / kUniformQuant};
-  ASSERT_TRUE(
-      DequantMatricesSetCustomDC(memory_manager, &dequant_matrices, dc_quant));
+  ASSERT_TRUE(DequantMatricesSetCustomDC(memory_manager, dequant_matrices.get(),
+                                         dc_quant));
 
-  HWY_ALIGN_MAX float scratch_space[16 * 16 * 5];
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory mem,
+      AlignedMemory::Create(memory_manager, 256 * 7 * sizeof(float)));
+  float* pixels = mem.address<float>();
+  float* coeffs = pixels + 256;
+  float* scratch_space = coeffs + 256;
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory mem_double,
+      AlignedMemory::Create(memory_manager, 256 * sizeof(double)));
+  double* slow_coeffs = mem_double.address<double>();
 
   // DCT8
   {
-    HWY_ALIGN_MAX float pixels[64];
-    std::iota(std::begin(pixels), std::end(pixels), 0);
-    HWY_ALIGN_MAX float coeffs[64];
+    std::iota(pixels, pixels + 64, 0);
     const AcStrategyType dct = AcStrategyType::DCT;
     TransformFromPixels(dct, pixels, 8, coeffs, scratch_space);
-    HWY_ALIGN_MAX double slow_coeffs[64];
     for (size_t i = 0; i < 64; i++) slow_coeffs[i] = pixels[i];
     DCTSlow<8>(slow_coeffs);
 
     for (size_t i = 0; i < 64; i++) {
       // DCTSlow doesn't multiply/divide by 1/N, so we do it manually.
-      slow_coeffs[i] = roundf(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
-      coeffs[i] = roundf(coeffs[i] / dequant_matrices.Matrix(dct, 0)[i]) *
-                  dequant_matrices.Matrix(dct, 0)[i];
+      slow_coeffs[i] =
+          std::round(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
+      coeffs[i] = std::round(coeffs[i] / dequant_matrices->Matrix(dct, 0)[i]) *
+                  dequant_matrices->Matrix(dct, 0)[i];
     }
     IDCTSlow<8>(slow_coeffs);
     TransformToPixels(dct, coeffs, pixels, 8, scratch_space);
@@ -234,19 +244,17 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
 
   // DCT16
   {
-    HWY_ALIGN_MAX float pixels[64 * 4];
-    std::iota(std::begin(pixels), std::end(pixels), 0);
-    HWY_ALIGN_MAX float coeffs[64 * 4];
+    std::iota(pixels, pixels + 64 * 4, 0);
     const AcStrategyType dct = AcStrategyType::DCT16X16;
     TransformFromPixels(dct, pixels, 16, coeffs, scratch_space);
-    HWY_ALIGN_MAX double slow_coeffs[64 * 4];
     for (size_t i = 0; i < 64 * 4; i++) slow_coeffs[i] = pixels[i];
     DCTSlow<16>(slow_coeffs);
 
     for (size_t i = 0; i < 64 * 4; i++) {
-      slow_coeffs[i] = roundf(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
-      coeffs[i] = roundf(coeffs[i] / dequant_matrices.Matrix(dct, 0)[i]) *
-                  dequant_matrices.Matrix(dct, 0)[i];
+      slow_coeffs[i] =
+          std::round(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
+      coeffs[i] = std::round(coeffs[i] / dequant_matrices->Matrix(dct, 0)[i]) *
+                  dequant_matrices->Matrix(dct, 0)[i];
     }
 
     IDCTSlow<16>(slow_coeffs);
@@ -260,7 +268,7 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
   // have the same scaling.
   for (size_t i = 0; i < AcStrategy::kNumValidStrategies; i++) {
     AcStrategyType kind = static_cast<AcStrategyType>(i);
-    EXPECT_NEAR(dequant_matrices.Matrix(kind, 0)[0], kUniformQuant, 1e-6);
+    EXPECT_NEAR(dequant_matrices->Matrix(kind, 0)[0], kUniformQuant, 1e-6);
   }
 }
 

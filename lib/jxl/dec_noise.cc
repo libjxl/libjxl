@@ -7,7 +7,15 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <utility>
+
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/dec_cache.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/noise.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_noise.cc"
@@ -26,12 +34,12 @@ namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::Or;
+using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::ShiftRight;
 using hwy::HWY_NAMESPACE::Vec;
 
 using D = HWY_CAPPED(float, kBlockDim);
-using DI = hwy::HWY_NAMESPACE::Rebind<int, D>;
-using DI8 = hwy::HWY_NAMESPACE::Repartition<uint8_t, D>;
+using DI = Rebind<int, D>;
 
 // Converts one vector's worth of random bits to floats in [1, 2).
 // NOTE: as the convolution kernel sums to 0, it doesn't matter if inputs are in
@@ -55,7 +63,8 @@ void RandomImage(Xorshift128Plus* rng, const Rect& rect,
   // May exceed the vector size, hence we have two loops over x below.
   constexpr size_t kFloatsPerBatch =
       Xorshift128Plus::N * sizeof(uint64_t) / sizeof(float);
-  HWY_ALIGN uint64_t batch[Xorshift128Plus::N] = {};
+  HWY_ALIGN uint64_t batch64[Xorshift128Plus::N] = {};
+  HWY_ALIGN uint32_t batch32[2 * Xorshift128Plus::N];
 
   const HWY_FULL(float) df;
   const size_t N = Lanes(df);
@@ -66,18 +75,21 @@ void RandomImage(Xorshift128Plus* rng, const Rect& rect,
     size_t x = 0;
     // Only entire batches (avoids exceeding the image padding).
     for (; x + kFloatsPerBatch < xsize; x += kFloatsPerBatch) {
-      rng->Fill(batch);
+      rng->Fill(batch64);
+      // Workaround for https://github.com/llvm/llvm-project/issues/121229
+      memcpy(batch32, batch64, sizeof(batch32));
       for (size_t i = 0; i < kFloatsPerBatch; i += Lanes(df)) {
-        BitsToFloat(reinterpret_cast<const uint32_t*>(batch) + i, row + x + i);
+        BitsToFloat(batch32 + i, row + x + i);
       }
     }
 
     // Any remaining pixels, rounded up to vectors (safe due to padding).
-    rng->Fill(batch);
+    rng->Fill(batch64);
+    // Workaround for https://github.com/llvm/llvm-project/issues/121229
+    memcpy(batch32, batch64, sizeof(batch32));
     size_t batch_pos = 0;  // < kFloatsPerBatch
     for (; x < xsize; x += N) {
-      BitsToFloat(reinterpret_cast<const uint32_t*>(batch) + batch_pos,
-                  row + x);
+      BitsToFloat(batch32 + batch_pos, row + x);
       batch_pos += N;
     }
   }

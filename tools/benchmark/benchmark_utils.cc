@@ -7,6 +7,7 @@
 
 #include "tools/benchmark/benchmark_utils.h"
 
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -24,7 +25,6 @@
 #include <unistd.h>
 
 #include <cstdio>
-#include <cstdlib>
 #include <utility>
 
 #ifdef __APPLE__

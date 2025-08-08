@@ -6,18 +6,19 @@
 #include "lib/jxl/render_pipeline/render_pipeline.h"
 
 #include <jxl/cms.h>
+#include <jxl/memory_manager.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <ostream>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "jxl/memory_manager.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -41,6 +42,7 @@
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/test_memory_manager.h"
@@ -69,9 +71,9 @@ Status DecodeFile(const Span<const uint8_t> file, bool use_slow_pipeline,
       JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetICC(
           std::move(icc), JxlGetDefaultCms()));
     }
-    PassesDecoderState dec_state(memory_manager);
+    auto dec_state = jxl::make_unique<PassesDecoderState>(memory_manager);
     JXL_RETURN_IF_ERROR(
-        dec_state.output_encoding_info.SetFromMetadata(io->metadata));
+        dec_state->output_encoding_info.SetFromMetadata(io->metadata));
     JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
     io->frames.clear();
     FrameHeader frame_header(&io->metadata);
@@ -81,7 +83,7 @@ Status DecodeFile(const Span<const uint8_t> file, bool use_slow_pipeline,
       do {
         size_t frame_start = reader.TotalBitsConsumed() / kBitsPerByte;
         size_t size_left = file.size() - frame_start;
-        JXL_RETURN_IF_ERROR(DecodeFrame(&dec_state, pool,
+        JXL_RETURN_IF_ERROR(DecodeFrame(dec_state.get(), pool,
                                         file.data() + frame_start, size_left,
                                         &frame_header, &io->frames.back(),
                                         io->metadata, use_slow_pipeline));
@@ -112,7 +114,8 @@ TEST(RenderPipelineTest, Build) {
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   builder.UseSimpleImplementation();
   FrameDimensions frame_dimensions;
-  frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
+  frame_dimensions.Set(/*xsize_px=*/1024, /*ysize_px=*/1024,
+                       /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
   JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
@@ -128,7 +131,8 @@ TEST(RenderPipelineTest, CallAllGroups) {
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   builder.UseSimpleImplementation();
   FrameDimensions frame_dimensions;
-  frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
+  frame_dimensions.Set(/*xsize_px=*/1024, /*ysize_px=*/1024,
+                       /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
   JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
@@ -152,7 +156,8 @@ TEST(RenderPipelineTest, BuildFast) {
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<UpsampleYSlowStage>()));
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   FrameDimensions frame_dimensions;
-  frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
+  frame_dimensions.Set(/*xsize_px=*/1024, /*ysize_px=*/1024,
+                       /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
   JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
@@ -168,7 +173,8 @@ TEST(RenderPipelineTest, CallAllGroupsFast) {
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   builder.UseSimpleImplementation();
   FrameDimensions frame_dimensions;
-  frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
+  frame_dimensions.Set(/*xsize_px=*/1024, /*ysize_px=*/1024,
+                       /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
   JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
@@ -198,6 +204,17 @@ struct RenderPipelineTestInputSettings {
   bool add_spot_color = false;
 
   Splines splines;
+
+  JXL_NOINLINE void Reset() {
+    input_path.clear();
+    xsize = 0;
+    ysize = 0;
+    jpeg_transcode = false;
+    cparams = CompressParams();
+    cparams_descr.clear();
+    add_spot_color = false;
+    splines.Clear();
+  }
 };
 
 class RenderPipelineTestParam
@@ -213,13 +230,16 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
   const std::vector<uint8_t> orig = jxl::test::ReadTestData(config.input_path);
 
-  CodecInOut io{memory_manager};
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
   if (config.jpeg_transcode) {
-    ASSERT_TRUE(jpeg::DecodeImageJPG(Bytes(orig), &io));
+    JXL_TEST_ASSIGN_OR_DIE(std::unique_ptr<jxl::jpeg::JPEGData> jpeg_data,
+                           jpeg::ParseJPG(memory_manager, Bytes(orig)));
+    ASSERT_TRUE(
+        jxl::test::JpegDataToCodecInOut(std::move(jpeg_data), io.get()));
   } else {
-    ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, &pool));
+    ASSERT_TRUE(SetFromBytes(Bytes(orig), io.get(), &pool));
   }
-  ASSERT_TRUE(io.ShrinkTo(config.xsize, config.ysize));
+  ASSERT_TRUE(io->ShrinkTo(config.xsize, config.ysize));
 
   if (config.add_spot_color) {
     JXL_TEST_ASSIGN_OR_DIE(
@@ -242,39 +262,40 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
     info.spot_color[2] = 1.f;
     info.spot_color[3] = 0.5f;
 
-    io.metadata.m.extra_channel_info.push_back(info);
+    io->metadata.m.extra_channel_info.push_back(info);
     std::vector<ImageF> ec;
     ec.push_back(std::move(spot));
-    ASSERT_TRUE(io.frames[0].SetExtraChannels(std::move(ec)));
+    ASSERT_TRUE(io->frames[0].SetExtraChannels(std::move(ec)));
   }
 
   std::vector<uint8_t> compressed;
 
   config.cparams.custom_splines = config.splines;
-  ASSERT_TRUE(test::EncodeFile(config.cparams, &io, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(config.cparams, io.get(), &compressed, &pool));
 
-  CodecInOut io_default{memory_manager};
+  auto io_default = jxl::make_unique<CodecInOut>(memory_manager);
   ASSERT_TRUE(DecodeFile(Bytes(compressed),
-                         /*use_slow_pipeline=*/false, &io_default, &pool));
-  CodecInOut io_slow_pipeline{memory_manager};
+                         /*use_slow_pipeline=*/false, io_default.get(), &pool));
+  auto io_slow_pipeline = jxl::make_unique<CodecInOut>(memory_manager);
   ASSERT_TRUE(DecodeFile(Bytes(compressed),
-                         /*use_slow_pipeline=*/true, &io_slow_pipeline, &pool));
+                         /*use_slow_pipeline=*/true, io_slow_pipeline.get(),
+                         &pool));
 
-  ASSERT_EQ(io_default.frames.size(), io_slow_pipeline.frames.size());
-  for (size_t i = 0; i < io_default.frames.size(); i++) {
+  ASSERT_EQ(io_default->frames.size(), io_slow_pipeline->frames.size());
+  for (size_t i = 0; i < io_default->frames.size(); i++) {
 #if JXL_HIGH_PRECISION
     constexpr float kMaxError = 2e-4;
 #else
     constexpr float kMaxError = 5e-4;
 #endif
-    Image3F def = std::move(*io_default.frames[i].color());
-    Image3F pip = std::move(*io_slow_pipeline.frames[i].color());
+    Image3F def = std::move(*io_default->frames[i].color());
+    Image3F pip = std::move(*io_slow_pipeline->frames[i].color());
     JXL_TEST_ASSERT_OK(VerifyRelativeError(pip, def, kMaxError, kMaxError, _));
-    for (size_t ec = 0; ec < io_default.frames[i].extra_channels().size();
+    for (size_t ec = 0; ec < io_default->frames[i].extra_channels().size();
          ec++) {
       JXL_TEST_ASSERT_OK(VerifyRelativeError(
-          io_slow_pipeline.frames[i].extra_channels()[ec],
-          io_default.frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
+          io_slow_pipeline->frames[i].extra_channels()[ec],
+          io_default->frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
     }
   }
 }
@@ -291,14 +312,14 @@ StatusOr<Splines> CreateTestSplines() {
   std::vector<Spline> spline_data = {spline};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
-  for (const Spline& spline : spline_data) {
+  for (const Spline& ospline : spline_data) {
     JXL_ASSIGN_OR_RETURN(
         QuantizedSpline qspline,
-        QuantizedSpline::Create(spline, /*quantization_adjustment=*/0,
+        QuantizedSpline::Create(ospline, /*quantization_adjustment=*/0,
                                 color_correlation.YtoXRatio(0),
                                 color_correlation.YtoBRatio(0)));
     quantized_splines.emplace_back(std::move(qspline));
-    starting_points.push_back(spline.control_points.front());
+    starting_points.push_back(ospline.control_points.front());
   }
   return Splines(/*quantization_adjustment=*/0, std::move(quantized_splines),
                  std::move(starting_points));
@@ -311,63 +332,68 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
       {3, 8}, {128, 128}, {256, 256}, {258, 258}, {533, 401}, {777, 777},
   };
 
-  for (auto size : sizes) {
-    RenderPipelineTestInputSettings settings;
-    settings.input_path = "jxl/flower/flower.png";
-    settings.xsize = size.first;
-    settings.ysize = size.second;
+  auto stub_heap = jxl::make_unique<RenderPipelineTestInputSettings>();
+  RenderPipelineTestInputSettings& stub = *stub_heap;
+  stub.input_path = "jxl/flower/flower.png";
 
-    // Base settings.
-    settings.cparams.butteraugli_distance = 1.0;
-    settings.cparams.patches = Override::kOff;
-    settings.cparams.dots = Override::kOff;
-    settings.cparams.gaborish = Override::kOff;
-    settings.cparams.epf = 0;
-    settings.cparams.color_transform = ColorTransform::kXYB;
+  // Base settings.
+  stub.cparams.butteraugli_distance = 1.0;
+  stub.cparams.patches = Override::kOff;
+  stub.cparams.dots = Override::kOff;
+  stub.cparams.gaborish = Override::kOff;
+  stub.cparams.epf = 0;
+  stub.cparams.color_transform = ColorTransform::kXYB;
+
+  auto s_heap = jxl::make_unique<RenderPipelineTestInputSettings>();
+  RenderPipelineTestInputSettings& s = *s_heap;
+
+  for (auto size : sizes) {
+    stub.xsize = size.first;
+    stub.ysize = size.second;
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams_descr = "NoGabNoEpfNoPatches";
       all_tests.push_back(s);
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams.color_transform = ColorTransform::kNone;
       s.cparams_descr = "NoGabNoEpfNoPatchesNoXYB";
       all_tests.push_back(s);
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams.gaborish = Override::kOn;
       s.cparams_descr = "GabNoEpfNoPatches";
       all_tests.push_back(s);
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams.epf = 1;
       s.cparams_descr = "NoGabEpf1NoPatches";
       all_tests.push_back(s);
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams.epf = 2;
       s.cparams_descr = "NoGabEpf2NoPatches";
       all_tests.push_back(s);
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams.epf = 3;
       s.cparams_descr = "NoGabEpf3NoPatches";
       all_tests.push_back(s);
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams.gaborish = Override::kOn;
       s.cparams.epf = 3;
       s.cparams_descr = "GabEpf3NoPatches";
@@ -375,7 +401,7 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams_descr = "Splines";
       JXL_TEST_ASSIGN_OR_DIE(s.splines, CreateTestSplines());
       all_tests.push_back(s);
@@ -383,20 +409,20 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
 
     for (size_t ups : {2, 4, 8}) {
       {
-        auto s = settings;
+        s = stub;
         s.cparams.resampling = ups;
         s.cparams_descr = "Ups" + std::to_string(ups);
         all_tests.push_back(s);
       }
       {
-        auto s = settings;
+        s = stub;
         s.cparams.resampling = ups;
         s.cparams.epf = 1;
         s.cparams_descr = "Ups" + std::to_string(ups) + "EPF1";
         all_tests.push_back(s);
       }
       {
-        auto s = settings;
+        s = stub;
         s.cparams.resampling = ups;
         s.cparams.gaborish = Override::kOn;
         s.cparams.epf = 1;
@@ -406,14 +432,14 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams_descr = "Noise";
       s.cparams.photon_noise_iso = 3200;
       all_tests.push_back(s);
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams_descr = "NoiseUps";
       s.cparams.photon_noise_iso = 3200;
       s.cparams.resampling = 2;
@@ -421,7 +447,7 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams_descr = "ModularLossless";
       s.cparams.modular_mode = true;
       s.cparams.butteraugli_distance = 0;
@@ -429,14 +455,14 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams_descr = "ProgressiveDC";
       s.cparams.progressive_dc = 1;
       all_tests.push_back(s);
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams_descr = "ModularLossy";
       s.cparams.modular_mode = true;
       s.cparams.butteraugli_distance = 1.f;
@@ -444,14 +470,14 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.input_path = "jxl/flower/flower_alpha.png";
       s.cparams_descr = "AlphaVarDCT";
       all_tests.push_back(s);
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.input_path = "jxl/flower/flower_alpha.png";
       s.cparams_descr = "AlphaVarDCTUpsamplingEPF";
       s.cparams.epf = 1;
@@ -460,7 +486,7 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams.modular_mode = true;
       s.cparams.butteraugli_distance = 0;
       s.input_path = "jxl/flower/flower_alpha.png";
@@ -469,7 +495,7 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.input_path = "jxl/flower/flower_alpha.png";
       s.cparams_descr = "AlphaDownsample";
       s.cparams.ec_resampling = 2;
@@ -477,7 +503,7 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     }
 
     {
-      auto s = settings;
+      s = stub;
       s.cparams_descr = "SpotColor";
       s.add_spot_color = true;
       all_tests.push_back(s);
@@ -489,44 +515,44 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
                             "jxl/flower/flower.png.im_q85_420.jpg",
                             "jxl/flower/flower.png.im_q85_422.jpg",
                             "jxl/flower/flower.png.im_q85_440.jpg"}) {
-    RenderPipelineTestInputSettings settings;
-    settings.input_path = input;
-    settings.jpeg_transcode = true;
-    settings.xsize = 2268;
-    settings.ysize = 1512;
-    settings.cparams_descr = "Default";
-    all_tests.push_back(settings);
+    s.Reset();
+    s.input_path = input;
+    s.jpeg_transcode = true;
+    s.xsize = 2268;
+    s.ysize = 1512;
+    s.cparams_descr = "Default";
+    all_tests.push_back(s);
   }
 
 #endif
 
   {
-    RenderPipelineTestInputSettings settings;
-    settings.input_path = "jxl/grayscale_patches.png";
-    settings.xsize = 1011;
-    settings.ysize = 277;
-    settings.cparams_descr = "Patches";
-    all_tests.push_back(settings);
+    s.Reset();
+    s.input_path = "jxl/grayscale_patches.png";
+    s.xsize = 1011;
+    s.ysize = 277;
+    s.cparams_descr = "Patches";
+    all_tests.push_back(s);
   }
 
   {
-    RenderPipelineTestInputSettings settings;
-    settings.input_path = "jxl/grayscale_patches.png";
-    settings.xsize = 1011;
-    settings.ysize = 277;
-    settings.cparams.photon_noise_iso = 1000;
-    settings.cparams_descr = "PatchesAndNoise";
-    all_tests.push_back(settings);
+    s.Reset();
+    s.input_path = "jxl/grayscale_patches.png";
+    s.xsize = 1011;
+    s.ysize = 277;
+    s.cparams.photon_noise_iso = 1000;
+    s.cparams_descr = "PatchesAndNoise";
+    all_tests.push_back(s);
   }
 
   {
-    RenderPipelineTestInputSettings settings;
-    settings.input_path = "jxl/grayscale_patches.png";
-    settings.xsize = 1011;
-    settings.ysize = 277;
-    settings.cparams.resampling = 2;
-    settings.cparams_descr = "PatchesAndUps2";
-    all_tests.push_back(settings);
+    s.Reset();
+    s.input_path = "jxl/grayscale_patches.png";
+    s.xsize = 1011;
+    s.ysize = 277;
+    s.cparams.resampling = 2;
+    s.cparams_descr = "PatchesAndUps2";
+    all_tests.push_back(s);
   }
 
   return all_tests;
@@ -568,30 +594,31 @@ TEST(RenderPipelineDecodingTest, Animation) {
   std::vector<uint8_t> compressed =
       jxl::test::ReadTestData("jxl/blending/cropped_traffic_light.jxl");
 
-  CodecInOut io_default{memory_manager};
+  auto io_default = jxl::make_unique<CodecInOut>(memory_manager);
   ASSERT_TRUE(DecodeFile(Bytes(compressed),
-                         /*use_slow_pipeline=*/false, &io_default, &pool));
-  CodecInOut io_slow_pipeline{memory_manager};
+                         /*use_slow_pipeline=*/false, io_default.get(), &pool));
+  auto io_slow_pipeline = jxl::make_unique<CodecInOut>(memory_manager);
   ASSERT_TRUE(DecodeFile(Bytes(compressed),
-                         /*use_slow_pipeline=*/true, &io_slow_pipeline, &pool));
+                         /*use_slow_pipeline=*/true, io_slow_pipeline.get(),
+                         &pool));
 
-  ASSERT_EQ(io_default.frames.size(), io_slow_pipeline.frames.size());
-  for (size_t i = 0; i < io_default.frames.size(); i++) {
+  ASSERT_EQ(io_default->frames.size(), io_slow_pipeline->frames.size());
+  for (size_t i = 0; i < io_default->frames.size(); i++) {
 #if JXL_HIGH_PRECISION
     constexpr float kMaxError = 1e-5;
 #else
     constexpr float kMaxError = 1e-4;
 #endif
 
-    Image3F fast_pipeline = std::move(*io_default.frames[i].color());
-    Image3F slow_pipeline = std::move(*io_slow_pipeline.frames[i].color());
+    Image3F fast_pipeline = std::move(*io_default->frames[i].color());
+    Image3F slow_pipeline = std::move(*io_slow_pipeline->frames[i].color());
     JXL_TEST_ASSERT_OK(VerifyRelativeError(slow_pipeline, fast_pipeline,
                                            kMaxError, kMaxError, _))
-    for (size_t ec = 0; ec < io_default.frames[i].extra_channels().size();
+    for (size_t ec = 0; ec < io_default->frames[i].extra_channels().size();
          ec++) {
       JXL_TEST_ASSERT_OK(VerifyRelativeError(
-          io_slow_pipeline.frames[i].extra_channels()[ec],
-          io_default.frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
+          io_slow_pipeline->frames[i].extra_channels()[ec],
+          io_default->frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
     }
   }
 }

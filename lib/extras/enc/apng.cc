@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/extras/enc/apng.h"
-
 // Parts of this code are taken from apngdis, which has the following license:
 /* APNG Disassembler 2.8
  *
@@ -36,21 +34,48 @@
  *
  */
 
+#include "lib/extras/enc/apng.h"
+
+// IWYU pragma: no_include <pngconf.h>
+
+#include <memory>
+
+#include "lib/extras/enc/encode.h"
+
+#if !JPEGXL_ENABLE_APNG
+
+namespace jxl {
+namespace extras {
+std::unique_ptr<Encoder> GetAPNGEncoder() { return nullptr; }
+}  // namespace extras
+}  // namespace jxl
+
+#else  // JPEGXL_ENABLE_APNG
+
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
+#include <jxl/types.h>
+
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
 
 #include "lib/extras/exif.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
-#if JPEGXL_ENABLE_APNG
+#include "lib/jxl/base/status.h"
 #include "png.h" /* original (unpatched) libpng is ok */
-#endif
 
 namespace jxl {
 namespace extras {
 
-#if JPEGXL_ENABLE_APNG
 namespace {
 
 constexpr unsigned char kExifSignature[6] = {0x45, 0x78, 0x69,
@@ -76,27 +101,24 @@ class APNGEncoder : public Encoder {
     // Encode main image frames
     JXL_RETURN_IF_ERROR(VerifyBasicInfo(ppf.info));
     encoded_image->icc.clear();
-    encoded_image->bitstreams.resize(1);
-    JXL_RETURN_IF_ERROR(EncodePackedPixelFileToAPNG(
-        ppf, pool, &encoded_image->bitstreams.front()));
+    JXL_RETURN_IF_ERROR(
+        EncodePackedPixelFileToAPNG(ppf, pool, &encoded_image->bitstreams));
 
     // Encode extra channels
     for (size_t i = 0; i < ppf.extra_channels_info.size(); ++i) {
       encoded_image->extra_channel_bitstreams.emplace_back();
       auto& ec_bitstreams = encoded_image->extra_channel_bitstreams.back();
-      ec_bitstreams.emplace_back();
-      JXL_RETURN_IF_ERROR(EncodePackedPixelFileToAPNG(
-          ppf, pool, &ec_bitstreams.back(), true, i));
+      JXL_RETURN_IF_ERROR(
+          EncodePackedPixelFileToAPNG(ppf, pool, &ec_bitstreams, true, i));
     }
     return true;
   }
 
  private:
-  Status EncodePackedPixelFileToAPNG(const PackedPixelFile& ppf,
-                                     ThreadPool* pool,
-                                     std::vector<uint8_t>* bytes,
-                                     bool encode_extra_channels = false,
-                                     size_t extra_channel_index = 0) const;
+  Status EncodePackedPixelFileToAPNG(
+      const PackedPixelFile& ppf, ThreadPool* pool,
+      std::vector<std::vector<uint8_t> >* bitstreams,
+      bool encode_extra_channels = false, size_t extra_channel_index = 0) const;
 };
 
 void PngWrite(png_structp png_ptr, png_bytep data, png_size_t length) {
@@ -264,10 +286,10 @@ void MaybeAddGAMA(const JxlColorEncoding& c_enc, png_structp png_ptr,
 void MaybeAddCLLi(const JxlColorEncoding& c_enc, const float intensity_target,
                   png_structp png_ptr, png_infop info_ptr) {
   if (c_enc.transfer_function != JXL_TRANSFER_FUNCTION_PQ) return;
-  if (intensity_target == 10'000) return;
+  if (intensity_target == 10000) return;
 
   const uint32_t max_content_light_level =
-      static_cast<uint32_t>(10'000.f * Clamp1(intensity_target, 0.f, 10'000.f));
+      static_cast<uint32_t>(10000.f * Clamp1(intensity_target, 0.f, 10000.f));
   png_byte chunk_data[8] = {};
   png_save_uint_32(chunk_data, max_content_light_level);
   // Leave MaxFALL set to 0.
@@ -282,8 +304,9 @@ void MaybeAddCLLi(const JxlColorEncoding& c_enc, const float intensity_target,
 }
 
 Status APNGEncoder::EncodePackedPixelFileToAPNG(
-    const PackedPixelFile& ppf, ThreadPool* pool, std::vector<uint8_t>* bytes,
-    bool encode_extra_channels, size_t extra_channel_index) const {
+    const PackedPixelFile& ppf, ThreadPool* pool,
+    std::vector<std::vector<uint8_t> >* bitstreams, bool encode_extra_channels,
+    size_t extra_channel_index) const {
   JxlExtraChannelInfo ec_info{};
   if (encode_extra_channels) {
     if (ppf.extra_channels_info.size() <= extra_channel_index) {
@@ -298,14 +321,19 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
       encode_extra_channels ? 1 : ppf.info.num_color_channels;
   size_t num_channels = color_channels + (has_alpha ? 1 : 0);
 
-  if (!ppf.info.have_animation && ppf.frames.size() != 1) {
-    return JXL_FAILURE("Invalid number of frames");
-  }
+  bitstreams->emplace_back();
+  auto bytes = &bitstreams->back();
 
   size_t count = 0;
   size_t anim_chunks = 0;
 
   for (const auto& frame : ppf.frames) {
+    if (!ppf.info.have_animation && count > 0) {
+      // in the case of non-coalesced layers (composite still), write multiple
+      // files
+      bitstreams->emplace_back();
+      bytes = &bitstreams->back();
+    }
     const PackedImage& color = encode_extra_channels
                                    ? frame.extra_channels[extra_channel_index]
                                    : frame.color;
@@ -338,7 +366,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
       if (bits_per_sample < 8) {
         float mul = 255.0 / ((1u << bits_per_sample) - 1);
         for (size_t i = 0; i < num_samples; ++i) {
-          out[i] = static_cast<uint8_t>(std::lroundf(in[i] * mul));
+          out[i] = static_cast<uint8_t>(std::lround(in[i] * mul));
         }
       } else {
         memcpy(out.data(), in, out_size);
@@ -351,7 +379,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
         for (size_t i = 0; i < num_samples; ++i, p_in += 2, p_out += 2) {
           uint32_t val = (format.endianness == JXL_BIG_ENDIAN ? LoadBE16(p_in)
                                                               : LoadLE16(p_in));
-          StoreBE16(static_cast<uint32_t>(std::lroundf(val * mul)), p_out);
+          StoreBE16(static_cast<uint32_t>(std::lround(val * mul)), p_out);
         }
       } else {
         memcpy(out.data(), in, out_size);
@@ -368,7 +396,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
                        ? LoadLEFloat(p_in)
                        : *reinterpret_cast<const float*>(p_in),
                    0.f, 1.f);
-        StoreBE16(static_cast<uint32_t>(std::lroundf(val * kMul)), p_out);
+        StoreBE16(static_cast<uint32_t>(std::lround(val * kMul)), p_out);
       }
     }
     png_structp png_ptr;
@@ -396,31 +424,33 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
     png_set_IHDR(png_ptr, info_ptr, width, height, bit_depth, color_type,
                  PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE,
                  PNG_FILTER_TYPE_BASE);
-    if (count == 0 && !encode_extra_channels) {
-      if (!MaybeAddSRGB(ppf.color_encoding, png_ptr, info_ptr)) {
-        if (ppf.primary_color_representation !=
-            PackedPixelFile::kIccIsPrimary) {
-          MaybeAddCICP(ppf.color_encoding, png_ptr, info_ptr);
+    if (count == 0 || !ppf.info.have_animation) {
+      if (!encode_extra_channels) {
+        if (!MaybeAddSRGB(ppf.color_encoding, png_ptr, info_ptr)) {
+          if (ppf.primary_color_representation !=
+              PackedPixelFile::kIccIsPrimary) {
+            MaybeAddCICP(ppf.color_encoding, png_ptr, info_ptr);
+          }
+          if (!ppf.icc.empty()) {
+            png_set_benign_errors(png_ptr, 1);
+            png_set_iCCP(png_ptr, info_ptr, "1", 0, ppf.icc.data(),
+                         ppf.icc.size());
+          }
+          MaybeAddCHRM(ppf.color_encoding, png_ptr, info_ptr);
+          MaybeAddGAMA(ppf.color_encoding, png_ptr, info_ptr);
         }
-        if (!ppf.icc.empty()) {
-          png_set_benign_errors(png_ptr, 1);
-          png_set_iCCP(png_ptr, info_ptr, "1", 0, ppf.icc.data(),
-                       ppf.icc.size());
-        }
-        MaybeAddCHRM(ppf.color_encoding, png_ptr, info_ptr);
-        MaybeAddGAMA(ppf.color_encoding, png_ptr, info_ptr);
-      }
-      MaybeAddCLLi(ppf.color_encoding, ppf.info.intensity_target, png_ptr,
-                   info_ptr);
+        MaybeAddCLLi(ppf.color_encoding, ppf.info.intensity_target, png_ptr,
+                     info_ptr);
 
-      std::vector<std::string> textstrings;
-      JXL_RETURN_IF_ERROR(BlobsWriterPNG::Encode(ppf.metadata, &textstrings));
-      for (size_t kk = 0; kk + 1 < textstrings.size(); kk += 2) {
-        png_text text;
-        text.key = const_cast<png_charp>(textstrings[kk].c_str());
-        text.text = const_cast<png_charp>(textstrings[kk + 1].c_str());
-        text.compression = PNG_TEXT_COMPRESSION_zTXt;
-        png_set_text(png_ptr, info_ptr, &text, 1);
+        std::vector<std::string> textstrings;
+        JXL_RETURN_IF_ERROR(BlobsWriterPNG::Encode(ppf.metadata, &textstrings));
+        for (size_t kk = 0; kk + 1 < textstrings.size(); kk += 2) {
+          png_text text;
+          text.key = const_cast<png_charp>(textstrings[kk].c_str());
+          text.text = const_cast<png_charp>(textstrings[kk + 1].c_str());
+          text.compression = PNG_TEXT_COMPRESSION_zTXt;
+          png_set_text(png_ptr, info_ptr, &text, 1);
+        }
       }
 
       png_write_info(png_ptr, info_ptr);
@@ -464,7 +494,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
     const size_t pos = bytes->size();
     png_write_image(png_ptr, rows.data());
     png_write_flush(png_ptr);
-    if (count > 0) {
+    if (count > 0 && ppf.info.have_animation) {
       std::vector<uint8_t> fdata(4);
       png_save_uint_32(fdata.data(), anim_chunks++);
       size_t p = pos;
@@ -496,15 +526,12 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
 }
 
 }  // namespace
-#endif
 
 std::unique_ptr<Encoder> GetAPNGEncoder() {
-#if JPEGXL_ENABLE_APNG
   return jxl::make_unique<APNGEncoder>();
-#else
-  return nullptr;
-#endif
 }
 
 }  // namespace extras
 }  // namespace jxl
+
+#endif  // JPEGXL_ENABLE_APNG

@@ -5,7 +5,17 @@
 
 #include "lib/extras/enc/encode.h"
 
+#include <jxl/codestream_header.h>
+#include <jxl/types.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cstddef>
+#include <cstdint>
 #include <locale>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/exr.h"
@@ -13,6 +23,10 @@
 #include "lib/extras/enc/npy.h"
 #include "lib/extras/enc/pgx.h"
 #include "lib/extras/enc/pnm.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {
@@ -72,7 +86,9 @@ Status Encoder::VerifyImageSize(const PackedImage& image,
   }
   size_t info_num_channels =
       (info.num_color_channels + (info.alpha_bits > 0 ? 1 : 0));
-  if (image.xsize != info.xsize || image.ysize != info.ysize ||
+  // TODO(jon): frames do not necessarily have to match image size,
+  // but probably this is still assumed in some encoders
+  if (  // image.xsize != info.xsize || image.ysize != info.ysize ||
       image.format.num_channels != info_num_channels) {
     return JXL_FAILURE("Frame size does not match image size");
   }

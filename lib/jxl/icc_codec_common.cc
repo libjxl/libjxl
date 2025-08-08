@@ -5,6 +5,8 @@
 
 #include "lib/jxl/icc_codec_common.h"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <tuple>
 
@@ -56,8 +58,6 @@ Status AppendUint32(uint32_t value, PaddedBytes* data) {
   StoreBE32(value, data->data() + pos);
   return true;
 }
-
-typedef std::array<uint8_t, 4> Tag;
 
 Tag DecodeKeyword(const uint8_t* data, size_t size, size_t pos) {
   if (pos + 4 > size) return {{' ', ' ', ' ', ' '}};

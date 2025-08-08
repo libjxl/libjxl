@@ -5,6 +5,12 @@
 
 #include "lib/jpegli/downsample.h"
 
+#include <cstddef>
+#include <cstdio>
+
+#include "lib/jpegli/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jpegli/downsample.cc"
 #include <hwy/foreach_target.h>
