@@ -444,6 +444,12 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
     }
 
     {
+      float masku_lut[3] = {
+          12.0,
+          0.0,
+          4.0,
+      };
+      auto masku_off = Set(df8, masku_lut[c]);
       auto lossc = Zero(df8);
       TransformToPixels(acs.Strategy(), &mem[0], block,
                         acs.covered_blocks_x() * 8, scratch_space);
@@ -458,8 +464,9 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
                                       ix * kBlockDim + dx);
               if (x + ix * 8 + dx + Lanes(df8) <= config.mask1x1_xsize) {
                 auto masku =
-                    Abs(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
-                                                       y + iy * 8 + dy)));
+                    Add(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
+                                                       y + iy * 8 + dy)),
+                        masku_off);
                 in = Mul(masku, in);
                 in = Mul(in, in);
                 in = Mul(in, in);
@@ -471,7 +478,7 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
         }
       }
       static const double kChannelMul[3] = {
-          pow(10.2, 8.0),
+          pow(8.2, 8.0),
           pow(1.0, 8.0),
           pow(1.03, 8.0),
       };
@@ -486,10 +493,17 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
     // Also add #bit of #bit of num_nonzeros, to estimate the ANS cost, with a
     // bias.
     entropy += config.zeros_mul * (CeilLog2Nonzero(nbits + 17) + nbits);
+    if (c == 0 && num_blocks >= 2) {
+      // It is X channel (red-green) and we often see ringing
+      // in the large blocks. Let's punish that more here.
+      float w = 1.0 + std::min(3.0, num_blocks / 8.0);
+      entropy *= w;
+      loss = Mul(loss, Set(df8, w));
+    }
   }
   float loss_scalar =
       pow(GetLane(SumOfLanes(df8, loss)) / (num_blocks * kDCTBlockSize),
-          1.0 / 8.0) *
+          1.0f / 8.0f) *
       (num_blocks * kDCTBlockSize) / quant_norm16;
   entropy *= entropy_mul;
   entropy += config.info_loss_multiplier * loss_scalar;
@@ -572,7 +586,7 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
          tx.type == AcStrategyType::IDENTITY) &&
         butteraugli_target < 5.0) {
       static const float kFavor2X2AtHighQuality = 0.4;
-      float weight = pow((5.0f - butteraugli_target) / 5.0f, 2.0);
+      float weight = pow((5.0f - butteraugli_target) / 5.0f, 2.0f);
       entropy_mul -= kFavor2X2AtHighQuality * weight;
     }
     if ((tx.type != AcStrategyType::DCT && tx.type != AcStrategyType::DCT2X2 &&
@@ -875,12 +889,12 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // ringing next to sky etc. Optimization will find smaller numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
-  const float entropy_mul16X8 = 1.25;
-  const float entropy_mul16X16 = 1.35;
-  const float entropy_mul16X32 = 1.5;
-  const float entropy_mul32X32 = 1.5;
-  const float entropy_mul64X32 = 2.26;
-  const float entropy_mul64X64 = 2.26;
+  const float entropy_mul16X8 = 1.21;
+  const float entropy_mul16X16 = 1.34;
+  const float entropy_mul16X32 = 1.49;
+  const float entropy_mul32X32 = 1.48;
+  const float entropy_mul64X32 = 2.25;
+  const float entropy_mul64X64 = 2.25;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher

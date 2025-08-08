@@ -80,7 +80,7 @@ TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = 0;
+  basic_info.uses_original_profile = JXL_FALSE;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
@@ -890,7 +890,7 @@ TEST(EncodeTest, CodestreamLevelTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = 0;
+  basic_info.uses_original_profile = JXL_FALSE;
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
@@ -1080,7 +1080,7 @@ TEST(EncodeTest, BasicInfoTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = 0;
+  basic_info.uses_original_profile = JXL_FALSE;
   basic_info.have_animation = 1;
   basic_info.intensity_target = 123.4;
   basic_info.min_nits = 5.0;

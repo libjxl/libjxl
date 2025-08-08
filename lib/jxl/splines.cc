@@ -79,14 +79,16 @@ float ContinuousIDCT(const Dct32& dct, const float t) {
 
 template <typename DF>
 void DrawSegment(DF df, const SplineSegment& segment, const bool add,
-                 const size_t y, const size_t x, const size_t row_x0, float* JXL_RESTRICT rows[3]) {
+                 const size_t y, const size_t x, const size_t x0,
+                 float* JXL_RESTRICT rows[3]) {
   Rebind<int32_t, DF> di;
   const auto inv_sigma = Set(df, segment.inv_sigma);
   const auto half = Set(df, 0.5f);
   const auto one_over_2s2 = Set(df, 0.353553391f);
   const auto sigma_over_4_times_intensity =
       Set(df, segment.sigma_over_4_times_intensity);
-  const auto dx = Sub(ConvertTo(df, Iota(di, x)), Set(df, segment.center_x));
+  const auto dx =
+      Sub(ConvertTo(df, Iota(di, x + x0)), Set(df, segment.center_x));
   const auto dy = Set(df, y - segment.center_y);
   const auto sqd = MulAdd(dx, dx, Mul(dy, dy));
   const auto distance = Sqrt(sqd);
@@ -98,23 +100,27 @@ void DrawSegment(DF df, const SplineSegment& segment, const bool add,
           Mul(one_dimensional_factor, one_dimensional_factor));
   for (size_t c = 0; c < 3; ++c) {
     const auto cm = Set(df, add ? segment.color[c] : -segment.color[c]);
-    const auto in = LoadU(df, rows[c] + x - row_x0);
-    StoreU(MulAdd(cm, local_intensity, in), df, rows[c] + x - row_x0);
+    const auto in = LoadU(df, rows[c] + x);
+    StoreU(MulAdd(cm, local_intensity, in), df, rows[c] + x);
   }
 }
 
 void DrawSegment(const SplineSegment& segment, const bool add, const size_t y,
-                 const ssize_t x0, ssize_t x1, float* JXL_RESTRICT rows[3]) {
-  ssize_t x = std::max<ssize_t>(
-      x0, std::llround(segment.center_x - segment.maximum_distance));
-  // one-past-the-end
-  x1 = std::min<ssize_t>(
-      x1, std::llround(segment.center_x + segment.maximum_distance) + 1);
+                 const size_t x0, const size_t x1,
+                 float* JXL_RESTRICT rows[3]) {
+  ssize_t start = std::llround(segment.center_x - segment.maximum_distance);
+  ssize_t end = std::llround(segment.center_x + segment.maximum_distance);
+  if (end < static_cast<ssize_t>(x0) || start >= static_cast<ssize_t>(x1)) {
+    return;  // span does not intersect scan
+  }
+  size_t span_x0 = std::max<ssize_t>(x0, start) - x0;
+  size_t span_x1 = std::min<ssize_t>(x1, end + 1) - x0;  // exclusive
   HWY_FULL(float) df;
-  for (; x + static_cast<ssize_t>(Lanes(df)) <= x1; x += Lanes(df)) {
+  size_t x = span_x0;
+  for (; x + Lanes(df) <= span_x1; x += Lanes(df)) {
     DrawSegment(df, segment, add, y, x, x0, rows);
   }
-  for (; x < x1; ++x) {
+  for (; x < span_x1; ++x) {
     DrawSegment(HWY_CAPPED(float, 1)(), segment, add, y, x, x0, rows);
   }
 }
@@ -165,7 +171,7 @@ void DrawSegments(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
                   const bool add, const SplineSegment* segments,
                   const size_t* segment_indices,
                   const size_t* segment_y_start) {
-  float* JXL_RESTRICT rows[3] = {row_x - x0, row_y - x0, row_b - x0};
+  float* JXL_RESTRICT rows[3] = {row_x, row_y, row_b};
   for (size_t i = segment_y_start[y]; i < segment_y_start[y + 1]; i++) {
     DrawSegment(segments[segment_indices[i]], add, y, x0, x1, rows);
   }

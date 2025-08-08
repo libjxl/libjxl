@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -236,9 +237,9 @@ TEST(FieldsTest, TestRoundtripSize) {
 
 // Ensure all values can be reached by the encoding.
 TEST(FieldsTest, TestCropRect) {
-  CodecMetadata metadata;
+  auto metadata = std::make_unique<CodecMetadata>();
   for (int32_t i = -999; i < 19000; ++i) {
-    FrameHeader f(&metadata);
+    FrameHeader f(metadata.get());
     f.custom_size_or_origin = true;
     f.frame_origin.x0 = i;
     f.frame_origin.y0 = i;
@@ -267,8 +268,8 @@ TEST(FieldsTest, TestPreview) {
 // Ensures Read(Write()) returns the same fields.
 TEST(FieldsTest, TestRoundtripFrame) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecMetadata metadata;
-  FrameHeader h(&metadata);
+  auto metadata = jxl::make_unique<CodecMetadata>();
+  FrameHeader h(metadata.get());
   h.extensions = 0x800;
 
   size_t extension_bits = 999;
@@ -280,7 +281,7 @@ TEST(FieldsTest, TestRoundtripFrame) {
   EXPECT_EQ(total_bits, writer.BitsWritten());
   writer.ZeroPadToByte();
 
-  FrameHeader h2(&metadata);
+  FrameHeader h2(metadata.get());
   BitReader reader(writer.GetSpan());
   ASSERT_TRUE(ReadFrameHeader(&reader, &h2));
   EXPECT_EQ(total_bits, reader.TotalBitsConsumed());

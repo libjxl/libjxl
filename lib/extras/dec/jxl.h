@@ -18,6 +18,8 @@
 #include <string>
 #include <vector>
 
+#include "lib/extras/size_constraints.h"
+
 namespace jxl {
 namespace extras {
 
@@ -29,12 +31,16 @@ struct JXLDecompressParams {
 
   // Requested output color space description.
   std::string color_space;
+  // Requested output color space description in case of CMYK images.
+  std::string color_space_for_cmyk;
   // If set, performs tone mapping to this intensity target luminance.
   float display_nits = 0.0;
   // Whether spot colors are rendered on the image.
   bool render_spotcolors = true;
   // Whether to keep or undo the orientation given in the header.
   bool keep_orientation = false;
+  // Coalescing or not
+  bool coalescing = true;
 
   // If runner_opaque is set, the decoder uses this parallel runner.
   JxlParallelRunner runner;
@@ -66,7 +72,8 @@ struct JXLDecompressParams {
 bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
                     const JXLDecompressParams& dparams, size_t* decoded_bytes,
                     PackedPixelFile* ppf,
-                    std::vector<uint8_t>* jpeg_bytes = nullptr);
+                    std::vector<uint8_t>* jpeg_bytes = nullptr,
+                    const SizeConstraints* constraints = nullptr);
 
 }  // namespace extras
 }  // namespace jxl

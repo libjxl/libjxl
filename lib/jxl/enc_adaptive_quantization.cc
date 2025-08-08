@@ -222,8 +222,8 @@ V BlueModulation(const D d, const size_t x, const size_t y,
                  const ImageF& planex, const ImageF& planey,
                  const ImageF& planeb, const Rect& rect, const V out_val) {
   auto sum = Zero(d);
-  static const float kLimit = 0.027121074570634722;
-  static const float kOffset = 0.084381641171960495;
+  static const float kLimit = 0.010474084867598155;
+  static const float kOffset = 0.0031994768654636393;
   for (size_t dy = 0; dy < 8; ++dy) {
     const float* JXL_RESTRICT row_in_x = rect.ConstRow(planex, y + dy) + x;
     const float* JXL_RESTRICT row_in_y = rect.ConstRow(planey, y + dy) + x;
@@ -238,7 +238,7 @@ V BlueModulation(const D d, const size_t x, const size_t y,
                                Min(Sub(p_b, p_y_effective), Set(d, kLimit))));
     }
   }
-  static const float kMul = 0.14207000358439159;
+  static const float kMul = 0.90590804735610064;
   sum = SumOfLanes(d, sum);
   float scalar_sum = GetLane(sum);
   // If it is all blue, don't boost the quantization.
@@ -247,7 +247,7 @@ V BlueModulation(const D d, const size_t x, const size_t y,
   if (scalar_sum >= 32 * kLimit) {
     scalar_sum = 64 * kLimit - scalar_sum;
   }
-  static const float kMaxLimit = 15.398788439047934f;
+  static const float kMaxLimit = 15.463398341612438;
   if (scalar_sum >= kMaxLimit * kLimit) {
     scalar_sum = kMaxLimit * kLimit;
   }
@@ -335,11 +335,11 @@ void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
     const HWY_CAPPED(float, kBlockDim) df;
     for (size_t ix = rect_out.x0(); ix < rect_out.x1(); ix++) {
       size_t x = ix * 8;
-      auto out_val = Set(df, row_out[ix]);
-      out_val = ComputeMask(df, out_val);
-      out_val = HfModulation(df, x, y, xyb_y, rect_in, out_val);
-      out_val = GammaModulation(df, x, y, xyb_x, xyb_y, rect_in, out_val);
-      out_val = BlueModulation(df, x, y, xyb_x, xyb_y, xyb_b, rect_in, out_val);
+      auto mask_val = ComputeMask(df, Set(df, row_out[ix]));
+      mask_val = GammaModulation(df, x, y, xyb_x, xyb_y, rect_in, mask_val);
+      auto out_val = HfModulation(df, x, y, xyb_y, rect_in, mask_val);
+      out_val = Min(out_val, BlueModulation(df, x, y, xyb_x, xyb_y, xyb_b,
+                                            rect_in, mask_val));
       // We want multiplicative quantization field, so everything
       // until this point has been modulating the exponent.
       row_out[ix] = FastPow2f(GetLane(out_val) * 1.442695041f) * mul + add;
@@ -362,7 +362,7 @@ float MaskingSqrt(const float v) {
   return GetLane(MaskingSqrt(DScalar(), vscalar));
 }
 
-void StoreMin4(const float v, float& min0, float& min1, float& min2,
+inline void StoreMin4(const float v, float& min0, float& min1, float& min2,
                float& min3) {
   if (v < min3) {
     if (v < min0) {
@@ -394,30 +394,22 @@ Status FuzzyErosion(const float butteraugli_target, const Rect& from_rect,
   static_assert(kStep == 1, "Step must be 1");
   JXL_ENSURE(to_rect.xsize() * 2 == from_rect.xsize());
   JXL_ENSURE(to_rect.ysize() * 2 == from_rect.ysize());
-  static const float kMulBase0 = 0.125;
-  static const float kMulBase1 = 0.10;
-  static const float kMulBase2 = 0.09;
-  static const float kMulBase3 = 0.06;
-  static const float kMulAdd0 = 0.0;
-  static const float kMulAdd1 = -0.10;
-  static const float kMulAdd2 = -0.09;
-  static const float kMulAdd3 = -0.06;
-
+  static const float kMulBase[4] = { 0.125, 0.1, 0.09, 0.06 };
+  static const float kMulAdd[4] = { 0.0, -0.1, -0.09, -0.06 };
   float mul = 0.0;
   if (butteraugli_target < 2.0f) {
     mul = (2.0f - butteraugli_target) * (1.0f / 2.0f);
   }
-  float kMul0 = kMulBase0 + mul * kMulAdd0;
-  float kMul1 = kMulBase1 + mul * kMulAdd1;
-  float kMul2 = kMulBase2 + mul * kMulAdd2;
-  float kMul3 = kMulBase3 + mul * kMulAdd3;
+  float kMul[4] = { 0 };
+  float norm_sum = 0.0;
+  for (size_t ii = 0; ii < 4; ++ii) {
+    kMul[ii] = kMulBase[ii] + mul * kMulAdd[ii];
+    norm_sum += kMul[ii];
+  }
   static const float kTotal = 0.29959705784054957;
-  float norm = kTotal / (kMul0 + kMul1 + kMul2 + kMul3);
-  kMul0 *= norm;
-  kMul1 *= norm;
-  kMul2 *= norm;
-  kMul3 *= norm;
-
+  for (size_t ii = 0; ii < 4; ++ii) {
+    kMul[ii] *= kTotal / norm_sum;
+  }
   for (size_t fy = 0; fy < from_rect.ysize(); ++fy) {
     size_t y = fy + from_rect.y0();
     size_t ym1 = y >= kStep ? y - kStep : y;
@@ -430,25 +422,22 @@ Status FuzzyErosion(const float butteraugli_target, const Rect& from_rect,
       size_t x = fx + from_rect.x0();
       size_t xm1 = x >= kStep ? x - kStep : x;
       size_t xp1 = x + kStep < xsize ? x + kStep : x;
-      float min0 = row[x];
-      float min1 = row[xm1];
-      float min2 = row[xp1];
-      float min3 = rowt[xm1];
+      float min[4] = { row[x], row[xm1], row[xp1], rowt[xm1] };
       // Sort the first four values.
-      if (min0 > min1) std::swap(min0, min1);
-      if (min0 > min2) std::swap(min0, min2);
-      if (min0 > min3) std::swap(min0, min3);
-      if (min1 > min2) std::swap(min1, min2);
-      if (min1 > min3) std::swap(min1, min3);
-      if (min2 > min3) std::swap(min2, min3);
+      if (min[0] > min[1]) std::swap(min[0], min[1]);
+      if (min[0] > min[2]) std::swap(min[0], min[2]);
+      if (min[0] > min[3]) std::swap(min[0], min[3]);
+      if (min[1] > min[2]) std::swap(min[1], min[2]);
+      if (min[1] > min[3]) std::swap(min[1], min[3]);
+      if (min[2] > min[3]) std::swap(min[2], min[3]);
       // The remaining five values of a 3x3 neighbourhood.
-      StoreMin4(rowt[x], min0, min1, min2, min3);
-      StoreMin4(rowt[xp1], min0, min1, min2, min3);
-      StoreMin4(rowb[xm1], min0, min1, min2, min3);
-      StoreMin4(rowb[x], min0, min1, min2, min3);
-      StoreMin4(rowb[xp1], min0, min1, min2, min3);
+      StoreMin4(rowt[x], min[0], min[1], min[2], min[3]);
+      StoreMin4(rowt[xp1], min[0], min[1], min[2], min[3]);
+      StoreMin4(rowb[xm1], min[0], min[1], min[2], min[3]);
+      StoreMin4(rowb[x], min[0], min[1], min[2], min[3]);
+      StoreMin4(rowb[xp1], min[0], min[1], min[2], min[3]);
 
-      float v = kMul0 * min0 + kMul1 * min1 + kMul2 * min2 + kMul3 * min3;
+      float v = kMul[0] * min[0] + kMul[1] * min[1] + kMul[2] * min[2] + kMul[3] * min[3];
       if (fx % 2 == 0 && fy % 2 == 0) {
         row_out[fx / 2] = v;
       } else {
@@ -648,11 +637,7 @@ Status Blur1x1Masking(JxlMemoryManager* memory_manager, ThreadPool* pool,
   // Before blurring it contains an image of absolute value of the
   // Laplacian of the intensity channel.
   static const float kFilterMask1x1[5] = {
-      static_cast<float>(0.25647067633737227),
-      static_cast<float>(0.2050056912354399075),
-      static_cast<float>(0.154082048668497307),
-      static_cast<float>(0.08149576591362004441),
-      static_cast<float>(0.0512750104812308467),
+    0.364911248, 0.05, 0.1688888021, 0.221069183, 0.306563504,
   };
   double sum =
       1.0 + 4 * (kFilterMask1x1[0] + kFilterMask1x1[1] + kFilterMask1x1[2] +
@@ -661,14 +646,13 @@ Status Blur1x1Masking(JxlMemoryManager* memory_manager, ThreadPool* pool,
     sum = 1e-5;
   }
   const float normalize = static_cast<float>(1.0 / sum);
-  const float normalize_mul = normalize;
   WeightsSymmetric5 weights =
       WeightsSymmetric5{{HWY_REP4(normalize)},
-                        {HWY_REP4(normalize_mul * kFilterMask1x1[0])},
-                        {HWY_REP4(normalize_mul * kFilterMask1x1[2])},
-                        {HWY_REP4(normalize_mul * kFilterMask1x1[1])},
-                        {HWY_REP4(normalize_mul * kFilterMask1x1[4])},
-                        {HWY_REP4(normalize_mul * kFilterMask1x1[3])}};
+                        {HWY_REP4(normalize * kFilterMask1x1[0])},
+                        {HWY_REP4(normalize * kFilterMask1x1[2])},
+                        {HWY_REP4(normalize * kFilterMask1x1[1])},
+                        {HWY_REP4(normalize * kFilterMask1x1[4])},
+                        {HWY_REP4(normalize * kFilterMask1x1[3])}};
   JXL_ASSIGN_OR_RETURN(
       ImageF temp, ImageF::Create(memory_manager, rect.xsize(), rect.ysize()));
   JXL_RETURN_IF_ERROR(
@@ -850,7 +834,7 @@ StatusOr<ImageF> TileDistMap(const ImageF& distmap, int tile_size, int margin,
 
 const float kDcQuantPow = 0.83f;
 const float kDcQuant = 1.095924047623553f;
-const float kAcQuant = 0.725f;
+const float kAcQuant = 0.765f;
 
 // Computes the decoded image for a given set of compression parameters.
 StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,

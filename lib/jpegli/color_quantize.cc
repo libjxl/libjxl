@@ -20,6 +20,7 @@
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/memory_manager.h"
+#include "lib/jxl/base/common.h"
 
 namespace jpegli {
 
@@ -268,13 +269,16 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
   const size_t num_pixels = cinfo->output_width * cinfo->output_height;
   const int max_color_count = std::max<size_t>(num_pixels, 1u << 18);
   const int max_palette_size = cinfo->desired_number_of_colors;
-  std::unique_ptr<uint8_t[]> red(new uint8_t[max_color_count]);
-  std::unique_ptr<uint8_t[]> green(new uint8_t[max_color_count]);
-  std::unique_ptr<uint8_t[]> blue(new uint8_t[max_color_count]);
+  auto red_storage = jxl::make_uninitialized_vector<uint8_t>(max_color_count);
+  auto green_storage = jxl::make_uninitialized_vector<uint8_t>(max_color_count);
+  auto blue_storage = jxl::make_uninitialized_vector<uint8_t>(max_color_count);
+  uint8_t* red = red_storage.data();
+  uint8_t* green = green_storage.data();
+  uint8_t* blue = blue_storage.data();
   std::vector<int> count(max_color_count, 0);
   // number of colors
-  int n = BuildRGBColorIndex(m->pixels_, num_pixels, count.data(), &red[0],
-                             &green[0], &blue[0]);
+  int n = BuildRGBColorIndex(m->pixels_, num_pixels, count.data(), red, green,
+                             blue);
 
   std::vector<int> dist(n, std::numeric_limits<int>::max());
   std::vector<int> cluster(n);
@@ -294,14 +298,14 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
       winner = i;
     }
     if (!in_palette[i] && count[i] > count_threshold) {
-      AddToRGBPalette(&red[0], &green[0], &blue[0], count.data(), i, k++, n,
-                      dist.data(), cluster.data(), &center[0], &error);
+      AddToRGBPalette(red, green, blue, count.data(), i, k++, n, dist.data(),
+                      cluster.data(), &center[0], &error);
       in_palette[i] = true;
     }
   }
   if (k == 0) {
-    AddToRGBPalette(&red[0], &green[0], &blue[0], count.data(), winner, k++, n,
-                    dist.data(), cluster.data(), &center[0], &error);
+    AddToRGBPalette(red, green, blue, count.data(), winner, k++, n, dist.data(),
+                    cluster.data(), &center[0], &error);
     in_palette[winner] = true;
   }
 
@@ -374,8 +378,8 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
     if (priority < top_priority) {
       bucket_array[priority].push_back(i);
     } else {
-      AddToRGBPalette(&red[0], &green[0], &blue[0], count.data(), i, k++, n,
-                      dist.data(), cluster.data(), &center[0], &error);
+      AddToRGBPalette(red, green, blue, count.data(), i, k++, n, dist.data(),
+                      cluster.data(), &center[0], &error);
     }
     bucket_array[top_priority].pop_back();
     while (top_priority >= 0 && bucket_array[top_priority].empty()) {
