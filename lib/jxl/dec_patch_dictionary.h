@@ -9,7 +9,6 @@
 // Chooses reference patches, and avoids encoding them once per occurrence.
 
 #include <jxl/memory_manager.h>
-#include <sys/types.h>
 
 #include <array>
 #include <cstddef>
@@ -19,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/image_bundle.h"
@@ -26,7 +26,7 @@
 
 namespace jxl {
 
-struct ReferceFrame {
+struct ReferenceFrame {
   std::unique_ptr<ImageBundle> frame;
   // ImageBundle doesn't yet have a simple way to state it is in XYB.
   bool ib_is_in_xyb = false;
@@ -107,7 +107,7 @@ class PatchDictionary {
   explicit PatchDictionary(JxlMemoryManager* memory_manager)
       : memory_manager_(memory_manager) {}
 
-  void SetShared(const std::array<ReferceFrame, 4>* reference_frames) {
+  void SetShared(const std::array<ReferenceFrame, 4>* reference_frames) {
     reference_frames_ = reference_frames;
   }
 
@@ -138,7 +138,7 @@ class PatchDictionary {
   friend class PatchDictionaryEncoder;
 
   JxlMemoryManager* memory_manager_;
-  const std::array<ReferceFrame, 4>* reference_frames_;
+  const std::array<ReferenceFrame, 4>* reference_frames_;
   std::vector<PatchPosition> positions_;
   std::vector<PatchReferencePosition> ref_positions_;
   std::vector<PatchBlending> blendings_;

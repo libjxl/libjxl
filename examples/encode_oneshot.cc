@@ -156,8 +156,8 @@ bool ReadPFM(const char* filename, std::vector<float>* pixels, uint32_t* xsize,
  */
 bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
                       const uint32_t ysize, std::vector<uint8_t>* compressed) {
-  auto enc = JxlEncoderMake(/*memory_manager=*/nullptr);
-  auto runner = JxlThreadParallelRunnerMake(
+  JxlEncoderPtr enc = JxlEncoderMake(/*memory_manager=*/nullptr);
+  JxlThreadParallelRunnerPtr runner = JxlThreadParallelRunnerMake(
       /*memory_manager=*/nullptr,
       JxlThreadParallelRunnerDefaultNumWorkerThreads());
   if (JXL_ENC_SUCCESS != JxlEncoderSetParallelRunner(enc.get(),
@@ -192,6 +192,10 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
 
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  if (!frame_settings) {
+    fprintf(stderr, "JxlEncoderFrameSettingsCreate failed\n");
+    return false;
+  }
 
   if (JXL_ENC_SUCCESS !=
       JxlEncoderAddImageFrame(frame_settings, &pixel_format,

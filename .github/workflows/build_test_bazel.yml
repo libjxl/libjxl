@@ -32,12 +32,12 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           egress-policy: audit
 
       - name: Checkout the source
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: true
           fetch-depth: 1
@@ -45,8 +45,9 @@ jobs:
       - name: Patch
         run: |
           cd third_party/highway
-          git fetch origin 31fbbd7ce1e4179a32d86688cd67316556f582bf
-          git checkout 31fbbd7ce1e4179a32d86688cd67316556f582bf
+          # TODO(eustas): stick to deps.sh commit
+          git fetch origin 457c891775a7397bdb0376bb1031e6e027af1c48
+          git checkout 457c891775a7397bdb0376bb1031e6e027af1c48
           git apply ${{ github.workspace }}/.github/workflows/highway.patch
       - name: Build
         run: bazel build -c opt ...:all

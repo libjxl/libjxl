@@ -25,6 +25,7 @@ jobs:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     # Include all names of required jobs here
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: release
@@ -37,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           egress-policy: audit
 
@@ -48,14 +49,15 @@ jobs:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     # Include all msystem of required jobs here
     strategy:
+      fail-fast: false
       matrix:
           include:
            - msystem: clang64
-           - msystem: clang32
+           # - msystem: clang32
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           egress-policy: audit
 

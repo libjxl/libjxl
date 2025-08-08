@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
@@ -39,7 +40,7 @@ enum class LayerType : uint8_t;
 
 class ModularFrameEncoder {
  public:
-  static StatusOr<ModularFrameEncoder> Create(
+  static StatusOr<std::unique_ptr<ModularFrameEncoder>> Create(
       JxlMemoryManager* memory_manager, const FrameHeader& frame_header,
       const CompressParams& cparams_orig, bool streaming_mode);
   Status ComputeEncodingData(

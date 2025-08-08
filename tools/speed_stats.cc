@@ -38,7 +38,7 @@ bool SpeedStats::GetSummary(SpeedStats::Summary* s) {
   if (elapsed_.size() == 2) {
     s->central_tendency = elapsed_[1];
     s->variability = 0.0;
-    s->type = " second:";
+    s->type = "second: ";
     return true;
   }
 
@@ -51,7 +51,7 @@ bool SpeedStats::GetSummary(SpeedStats::Summary* s) {
 
     s->central_tendency = pow(product, 1.0 / (elapsed_.size() - 1));
     s->variability = 0.0;
-    s->type = " geomean:";
+    s->type = "geomean: ";
     if (std::isnormal(s->central_tendency)) return true;
   }
 
@@ -64,14 +64,15 @@ bool SpeedStats::GetSummary(SpeedStats::Summary* s) {
     stdev += diff * diff;
   }
   s->variability = sqrt(stdev);
-  s->type = " median:";
+  s->type = "median: ";
   return true;
 }
 
 namespace {
 
 std::string SummaryStat(double value, const char* unit,
-                        const SpeedStats::Summary& s) {
+                        const SpeedStats::Summary& s,
+                        const std::string& prefix) {
   if (value == 0.) return "";
 
   char stat_str[100] = {'\0'};
@@ -86,9 +87,14 @@ std::string SummaryStat(double value, const char* unit,
     snprintf(variability, sizeof(variability), " (stdev %.3f)", stdev);
   }
 
-  snprintf(stat_str, sizeof(stat_str), "%s %.3f %s/s [%.2f, %.2f]%s", s.type,
-           value_tendency, unit, value_min, value_max, variability);
-  return stat_str;
+  char range[20] = {'\0'};
+  if (s.min != s.max) {
+    snprintf(range, sizeof(range), " [%.3f, %.3f]", value_min, value_max);
+  }
+
+  snprintf(stat_str, sizeof(stat_str), "%s%.3f %s/s%s%s", s.type,
+           value_tendency, unit, range, variability);
+  return prefix + stat_str;
 }
 
 }  // namespace
@@ -98,13 +104,17 @@ bool SpeedStats::Print(size_t worker_threads) {
   if (!GetSummary(&s)) {
     return false;
   }
-  std::string mps_stats = SummaryStat(xsize_ * ysize_ * 1e-6, "MP", s);
-  std::string mbs_stats = SummaryStat(file_size_ * 1e-6, "MB", s);
+  std::string mps_stats = SummaryStat(xsize_ * ysize_ * 1e-6, "MP", s, ", ");
+  std::string mbs_stats = SummaryStat(file_size_ * 1e-6, "MB", s, ", ");
+  size_t reps = elapsed_.size();
+  std::string reps_str;
+  if (reps > 1) {
+    reps_str = ", " + std::to_string(reps) + " reps";
+  }
 
-  fprintf(stderr, "%d x %d, %s, %s, %d reps, %d threads.\n",
-          static_cast<int>(xsize_), static_cast<int>(ysize_), mps_stats.c_str(),
-          mbs_stats.c_str(), static_cast<int>(elapsed_.size()),
-          static_cast<int>(worker_threads));
+  fprintf(stderr, "%d x %d%s%s%s, %d threads.\n", static_cast<int>(xsize_),
+          static_cast<int>(ysize_), mps_stats.c_str(), mbs_stats.c_str(),
+          reps_str.c_str(), static_cast<int>(worker_threads));
   return true;
 }
 

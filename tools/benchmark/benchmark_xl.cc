@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/apng.h"
@@ -38,9 +39,9 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_comparator.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
@@ -100,14 +101,14 @@ void PrintStats(const TrackingMemoryManager& memory_manager) {
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
   JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
-  CodecInOut io{memory_manager};
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
   std::vector<uint8_t> encoded;
   JXL_RETURN_IF_ERROR(ReadFile(filename, &encoded));
   JXL_RETURN_IF_ERROR(
-      jxl::SetFromBytes(Bytes(encoded), jxl::extras::ColorHints(), &io));
-  JXL_ASSIGN_OR_RETURN(*image,
-                       Image3F::Create(memory_manager, io.xsize(), io.ysize()));
-  JXL_RETURN_IF_ERROR(CopyImageTo(*io.Main().color(), image));
+      jxl::SetFromBytes(Bytes(encoded), jxl::extras::ColorHints(), io.get()));
+  JXL_ASSIGN_OR_RETURN(
+      *image, Image3F::Create(memory_manager, io->xsize(), io->ysize()));
+  JXL_RETURN_IF_ERROR(CopyImageTo(*io->Main().color(), image));
   return true;
 }
 
@@ -257,21 +258,24 @@ Status DoCompress(const std::string& filename, const PackedPixelFile& ppf,
   float distance = 1.0f;
 
   if (valid && !skip_butteraugli) {
-    CodecInOut ppf_io{memory_manager};
+    auto ppf_io = jxl::make_unique<CodecInOut>(memory_manager);
     JXL_RETURN_IF_ERROR(
-        ConvertPackedPixelFileToCodecInOut(ppf, inner_pool, &ppf_io));
-    CodecInOut ppf2_io{memory_manager};
+        ConvertPackedPixelFileToCodecInOut(ppf, inner_pool, ppf_io.get()));
+    auto ppf2_io = jxl::make_unique<CodecInOut>(memory_manager);
     JXL_RETURN_IF_ERROR(
-        ConvertPackedPixelFileToCodecInOut(ppf2, inner_pool, &ppf2_io));
-    const ImageBundle& ib1 = ppf_io.Main();
-    const ImageBundle& ib2 = ppf2_io.Main();
+        ConvertPackedPixelFileToCodecInOut(ppf2, inner_pool, ppf2_io.get()));
+    const ImageBundle& ib1 = ppf_io->Main();
+    const ImageBundle& ib2 = ppf2_io->Main();
     if (jxl::SameSize(ppf, ppf2)) {
       ButteraugliParams params;
-      // Hack the default intensity target value to be 80.0, the intensity
-      // target of sRGB images and a more reasonable viewing default than
-      // JPEG XL file format's default.
+      // Hack the default intensity target value for SDR images to be 80.0, the
+      // intensity target of sRGB images and a more reasonable viewing default
+      // than JPEG XL file format's default.
       // TODO(szabadka) Support different intensity targets as well.
-      params.intensity_target = 80.0;
+      const auto& transfer_function = ib1.c_current().Tf();
+      params.intensity_target = transfer_function.IsPQ()    ? 10000.f
+                                : transfer_function.IsHLG() ? 1000.f
+                                                            : 80.f;
 
       const JxlCmsInterface& cms = *JxlGetDefaultCms();
       JxlButteraugliComparator comparator(params, cms);
@@ -289,8 +293,9 @@ Status DoCompress(const std::string& filename, const PackedPixelFile& ppf,
         compressed->empty()
             ? 0
             : jxl::ComputePSNR(ib1, ib2, *JxlGetDefaultCms()) * input_pixels;
-    double pnorm =
-        ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm);
+    JXL_ASSIGN_OR_RETURN(
+        double pnorm,
+        ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm));
     s->distance_p_norm += pnorm * input_pixels;
     JXL_ASSIGN_OR_RETURN(Msssim msssim, ComputeSSIMULACRA2(ib1, ib2));
     double ssimulacra2 = msssim.Score();
@@ -1012,9 +1017,9 @@ class Benchmark {
           memcpy(row_out, &row_in[x0], size * sizeof(row_out[0]));
         }
       }
-      std::string fn_output =
-          StringPrintf("%s/%s.crop_%dx%d+%d+%d.png", sample_tmp_dir.c_str(),
-                       FileBaseName(fnames[idx]).c_str(), size, size, x0, y0);
+      std::string fn_output = StringPrintf(
+          "%s/%s.crop_%" PRIuS "x%" PRIuS "+%d+%d.png", sample_tmp_dir.c_str(),
+          FileBaseName(fnames[idx]).c_str(), size, size, x0, y0);
       ThreadPool* null_pool = nullptr;
       JPEGXL_TOOLS_CHECK(WriteImage(sample, null_pool, fn_output));
       fnames_out.push_back(fn_output);

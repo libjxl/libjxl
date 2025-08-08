@@ -5,6 +5,9 @@
 
 #include "lib/jxl/box_content_decoder.h"
 
+#include <brotli/decode.h>
+#include <jxl/decode.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>

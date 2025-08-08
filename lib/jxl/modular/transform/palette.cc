@@ -7,7 +7,20 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include <vector>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/transform.h"  // CheckEqualChannels
 
 namespace jxl {
@@ -89,8 +102,8 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
         indices, ImageI::Create(memory_manager, plane.xsize(), plane.ysize()));
     plane.Swap(indices);
     if (predictor == Predictor::Weighted) {
-      const auto process_row = [&](const uint32_t c,
-                                   size_t /* thread */) -> Status {
+      const auto process_channel = [&](const uint32_t c,
+                                       size_t /* thread */) -> Status {
         Channel &channel = input.channel[c0 + c];
         weighted::State wp_state(wp_header, channel.w, channel.h);
         for (size_t y = 0; y < channel.h; y++) {
@@ -117,10 +130,10 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
         return true;
       };
       JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, nb, ThreadPool::NoInit,
-                                    process_row, "UndoDeltaPaletteWP"));
+                                    process_channel, "UndoDeltaPaletteWP"));
     } else {
-      const auto process_row = [&](const uint32_t c,
-                                   size_t /* thread */) -> Status {
+      const auto process_channel = [&](const uint32_t c,
+                                       size_t /* thread */) -> Status {
         Channel &channel = input.channel[c0 + c];
         for (size_t y = 0; y < channel.h; y++) {
           pixel_type *JXL_RESTRICT p = channel.Row(y);
@@ -145,7 +158,7 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
         return true;
       };
       JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, nb, ThreadPool::NoInit,
-                                    process_row, "UndoDeltaPaletteNoWP"));
+                                    process_channel, "UndoDeltaPaletteNoWP"));
     }
   }
   if (c0 >= input.nb_meta_channels) {

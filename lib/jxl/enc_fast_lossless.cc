@@ -6,17 +6,18 @@
 #include "lib/jxl/base/status.h"
 #ifndef FJXL_SELF_INCLUDE
 
-#include "lib/jxl/enc_fast_lossless.h"
-
 #include <assert.h>
-#include <stdint.h>
-#include <string.h>
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <vector>
+
+#include "lib/jxl/enc_fast_lossless.h"
 
 #if FJXL_STANDALONE
 #if defined(_MSC_VER)
@@ -279,7 +280,7 @@ struct BitWriter {
         this->bits_in_buffer += nbits[i];
         // This `if` seems to be faster than using ternaries.
         if (this->bits_in_buffer >= 64) {
-          uint64_t next_buffer = bits[i] >> shift;
+          uint64_t next_buffer = shift >= 64 ? 0 : bits[i] >> shift;
           this->buffer = next_buffer;
           this->bits_in_buffer -= 64;
           this->bytes_written += 8;
@@ -546,6 +547,11 @@ struct PrefixCode {
         ni++;
       }
     }
+    for (size_t i = ni; i < kMaxNumSymbols; ++i) {
+      compact_freqs[i] = 0;
+      min_limit[i] = 0;
+      max_limit[i] = 0;
+    }
     uint8_t num_bits[kMaxNumSymbols] = {};
     ComputeCodeLengthsNonZero(compact_freqs, ni, min_limit, max_limit,
                               num_bits);
@@ -665,8 +671,8 @@ struct PrefixCode {
     }
     // Encode 0s until 224 (start of LZ77 symbols). This is in total 224-19 =
     // 205.
-    static_assert(kLZ77Offset == 224);
-    static_assert(kNumRawSymbols == 19);
+    static_assert(kLZ77Offset == 224, "kLZ77Offset should be 224");
+    static_assert(kNumRawSymbols == 19, "kNumRawSymbols should be 19");
     {
       // Max bits in this block: 24
       writer->Write(code_length_nbits[17], code_length_bits[17]);
@@ -789,7 +795,24 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
     }
     if (have_alpha) {
       output->Write(2, 0b01);  // One extra channel
-      output->Write(1, 1);     // ... all_default (ie. 8-bit alpha)
+      if (frame->bitdepth == 8) {
+        output->Write(1, 1); // ... all_default (ie. 8-bit alpha)
+      } else {
+        output->Write(1, 0); // not d_alpha
+        output->Write(2, 0); // type = kAlpha
+        output->Write(1, 0); // not float
+        if (frame->bitdepth == 10) {
+          output->Write(2, 0b01); // bit_depth.bits_per_sample = 10
+        } else if (frame->bitdepth == 12) {
+          output->Write(2, 0b10); // bit_depth.bits_per_sample = 12
+        } else {
+          output->Write(2, 0b11); // 1 + u(6)
+          output->Write(6, frame->bitdepth - 1);
+        }
+        output->Write(2, 0); // dim_shift = 0
+        output->Write(2, 0); // name_len = 0
+        output->Write(1, 0); // alpha_associated = 0
+      }
     } else {
       output->Write(2, 0b00);  // No extra channel
     }
@@ -1468,46 +1491,10 @@ struct SIMDVec32 {
     return SIMDVec32{_mm256_set1_epi32(v)};
   }
   FJXL_INLINE SIMDVec32 ValToToken() const {
-    // we know that each value has at most 20 bits, so we just need 5 nibbles
-    // and don't need to mask the fifth. However we do need to set the higher
-    // bytes to 0xFF, which will make table lookups return 0.
-    auto nibble0 =
-        _mm256_or_si256(_mm256_and_si256(vec, _mm256_set1_epi32(0xF)),
-                        _mm256_set1_epi32(0xFFFFFF00));
-    auto nibble1 = _mm256_or_si256(
-        _mm256_and_si256(_mm256_srli_epi32(vec, 4), _mm256_set1_epi32(0xF)),
-        _mm256_set1_epi32(0xFFFFFF00));
-    auto nibble2 = _mm256_or_si256(
-        _mm256_and_si256(_mm256_srli_epi32(vec, 8), _mm256_set1_epi32(0xF)),
-        _mm256_set1_epi32(0xFFFFFF00));
-    auto nibble3 = _mm256_or_si256(
-        _mm256_and_si256(_mm256_srli_epi32(vec, 12), _mm256_set1_epi32(0xF)),
-        _mm256_set1_epi32(0xFFFFFF00));
-    auto nibble4 = _mm256_or_si256(_mm256_srli_epi32(vec, 16),
-                                   _mm256_set1_epi32(0xFFFFFF00));
-
-    auto lut0 = _mm256_broadcastsi128_si256(
-        _mm_setr_epi8(0, 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4));
-    auto lut1 = _mm256_broadcastsi128_si256(
-        _mm_setr_epi8(0, 5, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8));
-    auto lut2 = _mm256_broadcastsi128_si256(_mm_setr_epi8(
-        0, 9, 10, 10, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12));
-    auto lut3 = _mm256_broadcastsi128_si256(_mm_setr_epi8(
-        0, 13, 14, 14, 15, 15, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16));
-    auto lut4 = _mm256_broadcastsi128_si256(_mm_setr_epi8(
-        0, 17, 18, 18, 19, 19, 19, 19, 20, 20, 20, 20, 20, 20, 20, 20));
-
-    auto token0 = _mm256_shuffle_epi8(lut0, nibble0);
-    auto token1 = _mm256_shuffle_epi8(lut1, nibble1);
-    auto token2 = _mm256_shuffle_epi8(lut2, nibble2);
-    auto token3 = _mm256_shuffle_epi8(lut3, nibble3);
-    auto token4 = _mm256_shuffle_epi8(lut4, nibble4);
-
-    auto token =
-        _mm256_max_epi32(_mm256_max_epi32(_mm256_max_epi32(token0, token1),
-                                          _mm256_max_epi32(token2, token3)),
-                         token4);
-    return SIMDVec32{token};
+    auto f32 = _mm256_castps_si256(_mm256_cvtepi32_ps(vec));
+    return SIMDVec32{_mm256_max_epi32(
+        _mm256_setzero_si256(),
+        _mm256_sub_epi32(_mm256_srli_epi32(f32, 23), _mm256_set1_epi32(126)))};
   }
   FJXL_INLINE SIMDVec32 SatSubU(const SIMDVec32& to_subtract) const {
     return SIMDVec32{_mm256_sub_epi32(_mm256_max_epu32(vec, to_subtract.vec),
@@ -2318,7 +2305,8 @@ FJXL_INLINE void TokenizeSIMD(const uint16_t* residuals, uint16_t* token_out,
 
 FJXL_INLINE void TokenizeSIMD(const uint32_t* residuals, uint16_t* token_out,
                               uint32_t* nbits_out, uint32_t* bits_out) {
-  static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes, "");
+  static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes,
+                "There should be twice more 16-bit lanes than 32-bit lanes");
   SIMDVec32 res_lo = SIMDVec32::Load(residuals);
   SIMDVec32 res_hi = SIMDVec32::Load(residuals + SIMDVec32::kLanes);
   SIMDVec32 token_lo = res_lo.ValToToken();
@@ -2424,7 +2412,8 @@ FJXL_INLINE void StoreSIMDAbove14(const uint32_t* nbits_tok,
                                   const uint16_t* nbits_huff,
                                   const uint16_t* bits_huff, size_t n,
                                   size_t skip, Bits32* bits_out) {
-  static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes, "");
+  static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes,
+                "There should be twice more 16-bit lanes than 32-bit lanes");
   Bits32 bits_low =
       Bits32::FromRaw(SIMDVec32::Load(nbits_tok), SIMDVec32::Load(bits_tok));
   Bits32 bits_hi =
@@ -2558,14 +2547,14 @@ FJXL_INLINE void StoreToWriterAVX512(const Bits32& bits32, BitWriter& output) {
 template <size_t n>
 FJXL_INLINE void StoreToWriter(const Bits32* bits, BitWriter& output) {
 #ifdef FJXL_AVX512
-  static_assert(n <= 2, "");
+  static_assert(n <= 2, "n should be less or 2 for AVX512");
   StoreToWriterAVX512(bits[0], output);
   if (n == 2) {
     StoreToWriterAVX512(bits[1], output);
   }
   return;
 #endif
-  static_assert(n <= 4, "");
+  static_assert(n <= 4, "n should be less or 4");
   alignas(64) uint64_t nbits64[Bits64::kLanes * n];
   alignas(64) uint64_t bits64[Bits64::kLanes * n];
   bits[0].Merge().Store(nbits64, bits64);
@@ -2815,7 +2804,7 @@ void CheckHuffmanBitsSIMD(int bits1, int nbits1, int bits2, int nbits2) {
 }
 
 struct Exactly14Bits {
-  explicit Exactly14Bits(size_t bitdepth) { assert(bitdepth == 14); }
+  explicit Exactly14Bits(size_t bitdepth_) { assert(bitdepth_ == 14); }
   // Force LZ77 symbols to have at least 8 bits, and raw symbols 15 and 16 to
   // have exactly 8, and no other symbol to have 8 or more. This ensures that
   // the representation for 15 and 16 is identical up to one bit.
@@ -2964,7 +2953,7 @@ void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
 
   output->Write(1, 1);     // Enable lz77 for the main bitstream
   output->Write(2, 0b00);  // lz77 offset 224
-  static_assert(kLZ77Offset == 224, "");
+  static_assert(kLZ77Offset == 224, "kLZ77Offset should be 224");
   output->Write(4, 0b1010);  // lz77 min length 7
   // 400 hybrid uint config for lz77
   output->Write(4, 4);
@@ -3069,13 +3058,13 @@ struct ChunkEncoder {
 
 template <typename BitDepth>
 struct ChunkSampleCollector {
-  FJXL_INLINE void Rle(size_t count, uint64_t* lz77_counts) {
+  FJXL_INLINE void Rle(size_t count, uint64_t* lz77_counts_) {
     if (count == 0) return;
     raw_counts[0] += 1;
     count -= kLZ77MinLength + 1;
     unsigned token, nbits, bits;
     EncodeHybridUintLZ77(count, &token, &nbits, &bits);
-    lz77_counts[token]++;
+    lz77_counts_[token]++;
   }
 
   FJXL_INLINE void Chunk(size_t run, typename BitDepth::upixel_t* residuals,
@@ -3705,7 +3694,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   encoder.output = output;
   encoder.code = &code[0];
   encoder.PrepareForSimd();
-  int16_t p[4][32 + 1024] = {};
+  std::vector<std::array<int16_t, 32 + 1024>> p(4);
   size_t i = 0;
   size_t have_zero = 1;
   for (; i < pcolors; i++) {
@@ -3715,21 +3704,25 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
     p[3][16 + i + have_zero] = (palette[i] >> 24) & 0xFF;
   }
   p[0][15] = 0;
-  row_encoder.ProcessRow(p[0] + 16, p[0] + 15, p[0] + 15, p[0] + 15, pcolors);
+  row_encoder.ProcessRow(p[0].data() + 16, p[0].data() + 15, p[0].data() + 15,
+                         p[0].data() + 15, pcolors);
   p[1][15] = p[0][16];
   p[0][15] = p[0][16];
   if (nb_chans > 1) {
-    row_encoder.ProcessRow(p[1] + 16, p[1] + 15, p[0] + 16, p[0] + 15, pcolors);
+    row_encoder.ProcessRow(p[1].data() + 16, p[1].data() + 15, p[0].data() + 16,
+                           p[0].data() + 15, pcolors);
   }
   p[2][15] = p[1][16];
   p[1][15] = p[1][16];
   if (nb_chans > 2) {
-    row_encoder.ProcessRow(p[2] + 16, p[2] + 15, p[1] + 16, p[1] + 15, pcolors);
+    row_encoder.ProcessRow(p[2].data() + 16, p[2].data() + 15, p[1].data() + 16,
+                           p[1].data() + 15, pcolors);
   }
   p[3][15] = p[2][16];
   p[2][15] = p[2][16];
   if (nb_chans > 3) {
-    row_encoder.ProcessRow(p[3] + 16, p[3] + 15, p[2] + 16, p[2] + 15, pcolors);
+    row_encoder.ProcessRow(p[3].data() + 16, p[3].data() + 15, p[2].data() + 16,
+                           p[2].data() + 15, pcolors);
   }
   row_encoder.Finalize();
 
@@ -3756,8 +3749,8 @@ bool detect_palette(const unsigned char* r, size_t width,
     for (int i = 0; i < 8; i++) index[i] = pixel_hash(p[i]);
     for (int i = 0; i < 8; i++) {
       collided |= (palette[index[i]] != 0 && p[i] != palette[index[i]]);
+      palette[index[i]] = p[i];
     }
-    for (int i = 0; i < 8; i++) palette[index[i]] = p[i];
   }
   for (; x < width; x++) {
     uint32_t p = 0;
@@ -4171,7 +4164,7 @@ namespace default_implementation {
 #undef FJXL_NEON
 }  // namespace default_implementation
 
-#else  // FJXL_ENABLE_NEON
+#else                                    // FJXL_ENABLE_NEON
 
 namespace default_implementation {
 #include "lib/jxl/enc_fast_lossless.cc"  // NOLINT
@@ -4265,7 +4258,7 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                              unsigned char** output, void* runner_opaque,
                              FJxlParallelRunner runner) {
   FJxlFrameInput input(rgba, row_stride, nb_chans, bitdepth);
-  auto frame_state = JxlFastLosslessPrepareFrame(
+  auto* frame_state = JxlFastLosslessPrepareFrame(
       input.GetInputSource(), width, height, nb_chans, bitdepth, big_endian,
       effort, /*oneshot=*/true);
   if (!JxlFastLosslessProcessFrame(frame_state, /*is_last=*/true, runner_opaque,

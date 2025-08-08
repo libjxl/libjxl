@@ -200,8 +200,9 @@ static std::vector<uint16_t> CreateTableCurve(bool tone_map) {
   // TODO(sboukortt): make this variable?
   static constexpr float kPQIntensityTarget = 10000;
 
-  static_assert(N <= 4096);  // ICC MFT2 only allows 4K entries
-  static_assert(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG);
+  static_assert(N <= 4096, "ICC MFT2 only allows 4K entries");
+  static_assert(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG,
+                "Only PQ/HLG is supported");
 
   static constexpr Vector3 kLuminances{1.f / 3, 1.f / 3, 1.f / 3};
   Rec2408ToneMapperBase tone_mapper(
@@ -678,7 +679,7 @@ static Status CreateICCLutAtoBTagForXYB(std::vector<uint8_t>* tags) {
   return true;
 }
 
-static Status CreateICCLutAtoBTagForHDR(JxlColorEncoding c,
+static Status CreateICCLutAtoBTagForHDR(JxlColorEncoding color_encoding,
                                         std::vector<uint8_t>* tags) {
   static constexpr size_t k3DLutDim = 9;
   WriteICCTag("mft1", tags->size(), tags);
@@ -715,7 +716,7 @@ static Status CreateICCLutAtoBTagForHDR(JxlColorEncoding c,
                       iy * (1.0f / (k3DLutDim - 1)),
                       ib * (1.0f / (k3DLutDim - 1))};
         uint8_t pcslab_out[3];
-        JXL_RETURN_IF_ERROR(ToneMapPixel(c, f, pcslab_out));
+        JXL_RETURN_IF_ERROR(ToneMapPixel(color_encoding, f, pcslab_out));
         for (uint8_t val : pcslab_out) {
           WriteICCUint8(val, tags->size(), tags);
         }

@@ -26,8 +26,6 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
-#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_memory_manager.h"
@@ -366,9 +364,6 @@ TEST_F(ColorManagementTest, XYBProfile) {
   ASSERT_TRUE(
       xform.Init(c_xyb, c_native, kDefaultIntensityTarget, kNumColors, 1));
 
-  ImageMetadata metadata;
-  metadata.color_encoding = c_native;
-  ImageBundle ib(memory_manager, &metadata);
   JXL_TEST_ASSIGN_OR_DIE(Image3F native,
                          Image3F::Create(memory_manager, kNumColors, 1));
   float mul = 1.0f / (kGridDim - 1);
@@ -381,11 +376,11 @@ TEST_F(ColorManagementTest, XYBProfile) {
       }
     }
   }
-  ASSERT_TRUE(ib.SetFromImage(std::move(native), c_native));
-  const Image3F& in = *ib.color();
   JXL_TEST_ASSIGN_OR_DIE(Image3F opsin,
                          Image3F::Create(memory_manager, kNumColors, 1));
-  ASSERT_TRUE(ToXYB(ib, nullptr, &opsin, cms, nullptr));
+  ASSERT_TRUE(CopyImageTo(native, &opsin));
+  ASSERT_TRUE(ToXYB(c_native, kDefaultIntensityTarget, nullptr, nullptr, &opsin,
+                    cms, nullptr));
 
   JXL_TEST_ASSIGN_OR_DIE(Image3F opsin2,
                          Image3F::Create(memory_manager, kNumColors, 1));
@@ -414,11 +409,12 @@ TEST_F(ColorManagementTest, XYBProfile) {
     printf(
         "(%f, %f, %f) -> (%9.6f, %f, %f) -> (%f, %f, %f) -> "
         "(%9.6f, %9.6f, %9.6f)",
-        in.PlaneRow(0, 0)[i], in.PlaneRow(1, 0)[i], in.PlaneRow(2, 0)[i],
-        opsin.PlaneRow(0, 0)[i], opsin.PlaneRow(1, 0)[i],
-        opsin.PlaneRow(2, 0)[i], opsin2.PlaneRow(0, 0)[i],
-        opsin2.PlaneRow(1, 0)[i], opsin2.PlaneRow(2, 0)[i],
-        out.PlaneRow(0, 0)[i], out.PlaneRow(1, 0)[i], out.PlaneRow(2, 0)[i]);
+        native.PlaneRow(0, 0)[i], native.PlaneRow(1, 0)[i],
+        native.PlaneRow(2, 0)[i], opsin.PlaneRow(0, 0)[i],
+        opsin.PlaneRow(1, 0)[i], opsin.PlaneRow(2, 0)[i],
+        opsin2.PlaneRow(0, 0)[i], opsin2.PlaneRow(1, 0)[i],
+        opsin2.PlaneRow(2, 0)[i], out.PlaneRow(0, 0)[i], out.PlaneRow(1, 0)[i],
+        out.PlaneRow(2, 0)[i]);
   };
 
   float max_err[3] = {};
@@ -426,7 +422,7 @@ TEST_F(ColorManagementTest, XYBProfile) {
   for (size_t i = 0; i < kNumColors; ++i) {
     for (size_t c = 0; c < 3; ++c) {
       // debug_print_color(i); printf("\n");
-      float err = std::abs(in.PlaneRow(c, 0)[i] - out.PlaneRow(c, 0)[i]);
+      float err = std::abs(native.PlaneRow(c, 0)[i] - out.PlaneRow(c, 0)[i]);
       if (err > max_err[c]) {
         max_err[c] = err;
         max_err_i[c] = i;
@@ -450,7 +446,7 @@ TEST_F(ColorManagementTest, GoldenXYBCube) {
       for (size_t ib = 0; ib < 2; ++ib) {
         const jxl::cms::ColorCube0D& out_f = cube[ix][iy][ib];
         for (int i = 0; i < 3; ++i) {
-          int32_t val = static_cast<int32_t>(std::lroundf(65535 * out_f[i]));
+          int32_t val = static_cast<int32_t>(std::lround(65535 * out_f[i]));
           ASSERT_TRUE(val >= 0 && val <= 65535);
           actual.push_back(val);
         }

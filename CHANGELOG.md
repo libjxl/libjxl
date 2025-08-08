@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+  - Corrupted images when using effort 1 lossless. (#4027)
+  - Extremely tall/wide images failed to encode using modular. (#3937)
+  - Progressive VarDCT couldn't load progressively. (#4223)
+  - Lossless Faster Decoding would create uncompressed files for levels 1 and 2,
+    with levels 3 and 4 being slower instead of faster. (#4201)
+  - Density regression with Predictor Zero since v0.11. (#4225)
+
+### Changed / clarified
+  - Empty DHT markers are now valid for JPEG transcoding. (#2704)
+  - Resampling 2 is now enabled at distance 10 and is up to 10x faster below
+     effort 10, by using a faster downsampling method. (#4147)
+  - Progressive lossless is now 30-40% smaller on average and can utilize multithreading. (#4201)
+
+## [0.11.1] - 2024-11-26
+
+### Fixed
+  - Huffman lookup table size fix (#3871 -
+    [CVE-2024-11403](https://www.cve.org/cverecord?id=CVE-2024-11403))
+  - Check height limit in modular trees. (#3943 -
+    [CVE-2024-11498](https://www.cve.org/cverecord?id=CVE-2024-11498))
+
+### Changed / clarified
+  - encoder API: document that `JxlEncoderFrameSettingsCreate` could return
+    `NULL`
+
+## [0.11.0] - 2024-09-13
+
 ### Added
   - Gain Map API (#3552 and #3628):  `JxlGainMapBundle` struct and API functions
     to read and write gain map bundles`JxlGainMapWriteBundle` and

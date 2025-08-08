@@ -5,11 +5,20 @@
 
 #include "lib/jpegli/libjpeg_test_util.h"
 
+#include <csetjmp>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <utility>
+#include <vector>
 
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/test_params.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/include_jpeglib.h"  // NOLINT
 #include "lib/jxl/base/sanitizers.h"
+
+#define J_TEST_UTILS jpeg_test_utils
+#include "lib/jpegli/test_utils-inl.h"
 
 namespace jpegli {
 
@@ -20,10 +29,6 @@ void Check(bool ok) {
     JXL_CRASH();
   }
 }
-
-#define JPEG_API_FN(name) jpeg_##name
-#include "lib/jpegli/test_utils-inl.h"
-#undef JPEG_API_FN
 
 void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
                     TestImage* output) {
@@ -64,8 +69,9 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
       jxl::msan::UnpoisonMemory(
           rows[0], sizeof(JSAMPLE) * cinfo->output_components * output->xsize);
       if (cinfo->quantize_colors) {
-        UnmapColors(rows[0], cinfo->output_width, cinfo->out_color_components,
-                    cinfo->colormap, cinfo->actual_number_of_colors);
+        J_TEST_UTILS::UnmapColors(rows[0], cinfo->output_width,
+                                  cinfo->out_color_components, cinfo->colormap,
+                                  cinfo->actual_number_of_colors);
       }
     }
     if (cinfo->output_scanline < cinfo->output_height) {
@@ -123,17 +129,17 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
     Check(0 == memcmp(jparams.icc.data(), icc_data, icc_len));
     free(icc_data);
   }
-  SetDecompressParams(dparams, cinfo);
-  VerifyHeader(jparams, cinfo);
+  J_TEST_UTILS::SetDecompressParams(dparams, cinfo);
+  J_TEST_UTILS::VerifyHeader(jparams, cinfo);
   if (dparams.output_mode == COEFFICIENTS) {
     jvirt_barray_ptr* coef_arrays = jpeg_read_coefficients(cinfo);
     Check(coef_arrays != nullptr);
     jxl::msan::UnpoisonMemory(coef_arrays,
                               cinfo->num_components * sizeof(jvirt_barray_ptr));
-    CopyCoefficients(cinfo, coef_arrays, output);
+    J_TEST_UTILS::CopyCoefficients(cinfo, coef_arrays, output);
   } else {
     Check(jpeg_start_decompress(cinfo));
-    VerifyScanHeader(jparams, cinfo);
+    J_TEST_UTILS::VerifyScanHeader(jparams, cinfo);
     ReadOutputPass(cinfo, dparams, output);
   }
   Check(jpeg_finish_decompress(cinfo));
@@ -170,8 +176,8 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
     }
     Check(JPEG_REACHED_SOS == jpeg_read_header(&cinfo, /*require_image=*/TRUE));
     cinfo.buffered_image = TRUE;
-    SetDecompressParams(dparams, &cinfo);
-    VerifyHeader(jparams, &cinfo);
+    J_TEST_UTILS::SetDecompressParams(dparams, &cinfo);
+    J_TEST_UTILS::VerifyHeader(jparams, &cinfo);
     Check(jpeg_start_decompress(&cinfo));
     // start decompress should not read the whole input in buffered image mode
     Check(!jpeg_input_complete(&cinfo));
@@ -187,13 +193,14 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
         if (result == JPEG_REACHED_SOS) ++sos_marker_cnt;
         continue;
       }
-      SetScanDecompressParams(dparams, &cinfo, cinfo.input_scan_number);
+      J_TEST_UTILS::SetScanDecompressParams(dparams, &cinfo,
+                                            cinfo.input_scan_number);
       Check(jpeg_start_output(&cinfo, cinfo.input_scan_number));
       // start output sets output_scan_number, but does not change
       // input_scan_number
       Check(cinfo.output_scan_number == cinfo.input_scan_number);
       Check(cinfo.input_scan_number == sos_marker_cnt);
-      VerifyScanHeader(jparams, &cinfo);
+      J_TEST_UTILS::VerifyScanHeader(jparams, &cinfo);
       TestImage output;
       ReadOutputPass(&cinfo, dparams, &output);
       output_progression->emplace_back(std::move(output));
@@ -209,7 +216,8 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
         Check(coef_arrays != nullptr);
         jxl::msan::UnpoisonMemory(
             coef_arrays, cinfo.num_components * sizeof(jvirt_barray_ptr));
-        CopyCoefficients(&cinfo, coef_arrays, &output_progression->back());
+        J_TEST_UTILS::CopyCoefficients(&cinfo, coef_arrays,
+                                       &output_progression->back());
       }
     }
     Check(jpeg_finish_decompress(&cinfo));
@@ -266,3 +274,5 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
 }
 
 }  // namespace jpegli
+
+#undef J_TEST_UTILS

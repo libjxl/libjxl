@@ -5,12 +5,8 @@
 
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_TONE_MAPPING_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_TONE_MAPPING_H_
-#include <math.h>
-#include <stdint.h>
 
-#include <algorithm>
-#include <utility>
-#include <vector>
+#include <memory>
 
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"

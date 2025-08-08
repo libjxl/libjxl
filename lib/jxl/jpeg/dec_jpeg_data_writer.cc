@@ -5,6 +5,8 @@
 
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 
+#include <jxl/types.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -17,8 +19,10 @@
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/jpeg/dec_jpeg_output_chunk.h"
 #include "lib/jxl/jpeg/dec_jpeg_serialization_state.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
@@ -384,10 +388,12 @@ bool EncodeDHT(const JPEGData& jpg, SerializationState* state) {
   size_t marker_len = 2;
   for (size_t i = state->dht_index; i < huffman_code.size(); ++i) {
     const JPEGHuffmanCode& huff = huffman_code[i];
-    marker_len += kJpegHuffmanMaxBitLength;
     for (uint32_t count : huff.counts) {
       marker_len += count;
     }
+    // special case: empty DHT marker
+    if (marker_len == 2) break;
+    marker_len += kJpegHuffmanMaxBitLength;
     if (huff.is_last) break;
   }
   state->output_queue.emplace_back(marker_len + 2);
@@ -405,6 +411,17 @@ bool EncodeDHT(const JPEGData& jpg, SerializationState* state) {
     const JPEGHuffmanCode& huff = huffman_code[huffman_code_index];
     size_t index = huff.slot_id;
     HuffmanCodeTable* huff_table;
+    size_t total_count = 0;
+    size_t max_length = 0;
+    for (size_t i = 0; i < huff.counts.size(); ++i) {
+      if (huff.counts[i] != 0) {
+        max_length = i;
+      }
+      total_count += huff.counts[i];
+    }
+    // Empty DHT marker
+    if (total_count == 0) break;
+
     if (index & 0x10) {
       index -= 0x10;
       huff_table = &state->ac_huff_table[index];
@@ -417,14 +434,6 @@ bool EncodeDHT(const JPEGData& jpg, SerializationState* state) {
       return false;
     }
     huff_table->initialized = true;
-    size_t total_count = 0;
-    size_t max_length = 0;
-    for (size_t i = 0; i < huff.counts.size(); ++i) {
-      if (huff.counts[i] != 0) {
-        max_length = i;
-      }
-      total_count += huff.counts[i];
-    }
     --total_count;
     data[pos++] = huff.slot_id;
     for (size_t i = 1; i <= kJpegHuffmanMaxBitLength; ++i) {
@@ -982,8 +991,7 @@ Status WriteJpegInternal(const JPEGData& jpg, const JPEGOutput& out,
         auto& chunk = ss->output_queue.front();
         size_t num_written = out(chunk.next, chunk.len);
         if (num_written == 0 && chunk.len > 0) {
-          return StatusMessage(Status(StatusCode::kNotEnoughBytes),
-                               "Failed to write output");
+          return JXL_NOT_ENOUGH_BYTES("Failed to write output");
         }
         chunk.len -= num_written;
         if (chunk.len == 0) {

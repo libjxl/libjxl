@@ -6,13 +6,19 @@
 #include "lib/jxl/modular/transform/enc_squeeze.h"
 
 #include <jxl/memory_manager.h>
+#include <stdio.h>
 
+#include <cstdint>
 #include <cstdlib>
+#include <utility>
+#include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/transform/squeeze.h"
-#include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/modular/transform/squeeze_params.h"
 
 namespace jxl {
 

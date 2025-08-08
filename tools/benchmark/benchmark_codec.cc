@@ -118,12 +118,12 @@ class NoneCodec : public ImageCodec {
                     const Span<const uint8_t> compressed, ThreadPool* pool,
                     PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io{jpegxl::tools::NoMemoryManager()};
+    auto io = jxl::make_unique<CodecInOut>(jpegxl::tools::NoMemoryManager());
     JXL_RETURN_IF_ERROR(
-        Decompress(filename, compressed, pool, &io, speed_stats));
+        Decompress(filename, compressed, pool, io.get(), speed_stats));
     JxlPixelFormat format{0, JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};
     return jxl::extras::ConvertCodecInOutToPackedPixelFile(
-        io, format, io.Main().c_current(), pool, ppf);
+        *io, format, io->Main().c_current(), pool, ppf);
   };
 
   static Status Decompress(const std::string& filename,

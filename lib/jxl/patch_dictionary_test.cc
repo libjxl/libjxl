@@ -3,19 +3,20 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <jxl/cms.h>
-#include <jxl/memory_manager.h>
+#include <jxl/encode.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
-#include "lib/extras/codec.h"
-#include "lib/jxl/base/override.h"
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/dec/decode.h"
+#include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/jxl.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/enc_params.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_test_utils.h"
-#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -23,47 +24,43 @@ namespace jxl {
 namespace {
 
 using ::jxl::test::ButteraugliDistance;
+using ::jxl::test::GetImage;
 using ::jxl::test::ReadTestData;
 using ::jxl::test::Roundtrip;
 
 TEST(PatchDictionaryTest, GrayscaleModular) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig = ReadTestData("jxl/grayscale_patches.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
+  extras::PackedPixelFile ppf;
+  ASSERT_TRUE(DecodeBytes(Bytes(orig), jxl::extras::ColorHints(), &ppf));
 
-  CompressParams cparams;
-  cparams.SetLossless();
-  cparams.patches = jxl::Override::kOn;
+  extras::JXLCompressParams cparams = jxl::test::CompressParamsForLossless();
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_PATCHES, 1);
+  extras::JXLDecompressParams dparams;
 
-  CodecInOut io2{memory_manager};
+  extras::PackedPixelFile ppf2;
   // Without patches: ~25k
-  size_t compressed_size;
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  size_t compressed_size = Roundtrip(ppf, cparams, dparams, nullptr, &ppf2);
   EXPECT_LE(compressed_size, 8000u);
-  JXL_TEST_ASSERT_OK(VerifyRelativeError(*io.Main().color(),
-                                         *io2.Main().color(), 1e-7f, 0, _));
+  JXL_TEST_ASSIGN_OR_DIE(ImageF image, GetImage(ppf));
+  JXL_TEST_ASSIGN_OR_DIE(ImageF image2, GetImage(ppf2));
+  JXL_TEST_ASSERT_OK(VerifyRelativeError(image, image2, 1e-7f, 0, _));
 }
 
 TEST(PatchDictionaryTest, GrayscaleVarDCT) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig = ReadTestData("jxl/grayscale_patches.png");
-  CodecInOut io{memory_manager};
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
+  extras::PackedPixelFile ppf;
+  ASSERT_TRUE(DecodeBytes(Bytes(orig), jxl::extras::ColorHints(), &ppf));
 
-  CompressParams cparams;
-  cparams.patches = jxl::Override::kOn;
+  extras::JXLCompressParams cparams;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_PATCHES, 1);
+  extras::JXLDecompressParams dparams;
 
-  CodecInOut io2{memory_manager};
+  extras::PackedPixelFile ppf2;
   // Without patches: ~47k
-  size_t compressed_size;
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  size_t compressed_size = Roundtrip(ppf, cparams, dparams, nullptr, &ppf2);
   EXPECT_LE(compressed_size, 14000u);
   // Without patches: ~1.2
-  EXPECT_LE(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
-                                *JxlGetDefaultCms(),
-                                /*distmap=*/nullptr),
-            1.1);
+  EXPECT_LE(ButteraugliDistance(ppf, ppf2), 1.1);
 }
 
 }  // namespace

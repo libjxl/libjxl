@@ -6,10 +6,15 @@
 #ifndef LIB_JPEGLI_BITSTREAM_H_
 #define LIB_JPEGLI_BITSTREAM_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <initializer_list>
 #include <vector>
 
+#include "lib/jpegli/bit_writer.h"
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/encode_internal.h"
+#include "lib/jxl/base/compiler_specific.h"
 
 namespace jpegli {
 

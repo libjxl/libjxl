@@ -5,27 +5,45 @@
 
 #include "lib/extras/dec/gif.h"
 
+#include <cstdint>
+
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/packed_image.h"
+#include "lib/extras/size_constraints.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
-#if JPEGXL_ENABLE_GIF
-#include <gif_lib.h>
-#endif
-#include <jxl/codestream_header.h>
+#if !JPEGXL_ENABLE_GIF
 
+namespace jxl {
+namespace extras {
+bool CanDecodeGIF() { return false; }
+Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
+                      PackedPixelFile* ppf,
+                      const SizeConstraints* constraints) {
+  return false;
+}
+}  // namespace extras
+}  // namespace jxl
+
+#else  // JPEGXL_ENABLE_GIF
+
+#include <gif_lib.h>
+#include <jxl/codestream_header.h>
+#include <jxl/types.h>
+
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include "lib/extras/size_constraints.h"
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/sanitizers.h"
 
 namespace jxl {
 namespace extras {
 
-#if JPEGXL_ENABLE_GIF
 namespace {
 
 struct ReadState {
@@ -63,20 +81,12 @@ Status ensure_have_alpha(PackedFrame* frame) {
   return true;
 }
 }  // namespace
-#endif
 
-bool CanDecodeGIF() {
-#if JPEGXL_ENABLE_GIF
-  return true;
-#else
-  return false;
-#endif
-}
+bool CanDecodeGIF() { return true; }
 
 Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
                       PackedPixelFile* ppf,
                       const SizeConstraints* constraints) {
-#if JPEGXL_ENABLE_GIF
   int error = GIF_OK;
   ReadState state = {bytes};
   const auto ReadFromSpan = [](GifFileType* const gif, GifByteType* const bytes,
@@ -423,10 +433,9 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
     }
   }
   return true;
-#else
-  return false;
-#endif
 }
 
 }  // namespace extras
 }  // namespace jxl
+
+#endif  // JPEGXL_ENABLE_GIF

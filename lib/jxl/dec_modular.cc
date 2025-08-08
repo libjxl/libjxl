@@ -7,10 +7,32 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <utility>
 #include <vector>
 
+#include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/dec_ans.h"
+#include "lib/jxl/dec_cache.h"
+#include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/image_ops.h"
+#include "lib/jxl/loop_filter.h"
+#include "lib/jxl/modular/encoding/dec_ma.h"
+#include "lib/jxl/modular/options.h"
+#include "lib/jxl/quant_weights.h"
+#include "lib/jxl/quantizer.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_modular.cc"
@@ -106,7 +128,7 @@ void SingleFromSingleAccurate(const size_t xsize,
 Status int_to_float(const pixel_type* const JXL_RESTRICT row_in,
                     float* const JXL_RESTRICT row_out, const size_t xsize,
                     const int bits, const int exp_bits) {
-  static_assert(sizeof(pixel_type) == sizeof(float));
+  static_assert(sizeof(pixel_type) == sizeof(float), "32-bit input is assumed");
   if (bits == 32) {
     JXL_ENSURE(exp_bits == 8);
     memcpy(row_out, row_in, xsize * sizeof(float));
@@ -155,21 +177,21 @@ Status int_to_float(const pixel_type* const JXL_RESTRICT row_in,
 #if JXL_DEBUG_V_LEVEL >= 1
 std::string ModularStreamId::DebugString() const {
   std::ostringstream os;
-  os << (kind == GlobalData   ? "ModularGlobal"
-         : kind == VarDCTDC   ? "VarDCTDC"
-         : kind == ModularDC  ? "ModularDC"
-         : kind == ACMetadata ? "ACMeta"
-         : kind == QuantTable ? "QuantTable"
-         : kind == ModularAC  ? "ModularAC"
-                              : "");
-  if (kind == VarDCTDC || kind == ModularDC || kind == ACMetadata ||
-      kind == ModularAC) {
+  os << (kind == Kind::GlobalData   ? "ModularGlobal"
+         : kind == Kind::VarDCTDC   ? "VarDCTDC"
+         : kind == Kind::ModularDC  ? "ModularDC"
+         : kind == Kind::ACMetadata ? "ACMeta"
+         : kind == Kind::QuantTable ? "QuantTable"
+         : kind == Kind::ModularAC  ? "ModularAC"
+                                    : "");
+  if (kind == Kind::VarDCTDC || kind == Kind::ModularDC ||
+      kind == Kind::ACMetadata || kind == Kind::ModularAC) {
     os << " group " << group_id;
   }
-  if (kind == ModularAC) {
+  if (kind == Kind::ModularAC) {
     os << " pass " << pass_id;
   }
-  if (kind == QuantTable) {
+  if (kind == Kind::QuantTable) {
     os << " " << quant_table_id;
   }
   return os.str();

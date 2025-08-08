@@ -5,9 +5,10 @@
 
 #include "lib/jpegli/common.h"
 
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/decode_internal.h"
-#include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/memory_manager.h"
+#include "lib/jpegli/types.h"
 
 void jpegli_abort(j_common_ptr cinfo) {
   if (cinfo->mem == nullptr) return;
@@ -27,7 +28,9 @@ void jpegli_destroy(j_common_ptr cinfo) {
   (*cinfo->mem->self_destruct)(cinfo);
   if (cinfo->is_decompressor) {
     cinfo->global_state = jpegli::kDecNull;
-    delete reinterpret_cast<j_decompress_ptr>(cinfo)->master;
+    jpeg_decomp_master* master =
+        reinterpret_cast<j_decompress_ptr>(cinfo)->master;
+    delete master;
   } else {
     cinfo->global_state = jpegli::kEncNull;
   }

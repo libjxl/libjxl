@@ -8,6 +8,7 @@
 
 #include <jxl/cms.h>
 #include <jxl/cms_interface.h>
+#include <jxl/types.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -16,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/dec/decode.h"  // Codec enum
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
@@ -26,8 +28,9 @@
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image_bundle.h"
 
 namespace jpegxl {

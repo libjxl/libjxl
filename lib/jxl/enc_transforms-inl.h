@@ -3,6 +3,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/frame_dimensions.h"
+
 #if defined(LIB_JXL_ENC_TRANSFORMS_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_ENC_TRANSFORMS_INL_H_
 #undef LIB_JXL_ENC_TRANSFORMS_INL_H_
@@ -26,13 +29,17 @@ enum class AcStrategyType : uint32_t;
 namespace HWY_NAMESPACE {
 namespace {
 
+constexpr size_t kMaxBlocks = 32;
+
 // Inverse of ReinterpretingDCT.
 template <size_t DCT_ROWS, size_t DCT_COLS, size_t LF_ROWS, size_t LF_COLS,
           size_t ROWS, size_t COLS>
 HWY_INLINE void ReinterpretingIDCT(const float* input,
                                    const size_t input_stride, float* output,
-                                   const size_t output_stride) {
-  HWY_ALIGN float block[ROWS * COLS] = {};
+                                   const size_t output_stride, float* scratch) {
+  static_assert(ROWS <= kMaxBlocks, "Unsupported block size");
+  static_assert(COLS <= kMaxBlocks, "Unsupported block size");
+  float* block = scratch;
   if (ROWS < COLS) {
     for (size_t y = 0; y < LF_ROWS; y++) {
       for (size_t x = 0; x < LF_COLS; x++) {
@@ -51,8 +58,7 @@ HWY_INLINE void ReinterpretingIDCT(const float* input,
     }
   }
 
-  // ROWS, COLS <= 8, so we can put scratch space on the stack.
-  HWY_ALIGN float scratch_space[ROWS * COLS * 3];
+  float* scratch_space = scratch + kMaxBlocks * kMaxBlocks;
   ComputeScaledIDCT<ROWS, COLS>()(block, DCTTo(output, output_stride),
                                   scratch_space);
 }
@@ -662,117 +668,119 @@ HWY_MAYBE_UNUSED void TransformFromPixels(const AcStrategyType strategy,
   }
 }
 
+// `scratch_space` should be at least 4 * kMaxBlocks * kMaxBlocks elements.
 HWY_MAYBE_UNUSED void DCFromLowestFrequencies(const AcStrategyType strategy,
                                               const float* block, float* dc,
-                                              size_t dc_stride) {
+                                              size_t dc_stride,
+                                              float* scratch_space) {
   using Type = AcStrategyType;
   switch (strategy) {
     case Type::DCT16X8: {
       ReinterpretingIDCT</*DCT_ROWS=*/2 * kBlockDim, /*DCT_COLS=*/kBlockDim,
                          /*LF_ROWS=*/2, /*LF_COLS=*/1, /*ROWS=*/2, /*COLS=*/1>(
-          block, 2 * kBlockDim, dc, dc_stride);
+          block, 2 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT8X16: {
       ReinterpretingIDCT</*DCT_ROWS=*/kBlockDim, /*DCT_COLS=*/2 * kBlockDim,
                          /*LF_ROWS=*/1, /*LF_COLS=*/2, /*ROWS=*/1, /*COLS=*/2>(
-          block, 2 * kBlockDim, dc, dc_stride);
+          block, 2 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT16X16: {
       ReinterpretingIDCT</*DCT_ROWS=*/2 * kBlockDim, /*DCT_COLS=*/2 * kBlockDim,
                          /*LF_ROWS=*/2, /*LF_COLS=*/2, /*ROWS=*/2, /*COLS=*/2>(
-          block, 2 * kBlockDim, dc, dc_stride);
+          block, 2 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT32X8: {
       ReinterpretingIDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/kBlockDim,
                          /*LF_ROWS=*/4, /*LF_COLS=*/1, /*ROWS=*/4, /*COLS=*/1>(
-          block, 4 * kBlockDim, dc, dc_stride);
+          block, 4 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT8X32: {
       ReinterpretingIDCT</*DCT_ROWS=*/kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
                          /*LF_ROWS=*/1, /*LF_COLS=*/4, /*ROWS=*/1, /*COLS=*/4>(
-          block, 4 * kBlockDim, dc, dc_stride);
+          block, 4 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT32X16: {
       ReinterpretingIDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/2 * kBlockDim,
                          /*LF_ROWS=*/4, /*LF_COLS=*/2, /*ROWS=*/4, /*COLS=*/2>(
-          block, 4 * kBlockDim, dc, dc_stride);
+          block, 4 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT16X32: {
       ReinterpretingIDCT</*DCT_ROWS=*/2 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
                          /*LF_ROWS=*/2, /*LF_COLS=*/4, /*ROWS=*/2, /*COLS=*/4>(
-          block, 4 * kBlockDim, dc, dc_stride);
+          block, 4 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT32X32: {
       ReinterpretingIDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
                          /*LF_ROWS=*/4, /*LF_COLS=*/4, /*ROWS=*/4, /*COLS=*/4>(
-          block, 4 * kBlockDim, dc, dc_stride);
+          block, 4 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT64X32: {
       ReinterpretingIDCT</*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
                          /*LF_ROWS=*/8, /*LF_COLS=*/4, /*ROWS=*/8, /*COLS=*/4>(
-          block, 8 * kBlockDim, dc, dc_stride);
+          block, 8 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT32X64: {
       ReinterpretingIDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
                          /*LF_ROWS=*/4, /*LF_COLS=*/8, /*ROWS=*/4, /*COLS=*/8>(
-          block, 8 * kBlockDim, dc, dc_stride);
+          block, 8 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT64X64: {
       ReinterpretingIDCT</*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
                          /*LF_ROWS=*/8, /*LF_COLS=*/8, /*ROWS=*/8, /*COLS=*/8>(
-          block, 8 * kBlockDim, dc, dc_stride);
+          block, 8 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT128X64: {
       ReinterpretingIDCT<
           /*DCT_ROWS=*/16 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
           /*LF_ROWS=*/16, /*LF_COLS=*/8, /*ROWS=*/16, /*COLS=*/8>(
-          block, 16 * kBlockDim, dc, dc_stride);
+          block, 16 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT64X128: {
       ReinterpretingIDCT<
           /*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/16 * kBlockDim,
           /*LF_ROWS=*/8, /*LF_COLS=*/16, /*ROWS=*/8, /*COLS=*/16>(
-          block, 16 * kBlockDim, dc, dc_stride);
+          block, 16 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT128X128: {
       ReinterpretingIDCT<
           /*DCT_ROWS=*/16 * kBlockDim, /*DCT_COLS=*/16 * kBlockDim,
           /*LF_ROWS=*/16, /*LF_COLS=*/16, /*ROWS=*/16, /*COLS=*/16>(
-          block, 16 * kBlockDim, dc, dc_stride);
+          block, 16 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT256X128: {
       ReinterpretingIDCT<
           /*DCT_ROWS=*/32 * kBlockDim, /*DCT_COLS=*/16 * kBlockDim,
           /*LF_ROWS=*/32, /*LF_COLS=*/16, /*ROWS=*/32, /*COLS=*/16>(
-          block, 32 * kBlockDim, dc, dc_stride);
+          block, 32 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT128X256: {
       ReinterpretingIDCT<
           /*DCT_ROWS=*/16 * kBlockDim, /*DCT_COLS=*/32 * kBlockDim,
           /*LF_ROWS=*/16, /*LF_COLS=*/32, /*ROWS=*/16, /*COLS=*/32>(
-          block, 32 * kBlockDim, dc, dc_stride);
+          block, 32 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT256X256: {
       ReinterpretingIDCT<
           /*DCT_ROWS=*/32 * kBlockDim, /*DCT_COLS=*/32 * kBlockDim,
           /*LF_ROWS=*/32, /*LF_COLS=*/32, /*ROWS=*/32, /*COLS=*/32>(
-          block, 32 * kBlockDim, dc, dc_stride);
+          block, 32 * kBlockDim, dc, dc_stride, scratch_space);
       break;
     }
     case Type::DCT:

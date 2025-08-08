@@ -6,11 +6,15 @@
 #ifndef LIB_JXL_GAUSS_BLUR_H_
 #define LIB_JXL_GAUSS_BLUR_H_
 
+#include <jxl/memory_manager.h>
+
 #include <cstddef>
 #include <functional>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 
@@ -45,11 +49,12 @@ RecursiveGaussian CreateRecursiveGaussian(double sigma);
 void FastGaussian1D(const RecursiveGaussian& rg, size_t xsize,
                     const float* JXL_RESTRICT in, float* JXL_RESTRICT out);
 
-typedef std::function<const float*(size_t /*y*/)> GetConstRow;
-typedef std::function<float*(size_t /*y*/)> GetRow;
+using GetConstRow = std::function<const float*(size_t /*y*/)>;
+using GetRow = std::function<float*(size_t /*y*/)>;
 
 // 2D Gaussian with zero-pad boundary handling and runtime independent of sigma.
-Status FastGaussian(const RecursiveGaussian& rg, size_t xsize, size_t ysize,
+Status FastGaussian(JxlMemoryManager* memory_manager,
+                    const RecursiveGaussian& rg, size_t xsize, size_t ysize,
                     const GetConstRow& in, const GetRow& temp,
                     const GetRow& out, ThreadPool* pool = nullptr);
 

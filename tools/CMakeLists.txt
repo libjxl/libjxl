@@ -71,7 +71,9 @@ add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   tracking_memory_manager.cc
   ${JXL_CMS_OBJECTS}
 )
-target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
+# JPEGXL_INTERNAL_FLAGS is set inside lib/
+# target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
+target_compile_options(jxl_tool PRIVATE -DJPEGXL_COMPILER_ID="${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 target_include_directories(jxl_tool PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(jxl_tool PUBLIC jxl_base hwy)
 
@@ -160,9 +162,13 @@ if(JPEGXL_ENABLE_TOOLS)
     list(APPEND INTERNAL_TOOL_BINARIES cjpegli djpegli)
   endif()
 
-  add_executable(jxlinfo jxlinfo.c)
+  add_executable(jxlinfo jxlinfo.cc)
   target_link_libraries(jxlinfo jxl jxl_extras_nocodec-internal)
   list(APPEND TOOL_BINARIES jxlinfo)
+
+  add_executable(jxltran jxltran.cc)
+  target_link_libraries(jxltran jxl jxl_tool)
+  list(APPEND TOOL_BINARIES jxltran)
 
   if(NOT SANITIZER STREQUAL "none")
     # Linking a C test binary with the C++ JPEG XL implementation when using
@@ -336,6 +342,18 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
     endif()
     set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS}")
   endif()
+  
+  # Attach manifest that tells Windows to use UTF-8 for eg. fopen
+  if(WIN32)
+    # Accommodate cl, clang-cl and clang with GNU-like command
+    if(NOT MINGW)
+      target_sources(${BINARY} PRIVATE utf8.manifest)
+    # Since CMake in MINGW doesn't support linking
+    # .manifest file, do it with .rc file
+    elseif(MINGW)
+      target_sources(${BINARY} PRIVATE utf8.rc)
+    endif()
+  endif()
 endforeach()
 
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
@@ -460,6 +478,7 @@ if (JNI_FOUND AND Java_FOUND)
     jni/org/jpeg/jpegxl/wrapper/Decoder.java
     jni/org/jpeg/jpegxl/wrapper/DecoderJni.java
     jni/org/jpeg/jpegxl/wrapper/ImageData.java
+    jni/org/jpeg/jpegxl/wrapper/JniHelper.java
     jni/org/jpeg/jpegxl/wrapper/PixelFormat.java
     jni/org/jpeg/jpegxl/wrapper/Status.java
     jni/org/jpeg/jpegxl/wrapper/StreamInfo.java
@@ -489,6 +508,7 @@ if (JNI_FOUND AND Java_FOUND)
 
     add_jar(jpegli_jni_wrapper SOURCES
       jni/org/jpeg/jpegli/wrapper/Encoder.java
+      jni/org/jpeg/jpegli/wrapper/JniHelper.java
       OUTPUT_NAME org.jpeg.jpegli
     )
     get_target_property(JPEGLI_JNI_WRAPPER_JAR jpegli_jni_wrapper JAR_FILE)

@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #include "lib/extras/codec.h"
@@ -16,8 +17,12 @@
 // #include "lib/jxl/base/span.h"
 #include <jxl/cms.h>
 
+#include "lib/extras/codec_in_out.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
@@ -53,17 +58,17 @@ int Run(int argc, char** argv) {
   }
   if (argc < input_arg + 2) return PrintUsage(argv);
 
-  jxl::CodecInOut io1{memory_manager};
-  jxl::CodecInOut io2{memory_manager};
-  jxl::CodecInOut* io[2] = {&io1, &io2};
+  auto io1 = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  auto io2 = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  jxl::CodecInOut* io[2] = {io1.get(), io2.get()};
   for (size_t i = 0; i < 2; ++i) {
     std::vector<uint8_t> encoded;
     JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(argv[input_arg + i], &encoded));
     JPEGXL_TOOLS_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded),
                                          jxl::extras::ColorHints(), io[i]));
   }
-  jxl::ImageBundle& ib1 = io1.Main();
-  jxl::ImageBundle& ib2 = io2.Main();
+  jxl::ImageBundle& ib1 = io1->Main();
+  jxl::ImageBundle& ib2 = io2->Main();
   JPEGXL_TOOLS_CHECK(
       ib1.TransformTo(jxl::ColorEncoding::LinearSRGB(ib1.IsGray()),
                       *JxlGetDefaultCms(), nullptr));

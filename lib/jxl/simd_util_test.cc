@@ -3,6 +3,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/memory_manager.h>
+
+#include <cstddef>
+
+#include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/test_memory_manager.h"
+#include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -20,33 +27,45 @@ namespace HWY_NAMESPACE {
 namespace {
 
 HWY_NOINLINE void TestInterleave2() {
+  JxlMemoryManager* memory_manager = ::jxl::test::MemoryManager();
   HWY_FULL(float) d;
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory mem,
+      AlignedMemory::Create(memory_manager, Lanes(d) * 2 * sizeof(float)));
   auto vec1 = Iota(d, 0 * 128.0);
   auto vec2 = Iota(d, 1 * 128.0);
-  HWY_ALIGN float mem[MaxLanes(d) * 2];
-  StoreInterleaved(d, vec1, vec2, mem);
+  float* out = mem.address<float>();
+  StoreInterleaved(d, vec1, vec2, out);
   for (size_t i = 0; i < Lanes(d); i++) {
     for (size_t j = 0; j < 2; j++) {
-      EXPECT_EQ(mem[2 * i + j], j * 128 + i) << "i: " << i << " j: " << j;
+      EXPECT_EQ(out[2 * i + j], j * 128 + i) << "i: " << i << " j: " << j;
     }
   }
 }
 HWY_NOINLINE void TestInterleave4() {
+  JxlMemoryManager* memory_manager = ::jxl::test::MemoryManager();
   HWY_FULL(float) d;
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory mem,
+      AlignedMemory::Create(memory_manager, Lanes(d) * 4 * sizeof(float)));
   auto vec1 = Iota(d, 0 * 128.0);
   auto vec2 = Iota(d, 1 * 128.0);
   auto vec3 = Iota(d, 2 * 128.0);
   auto vec4 = Iota(d, 3 * 128.0);
-  HWY_ALIGN float mem[MaxLanes(d) * 4];
-  StoreInterleaved(d, vec1, vec2, vec3, vec4, mem);
+  float* out = mem.address<float>();
+  StoreInterleaved(d, vec1, vec2, vec3, vec4, out);
   for (size_t i = 0; i < Lanes(d); i++) {
     for (size_t j = 0; j < 4; j++) {
-      EXPECT_EQ(mem[4 * i + j], j * 128 + i) << "i: " << i << " j: " << j;
+      EXPECT_EQ(out[4 * i + j], j * 128 + i) << "i: " << i << " j: " << j;
     }
   }
 }
 HWY_NOINLINE void TestInterleave8() {
+  JxlMemoryManager* memory_manager = ::jxl::test::MemoryManager();
   HWY_FULL(float) d;
+  JXL_TEST_ASSIGN_OR_DIE(
+      AlignedMemory mem,
+      AlignedMemory::Create(memory_manager, Lanes(d) * 8 * sizeof(float)));
   auto vec1 = Iota(d, 0 * 128.0);
   auto vec2 = Iota(d, 1 * 128.0);
   auto vec3 = Iota(d, 2 * 128.0);
@@ -55,11 +74,11 @@ HWY_NOINLINE void TestInterleave8() {
   auto vec6 = Iota(d, 5 * 128.0);
   auto vec7 = Iota(d, 6 * 128.0);
   auto vec8 = Iota(d, 7 * 128.0);
-  HWY_ALIGN float mem[MaxLanes(d) * 8];
-  StoreInterleaved(d, vec1, vec2, vec3, vec4, vec5, vec6, vec7, vec8, mem);
+  float* out = mem.address<float>();
+  StoreInterleaved(d, vec1, vec2, vec3, vec4, vec5, vec6, vec7, vec8, out);
   for (size_t i = 0; i < Lanes(d); i++) {
     for (size_t j = 0; j < 8; j++) {
-      EXPECT_EQ(mem[8 * i + j], j * 128 + i) << "i: " << i << " j: " << j;
+      EXPECT_EQ(out[8 * i + j], j * 128 + i) << "i: " << i << " j: " << j;
     }
   }
 }

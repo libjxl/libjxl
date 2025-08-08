@@ -5,25 +5,48 @@
 
 #include "lib/extras/dec/jpg.h"
 
-#if JPEGXL_ENABLE_JPEG
-#include "lib/jxl/base/include_jpeglib.h"  // NOLINT
-#endif
+#include <cstdint>
+
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/packed_image.h"
+#include "lib/extras/size_constraints.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+
+#if !JPEGXL_ENABLE_JPEG
+
+namespace jxl {
+namespace extras {
+bool CanDecodeJPG() { return false; }
+Status DecodeImageJPG(const Span<const uint8_t> bytes,
+                      const ColorHints& color_hints, PackedPixelFile* ppf,
+                      const SizeConstraints* constraints,
+                      const JPGDecompressParams* dparams) {
+  return false;
+}
+}  // namespace extras
+}  // namespace jxl
+
+#else  // JPEGXL_ENABLE_JPEG
+
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
+#include <jxl/types.h>
 
 #include <algorithm>
-#include <cstdint>
+#include <cstring>
+#include <memory>
 #include <numeric>
 #include <utility>
 #include <vector>
 
-#include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/include_jpeglib.h"
 #include "lib/jxl/base/sanitizers.h"
-#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {
 
-#if JPEGXL_ENABLE_JPEG
 namespace {
 
 constexpr unsigned char kICCSignature[12] = {
@@ -179,21 +202,13 @@ Status UnmapColors(uint8_t* row, size_t xsize, int components,
 }
 
 }  // namespace
-#endif
 
-bool CanDecodeJPG() {
-#if JPEGXL_ENABLE_JPEG
-  return true;
-#else
-  return false;
-#endif
-}
+bool CanDecodeJPG() { return true; }
 
 Status DecodeImageJPG(const Span<const uint8_t> bytes,
                       const ColorHints& color_hints, PackedPixelFile* ppf,
                       const SizeConstraints* constraints,
                       const JPGDecompressParams* dparams) {
-#if JPEGXL_ENABLE_JPEG
   // Don't do anything for non-JPEG files (no need to report an error)
   if (!IsJPG(bytes)) return false;
 
@@ -269,7 +284,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     ppf->info.ysize = cinfo.image_height;
     // Original data is uint, so exponent_bits_per_sample = 0.
     ppf->info.bits_per_sample = BITS_IN_JSAMPLE;
-    static_assert(BITS_IN_JSAMPLE == 8 || BITS_IN_JSAMPLE == 16);
+    static_assert(BITS_IN_JSAMPLE == 8 || BITS_IN_JSAMPLE == 16,
+                  "Only 8/16 bit samples are supported");
     ppf->info.exponent_bits_per_sample = 0;
     ppf->info.uses_original_profile = JXL_TRUE;
 
@@ -344,10 +360,9 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
   };
 
   return try_catch_block();
-#else
-  return false;
-#endif
 }
 
 }  // namespace extras
 }  // namespace jxl
+
+#endif  // JPEGXL_ENABLE_JPEG

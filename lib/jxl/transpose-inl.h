@@ -5,6 +5,8 @@
 
 // Block transpose for DCT/IDCT
 
+#include "lib/jxl/base/compiler_specific.h"
+
 #if defined(LIB_JXL_TRANSPOSE_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_TRANSPOSE_INL_H_
 #undef LIB_JXL_TRANSPOSE_INL_H_
@@ -69,7 +71,7 @@ JXL_INLINE_TRANSPOSE void GenericTransposeBlock(
     size_t ROWSp, size_t COLSp) {
   size_t ROWS = ROWS_or_0 == 0 ? ROWSp : ROWS_or_0;
   size_t COLS = COLS_or_0 == 0 ? COLSp : COLS_or_0;
-  static_assert(MaxLanes(BlockDesc<8>()) == 8, "Invalid descriptor size");
+  JXL_DASSERT(Lanes(BlockDesc<8>()) == 8);
   static_assert(ROWS_or_0 % 8 == 0, "Invalid number of rows");
   static_assert(COLS_or_0 % 8 == 0, "Invalid number of columns");
   for (size_t n = 0; n < ROWS; n += 8) {
@@ -133,7 +135,7 @@ JXL_INLINE_TRANSPOSE void GenericTransposeBlock(
     size_t ROWSp, size_t COLSp) {
   size_t ROWS = ROWS_or_0 == 0 ? ROWSp : ROWS_or_0;
   size_t COLS = COLS_or_0 == 0 ? COLSp : COLS_or_0;
-  static_assert(MaxLanes(BlockDesc<4>()) == 4, "Invalid descriptor size");
+  JXL_DASSERT(Lanes(BlockDesc<4>()) == 4);
   static_assert(ROWS_or_0 % 4 == 0, "Invalid number of rows");
   static_assert(COLS_or_0 % 4 == 0, "Invalid number of columns");
   for (size_t n = 0; n < ROWS; n += 4) {

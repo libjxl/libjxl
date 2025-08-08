@@ -6,7 +6,6 @@
 #include "lib/jxl/dec_patch_dictionary.h"
 
 #include <jxl/memory_manager.h>
-#include <sys/types.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -14,13 +13,16 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
 #include "lib/jxl/common.h"  // kMaxNumReferenceFrames
 #include "lib/jxl/dec_ans.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/pack_signed.h"
 #include "lib/jxl/patch_dictionary_internal.h"
 
@@ -39,7 +41,7 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
   JXL_ASSIGN_OR_RETURN(ANSSymbolReader decoder,
                        ANSSymbolReader::Create(&code, br));
 
-  auto read_num = [&](size_t context) {
+  auto read_num = [&](size_t context) -> size_t {
     size_t r = decoder.ReadHybridUint(context, br, context_map);
     return r;
   };

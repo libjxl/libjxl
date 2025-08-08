@@ -381,13 +381,13 @@ struct FrameHeader : public Fields {
   mutable bool all_default;
 
   // Always present
-  FrameEncoding encoding;
-  // Some versions of UBSAN complain in VisitFrameType if not initialized.
+  // Some builds / emulators complain if those fields are not initialized.
+  FrameEncoding encoding = FrameEncoding::kModular;
   FrameType frame_type = FrameType::kRegularFrame;
 
   uint64_t flags;
 
-  ColorTransform color_transform;
+  ColorTransform color_transform = ColorTransform::kXYB;
   YCbCrChromaSubsampling chroma_subsampling;
 
   uint32_t group_size_shift;  // only if encoding == kModular;
@@ -428,7 +428,7 @@ struct FrameHeader : public Fields {
   uint32_t save_as_reference;
 
   // Whether to save this frame before or after the color transform. A frame
-  // that is saved before the color tansform can only be used for blending
+  // that is saved before the color transform can only be used for blending
   // through patches. On the contrary, a frame that is saved after the color
   // transform can only be used for blending through blending modes.
   // Irrelevant for extra channel blending. Can only be true if

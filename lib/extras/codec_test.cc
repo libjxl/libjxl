@@ -267,15 +267,19 @@ void TestRoundTrip(const TestImageParams& params, ThreadPool* pool) {
       params.codec, params.is_gray, params.add_alpha, params.bits_per_sample);
   printf("Codec %s %s\n", extension.c_str(), params.DebugString().c_str());
 
-  PackedPixelFile ppf_in;
-  CreateTestImage(params, &ppf_in);
-
-  EncodedImage encoded;
-  auto encoder = Encoder::FromExtension(extension);
-  if (!encoder) {
-    fprintf(stderr, "Skipping test because of missing codec support.\n");
+  if (!CanDecode(params.codec)) {
+    fprintf(stderr, "Skipping test because of missing decoding support.\n");
     return;
   }
+  auto encoder = Encoder::FromExtension(extension);
+  if (!encoder) {
+    fprintf(stderr, "Skipping test because of missing encoding support.\n");
+    return;
+  }
+
+  PackedPixelFile ppf_in;
+  CreateTestImage(params, &ppf_in);
+  EncodedImage encoded;
   ASSERT_TRUE(encoder->Encode(ppf_in, &encoded, pool));
   ASSERT_EQ(encoded.bitstreams.size(), 1);
 
@@ -373,8 +377,7 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
       ColorHints color_hints;
       color_hints.Add("color_space",
                       channels < 3 ? "Gra_D65_Rel_SRG" : "RGB_D65_SRG_Rel_SRG");
-      ASSERT_TRUE(
-          DecodeBytes(Bytes(orig.data(), orig.size()), color_hints, &ppf));
+      ASSERT_TRUE(DecodeBytes(Bytes(orig), color_hints, &ppf));
 
       EncodedImage encoded;
       auto encoder = Encoder::FromExtension(extension);

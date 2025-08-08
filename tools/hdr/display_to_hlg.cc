@@ -3,13 +3,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/hdr/image_utils.h"
@@ -68,14 +73,16 @@ int main(int argc, const char** argv) {
 
   std::vector<uint8_t> encoded;
   JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
+  auto image =
+      jxl::make_unique<jxl::CodecInOut>(jpegxl::tools::NoMemoryManager());
   JPEGXL_TOOLS_CHECK(jxl::SetFromBytes(
-      jxl::Bytes(encoded), jxl::extras::ColorHints(), &image, pool.get()));
-  image.metadata.m.SetIntensityTarget(max_nits);
+      jxl::Bytes(encoded), jxl::extras::ColorHints(), image.get(), pool.get()));
+  image->metadata.m.SetIntensityTarget(max_nits);
   JPEGXL_TOOLS_CHECK(jxl::HlgInverseOOTF(
-      &image.Main(), jxl::GetHlgGamma(max_nits, surround_nits), pool.get()));
-  JPEGXL_TOOLS_CHECK(jxl::GamutMap(&image, preserve_saturation, pool.get()));
-  image.metadata.m.SetIntensityTarget(301);
+      &image->Main(), jxl::GetHlgGamma(max_nits, surround_nits), pool.get()));
+  JPEGXL_TOOLS_CHECK(
+      jxl::GamutMap(image.get(), preserve_saturation, pool.get()));
+  image->metadata.m.SetIntensityTarget(301);
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
@@ -84,9 +91,9 @@ int main(int argc, const char** argv) {
   hlg.Tf().SetTransferFunction(jxl::TransferFunction::kHLG);
   JPEGXL_TOOLS_CHECK(hlg.CreateICC());
   JPEGXL_TOOLS_CHECK(
-      jpegxl::tools::TransformCodecInOutTo(image, hlg, pool.get()));
-  image.metadata.m.color_encoding = hlg;
+      jpegxl::tools::TransformCodecInOutTo(*image, hlg, pool.get()));
+  image->metadata.m.color_encoding = hlg;
   JPEGXL_TOOLS_CHECK(
-      jpegxl::tools::Encode(image, output_filename, &encoded, pool.get()));
+      jpegxl::tools::Encode(*image, output_filename, &encoded, pool.get()));
   JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

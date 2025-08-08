@@ -7,10 +7,15 @@
 
 #include <jxl/memory_manager.h>
 
+#include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 
 namespace jxl {
 

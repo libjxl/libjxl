@@ -8,21 +8,6 @@ package org.jpeg.jpegxl.wrapper;
 import java.nio.ByteBuffer;
 
 public class DecoderTest {
-  static {
-    String jniLibrary = System.getProperty("org.jpeg.jpegxl.wrapper.lib");
-    if (jniLibrary != null) {
-      try {
-        System.load(new java.io.File(jniLibrary).getAbsolutePath());
-      } catch (UnsatisfiedLinkError ex) {
-        String message =
-            "If the nested exception message says that some standard library (stdc++, tcmalloc, etc.) was not found, "
-            + "it is likely that JDK discovered by the build system overrides library search path. "
-            + "Try specifying a different JDK via JAVA_HOME environment variable and doing a clean build.";
-        throw new RuntimeException(message, ex);
-      }
-    }
-  }
-
   private static final int SIMPLE_IMAGE_DIM = 1024;
   // Base64: "/wr6H0GRCAYBAGAASzgkunkeVbaSBu95EXDn0e7ABz2ShAMA"
   private static final byte[] SIMPLE_IMAGE_BYTES = {-1, 10, -6, 31, 65, -111, 8, 6, 1, 0, 96, 0, 75,

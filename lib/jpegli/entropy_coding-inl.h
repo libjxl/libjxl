@@ -3,6 +3,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstddef>
+#include <cstdint>
+
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
+#include "lib/jpegli/encode_internal.h"
+
 #if defined(LIB_JPEGLI_ENTROPY_CODING_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JPEGLI_ENTROPY_CODING_INL_H_
 #undef LIB_JPEGLI_ENTROPY_CODING_INL_H_
@@ -10,6 +17,9 @@
 #define LIB_JPEGLI_ENTROPY_CODING_INL_H_
 #endif
 
+#include <hwy/highway.h>
+
+#include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -37,8 +47,8 @@ using hwy::HWY_NAMESPACE::Sub;
 using DI = HWY_FULL(int32_t);
 constexpr DI di;
 
-template <typename DI, class V>
-JXL_INLINE V NumBits(DI di, const V x) {
+template <class V>
+JXL_INLINE V NumBits(const V x) {
   // TODO(szabadka) Add faster implementations for some specific architectures.
   const auto b1 = And(x, Set(di, 1));
   const auto b2 = And(x, Set(di, 2));
@@ -107,7 +117,7 @@ JXL_INLINE void ComputeSymbols(const int num_nonzeros,
     const auto idx = Load(di, &nonzero_idx[i]);
     const auto prev_idx = LoadU(di, &nonzero_idx[i - 1]);
     const auto coeff = Load(di, &block[i]);
-    const auto nbits = NumBits(di, Abs(coeff));
+    const auto nbits = NumBits(Abs(coeff));
     const auto mask = ShiftRight<8 * sizeof(int32_t) - 1>(coeff);
     const auto bits = And(Add(coeff, mask), Sub(Shl(one, nbits), one));
     const auto symbol = Sub(Add(nbits, idx), Add(prev_idx, offset));
@@ -118,9 +128,9 @@ JXL_INLINE void ComputeSymbols(const int num_nonzeros,
 
 template <typename T>
 int NumNonZero8x8ExceptDC(const T* block) {
-  const HWY_CAPPED(T, 8) di;
+  const HWY_CAPPED(T, 8) cdi;
 
-  const auto zero = Zero(di);
+  const auto zero = Zero(cdi);
   // Add FFFF for every zero coefficient, negate to get #zeros.
   auto neg_sum_zero = zero;
   {
@@ -128,25 +138,25 @@ int NumNonZero8x8ExceptDC(const T* block) {
     const size_t y = 0;
     HWY_ALIGN const T dc_mask_lanes[8] = {-1};
 
-    for (size_t x = 0; x < 8; x += Lanes(di)) {
-      const auto dc_mask = Load(di, dc_mask_lanes + x);
+    for (size_t x = 0; x < 8; x += Lanes(cdi)) {
+      const auto dc_mask = Load(cdi, dc_mask_lanes + x);
 
       // DC counts as zero so we don't include it in nzeros.
-      const auto coef = AndNot(dc_mask, Load(di, &block[y * 8 + x]));
+      const auto coef = AndNot(dc_mask, Load(cdi, &block[y * 8 + x]));
 
-      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
+      neg_sum_zero = Add(neg_sum_zero, VecFromMask(cdi, Eq(coef, zero)));
     }
   }
   // Remaining rows: no mask
   for (size_t y = 1; y < 8; y++) {
-    for (size_t x = 0; x < 8; x += Lanes(di)) {
-      const auto coef = Load(di, &block[y * 8 + x]);
-      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
+    for (size_t x = 0; x < 8; x += Lanes(cdi)) {
+      const auto coef = Load(cdi, &block[y * 8 + x]);
+      neg_sum_zero = Add(neg_sum_zero, VecFromMask(cdi, Eq(coef, zero)));
     }
   }
 
   // We want 64 - sum_zero, add because neg_sum_zero is already negated.
-  return kDCTBlockSize + GetLane(SumOfLanes(di, neg_sum_zero));
+  return kDCTBlockSize + GetLane(SumOfLanes(cdi, neg_sum_zero));
 }
 
 template <typename T, bool zig_zag_order>

@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jpegli/libjpeg_test_util.h"
 #include "lib/jpegli/test_params.h"

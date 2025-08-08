@@ -7,15 +7,22 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/ans_common.h"
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_context_map.h"
+#include "lib/jxl/dec_huffman.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/memory_manager_internal.h"
 
@@ -142,7 +149,7 @@ Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
     // Invalid input, e.g. due to invalid usage of RLE.
     if (omit_pos < 0) return JXL_FAILURE("Invalid histogram.");
     if (static_cast<size_t>(omit_pos) + 1 < logcounts.size() &&
-        logcounts[omit_pos + 1] == ANS_TAB_SIZE + 1) {
+        logcounts[omit_pos + 1] == ANS_LOG_TAB_SIZE + 1) {
       return JXL_FAILURE("Invalid histogram.");
     }
     int prev = 0;
@@ -206,8 +213,7 @@ Status DecodeANSCodes(JxlMemoryManager* memory_manager,
       if (alphabet_sizes[c] > 1) {
         if (!result->huffman_data[c].ReadFromBitStream(alphabet_sizes[c], in)) {
           if (!in->AllReadsWithinBounds()) {
-            return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                              "Not enough bytes for huffman code");
+            return JXL_NOT_ENOUGH_BYTES("Not enough bytes for huffman code");
           }
           return JXL_FAILURE("Invalid huffman tree number %" PRIuS
                              ", alphabet size %u",

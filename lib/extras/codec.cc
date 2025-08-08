@@ -5,17 +5,25 @@
 
 #include "lib/extras/codec.h"
 
-#include <jxl/decode.h>
-#include <jxl/types.h>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
 
+#include "lib/extras/codec_in_out.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/apng.h"
+#include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/exr.h"
 #include "lib/extras/enc/jpg.h"
 #include "lib/extras/enc/pgx.h"
 #include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
@@ -33,7 +41,8 @@ Status SetFromBytes(const Span<const uint8_t> bytes,
   if (bytes.size() < kMinBytes) return JXL_FAILURE("Too few bytes");
 
   extras::PackedPixelFile ppf;
-  if (extras::DecodeBytes(bytes, color_hints, &ppf, constraints, orig_codec)) {
+  if (extras::DecodeBytes(bytes, color_hints, &ppf, constraints, orig_codec,
+                          io->memory_manager)) {
     return ConvertPackedPixelFileToCodecInOut(ppf, pool, io);
   }
   return JXL_FAILURE("Codecs failed to decode");

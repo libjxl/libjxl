@@ -5,6 +5,8 @@
 
 #include "lib/jxl/icc_codec_common.h"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <tuple>
 
@@ -57,8 +59,6 @@ Status AppendUint32(uint32_t value, PaddedBytes* data) {
   return true;
 }
 
-typedef std::array<uint8_t, 4> Tag;
-
 Tag DecodeKeyword(const uint8_t* data, size_t size, size_t pos) {
   if (pos + 4 > size) return {{' ', ' ', ' ', ' '}};
   return {{data[pos], data[pos + 1], data[pos + 2], data[pos + 3]}};
@@ -70,7 +70,7 @@ void EncodeKeyword(const Tag& keyword, uint8_t* data, size_t size, size_t pos) {
 }
 
 Status AppendKeyword(const Tag& keyword, PaddedBytes* data) {
-  static_assert(std::tuple_size<Tag>{} == 4);
+  static_assert(std::tuple_size<Tag>{} == 4, "Tag should be 4-bytes");
   return data->append(keyword);
 }
 

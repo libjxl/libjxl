@@ -3,14 +3,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstddef>
+#include <cstdint>
+
 #if defined(LIB_JXL_QUANTIZER_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_QUANTIZER_INL_H_
 #undef LIB_JXL_QUANTIZER_INL_H_
 #else
 #define LIB_JXL_QUANTIZER_INL_H_
 #endif
-
-#include <stddef.h>
 
 #include <hwy/highway.h>
 HWY_BEFORE_NAMESPACE();

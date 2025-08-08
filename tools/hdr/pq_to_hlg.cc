@@ -9,8 +9,13 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/codec_in_out.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/hdr/image_utils.h"
@@ -56,25 +61,27 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
-  jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
+  auto image =
+      jxl::make_unique<jxl::CodecInOut>(jpegxl::tools::NoMemoryManager());
   jxl::extras::ColorHints color_hints;
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;
   JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JPEGXL_TOOLS_CHECK(
-      jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, pool.get()));
+  JPEGXL_TOOLS_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints,
+                                       image.get(), pool.get()));
   if (max_nits > 0) {
-    image.metadata.m.SetIntensityTarget(max_nits);
+    image->metadata.m.SetIntensityTarget(max_nits);
   }
   const jxl::Primaries original_primaries =
-      image.Main().c_current().GetPrimariesType();
-  JPEGXL_TOOLS_CHECK(jxl::ToneMapTo({0, 1000}, &image, pool.get()));
-  JPEGXL_TOOLS_CHECK(jxl::HlgInverseOOTF(&image.Main(), 1.2f, pool.get()));
-  JPEGXL_TOOLS_CHECK(jxl::GamutMap(&image, preserve_saturation, pool.get()));
+      image->Main().c_current().GetPrimariesType();
+  JPEGXL_TOOLS_CHECK(jxl::ToneMapTo({0, 1000}, image.get(), pool.get()));
+  JPEGXL_TOOLS_CHECK(jxl::HlgInverseOOTF(&image->Main(), 1.2f, pool.get()));
+  JPEGXL_TOOLS_CHECK(
+      jxl::GamutMap(image.get(), preserve_saturation, pool.get()));
   // Peak luminance at which the system gamma is 1, since we are now in scene
   // light, having applied the inverse OOTF ourselves to control the subsequent
   // gamut mapping instead of leaving it to JxlCms below.
-  image.metadata.m.SetIntensityTarget(301);
+  image->metadata.m.SetIntensityTarget(301);
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
@@ -83,10 +90,10 @@ int main(int argc, const char** argv) {
   hlg.Tf().SetTransferFunction(jxl::TransferFunction::kHLG);
   JPEGXL_TOOLS_CHECK(hlg.CreateICC());
   JPEGXL_TOOLS_CHECK(
-      jpegxl::tools::TransformCodecInOutTo(image, hlg, pool.get()));
-  image.metadata.m.color_encoding = hlg;
+      jpegxl::tools::TransformCodecInOutTo(*image, hlg, pool.get()));
+  image->metadata.m.color_encoding = hlg;
   JPEGXL_TOOLS_CHECK(
-      jpegxl::tools::Encode(image, output_filename, &encoded, pool.get()));
+      jpegxl::tools::Encode(*image, output_filename, &encoded, pool.get()));
   JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
   return EXIT_SUCCESS;
 }

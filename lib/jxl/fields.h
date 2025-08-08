@@ -163,9 +163,6 @@ void SetDefault(Fields* JXL_RESTRICT fields);
 // to their default value.
 bool AllDefault(const Fields& fields);
 
-// Returns max number of bits required to encode a T.
-size_t MaxBits(const Fields& fields);
-
 // Returns whether a header's fields can all be encoded, i.e. they have a
 // valid representation. If so, "*total_bits" is the exact number of bits
 // required. Called by Write.

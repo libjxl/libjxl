@@ -7,6 +7,56 @@
 // test_utils.cc files with different JPEG_API_FN macros and possibly different
 // include paths for the jpeg headers.
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <utility>
+#include <vector>
+
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/test_params.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/sanitizers.h"
+
+#if defined(JPEG_API_FLAVOUR_JPEGLI)
+#include "lib/jpegli/decode.h"
+#define JPEG_API_FN(name) jpegli_##name
+#else
+#define JPEG_API_FN(name) jpeg_##name
+#endif  // JPEG_API_FLAVOUR_JPEGLI
+
+namespace J_TEST_UTILS {
+
+using ::jpegli::CompressParams;
+using ::jpegli::CQUANT_1PASS;
+using ::jpegli::CQUANT_2PASS;
+using ::jpegli::CQUANT_EXTERNAL;
+using ::jpegli::CQUANT_REUSE;
+using ::jpegli::DecompressParams;
+using ::jpegli::DivCeil;
+using ::jpegli::kLastScan;
+using ::jpegli::kMarkerData;
+using ::jpegli::kSpecialMarker0;
+using ::jpegli::kSpecialMarker1;
+using ::jpegli::kTestColorMap;
+using ::jpegli::kTestColorMapNumColors;
+using ::jpegli::RAW_DATA;
+using ::jpegli::ScanDecompressParams;
+using ::jpegli::TestImage;
+
+#if defined(JPEG_API_FLAVOUR_JPEGLI)
+using ::jpegli::Check;
+#else
+namespace {
+void Check(bool ok) {
+  if (!ok) {
+    JXL_CRASH();
+  }
+}
+}  // namespace
+#endif
+
 // Sequential non-interleaved.
 constexpr jpeg_scan_info kScript1[] = {
     {1, {0}, 0, 63, 0, 0},
@@ -240,9 +290,9 @@ void SetDecompressParams(const DecompressParams& dparams,
           cinfo->enable_external_quant = TRUE;
         }
       }
-      SetScanDecompressParams(dparams, cinfo, 1);
+      J_TEST_UTILS::SetScanDecompressParams(dparams, cinfo, 1);
     } else {
-      SetScanDecompressParams(dparams, cinfo, kLastScan);
+      J_TEST_UTILS::SetScanDecompressParams(dparams, cinfo, kLastScan);
     }
   }
 }
@@ -430,3 +480,7 @@ void CopyCoefficients(j_decompress_ptr cinfo, jvirt_barray_ptr* coef_arrays,
     output->coeffs.emplace_back(std::move(coeffs));
   }
 }
+
+}  // namespace J_TEST_UTILS
+
+#undef JPEG_API_FN

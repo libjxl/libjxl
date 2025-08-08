@@ -16,15 +16,21 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/scope_guard.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/fields.h"
 #include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/encoding/dec_ma.h"
+#include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/pack_signed.h"
 
 namespace jxl {
@@ -180,7 +186,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   const auto make_pixel = [](uint64_t v, pixel_type multiplier,
                              pixel_type_w offset) -> pixel_type {
     JXL_DASSERT((v & 0xFFFFFFFF) == v);
-    pixel_type_w val = UnpackSigned(v);
+    pixel_type_w val = static_cast<pixel_type_w>(UnpackSigned(v));
     // if it overflows, it overflows, and we have a problem anyway
     return val * multiplier + offset;
   };
@@ -237,7 +243,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         const pixel_type *JXL_RESTRICT rtop = (y ? channel.Row(y - 1) : r - 1);
         const pixel_type *JXL_RESTRICT rtopleft =
             (y ? channel.Row(y - 1) - 1 : r - 1);
-        pixel_type_w guess = (y ? rtop[0] : 0);
+        pixel_type_w guess_0 = (y ? rtop[0] : 0);
         if (fl_run == 0) {
           reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &fl_v,
                                                      &fl_run);
@@ -245,7 +251,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         } else {
           fl_run--;
         }
-        r[0] = sv + guess;
+        r[0] = sv + guess_0;
         for (size_t x = 1; x < channel.w; x++) {
           pixel_type left = r[x - 1];
           pixel_type top = rtop[x];
@@ -335,8 +341,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
             x, y, channel.w, left, left, topright, left, toptop, &properties,
             offset);
         uint32_t pos =
-            kPropRangeFast + std::min(std::max(-kPropRangeFast, properties[0]),
-                                      kPropRangeFast - 1);
+            kPropRangeFast +
+            jxl::Clamp1(properties[0], -kPropRangeFast, kPropRangeFast - 1);
         uint32_t ctx_id = tree_lut.context_lookup[pos];
         uint64_t v =
             reader->ReadHybridUintClusteredInlined<uses_lz77>(ctx_id, br);
@@ -349,8 +355,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
             x, y, channel.w, rtop[x], r[x - 1], rtopright[x], rtopleft[x],
             rtoptop[x], &properties, offset);
         uint32_t pos =
-            kPropRangeFast + std::min(std::max(-kPropRangeFast, properties[0]),
-                                      kPropRangeFast - 1);
+            kPropRangeFast +
+            jxl::Clamp1(properties[0], -kPropRangeFast, kPropRangeFast - 1);
         uint32_t ctx_id = tree_lut.context_lookup[pos];
         uint64_t v =
             reader->ReadHybridUintClusteredInlined<uses_lz77>(ctx_id, br);
@@ -363,8 +369,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
             x, y, channel.w, rtop[x], r[x - 1], rtop[x], rtopleft[x],
             rtoptop[x], &properties, offset);
         uint32_t pos =
-            kPropRangeFast + std::min(std::max(-kPropRangeFast, properties[0]),
-                                      kPropRangeFast - 1);
+            kPropRangeFast +
+            jxl::Clamp1(properties[0], -kPropRangeFast, kPropRangeFast - 1);
         uint32_t ctx_id = tree_lut.context_lookup[pos];
         uint64_t v =
             reader->ReadHybridUintClusteredInlined<uses_lz77>(ctx_id, br);
@@ -546,7 +552,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     for (auto &ch : image.channel) {
       ZeroFillImage(&ch.plane);
     }
-    return Status(StatusCode::kNotEnoughBytes);
+    return JXL_NOT_ENOUGH_BYTES("Read overrun before ModularDecode");
   }
 
   JXL_DEBUG_V(3, "Image data underwent %" PRIuS " transformations: ",
@@ -566,12 +572,12 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   size_t distance_multiplier = 0;
   for (size_t i = 0; i < nb_channels; i++) {
     Channel &channel = image.channel[i];
-    if (!channel.w || !channel.h) {
-      continue;  // skip empty channels
-    }
     if (i >= image.nb_meta_channels && (channel.w > options->max_chan_size ||
                                         channel.h > options->max_chan_size)) {
       break;
+    }
+    if (!channel.w || !channel.h) {
+      continue;  // skip empty channels
     }
     if (channel.w > distance_multiplier) {
       distance_multiplier = channel.w;
@@ -631,13 +637,13 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   uint32_t fl_v = 0;
   for (; next_channel < nb_channels; next_channel++) {
     Channel &channel = image.channel[next_channel];
-    if (!channel.w || !channel.h) {
-      continue;  // skip empty channels
-    }
     if (next_channel >= image.nb_meta_channels &&
         (channel.w > options->max_chan_size ||
          channel.h > options->max_chan_size)) {
       break;
+    }
+    if (!channel.w || !channel.h) {
+      continue;  // skip empty channels
     }
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
         br, &reader, *context_map, *tree, header.wp_header, next_channel,
@@ -646,7 +652,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     // Truncated group.
     if (!br->AllReadsWithinBounds()) {
       if (!allow_truncated_group) return JXL_FAILURE("Truncated input");
-      return Status(StatusCode::kNotEnoughBytes);
+      return JXL_NOT_ENOUGH_BYTES("Read overrun in ModularDecode");
     }
   }
 

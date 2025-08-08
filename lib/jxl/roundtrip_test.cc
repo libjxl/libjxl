@@ -16,11 +16,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "lib/extras/codec.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
@@ -43,29 +43,28 @@ using ::jxl::test::ButteraugliDistance;
 // Converts a test image to a CodecInOut.
 // icc_profile can be empty to automatically deduce profile from the pixel
 // format, or filled in to force this ICC profile
-jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
-                                 const size_t xsize, const size_t ysize,
-                                 const JxlPixelFormat& pixel_format,
-                                 const jxl::Bytes& icc_profile) {
-  jxl::CodecInOut io{jxl::test::MemoryManager()};
-  jxl::test::Check(io.SetSize(xsize, ysize));
+std::unique_ptr<jxl::CodecInOut> ConvertTestImage(
+    const std::vector<uint8_t>& buf, const size_t xsize, const size_t ysize,
+    const JxlPixelFormat& pixel_format, const jxl::Bytes& icc_profile) {
+  auto io = jxl::make_unique<jxl::CodecInOut>(jxl::test::MemoryManager());
+  jxl::test::Check(io->SetSize(xsize, ysize));
 
   bool is_gray = pixel_format.num_channels < 3;
   bool has_alpha =
       pixel_format.num_channels == 2 || pixel_format.num_channels == 4;
 
-  io.metadata.m.color_encoding.SetColorSpace(is_gray ? jxl::ColorSpace::kGray
-                                                     : jxl::ColorSpace::kRGB);
+  io->metadata.m.color_encoding.SetColorSpace(is_gray ? jxl::ColorSpace::kGray
+                                                      : jxl::ColorSpace::kRGB);
   if (has_alpha) {
     // Note: alpha > 16 not yet supported by the C++ codec
     switch (pixel_format.data_type) {
       case JXL_TYPE_UINT8:
-        io.metadata.m.SetAlphaBits(8);
+        io->metadata.m.SetAlphaBits(8);
         break;
       case JXL_TYPE_UINT16:
       case JXL_TYPE_FLOAT:
       case JXL_TYPE_FLOAT16:
-        io.metadata.m.SetAlphaBits(16);
+        io->metadata.m.SetAlphaBits(16);
         break;
       default:
         ADD_FAILURE() << "Roundtrip tests for data type "
@@ -76,19 +75,19 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   switch (pixel_format.data_type) {
     case JXL_TYPE_FLOAT:
       bitdepth = 32;
-      io.metadata.m.SetFloat32Samples();
+      io->metadata.m.SetFloat32Samples();
       break;
     case JXL_TYPE_FLOAT16:
       bitdepth = 16;
-      io.metadata.m.SetFloat16Samples();
+      io->metadata.m.SetFloat16Samples();
       break;
     case JXL_TYPE_UINT8:
       bitdepth = 8;
-      io.metadata.m.SetUintSamples(8);
+      io->metadata.m.SetUintSamples(8);
       break;
     case JXL_TYPE_UINT16:
       bitdepth = 16;
-      io.metadata.m.SetUintSamples(16);
+      io->metadata.m.SetUintSamples(16);
       break;
     default:
       ADD_FAILURE() << "Roundtrip tests for data type "
@@ -107,7 +106,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   }
   EXPECT_TRUE(ConvertFromExternal(jxl::Bytes(buf), xsize, ysize, color_encoding,
                                   /*bits_per_sample=*/bitdepth, pixel_format,
-                                  /*pool=*/nullptr, &io.Main()));
+                                  /*pool=*/nullptr, &io->Main()));
   return io;
 }
 
@@ -209,8 +208,8 @@ void VerifyRoundtripCompression(
       GetTestImage<T>(xsize, ysize, extra_channel_pixel_format);
   const std::vector<uint8_t> original_bytes =
       GetTestImage<T>(orig_xsize, orig_ysize, input_pixel_format);
-  jxl::CodecInOut original_io = ConvertTestImage(
-      original_bytes, orig_xsize, orig_ysize, input_pixel_format, {});
+  auto original_io = ConvertTestImage(original_bytes, orig_xsize, orig_ysize,
+                                      input_pixel_format, {});
 
   JxlEncoder* enc = JxlEncoderCreate(nullptr);
   EXPECT_NE(nullptr, enc);
@@ -245,8 +244,8 @@ void VerifyRoundtripCompression(
         basic_info.bits_per_sample, extra_channel_pixel_format, 0,
         /*pool=*/nullptr, &alpha_channel));
 
-    original_io.metadata.m.SetAlphaBits(basic_info.bits_per_sample);
-    ASSERT_TRUE(original_io.Main().SetAlpha(std::move(alpha_channel)));
+    original_io->metadata.m.SetAlphaBits(basic_info.bits_per_sample);
+    ASSERT_TRUE(original_io->Main().SetAlpha(std::move(alpha_channel)));
     output_pixel_format_with_extra_channel_alpha.num_channels++;
   }
   // Those are the num_extra_channels including a potential alpha channel.
@@ -293,6 +292,7 @@ void VerifyRoundtripCompression(
             JxlEncoderSetUpsamplingMode(enc, resampling, upsampling_mode));
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
+  ASSERT_NE(nullptr, frame_settings);
   JxlEncoderSetFrameLossless(frame_settings, lossless);
   if (resampling > 1) {
     EXPECT_EQ(
@@ -413,27 +413,27 @@ void VerifyRoundtripCompression(
 
   JxlDecoderDestroy(dec);
 
-  jxl::CodecInOut decoded_io = ConvertTestImage(
+  auto decoded_io = ConvertTestImage(
       decoded_bytes, xsize, ysize, output_pixel_format_with_extra_channel_alpha,
       jxl::Bytes(icc_profile));
 
   if (already_downsampled) {
-    jxl::Image3F* color = decoded_io.Main().color();
+    jxl::Image3F* color = decoded_io->Main().color();
     JXL_TEST_ASSIGN_OR_DIE(*color, jxl::DownsampleImage(*color, resampling));
-    if (decoded_io.Main().HasAlpha()) {
-      ImageF* alpha = decoded_io.Main().alpha();
+    if (decoded_io->Main().HasAlpha()) {
+      ImageF* alpha = decoded_io->Main().alpha();
       JXL_TEST_ASSIGN_OR_DIE(*alpha, jxl::DownsampleImage(*alpha, resampling));
     }
-    EXPECT_TRUE(decoded_io.SetSize(color->xsize(), color->ysize()));
+    EXPECT_TRUE(decoded_io->SetSize(color->xsize(), color->ysize()));
   }
 
   if (lossless && !already_downsampled) {
-    JXL_EXPECT_OK(jxl::SamePixels(*original_io.Main().color(),
-                                  *decoded_io.Main().color(), _));
+    JXL_EXPECT_OK(jxl::SamePixels(*original_io->Main().color(),
+                                  *decoded_io->Main().color(), _));
   } else {
     jxl::ButteraugliParams butteraugli_params;
     float butteraugli_score =
-        ButteraugliDistance(original_io.frames, decoded_io.frames,
+        ButteraugliDistance(original_io->frames, decoded_io->frames,
                             butteraugli_params, *JxlGetDefaultCms(),
                             /*distmap=*/nullptr, nullptr);
     float target_score = 1.5f;
@@ -583,7 +583,7 @@ TEST(RoundtripTest, ExtraBoxesTest) {
 
   const std::vector<uint8_t> original_bytes =
       GetTestImage<float>(xsize, ysize, pixel_format);
-  jxl::CodecInOut original_io =
+  auto original_io =
       ConvertTestImage(original_bytes, xsize, ysize, pixel_format, {});
 
   JxlEncoder* enc = JxlEncoderCreate(nullptr);
@@ -607,6 +607,7 @@ TEST(RoundtripTest, ExtraBoxesTest) {
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(enc, &color_encoding));
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
+  ASSERT_NE(nullptr, frame_settings);
   JxlEncoderSetFrameLossless(frame_settings, JXL_FALSE);
   EXPECT_EQ(
       JXL_ENC_SUCCESS,
@@ -670,12 +671,12 @@ TEST(RoundtripTest, ExtraBoxesTest) {
 
   JxlDecoderDestroy(dec);
 
-  jxl::CodecInOut decoded_io = ConvertTestImage(
-      decoded_bytes, xsize, ysize, pixel_format, jxl::Bytes(icc_profile));
+  auto decoded_io = ConvertTestImage(decoded_bytes, xsize, ysize, pixel_format,
+                                     jxl::Bytes(icc_profile));
 
   jxl::ButteraugliParams butteraugli_params;
   float butteraugli_score =
-      ButteraugliDistance(original_io.frames, decoded_io.frames,
+      ButteraugliDistance(original_io->frames, decoded_io->frames,
                           butteraugli_params, *JxlGetDefaultCms(),
                           /*distmap=*/nullptr, nullptr);
   EXPECT_LE(butteraugli_score, 1.0f);
@@ -693,8 +694,8 @@ TEST(RoundtripTest, MultiFrameTest) {
     // use a vertical filmstrip of nb_frames frames
     const std::vector<uint8_t> original_bytes =
         GetTestImage<float>(xsize, ysize * nb_frames, pixel_format);
-    jxl::CodecInOut original_io = ConvertTestImage(
-        original_bytes, xsize, ysize * nb_frames, pixel_format, {});
+    auto original_io = ConvertTestImage(original_bytes, xsize,
+                                        ysize * nb_frames, pixel_format, {});
 
     JxlEncoder* enc = JxlEncoderCreate(nullptr);
     EXPECT_NE(nullptr, enc);
@@ -722,6 +723,7 @@ TEST(RoundtripTest, MultiFrameTest) {
               JxlEncoderSetColorEncoding(enc, &color_encoding));
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc, nullptr);
+    ASSERT_NE(nullptr, frame_settings);
     JxlEncoderSetFrameLossless(frame_settings, JXL_FALSE);
     if (index_frames == 1) {
       EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -806,13 +808,12 @@ TEST(RoundtripTest, MultiFrameTest) {
       EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
     }
     JxlDecoderDestroy(dec);
-    jxl::CodecInOut decoded_io =
-        ConvertTestImage(decoded_bytes, xsize, ysize * nb_frames, pixel_format,
-                         jxl::Bytes(icc_profile));
+    auto decoded_io = ConvertTestImage(decoded_bytes, xsize, ysize * nb_frames,
+                                       pixel_format, jxl::Bytes(icc_profile));
 
     jxl::ButteraugliParams butteraugli_params;
     float butteraugli_score =
-        ButteraugliDistance(original_io.frames, decoded_io.frames,
+        ButteraugliDistance(original_io->frames, decoded_io->frames,
                             butteraugli_params, *JxlGetDefaultCms(),
                             /*distmap=*/nullptr, nullptr);
     EXPECT_LE(butteraugli_score, 1.0f);
@@ -886,6 +887,7 @@ TEST(RoundtripTest, TestICCProfile) {
             JxlEncoderSetICCProfile(enc, icc.data(), icc.size()));
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
+  ASSERT_NE(nullptr, frame_settings);
   EXPECT_EQ(
       JXL_ENC_SUCCESS,
       JxlEncoderAddImageFrame(frame_settings, &format,
@@ -951,12 +953,11 @@ JXL_TRANSCODE_JPEG_TEST(RoundtripTest, TestJPEGReconstruction) {
   TEST_LIBJPEG_SUPPORT();
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
   const std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
-  jxl::CodecInOut orig_io{jxl::test::MemoryManager()};
-  ASSERT_TRUE(SetFromBytes(jxl::Bytes(orig), &orig_io, /*pool=*/nullptr));
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  ASSERT_NE(nullptr, frame_settings);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
@@ -992,4 +993,111 @@ JXL_TRANSCODE_JPEG_TEST(RoundtripTest, TestJPEGReconstruction) {
   used = reconstructed_buffer.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
   ASSERT_EQ(used, orig.size());
   EXPECT_EQ(0, memcmp(reconstructed_buffer.data(), orig.data(), used));
+}
+
+JXL_TRANSCODE_JPEG_TEST(RoundtripTest,
+                        TestJPEGReconstructionWithIncompleteHuffmanCode) {
+  TEST_LIBJPEG_SUPPORT();
+  static constexpr uint8_t kJPEGBytes[] = {
+      // SOI
+      0xff, 0xd8,  //
+      // SOF
+      0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01,  //
+      0x01, 0x11, 0x00,                                            //
+      // DQT
+      0xff, 0xdb, 0x00, 0x43, 0x00, 0x03, 0x02, 0x02, 0x03, 0x02,  //
+      0x02, 0x03, 0x03, 0x03, 0x03, 0x04, 0x03, 0x03, 0x04, 0x05,  //
+      0x08, 0x05, 0x05, 0x04, 0x04, 0x05, 0x0a, 0x07, 0x07, 0x06,  //
+      0x08, 0x0c, 0x0a, 0x0c, 0x0c, 0x0b, 0x0a, 0x0b, 0x0b, 0x0d,  //
+      0x0e, 0x12, 0x10, 0x0d, 0x0e, 0x11, 0x0e, 0x0b, 0x0b, 0x10,  //
+      0x16, 0x10, 0x11, 0x13, 0x14, 0x15, 0x15, 0x15, 0x0c, 0x0f,  //
+      0x17, 0x18, 0x16, 0x14, 0x18, 0x12, 0x14, 0x15, 0x14,        //
+      // DHT
+      0xff, 0xc4, 0x01, 0x30,  // marker, len
+      0x00,                    // slot id DC0
+      // counts for lengths 1 - 16 (total_count: 12)
+      0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00,  //
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      // symbols: 0 - 11
+      0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,  //
+      0x0a, 0x0b,                                                  //
+      0x13,  // slot id AC3
+      // counts for lengths 1 - 16 (total_count: 256)
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01,  //
+      0x01, 0x01, 0x01, 0x01, 0x01, 0xf9,                          //
+      // symbols: 0 - 255
+      0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,  //
+      0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13,  //
+      0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,  //
+      0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,  //
+      0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31,  //
+      0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b,  //
+      0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45,  //
+      0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,  //
+      0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59,  //
+      0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60, 0x61, 0x62, 0x63,  //
+      0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d,  //
+      0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77,  //
+      0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f, 0x80, 0x81,  //
+      0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b,  //
+      0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95,  //
+      0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f,  //
+      0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9,  //
+      0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf, 0xb0, 0xb1, 0xb2, 0xb3,  //
+      0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd,  //
+      0xbe, 0xbf, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,  //
+      0xc8, 0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce, 0xcf, 0xd0, 0xd1,  //
+      0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xdb,  //
+      0xdc, 0xdd, 0xde, 0xdf, 0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5,  //
+      0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xed, 0xee, 0xef,  //
+      0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9,  //
+      0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
+      // SOS
+      0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x03, 0x00, 0x3f, 0x00,  //
+      // entropy coded data (first 16 bit: DC 0, next 9 bits: AC eob)
+      0xfc, 0xaa, 0x00, 0x00,  //
+      // EOI
+      0xff, 0xd9,  //
+  };
+  static constexpr size_t kJPEGSize = sizeof(kJPEGBytes);
+
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  ASSERT_NE(nullptr, frame_settings);
+
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), JXL_TRUE));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddJPEGFrame(frame_settings, kJPEGBytes, kJPEGSize));
+  JxlEncoderCloseInput(enc.get());
+
+  std::vector<uint8_t> compressed;
+  EncodeWithEncoder(enc.get(), &compressed);
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec.get(), JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_FULL_IMAGE));
+  JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+  EXPECT_EQ(JXL_DEC_JPEG_RECONSTRUCTION, JxlDecoderProcessInput(dec.get()));
+  std::vector<uint8_t> reconstructed_buffer(128);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetJPEGBuffer(dec.get(), reconstructed_buffer.data(),
+                                    reconstructed_buffer.size()));
+  size_t used = 0;
+  JxlDecoderStatus dec_process_result = JXL_DEC_JPEG_NEED_MORE_OUTPUT;
+  while (dec_process_result == JXL_DEC_JPEG_NEED_MORE_OUTPUT) {
+    used = reconstructed_buffer.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
+    reconstructed_buffer.resize(reconstructed_buffer.size() * 2);
+    EXPECT_EQ(
+        JXL_DEC_SUCCESS,
+        JxlDecoderSetJPEGBuffer(dec.get(), reconstructed_buffer.data() + used,
+                                reconstructed_buffer.size() - used));
+    dec_process_result = JxlDecoderProcessInput(dec.get());
+  }
+  ASSERT_EQ(JXL_DEC_FULL_IMAGE, dec_process_result);
+  used = reconstructed_buffer.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
+  ASSERT_EQ(used, kJPEGSize);
+  EXPECT_EQ(0, memcmp(reconstructed_buffer.data(), kJPEGBytes, used));
 }

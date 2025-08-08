@@ -7,6 +7,12 @@
 
 #include <jxl/memory_manager.h>
 
+#include <cstddef>
+#include <utility>
+
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/image.h"
+
 #if JXL_DEBUG_V_LEVEL >= 1
 #include <sstream>
 #endif
@@ -16,6 +22,13 @@
 #include "lib/jxl/modular/transform/transform.h"
 
 namespace jxl {
+
+StatusOr<Channel> Channel::Create(JxlMemoryManager *memory_manager, size_t iw,
+                                  size_t ih, int hsh, int vsh) {
+  JXL_ASSIGN_OR_RETURN(Plane<pixel_type> plane,
+                       Plane<pixel_type>::Create(memory_manager, iw, ih));
+  return Channel(std::move(plane), iw, ih, hsh, vsh);
+}
 
 void Image::undo_transforms(const weighted::Header &wp_header,
                             jxl::ThreadPool *pool) {

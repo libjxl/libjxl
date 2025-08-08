@@ -8,15 +8,20 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include "lib/jxl/base/arch_macros.h"
+#include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 namespace jxl {
 std::pair<size_t, size_t>
@@ -772,11 +777,11 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
       // current frame.
       size_t x0 =
           i < first_image_dim_stage_ ? full_image_x0 - frame_x0 : full_image_x0;
-      size_t y =
+      size_t y0 =
           i < first_image_dim_stage_ ? full_image_y - frame_y0 : full_image_y;
       JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
           input_rows[first_trailing_stage_], output_rows,
-          /*xextra=*/0, full_image_x1 - full_image_x0, x0, y, thread_id));
+          /*xextra=*/0, full_image_x1 - full_image_x0, x0, y0, thread_id));
     }
   }
   return true;
