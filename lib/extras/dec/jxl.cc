@@ -23,6 +23,7 @@
 
 #include "lib/extras/common.h"
 #include "lib/extras/dec/color_description.h"
+#include "lib/extras/exif.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/byte_order.h"
@@ -629,6 +630,11 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         bool bigendian;
         if (IsExif(exif, &bigendian)) {
           ppf->metadata.exif = std::move(exif);
+          if (jpeg_bytes == nullptr && !dparams.keep_orientation) {
+            // when decoding to pixels and orientation is undone during decode,
+            // reset exif orientation to avoid double orientation
+            ResetExifOrientation(ppf->metadata.exif);
+          }
         } else {
           fprintf(stderr, "Warning: invalid TIFF header in Exif\n");
         }
