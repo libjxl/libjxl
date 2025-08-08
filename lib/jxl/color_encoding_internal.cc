@@ -5,12 +5,19 @@
 
 #include "lib/jxl/color_encoding_internal.h"
 
+#include <jxl/cms_interface.h>
+#include <jxl/color_encoding.h>
+#include <jxl/types.h>
+
 #include <array>
+#include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/cms/jxl_cms_internal.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/pack_signed.h"
 

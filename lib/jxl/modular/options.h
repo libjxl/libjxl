@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/enc_ans_params.h"
 
 namespace jxl {
@@ -78,8 +79,7 @@ struct ModularOptions {
   // Alternative heuristic tweaks.
   // Properties default to channel, group, weighted, gradient residual, W-NW,
   // NW-N, N-NE, N-NN
-  std::vector<uint32_t> splitting_heuristics_properties = {0,  1,  15, 9,
-                                                           10, 11, 12, 13};
+  std::vector<uint32_t> splitting_heuristics_properties;
   float splitting_heuristics_node_threshold = 96;
   size_t max_property_values = 32;
 
@@ -116,6 +116,13 @@ struct ModularOptions {
 
   // Ignore the image and just pretend all tokens are zeroes
   bool zero_tokens = false;
+
+  ModularOptions() {
+    // GCC has complaints about inline vector initialization; do it manually.
+    static const std::vector<uint32_t> kDefaultSplittingHeuristicsProperties = {
+        0, 1, 15, 9, 10, 11, 12, 13};
+    splitting_heuristics_properties = kDefaultSplittingHeuristicsProperties;
+  }
 };
 
 }  // namespace jxl

@@ -5,7 +5,16 @@
 
 #include "lib/jxl/render_pipeline/stage_to_linear.h"
 
+#include <cstddef>
+#include <cstdio>
+#include <memory>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizers.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_xyb.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_to_linear.cc"
@@ -23,60 +32,44 @@ namespace {
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::IfThenZeroElse;
 
-template <typename Op>
-struct PerChannelOp {
-  explicit PerChannelOp(Op op) : op(op) {}
-  template <typename D, typename T>
-  void Transform(D d, T* r, T* g, T* b) const {
-    *r = op.Transform(d, *r);
-    *g = op.Transform(d, *g);
-    *b = op.Transform(d, *b);
-  }
-
-  Op op;
-};
-template <typename Op>
-PerChannelOp<Op> MakePerChannelOp(Op&& op) {
-  return PerChannelOp<Op>(std::forward<Op>(op));
-}
-
 struct OpLinear {
+  explicit OpLinear(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
-  T Transform(D d, const T& encoded) const {
-    return encoded;
-  }
+  void Transform(D d, T* r, T* g, T* b) const {}
 };
 
 struct OpRgb {
+  explicit OpRgb(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
-  T Transform(D d, const T& encoded) const {
-    return TF_SRGB().DisplayFromEncoded(encoded);
+  void Transform(D d, T* r, T* g, T* b) const {
+    for (T* val : {r, g, b}) {
+      *val = TF_SRGB().DisplayFromEncoded(*val);
+    }
   }
 };
 
 struct OpPq {
-  explicit OpPq(const float intensity_target) : tf_pq_(intensity_target) {}
+  explicit OpPq(const OutputEncodingInfo& output_encoding_info)
+      : tf_pq_(output_encoding_info.orig_intensity_target) {}
   template <typename D, typename T>
-  T Transform(D d, const T& encoded) const {
-    return tf_pq_.DisplayFromEncoded(d, encoded);
+  void Transform(D d, T* r, T* g, T* b) const {
+    for (T* val : {r, g, b}) {
+      *val = tf_pq_.DisplayFromEncoded(d, *val);
+    }
   }
   TF_PQ tf_pq_;
 };
 
 struct OpHlg {
-  explicit OpHlg(const Vector3& luminances, const float intensity_target)
-      : hlg_ootf_(HlgOOTF::FromSceneLight(
-            /*display_luminance=*/intensity_target, luminances)) {}
+  explicit OpHlg(const OutputEncodingInfo& output_encoding_info)
+      : hlg_ootf_(
+            HlgOOTF::FromSceneLight(output_encoding_info.orig_intensity_target,
+                                    output_encoding_info.luminances)) {}
 
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
-      HWY_ALIGN float vals[MaxLanes(d)];
-      Store(*val, d, vals);
-      for (size_t i = 0; i < Lanes(d); ++i) {
-        vals[i] = TF_HLG_Base::DisplayFromEncoded(vals[i]);
-      }
-      *val = Load(d, vals);
+      *val = TF_HLG().DisplayFromEncoded(d, *val);
     }
     hlg_ootf_.Apply(r, g, b);
   }
@@ -84,22 +77,30 @@ struct OpHlg {
 };
 
 struct Op709 {
+  explicit Op709(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
-  T Transform(D d, const T& encoded) const {
-    return TF_709().DisplayFromEncoded(d, encoded);
+  void Transform(D d, T* r, T* g, T* b) const {
+    for (T* val : {r, g, b}) {
+      *val = TF_709().DisplayFromEncoded(d, *val);
+    }
   }
 };
 
 struct OpGamma {
+  explicit OpGamma(const OutputEncodingInfo& output_encoding_info)
+      : gamma(1.f / output_encoding_info.inverse_gamma) {}
   const float gamma;
   template <typename D, typename T>
-  T Transform(D d, const T& encoded) const {
-    return IfThenZeroElse(Le(encoded, Set(d, 1e-5f)),
-                          FastPowf(d, encoded, Set(d, gamma)));
+  void Transform(D d, T* r, T* g, T* b) const {
+    for (T* val : {r, g, b}) {
+      *val = IfThenZeroElse(Le(*val, Set(d, 1e-5f)),
+                            FastPowf(d, *val, Set(d, gamma)));
+    }
   }
 };
 
 struct OpInvalid {
+  explicit OpInvalid(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {}
 };
@@ -107,9 +108,9 @@ struct OpInvalid {
 template <typename Op>
 class ToLinearStage : public RenderPipelineStage {
  public:
-  explicit ToLinearStage(Op op)
+  explicit ToLinearStage(const OutputEncodingInfo& output_encoding_info)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
-        op_(std::move(op)) {}
+        op_(output_encoding_info) {}
 
   explicit ToLinearStage()
       : RenderPipelineStage(RenderPipelineStage::Settings()), valid_(false) {}
@@ -159,30 +160,28 @@ class ToLinearStage : public RenderPipelineStage {
 };
 
 template <typename Op>
-std::unique_ptr<ToLinearStage<Op>> MakeToLinearStage(Op&& op) {
-  return jxl::make_unique<ToLinearStage<Op>>(std::forward<Op>(op));
+std::unique_ptr<ToLinearStage<Op>> MakeToLinearStage(
+    const OutputEncodingInfo& output_encoding_info) {
+  return jxl::make_unique<ToLinearStage<Op>>(output_encoding_info);
 }
 
 std::unique_ptr<RenderPipelineStage> GetToLinearStage(
     const OutputEncodingInfo& output_encoding_info) {
   const auto& tf = output_encoding_info.color_encoding.Tf();
   if (tf.IsLinear()) {
-    return MakeToLinearStage(MakePerChannelOp(OpLinear()));
+    return MakeToLinearStage<OpLinear>(output_encoding_info);
   } else if (tf.IsSRGB()) {
-    return MakeToLinearStage(MakePerChannelOp(OpRgb()));
+    return MakeToLinearStage<OpRgb>(output_encoding_info);
   } else if (tf.IsPQ()) {
-    return MakeToLinearStage(
-        MakePerChannelOp(OpPq(output_encoding_info.orig_intensity_target)));
+    return MakeToLinearStage<OpPq>(output_encoding_info);
   } else if (tf.IsHLG()) {
-    return MakeToLinearStage(OpHlg(output_encoding_info.luminances,
-                                   output_encoding_info.orig_intensity_target));
+    return MakeToLinearStage<OpHlg>(output_encoding_info);
   } else if (tf.Is709()) {
-    return MakeToLinearStage(MakePerChannelOp(Op709()));
+    return MakeToLinearStage<Op709>(output_encoding_info);
   } else if (tf.have_gamma || tf.IsDCI()) {
-    return MakeToLinearStage(
-        MakePerChannelOp(OpGamma{1.f / output_encoding_info.inverse_gamma}));
+    return MakeToLinearStage<OpGamma>(output_encoding_info);
   } else {
-    return jxl::make_unique<ToLinearStage<OpInvalid>>();
+    return MakeToLinearStage<OpInvalid>(output_encoding_info);
   }
 }
 

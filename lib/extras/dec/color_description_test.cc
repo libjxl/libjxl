@@ -5,6 +5,11 @@
 
 #include "lib/extras/dec/color_description.h"
 
+#include <jxl/color_encoding.h>
+
+#include <cstdio>
+#include <string>
+
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"

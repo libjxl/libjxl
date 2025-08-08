@@ -5,10 +5,18 @@
 
 #include "lib/extras/metrics.h"
 
-#include <math.h>
-#include <stdlib.h>
+#include <jxl/cms_interface.h>
+#include <jxl/memory_manager.h>
 
 #include <atomic>
+#include <cmath>
+#include <cstdlib>
+#include <limits>
+
+#include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_ops.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/extras/metrics.cc"
@@ -19,6 +27,7 @@
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/memory_manager_internal.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -29,8 +38,13 @@ using hwy::HWY_NAMESPACE::GetLane;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::Rebind;
 
-double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
-                        double p) {
+StatusOr<double> ComputeDistanceP(const ImageF& distmap,
+                                  const ButteraugliParams& params, double p) {
+  if (distmap.xsize() == 0 || distmap.ysize() == 0) {
+    return 0.0;
+  }
+  JxlMemoryManager* memory_manager = distmap.memory_manager();
+  JXL_ENSURE(memory_manager != nullptr);
   const double onePerPixels = 1.0 / (distmap.ysize() * distmap.xsize());
   if (std::abs(p - 3.0) < 1E-6) {
     double sum1[3] = {0.0};
@@ -43,12 +57,17 @@ double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
     using T = float;
 #endif
     const HWY_FULL(T) d;
-    constexpr size_t N = MaxLanes(d);
+    JXL_ASSIGN_OR_RETURN(
+        AlignedMemory sum_totals,
+        AlignedMemory::Create(memory_manager, 3 * Lanes(d) * sizeof(T)));
     // Manually aligned storage to avoid asan crash on clang-7 due to
     // unaligned spill.
-    HWY_ALIGN T sum_totals0[N] = {0};
-    HWY_ALIGN T sum_totals1[N] = {0};
-    HWY_ALIGN T sum_totals2[N] = {0};
+    T* sum_totals0 = sum_totals.address<T>();
+    T* sum_totals1 = sum_totals0 + Lanes(d);
+    T* sum_totals2 = sum_totals1 + Lanes(d);
+    Store(Zero(d), d, sum_totals0);
+    Store(Zero(d), d, sum_totals1);
+    Store(Zero(d), d, sum_totals2);
 
     for (size_t y = 0; y < distmap.ysize(); ++y) {
       const float* JXL_RESTRICT row = distmap.ConstRow(y);
@@ -99,7 +118,7 @@ double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
     v /= 3.0;
     return v;
   } else {
-    static std::atomic<int> once{0};
+    static std::atomic<uint32_t> once{0};
     if (once.fetch_add(1, std::memory_order_relaxed) == 0) {
       JXL_WARNING("WARNING: using slow ComputeDistanceP");
     }
@@ -186,8 +205,8 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(ComputeDistanceP);
-double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
-                        double p) {
+StatusOr<double> ComputeDistanceP(const ImageF& distmap,
+                                  const ButteraugliParams& params, double p) {
   return HWY_DYNAMIC_DISPATCH(ComputeDistanceP)(distmap, params, p);
 }
 

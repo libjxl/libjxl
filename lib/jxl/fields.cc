@@ -9,10 +9,16 @@
 #include <cinttypes>  // PRIu64
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <hwy/base.h>
 
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/field_encodings.h"
 
 namespace jxl {
 
@@ -154,8 +160,7 @@ class ReadVisitor : public VisitorBase {
               uint32_t* JXL_RESTRICT value) override {
     *value = BitsCoder::Read(bits, reader_);
     if (!reader_->AllReadsWithinBounds()) {
-      return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                        "Not enough bytes for header");
+      return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
     }
     return true;
   }
@@ -164,8 +169,7 @@ class ReadVisitor : public VisitorBase {
              uint32_t* JXL_RESTRICT value) override {
     *value = U32Coder::Read(dist, reader_);
     if (!reader_->AllReadsWithinBounds()) {
-      return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                        "Not enough bytes for header");
+      return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
     }
     return true;
   }
@@ -174,8 +178,7 @@ class ReadVisitor : public VisitorBase {
              uint64_t* JXL_RESTRICT value) override {
     *value = U64Coder::Read(reader_);
     if (!reader_->AllReadsWithinBounds()) {
-      return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                        "Not enough bytes for header");
+      return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
     }
     return true;
   }
@@ -184,8 +187,7 @@ class ReadVisitor : public VisitorBase {
              float* JXL_RESTRICT value) override {
     ok_ &= F16Coder::Read(reader_, value);
     if (!reader_->AllReadsWithinBounds()) {
-      return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                        "Not enough bytes for header");
+      return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
     }
     return true;
   }
@@ -246,8 +248,7 @@ class ReadVisitor : public VisitorBase {
       JXL_WARNING("Skipping %" PRIuS "-bit extension(s)", remaining_bits);
       reader_->SkipBits(remaining_bits);
       if (!reader_->AllReadsWithinBounds()) {
-        return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                          "Not enough bytes for header");
+        return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
       }
     }
     return true;
@@ -269,55 +270,6 @@ class ReadVisitor : public VisitorBase {
 
   friend Status jxl::CheckHasEnoughBits(Visitor* /* visitor */,
                                         size_t /* bits */);
-};
-
-class MaxBitsVisitor : public VisitorBase {
- public:
-  Status Bits(const size_t bits, const uint32_t /*default_value*/,
-              uint32_t* JXL_RESTRICT /*value*/) override {
-    max_bits_ += BitsCoder::MaxEncodedBits(bits);
-    return true;
-  }
-
-  Status U32(const U32Enc enc, const uint32_t /*default_value*/,
-             uint32_t* JXL_RESTRICT /*value*/) override {
-    max_bits_ += U32Coder::MaxEncodedBits(enc);
-    return true;
-  }
-
-  Status U64(const uint64_t /*default_value*/,
-             uint64_t* JXL_RESTRICT /*value*/) override {
-    max_bits_ += U64Coder::MaxEncodedBits();
-    return true;
-  }
-
-  Status F16(const float /*default_value*/,
-             float* JXL_RESTRICT /*value*/) override {
-    max_bits_ += F16Coder::MaxEncodedBits();
-    return true;
-  }
-
-  Status AllDefault(const Fields& /*fields*/,
-                    bool* JXL_RESTRICT all_default) override {
-    JXL_RETURN_IF_ERROR(Bool(true, all_default));
-    return false;  // For max bits, assume nothing is default
-  }
-
-  // Always visit conditional fields to get a (loose) upper bound.
-  Status Conditional(bool /*condition*/) override { return true; }
-
-  Status BeginExtensions(uint64_t* JXL_RESTRICT /*extensions*/) override {
-    // Skip - extensions are not included in "MaxBits" because their length
-    // is potentially unbounded.
-    return true;
-  }
-
-  Status EndExtensions() override { return true; }
-
-  size_t MaxBits() const { return max_bits_; }
-
- private:
-  size_t max_bits_ = 0;
 };
 
 class CanEncodeVisitor : public VisitorBase {
@@ -429,13 +381,6 @@ bool Bundle::AllDefault(const Fields& fields) {
     JXL_DEBUG_ABORT("AllDefault should never fail");
   }
   return visitor.AllDefault();
-}
-size_t Bundle::MaxBits(const Fields& fields) {
-  MaxBitsVisitor visitor;
-  Status ret = visitor.VisitConst(fields);
-  (void)ret;
-  JXL_DASSERT(ret);
-  return visitor.MaxBits();
 }
 Status Bundle::CanEncode(const Fields& fields, size_t* extension_bits,
                          size_t* total_bits) {
@@ -642,8 +587,7 @@ Status CheckHasEnoughBits(Visitor* visitor, size_t bits) {
   size_t have_bits = rv->reader_->TotalBytes() * kBitsPerByte;
   size_t want_bits = bits + rv->reader_->TotalBitsConsumed();
   if (have_bits < want_bits) {
-    return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                      "Not enough bytes for header");
+    return JXL_NOT_ENOUGH_BYTES("Not enough bytes for header");
   }
   return true;
 }

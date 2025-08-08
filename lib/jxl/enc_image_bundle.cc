@@ -8,12 +8,20 @@
 #include <jxl/cms_interface.h>
 #include <jxl/memory_manager.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <utility>
+#include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/image_ops.h"
 
 namespace jxl {
 

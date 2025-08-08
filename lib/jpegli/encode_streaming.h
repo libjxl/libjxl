@@ -6,7 +6,7 @@
 #ifndef LIB_JPEGLI_ENCODE_STREAMING_H_
 #define LIB_JPEGLI_ENCODE_STREAMING_H_
 
-#include "lib/jpegli/encode_internal.h"
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 

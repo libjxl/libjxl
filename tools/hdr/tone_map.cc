@@ -9,7 +9,14 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/codec_in_out.h"
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/tone_mapping.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/hdr/image_utils.h"
@@ -69,35 +76,37 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
-  jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
+  auto image =
+      jxl::make_unique<jxl::CodecInOut>(jpegxl::tools::NoMemoryManager());
   jxl::extras::ColorHints color_hints;
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;
   JPEGXL_TOOLS_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JPEGXL_TOOLS_CHECK(
-      jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, pool.get()));
+  JPEGXL_TOOLS_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints,
+                                       image.get(), pool.get()));
   if (max_nits > 0) {
-    image.metadata.m.SetIntensityTarget(max_nits);
+    image->metadata.m.SetIntensityTarget(max_nits);
   }
-  JPEGXL_TOOLS_CHECK(jxl::ToneMapTo({0, target_nits}, &image, pool.get()));
-  JPEGXL_TOOLS_CHECK(jxl::GamutMap(&image, preserve_saturation, pool.get()));
+  JPEGXL_TOOLS_CHECK(jxl::ToneMapTo({0, target_nits}, image.get(), pool.get()));
+  JPEGXL_TOOLS_CHECK(
+      jxl::GamutMap(image.get(), preserve_saturation, pool.get()));
 
-  jxl::ColorEncoding c_out = image.metadata.m.color_encoding;
+  jxl::ColorEncoding c_out = image->metadata.m.color_encoding;
   jxl::cms::TransferFunction tf =
       pq ? jxl::TransferFunction::kPQ : jxl::TransferFunction::kSRGB;
 
   if (jxl::extras::CodecFromPath(output_filename) == jxl::extras::Codec::kEXR) {
     tf = jxl::TransferFunction::kLinear;
-    image.metadata.m.SetFloat16Samples();
+    image->metadata.m.SetFloat16Samples();
   }
   c_out.Tf().SetTransferFunction(tf);
 
   JPEGXL_TOOLS_CHECK(c_out.CreateICC());
   JPEGXL_TOOLS_CHECK(
-      jpegxl::tools::TransformCodecInOutTo(image, c_out, pool.get()));
-  image.metadata.m.color_encoding = c_out;
+      jpegxl::tools::TransformCodecInOutTo(*image, c_out, pool.get()));
+  image->metadata.m.color_encoding = c_out;
   JPEGXL_TOOLS_CHECK(
-      jpegxl::tools::Encode(image, output_filename, &encoded, pool.get()));
+      jpegxl::tools::Encode(*image, output_filename, &encoded, pool.get()));
   JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
   return EXIT_SUCCESS;
 }

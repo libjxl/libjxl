@@ -5,14 +5,20 @@
 
 #include "lib/jpegli/encode_streaming.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #include "lib/jpegli/bit_writer.h"
 #include "lib/jpegli/bitstream.h"
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
+#include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/entropy_coding.h"
-#include "lib/jpegli/error.h"
 #include "lib/jpegli/memory_manager.h"
-#include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/compiler_specific.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jpegli/encode_streaming.cc"

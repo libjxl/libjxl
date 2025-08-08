@@ -5,6 +5,13 @@
 
 #include "lib/jpegli/color_transform.h"
 
+#include <cstddef>
+#include <cstring>
+#include <utility>
+
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jpegli/color_transform.cc"
 #include <hwy/foreach_target.h>

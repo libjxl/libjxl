@@ -7,11 +7,12 @@
 #ifndef FJXL_SELF_INCLUDE
 
 #include <assert.h>
-#include <stdint.h>
-#include <string.h>
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -279,7 +280,7 @@ struct BitWriter {
         this->bits_in_buffer += nbits[i];
         // This `if` seems to be faster than using ternaries.
         if (this->bits_in_buffer >= 64) {
-          uint64_t next_buffer = bits[i] >> shift;
+          uint64_t next_buffer = shift >= 64 ? 0 : bits[i] >> shift;
           this->buffer = next_buffer;
           this->bits_in_buffer -= 64;
           this->bytes_written += 8;
@@ -546,6 +547,11 @@ struct PrefixCode {
         ni++;
       }
     }
+    for (size_t i = ni; i < kMaxNumSymbols; ++i) {
+      compact_freqs[i] = 0;
+      min_limit[i] = 0;
+      max_limit[i] = 0;
+    }
     uint8_t num_bits[kMaxNumSymbols] = {};
     ComputeCodeLengthsNonZero(compact_freqs, ni, min_limit, max_limit,
                               num_bits);
@@ -789,7 +795,24 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
     }
     if (have_alpha) {
       output->Write(2, 0b01);  // One extra channel
-      output->Write(1, 1);     // ... all_default (ie. 8-bit alpha)
+      if (frame->bitdepth == 8) {
+        output->Write(1, 1); // ... all_default (ie. 8-bit alpha)
+      } else {
+        output->Write(1, 0); // not d_alpha
+        output->Write(2, 0); // type = kAlpha
+        output->Write(1, 0); // not float
+        if (frame->bitdepth == 10) {
+          output->Write(2, 0b01); // bit_depth.bits_per_sample = 10
+        } else if (frame->bitdepth == 12) {
+          output->Write(2, 0b10); // bit_depth.bits_per_sample = 12
+        } else {
+          output->Write(2, 0b11); // 1 + u(6)
+          output->Write(6, frame->bitdepth - 1);
+        }
+        output->Write(2, 0); // dim_shift = 0
+        output->Write(2, 0); // name_len = 0
+        output->Write(1, 0); // alpha_associated = 0
+      }
     } else {
       output->Write(2, 0b00);  // No extra channel
     }
@@ -2781,7 +2804,7 @@ void CheckHuffmanBitsSIMD(int bits1, int nbits1, int bits2, int nbits2) {
 }
 
 struct Exactly14Bits {
-  explicit Exactly14Bits(size_t bitdepth) { assert(bitdepth == 14); }
+  explicit Exactly14Bits(size_t bitdepth_) { assert(bitdepth_ == 14); }
   // Force LZ77 symbols to have at least 8 bits, and raw symbols 15 and 16 to
   // have exactly 8, and no other symbol to have 8 or more. This ensures that
   // the representation for 15 and 16 is identical up to one bit.
@@ -3035,13 +3058,13 @@ struct ChunkEncoder {
 
 template <typename BitDepth>
 struct ChunkSampleCollector {
-  FJXL_INLINE void Rle(size_t count, uint64_t* lz77_counts) {
+  FJXL_INLINE void Rle(size_t count, uint64_t* lz77_counts_) {
     if (count == 0) return;
     raw_counts[0] += 1;
     count -= kLZ77MinLength + 1;
     unsigned token, nbits, bits;
     EncodeHybridUintLZ77(count, &token, &nbits, &bits);
-    lz77_counts[token]++;
+    lz77_counts_[token]++;
   }
 
   FJXL_INLINE void Chunk(size_t run, typename BitDepth::upixel_t* residuals,
@@ -3671,7 +3694,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   encoder.output = output;
   encoder.code = &code[0];
   encoder.PrepareForSimd();
-  int16_t p[4][32 + 1024] = {};
+  std::vector<std::array<int16_t, 32 + 1024>> p(4);
   size_t i = 0;
   size_t have_zero = 1;
   for (; i < pcolors; i++) {
@@ -3681,21 +3704,25 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
     p[3][16 + i + have_zero] = (palette[i] >> 24) & 0xFF;
   }
   p[0][15] = 0;
-  row_encoder.ProcessRow(p[0] + 16, p[0] + 15, p[0] + 15, p[0] + 15, pcolors);
+  row_encoder.ProcessRow(p[0].data() + 16, p[0].data() + 15, p[0].data() + 15,
+                         p[0].data() + 15, pcolors);
   p[1][15] = p[0][16];
   p[0][15] = p[0][16];
   if (nb_chans > 1) {
-    row_encoder.ProcessRow(p[1] + 16, p[1] + 15, p[0] + 16, p[0] + 15, pcolors);
+    row_encoder.ProcessRow(p[1].data() + 16, p[1].data() + 15, p[0].data() + 16,
+                           p[0].data() + 15, pcolors);
   }
   p[2][15] = p[1][16];
   p[1][15] = p[1][16];
   if (nb_chans > 2) {
-    row_encoder.ProcessRow(p[2] + 16, p[2] + 15, p[1] + 16, p[1] + 15, pcolors);
+    row_encoder.ProcessRow(p[2].data() + 16, p[2].data() + 15, p[1].data() + 16,
+                           p[1].data() + 15, pcolors);
   }
   p[3][15] = p[2][16];
   p[2][15] = p[2][16];
   if (nb_chans > 3) {
-    row_encoder.ProcessRow(p[3] + 16, p[3] + 15, p[2] + 16, p[2] + 15, pcolors);
+    row_encoder.ProcessRow(p[3].data() + 16, p[3].data() + 15, p[2].data() + 16,
+                           p[2].data() + 15, pcolors);
   }
   row_encoder.Finalize();
 
@@ -3722,8 +3749,8 @@ bool detect_palette(const unsigned char* r, size_t width,
     for (int i = 0; i < 8; i++) index[i] = pixel_hash(p[i]);
     for (int i = 0; i < 8; i++) {
       collided |= (palette[index[i]] != 0 && p[i] != palette[index[i]]);
+      palette[index[i]] = p[i];
     }
-    for (int i = 0; i < 8; i++) palette[index[i]] = p[i];
   }
   for (; x < width; x++) {
     uint32_t p = 0;
@@ -4231,7 +4258,7 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                              unsigned char** output, void* runner_opaque,
                              FJxlParallelRunner runner) {
   FJxlFrameInput input(rgba, row_stride, nb_chans, bitdepth);
-  auto frame_state = JxlFastLosslessPrepareFrame(
+  auto* frame_state = JxlFastLosslessPrepareFrame(
       input.GetInputSource(), width, height, nb_chans, bitdepth, big_endian,
       effort, /*oneshot=*/true);
   if (!JxlFastLosslessProcessFrame(frame_state, /*is_last=*/true, runner_opaque,

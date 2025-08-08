@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jpegli/libjpeg_test_util.h"
@@ -424,9 +425,9 @@ TEST(DecodeAPITest, ReuseCinfo) {
                 JPEGLI_TEST_ENSURE_TRUE(output_progression.size() ==
                                         expected_output_progression.size());
                 for (size_t i = 0; i < output_progression.size(); ++i) {
-                  const TestImage& output = output_progression[i];
-                  const TestImage& expected = expected_output_progression[i];
-                  VerifyOutputImage(expected, output, max_rms);
+                  const TestImage& p_output = output_progression[i];
+                  const TestImage& p_expected = expected_output_progression[i];
+                  VerifyOutputImage(p_expected, p_output, max_rms);
                 }
               }
             }

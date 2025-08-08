@@ -5,13 +5,18 @@
 
 #include "lib/jxl/image_metadata.h"
 
-#include <limits>
-#include <utility>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
-#include "lib/jxl/alpha.h"
-#include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/matrix_ops.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/opsin_params.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/quantizer.h"

@@ -23,6 +23,7 @@ namespace HWY_NAMESPACE {
 namespace {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::ApproximateReciprocal;
 using hwy::HWY_NAMESPACE::Div;
 using hwy::HWY_NAMESPACE::MulAdd;
 

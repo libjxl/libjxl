@@ -7,9 +7,19 @@
 
 #include <jxl/types.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <hwy/base.h>
+#include <vector>
+
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // kMaxNumPasses, JPEGXL_ENABLE_TRANSCODE_JPEG
+#include "lib/jxl/field_encodings.h"
+#include "lib/jxl/fields.h"
 
 namespace jxl {
 namespace jpeg {
@@ -228,9 +238,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
                                        Bits(8), 0, &hc.counts[i]));
       num_symbols += hc.counts[i];
     }
-    if (num_symbols < 1) {
+    if (num_symbols == 0) {
       // Actually, at least 2 symbols are required, since one of them is EOI.
-      return JXL_FAILURE("Empty Huffman table");
+      // This case is used to represent an empty DHT marker.
+      continue;
     }
     if (num_symbols > hc.values.size()) {
       return JXL_FAILURE("Huffman code too large (%" PRIuS ")", num_symbols);

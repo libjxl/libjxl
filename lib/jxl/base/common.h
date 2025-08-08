@@ -15,6 +15,7 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
 
@@ -49,6 +50,10 @@ constexpr inline size_t RoundUpTo(size_t what, size_t align) {
 
 constexpr double kPi = 3.14159265358979323846264338327950288;
 
+// Multiplier for conversion of log2(x) result to ln(x).
+// print(1.0 / math.log2(math.e))
+constexpr float kInvLog2e = 0.6931471805599453;
+
 // Reasonable default for sRGB, matches common monitors. We map white to this
 // many nits (cd/m^2) by default. Butteraugli was tuned for 250 nits, which is
 // very close.
@@ -69,6 +74,26 @@ std::unique_ptr<T> make_unique(Args&&... args) {
 #else
 using std::make_unique;
 #endif
+
+template <typename T>
+struct UninitializedAllocator : std::allocator<T> {
+  static_assert(std::is_trivially_copyable<T>::value,
+                "Uninitialized values have to be trivially destructible");
+  using value_type = T;
+  template <typename U>
+  struct rebind {
+    using other = UninitializedAllocator<U>;
+  };
+  void construct(T* place) {}
+};
+
+template <typename T>
+using uninitialized_vector = std::vector<T, UninitializedAllocator<T>>;
+
+template <typename T>
+uninitialized_vector<T> make_uninitialized_vector(size_t n) {
+  return uninitialized_vector<T>(n, UninitializedAllocator<T>());
+}
 
 typedef std::array<float, 3> Color;
 

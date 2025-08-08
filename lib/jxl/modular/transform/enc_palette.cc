@@ -7,17 +7,28 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
 #include <map>
 #include <set>
+#include <utility>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/enc_transform.h"
 #include "lib/jxl/modular/transform/palette.h"
+#include "lib/jxl/modular/transform/transform.h"
 
 namespace jxl {
 
@@ -68,11 +79,13 @@ static int QuantizeColorToImplicitPaletteIndex(
     const std::vector<pixel_type> &color, const int palette_size,
     const int bit_depth, bool high_quality) {
   int index = 0;
+  int quant = (1 << bit_depth) - 1;
+  // When bit_depth == 1, half would be equal quant without this fuse.
+  int half = (bit_depth > 1) ? (1 << (bit_depth - 1)) : 0;
   if (high_quality) {
     int multiplier = 1;
     for (int value : color) {
-      int quantized = ((kLargeCube - 1) * value + (1 << (bit_depth - 1))) /
-                      ((1 << bit_depth) - 1);
+      int quantized = ((kLargeCube - 1) * value + half) / quant;
       JXL_DASSERT((quantized % kLargeCube) == quantized);
       index += quantized * multiplier;
       multiplier *= kLargeCube;
@@ -83,8 +96,7 @@ static int QuantizeColorToImplicitPaletteIndex(
     for (int value : color) {
       value -= 1 << (std::max(0, bit_depth - 3));
       value = std::max(0, value);
-      int quantized = ((kLargeCube - 1) * value + (1 << (bit_depth - 1))) /
-                      ((1 << bit_depth) - 1);
+      int quantized = ((kLargeCube - 1) * value + half) / quant;
       JXL_DASSERT((quantized % kLargeCube) == quantized);
       if (quantized > kSmallCube - 1) {
         quantized = kSmallCube - 1;
@@ -408,7 +420,7 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
   // rare colors.
   // Within each bucket, the colors are sorted on luma (times alpha).
   float freq_threshold = 4;  // arbitrary threshold
-  int x = 0;
+  int clr = 0;
   if (ordered && nb >= 3) {
     JXL_DEBUG_V(7, "Palette of %i colors, using luma order", nb_colors);
     // sort on luma (multiplied by alpha if available)
@@ -432,13 +444,13 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
   }
 
   for (auto pcol : candidate_palette_imageorder) {
-    JXL_DEBUG_V(9, "  Color %i :  ", x);
+    JXL_DEBUG_V(9, "  Color %i :  ", clr);
     for (size_t i = 0; i < nb; i++) {
-      p_palette[nb_deltas + i * onerow + x] = pcol[i];
+      p_palette[nb_deltas + i * onerow + clr] = pcol[i];
       JXL_DEBUG_V(9, "%i ", pcol[i]);
     }
-    inv_palette[pcol] = x;
-    x++;
+    inv_palette[pcol] = clr;
+    clr++;
   }
   std::vector<weighted::State> wp_states;
   for (size_t c = 0; c < nb; c++) {
@@ -481,7 +493,7 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
             color_with_error[c] =
                 p_in[c][x] + (palette_iteration_data.final_run ? 1 : 0) *
                                  diffusion_multiplier * error_row[0][c][x + 2];
-            color[c] = Clamp1(lroundf(color_with_error[c]), 0l,
+            color[c] = Clamp1(lround(color_with_error[c]), 0l,
                               (1l << input.bitdepth) - 1);
           }
 

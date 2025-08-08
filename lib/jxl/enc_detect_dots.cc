@@ -15,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/enc_patch_dictionary.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_detect_dots.cc"
 #include <hwy/foreach_target.h>
@@ -527,7 +529,8 @@ StatusOr<GaussianEllipse> FitGaussian(const ConnectedComponent& cc,
     ellipse.angle += kPi / 2.0;
   }
   ellipse.angle -= kPi * std::floor(ellipse.angle / kPi);
-  if (fabs(ellipse.angle - kPi) < 1e-6 || fabs(ellipse.angle) < 1e-6) {
+  if (std::fabs(ellipse.angle - kPi) < 1e-6 ||
+      std::fabs(ellipse.angle) < 1e-6) {
     ellipse.angle = 0.0;
   }
   JXL_ENSURE(ellipse.angle >= 0 && ellipse.angle <= kPi &&

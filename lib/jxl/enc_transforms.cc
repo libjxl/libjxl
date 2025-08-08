@@ -5,12 +5,15 @@
 
 #include "lib/jxl/enc_transforms.h"
 
+#include <cstddef>
+
+#include "lib/jxl/base/compiler_specific.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_transforms.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/dct_scales.h"
 #include "lib/jxl/enc_transforms-inl.h"
 
 namespace jxl {
@@ -27,8 +30,10 @@ void TransformFromPixels(const AcStrategyType strategy,
 
 HWY_EXPORT(DCFromLowestFrequencies);
 void DCFromLowestFrequencies(AcStrategyType strategy, const float* block,
-                             float* dc, size_t dc_stride) {
-  HWY_DYNAMIC_DISPATCH(DCFromLowestFrequencies)(strategy, block, dc, dc_stride);
+                             float* dc, size_t dc_stride,
+                             float* scratch_space) {
+  HWY_DYNAMIC_DISPATCH(DCFromLowestFrequencies)
+  (strategy, block, dc, dc_stride, scratch_space);
 }
 
 HWY_EXPORT(AFVDCT4x4);

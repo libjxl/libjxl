@@ -5,38 +5,49 @@
 
 #include "lib/jpegli/test_utils.h"
 
+#include <jxl/types.h>
+
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <ios>
+#include <iterator>
+#include <ostream>
 #include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
-#include "lib/jpegli/decode.h"
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/encode.h"
+#include "lib/jpegli/test_params.h"
+#include "lib/jpegli/types.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"
 #endif
 
+#define J_TEST_UTILS jpegli
+#define JPEG_API_FLAVOUR_JPEGLI
+#include "lib/jpegli/test_utils-inl.h"
+#undef JPEG_API_FLAVOUR_JPEGLI
+#undef J_TEST_UTILS
+
 namespace jpegli {
 
-namespace {
 void Check(bool ok) {
   if (!ok) {
     JXL_CRASH();
   }
 }
 #define QUIT(M) Check(false);
-}  // namespace
-
-#define JPEG_API_FN(name) jpegli_##name
-#include "lib/jpegli/test_utils-inl.h"
-#undef JPEG_API_FN
 
 #if defined(TEST_DATA_PATH)
 std::string GetTestDataPath(const std::string& filename) {
@@ -51,7 +62,8 @@ std::string GetTestDataPath(const std::string& filename) {
 }
 #endif
 
-jxl::StatusOr<std::vector<uint8_t>> ReadTestData(const std::string& filename) {
+::jxl::StatusOr<std::vector<uint8_t>> ReadTestData(
+    const std::string& filename) {
   std::vector<uint8_t> data;
   std::string full_path = GetTestDataPath(filename);
   fprintf(stderr, "ReadTestData %s\n", full_path.c_str());
@@ -323,7 +335,7 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
   return os;
 }
 
-jxl::Status SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels) {
+::jxl::Status SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels) {
   if (colorspace == JCS_GRAYSCALE) {
     *channels = 1;
   } else if (colorspace == JCS_RGB || colorspace == JCS_YCbCr ||

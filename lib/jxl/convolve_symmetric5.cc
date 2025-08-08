@@ -3,8 +3,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/image.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/convolve_symmetric5.cc"
@@ -13,7 +21,7 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/rect.h"
-#include "lib/jxl/convolve-inl.h"
+#include "lib/jxl/image_ops.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -182,12 +190,6 @@ Status Symmetric5(const ImageF& in, const Rect& in_rect,
                   ImageF* JXL_RESTRICT out, const Rect& out_rect) {
   return HWY_DYNAMIC_DISPATCH(Symmetric5)(in, in_rect, weights, pool, out,
                                           out_rect);
-}
-
-Status Symmetric5(const ImageF& in, const Rect& rect,
-                  const WeightsSymmetric5& weights, ThreadPool* pool,
-                  ImageF* JXL_RESTRICT out) {
-  return Symmetric5(in, rect, weights, pool, out, Rect(*out));
 }
 
 }  // namespace jxl

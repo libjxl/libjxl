@@ -35,7 +35,18 @@ GetPopulationCountPrecision(uint32_t logcount, uint32_t shift) {
 // Returns a histogram where the counts are positive, differ by at most 1,
 // and add up to total_count. The bigger counts (if any) are at the beginning
 // of the histogram.
-std::vector<int32_t> CreateFlatHistogram(int length, int total_count);
+static JXL_MAYBE_UNUSED JXL_INLINE std::vector<int32_t> CreateFlatHistogram(
+    int length, int total_count) {
+  JXL_DASSERT(length > 0);
+  JXL_DASSERT(length <= total_count);
+  const int count = total_count / length;
+  std::vector<int32_t> result(length, count);
+  const int rem_counts = total_count % length;
+  for (int i = 0; i < rem_counts; ++i) {
+    ++result[i];
+  }
+  return result;
+}
 
 // An alias table implements a mapping from the [0, ANS_TAB_SIZE) range into
 // the [0, ANS_MAX_ALPHABET_SIZE) range, satisfying the following conditions:

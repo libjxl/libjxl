@@ -6,8 +6,7 @@
 #ifndef LIB_JPEGLI_DECODE_INTERNAL_H_
 #define LIB_JPEGLI_DECODE_INTERNAL_H_
 
-#include <sys/types.h>
-
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -15,6 +14,7 @@
 #include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/huffman.h"
 #include "lib/jpegli/types.h"
+#include "lib/jxl/base/compiler_specific.h"
 
 namespace jpegli {
 

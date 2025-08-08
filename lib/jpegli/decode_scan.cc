@@ -5,12 +5,15 @@
 
 #include "lib/jpegli/decode_scan.h"
 
-#include <string.h>
-
+#include <algorithm>
+#include <cstring>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
+#include "lib/jpegli/huffman.h"
 #include "lib/jxl/base/status.h"
 
 namespace jpegli {

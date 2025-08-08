@@ -7,8 +7,6 @@
 
 // To support webp, install libwebp-dev and rerun cmake.
 
-#include <string>
-
 #include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"

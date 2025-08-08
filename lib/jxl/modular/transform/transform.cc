@@ -6,20 +6,86 @@
 #include "lib/jxl/modular/transform/transform.h"
 
 #include <cinttypes>  // PRIu32
+#include <cstddef>
+#include <cstdint>
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/palette.h"
 #include "lib/jxl/modular/transform/rct.h"
 #include "lib/jxl/modular/transform/squeeze.h"
+#include "lib/jxl/modular/transform/squeeze_params.h"
 
 namespace jxl {
 
 SqueezeParams::SqueezeParams() { Bundle::Init(this); }
+
+Transform::Transform() : Transform(TransformId::kInvalid) {}
+
 Transform::Transform(TransformId id) {
   Bundle::Init(this);
   this->id = id;
+}
+
+Status Transform::VisitFields(Visitor *JXL_RESTRICT visitor) {
+  JXL_QUIET_RETURN_IF_ERROR(
+      visitor->U32(Val(static_cast<uint32_t>(TransformId::kRCT)),
+                   Val(static_cast<uint32_t>(TransformId::kPalette)),
+                   Val(static_cast<uint32_t>(TransformId::kSqueeze)),
+                   Val(static_cast<uint32_t>(TransformId::kInvalid)),
+                   static_cast<uint32_t>(TransformId::kRCT),
+                   reinterpret_cast<uint32_t *>(&id)));
+  if (id == TransformId::kInvalid) {
+    return JXL_FAILURE("Invalid transform ID");
+  }
+  if (visitor->Conditional(id == TransformId::kRCT ||
+                           id == TransformId::kPalette)) {
+    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Bits(3), BitsOffset(6, 8),
+                                           BitsOffset(10, 72),
+                                           BitsOffset(13, 1096), 0, &begin_c));
+  }
+  if (visitor->Conditional(id == TransformId::kRCT)) {
+    // 0-41, default YCoCg.
+    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(6), Bits(2), BitsOffset(4, 2),
+                                           BitsOffset(6, 10), 6, &rct_type));
+    if (rct_type >= 42) {
+      return JXL_FAILURE("Invalid transform RCT type");
+    }
+  }
+  if (visitor->Conditional(id == TransformId::kPalette)) {
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->U32(Val(1), Val(3), Val(4), BitsOffset(13, 1), 3, &num_c));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
+        BitsOffset(8, 0), BitsOffset(10, 256), BitsOffset(12, 1280),
+        BitsOffset(16, 5376), 256, &nb_colors));
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->U32(Val(0), BitsOffset(8, 1), BitsOffset(10, 257),
+                     BitsOffset(16, 1281), 0, &nb_deltas));
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->Bits(4, static_cast<uint32_t>(Predictor::Zero),
+                      reinterpret_cast<uint32_t *>(&predictor)));
+    if (predictor >= Predictor::Best) {
+      return JXL_FAILURE("Invalid predictor");
+    }
+  }
+
+  if (visitor->Conditional(id == TransformId::kSqueeze)) {
+    uint32_t num_squeezes = static_cast<uint32_t>(squeezes.size());
+    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(0), BitsOffset(4, 1),
+                                           BitsOffset(6, 9), BitsOffset(8, 41),
+                                           0, &num_squeezes));
+    if (visitor->IsReading()) squeezes.resize(num_squeezes);
+    for (size_t i = 0; i < num_squeezes; i++) {
+      JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&squeezes[i]));
+    }
+  }
+  return true;
 }
 
 Status Transform::Inverse(Image &input, const weighted::Header &wp_header,

@@ -7,10 +7,14 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/icc_codec_common.h"
 #include "lib/jxl/padded_bytes.h"
@@ -360,23 +364,23 @@ Status ICCReader::Init(BitReader* reader) {
 }
 
 Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
-  ANSSymbolReader::Checkpoint checkpoint;
+  auto checkpoint = jxl::make_unique<ANSSymbolReader::Checkpoint>();
   size_t saved_i = 0;
   auto save = [&]() {
-    ans_reader_.Save(&checkpoint);
+    ans_reader_.Save(checkpoint.get());
     bits_to_skip_ = reader->TotalBitsConsumed() - used_bits_base_;
     saved_i = i_;
   };
   save();
-  auto check_and_restore = [&]() {
+  auto check_and_restore = [&]() -> Status {
     Status status = CheckEOI(reader);
     if (!status) {
       // not enough bytes.
-      ans_reader_.Restore(checkpoint);
+      ans_reader_.Restore(*checkpoint);
       i_ = saved_i;
       return status;
     }
-    return Status(true);
+    return true;
   };
   for (; i_ < enc_size_; i_++) {
     if (i_ % ANSSymbolReader::kMaxCheckpointInterval == 0 && i_ > 0) {
@@ -407,8 +411,7 @@ Status ICCReader::Process(BitReader* reader, PaddedBytes* icc) {
 
 Status ICCReader::CheckEOI(BitReader* reader) {
   if (reader->AllReadsWithinBounds()) return true;
-  return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                    "Not enough bytes for reading ICC profile");
+  return JXL_NOT_ENOUGH_BYTES("Not enough bytes for reading ICC profile");
 }
 
 }  // namespace jxl

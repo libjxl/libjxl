@@ -32,7 +32,7 @@ class GroupBorderAssigner {
 
  private:
   FrameDimensions frame_dim_;
-  std::vector<std::atomic<uint8_t>> counters_;
+  std::vector<std::vector<std::atomic<uint32_t>>> counters_;
 
   // Constants to identify group positions relative to the corners.
   static constexpr uint8_t kTopLeft = 0x01;

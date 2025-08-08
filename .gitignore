@@ -18,3 +18,9 @@ third_party/hdrvdp-2.2.2.zip.tmp
 tools/benchmark/metrics/plots
 tools/benchmark/metrics/results.csv
 tools/conformance/__pycache__
+
+# Editor configuration
+*.code-workspace
+
+# macOS Finder state files
+.DS_Store

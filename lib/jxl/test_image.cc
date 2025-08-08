@@ -5,19 +5,25 @@
 
 #include "lib/jxl/test_image.h"
 
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
+#include <jxl/types.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "lib/extras/dec/color_description.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -91,7 +97,7 @@ void FillPackedImage(size_t bits_per_sample, uint16_t seed,
   size_t rect_y0 = rngu(ysize);
   size_t rect_x1 = rngu(xsize);
   size_t rect_y1 = rngu(ysize);
-  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_y1);
+  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_x1);
   if (rect_y1 < rect_y0) std::swap(rect_y0, rect_y1);
 
   // Create pixel content to test, actual content does not matter as long as it
@@ -169,7 +175,7 @@ std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
   size_t rect_y0 = rng(ysize);
   size_t rect_x1 = rng(xsize);
   size_t rect_y1 = rng(ysize);
-  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_y1);
+  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_x1);
   if (rect_y1 < rect_y0) std::swap(rect_y0, rect_y1);
 
   size_t num_pixels = xsize * ysize;

@@ -7,37 +7,63 @@
 
 #include <jxl/cms.h>
 #include <jxl/cms_interface.h>
+#include <jxl/codestream_header.h>
+#include <jxl/encode.h>
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <fstream>
+#include <ios>
+#include <iterator>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "lib/extras/codec_in_out.h"
+#include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/jxl.h"
 #include "lib/extras/metrics.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/float.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_comparator.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
+#include "lib/jxl/luminance.h"
 #include "lib/jxl/padded_bytes.h"
 #include "lib/jxl/test_memory_manager.h"
 
@@ -104,13 +130,14 @@ void DefaultAcceptedFormats(extras::JXLDecompressParams& dparams) {
   }
 }
 
-Status DecodeFile(extras::JXLDecompressParams dparams,
+Status DecodeFile(const extras::JXLDecompressParams& dparams,
                   const Span<const uint8_t> file, CodecInOut* JXL_RESTRICT io,
                   ThreadPool* pool) {
-  DefaultAcceptedFormats(dparams);
+  extras::JXLDecompressParams local_dparams(dparams);
+  DefaultAcceptedFormats(local_dparams);
   SetThreadParallelRunner(dparams, pool);
   extras::PackedPixelFile ppf;
-  JXL_RETURN_IF_ERROR(DecodeImageJXL(file.data(), file.size(), dparams,
+  JXL_RETURN_IF_ERROR(DecodeImageJXL(file.data(), file.size(), local_dparams,
                                      /*decoded_bytes=*/nullptr, &ppf));
   JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
   return true;
@@ -188,10 +215,11 @@ void CheckSameEncodings(const std::vector<ColorEncoding>& a,
 }  // namespace
 
 bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
-               extras::JXLDecompressParams dparams,
+               const extras::JXLDecompressParams& dparams,
                CodecInOut* JXL_RESTRICT io2, std::stringstream& failures,
                size_t* compressed_size, ThreadPool* pool) {
-  DefaultAcceptedFormats(dparams);
+  extras::JXLDecompressParams local_dparams(dparams);
+  DefaultAcceptedFormats(local_dparams);
   if (compressed_size) {
     *compressed_size = static_cast<size_t>(-1);
   }
@@ -225,7 +253,7 @@ bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
   CheckSameEncodings(metadata_encodings_1, original_metadata_encodings,
                      "original vs after encoding", failures);
 
-  Check(DecodeFile(dparams, Bytes(compressed), io2, pool));
+  Check(DecodeFile(local_dparams, Bytes(compressed), io2, pool));
   Check(io2->frames.size() == io->frames.size());
 
   for (const ImageBundle& ib2 : io2->frames) {
@@ -251,17 +279,18 @@ bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
 
 size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
                  const extras::JXLCompressParams& cparams,
-                 extras::JXLDecompressParams dparams, ThreadPool* pool,
+                 const extras::JXLDecompressParams& dparams, ThreadPool* pool,
                  extras::PackedPixelFile* ppf_out) {
-  DefaultAcceptedFormats(dparams);
+  extras::JXLDecompressParams local_dparams(dparams);
+  DefaultAcceptedFormats(local_dparams);
   SetThreadParallelRunner(cparams, pool);
-  SetThreadParallelRunner(dparams, pool);
+  SetThreadParallelRunner(local_dparams, pool);
   std::vector<uint8_t> compressed;
   Check(extras::EncodeImageJXL(cparams, ppf_in, /*jpeg_bytes=*/nullptr,
                                &compressed));
   size_t decoded_bytes = 0;
-  Check(extras::DecodeImageJXL(compressed.data(), compressed.size(), dparams,
-                               &decoded_bytes, ppf_out));
+  Check(extras::DecodeImageJXL(compressed.data(), compressed.size(),
+                               local_dparams, &decoded_bytes, ppf_out));
   Check(decoded_bytes == compressed.size());
   return compressed.size();
 }
@@ -299,23 +328,23 @@ std::vector<ColorEncodingDescriptor> AllEncodings() {
   return all_encodings;
 }
 
-jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
-                                          size_t num_channels, size_t xsize,
-                                          size_t ysize) {
+std::unique_ptr<jxl::CodecInOut> SomeTestImageToCodecInOut(
+    const std::vector<uint8_t>& buf, size_t num_channels, size_t xsize,
+    size_t ysize) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  jxl::CodecInOut io{memory_manager};
-  Check(io.SetSize(xsize, ysize));
-  io.metadata.m.SetAlphaBits(16);
-  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(
+  auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  Check(io->SetSize(xsize, ysize));
+  io->metadata.m.SetAlphaBits(16);
+  io->metadata.m.color_encoding = jxl::ColorEncoding::SRGB(
       /*is_gray=*/num_channels == 1 || num_channels == 2);
   JxlPixelFormat format = {static_cast<uint32_t>(num_channels), JXL_TYPE_UINT16,
                            JXL_BIG_ENDIAN, 0};
   Check(ConvertFromExternal(
-      jxl::Bytes(buf.data(), buf.size()), xsize, ysize,
+      jxl::Bytes(buf), xsize, ysize,
       jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels < 3),
       /*bits_per_sample=*/16, format,
       /*pool=*/nullptr,
-      /*ib=*/&io.Main()));
+      /*ib=*/&io->Main()));
   return io;
 }
 
@@ -583,12 +612,12 @@ double DistanceRMS(const uint8_t* a, const uint8_t* b, size_t xsize,
 float ButteraugliDistance(const extras::PackedPixelFile& a,
                           const extras::PackedPixelFile& b, ThreadPool* pool) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecInOut io0{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(a, pool, &io0));
-  CodecInOut io1{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(b, pool, &io1));
+  auto io0 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(a, pool, io0.get()));
+  auto io1 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(b, pool, io1.get()));
   // TODO(eustas): simplify?
-  return ButteraugliDistance(io0.frames, io1.frames, ButteraugliParams(),
+  return ButteraugliDistance(io0->frames, io1->frames, ButteraugliParams(),
                              *JxlGetDefaultCms(),
                              /*distmap=*/nullptr, pool);
 }
@@ -624,35 +653,37 @@ float ButteraugliDistance(const std::vector<ImageBundle>& frames0,
 float Butteraugli3Norm(const extras::PackedPixelFile& a,
                        const extras::PackedPixelFile& b, ThreadPool* pool) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecInOut io0{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(a, pool, &io0));
-  CodecInOut io1{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(b, pool, &io1));
+  auto io0 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(a, pool, io0.get()));
+  auto io1 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(b, pool, io1.get()));
   ButteraugliParams butteraugli_params;
   ImageF distmap;
-  ButteraugliDistance(io0.frames, io1.frames, butteraugli_params,
+  ButteraugliDistance(io0->frames, io1->frames, butteraugli_params,
                       *JxlGetDefaultCms(), &distmap, pool);
-  return ComputeDistanceP(distmap, butteraugli_params, 3);
+  JXL_TEST_ASSIGN_OR_DIE(double pnorm,
+                         ComputeDistanceP(distmap, butteraugli_params, 3));
+  return pnorm;
 }
 
 float ComputeDistance2(const extras::PackedPixelFile& a,
                        const extras::PackedPixelFile& b) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecInOut io0{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(a, nullptr, &io0));
-  CodecInOut io1{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
-  return ComputeDistance2(io0.Main(), io1.Main(), *JxlGetDefaultCms());
+  auto io0 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(a, nullptr, io0.get()));
+  auto io1 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(b, nullptr, io1.get()));
+  return ComputeDistance2(io0->Main(), io1->Main(), *JxlGetDefaultCms());
 }
 
 float ComputePSNR(const extras::PackedPixelFile& a,
                   const extras::PackedPixelFile& b) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  CodecInOut io0{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(a, nullptr, &io0));
-  CodecInOut io1{memory_manager};
-  Check(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
-  return ComputePSNR(io0.Main(), io1.Main(), *JxlGetDefaultCms());
+  auto io0 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(a, nullptr, io0.get()));
+  auto io1 = jxl::make_unique<CodecInOut>(memory_manager);
+  Check(ConvertPackedPixelFileToCodecInOut(b, nullptr, io1.get()));
+  return ComputePSNR(io0->Main(), io1->Main(), *JxlGetDefaultCms());
 }
 
 bool SameAlpha(const extras::PackedPixelFile& a,
@@ -744,10 +775,10 @@ bool SamePixels(const extras::PackedPixelFile& a,
 
 Status ReadICC(BitReader* JXL_RESTRICT reader,
                std::vector<uint8_t>* JXL_RESTRICT icc) {
-  JxlMemoryManager* memort_manager = jxl::test::MemoryManager();
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   icc->clear();
-  ICCReader icc_reader{memort_manager};
-  PaddedBytes icc_buffer{memort_manager};
+  ICCReader icc_reader{memory_manager};
+  PaddedBytes icc_buffer{memory_manager};
   JXL_RETURN_IF_ERROR(icc_reader.Init(reader));
   JXL_RETURN_IF_ERROR(icc_reader.Process(reader, &icc_buffer));
   Bytes(icc_buffer).AppendTo(*icc);
@@ -906,6 +937,32 @@ StatusOr<Image3F> GetColorImage(const extras::PackedPixelFile& ppf) {
         ppf.info.bits_per_sample, format, c, nullptr, &color.Plane(c)));
   }
   return color;
+}
+
+Status JpegDataToCodecInOut(std::unique_ptr<jxl::jpeg::JPEGData>&& data,
+                            CodecInOut* io) {
+  JxlMemoryManager* memory_manager = io->memory_manager;
+  io->frames.clear();
+  io->frames.reserve(1);
+  io->frames.emplace_back(memory_manager, &io->metadata.m);
+  io->Main().jpeg_data = std::move(data);
+  jpeg::JPEGData* jpeg_data = io->Main().jpeg_data.get();
+  JXL_RETURN_IF_ERROR(jxl::jpeg::SetColorEncodingFromJpegData(
+      *jpeg_data, &io->metadata.m.color_encoding));
+  JXL_RETURN_IF_ERROR(jxl::jpeg::SetChromaSubsamplingFromJpegData(
+      *jpeg_data, &io->Main().chroma_subsampling));
+  JXL_RETURN_IF_ERROR(jxl::jpeg::SetColorTransformFromJpegData(
+      *jpeg_data, &io->Main().color_transform));
+
+  io->metadata.m.SetIntensityTarget(kDefaultIntensityTarget);
+  io->metadata.m.SetUintSamples(8);
+  JXL_ASSIGN_OR_RETURN(
+      Image3F tmp,
+      Image3F::Create(memory_manager, jpeg_data->width, jpeg_data->height));
+  JXL_RETURN_IF_ERROR(
+      io->SetFromImage(std::move(tmp), io->metadata.m.color_encoding));
+  SetIntensityTarget(&io->metadata.m);
+  return true;
 }
 
 }  // namespace test
