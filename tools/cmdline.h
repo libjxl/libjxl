@@ -20,7 +20,7 @@ namespace tools {
 
 class CommandLineParser {
  public:
-  typedef int OptionId;
+  using OptionId = int;
 
   // An abstract class for defining command line options.
   class CmdOptionInterface {

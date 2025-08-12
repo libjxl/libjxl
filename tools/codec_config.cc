@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <hwy/base.h>
 #include <hwy/per_target.h>
 #include <hwy/targets.h>
 #include <string>
@@ -41,12 +42,19 @@ std::string CodecConfigString(uint32_t lib_version) {
 #else
 #endif
 
+#if (HWY_MAJOR > 1 || (HWY_MAJOR == 1 && HWY_MINOR >= 1))
   int64_t current = hwy::DispatchedTarget();
+  bool has_current = true;
+#else
+  int64_t current = 0;
+  bool has_current = false;
+#endif
+
   bool seen_current = false;
   bool seen_target = false;
   config += "[";
   for (const int64_t target : hwy::SupportedAndGeneratedTargets()) {
-    if (target == current) {
+    if (has_current && (target == current)) {
       config += '_';
       config += hwy::TargetName(target);
       config += '_';
@@ -59,13 +67,19 @@ std::string CodecConfigString(uint32_t lib_version) {
   }
   if (!seen_target) {
     config += "no targets found,";
-  } else if (!seen_current) {
+  } else if (has_current && !seen_current) {
     config += "unsupported but chosen: ";
     config += hwy::TargetName(current);
     config += ',';
   }
   config.resize(config.size() - 1);  // remove trailing comma
   config += "]";
+
+#if defined(JPEGXL_COMPILER_ID)
+  config += " {";
+  config += JPEGXL_COMPILER_ID;
+  config += "}";
+#endif
 
   return config;
 }

@@ -13,6 +13,7 @@
 
 #include <QElapsedTimer>
 #include <QFile>
+#include <QtConcurrent>
 
 #define CMS_NO_REGISTER_KEYWORD 1
 #include "lcms2.h"
@@ -113,7 +114,7 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
                                         pixel_count * 4 * sizeof(float)));
   EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
 
-  std::vector<uint16_t> uint16_pixels(pixel_count * 4);
+  auto uint16_pixels = std::make_unique<uint16_t[]>(pixel_count * 4);
   const thread_local cmsContext context = cmsCreateContext(nullptr, nullptr);
   EXPECT_TRUE(context != nullptr);
   const CmsProfileUniquePtr jxl_profile(cmsOpenProfileFromMemTHR(
@@ -132,23 +133,21 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
       context, jxl_profile.get(), TYPE_RGBA_FLT, target_profile.get(),
       TYPE_RGBA_16, INTENT_RELATIVE_COLORIMETRIC, cmsFLAGS_COPY_ALPHA));
   EXPECT_TRUE(transform != nullptr);
-  cmsDoTransform(transform.get(), float_pixels.data(), uint16_pixels.data(),
-                 pixel_count);
+  std::vector<size_t> row_indices(info.ysize);
+  std::iota(row_indices.begin(), row_indices.end(), 0);
+  QtConcurrent::blockingMap(row_indices, [&](size_t y) {
+    cmsDoTransform(transform.get(), float_pixels.data() + 4 * y * info.xsize,
+                   uint16_pixels.get() + 4 * y * info.xsize, info.xsize);
+  });
   if (elapsed_ns != nullptr) *elapsed_ns = timer.nsecsElapsed();
 
-  QImage result(info.xsize, info.ysize,
-                info.alpha_premultiplied ? QImage::Format_RGBA64_Premultiplied
-                                         : QImage::Format_RGBA64);
-
-  for (int y = 0; y < result.height(); ++y) {
-    QRgba64* const row = reinterpret_cast<QRgba64*>(result.scanLine(y));
-    const uint16_t* const data = uint16_pixels.data() + result.width() * y * 4;
-    for (int x = 0; x < result.width(); ++x) {
-      row[x] = qRgba64(data[4 * x + 0], data[4 * x + 1], data[4 * x + 2],
-                       data[4 * x + 3]);
-    }
-  }
-  return result;
+  uint16_t* qimage_data = uint16_pixels.release();
+  return QImage(
+      reinterpret_cast<uchar*>(qimage_data), info.xsize, info.ysize,
+      info.alpha_premultiplied ? QImage::Format_RGBA64_Premultiplied
+                               : QImage::Format_RGBA64,
+      [](void* info) { delete[] reinterpret_cast<uint16_t*>(info); },
+      qimage_data);
 }
 
 }  // namespace tools

@@ -89,6 +89,8 @@ struct HybridUintConfig {
     }
   }
 
+  JXL_INLINE uint32_t LsbMask() const { return (1 << lsb_in_token) - 1; }
+
   explicit HybridUintConfig(uint32_t split_exponent = 4,
                             uint32_t msb_in_token = 2,
                             uint32_t lsb_in_token = 0)
@@ -379,6 +381,8 @@ class ANSSymbolReader {
   bool IsSingleValueAndAdvance(size_t ctx, uint32_t* value, size_t count) {
     // TODO(veluca): No optimization for Huffman mode yet.
     if (use_prefix_code_) return false;
+    // TODO(eustas): Check if we could deal with copy tail as well.
+    if (num_to_copy_ != 0) return false;
     // TODO(eustas): propagate "degenerate_symbol" to simplify this method.
     const uint32_t res = state_ & (ANS_TAB_SIZE - 1u);
     const AliasTable::Entry* table = &alias_tables_[ctx << log_alpha_size_];

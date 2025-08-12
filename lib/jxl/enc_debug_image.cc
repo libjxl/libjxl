@@ -20,6 +20,7 @@
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_params.h"

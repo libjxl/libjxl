@@ -86,7 +86,9 @@ Status Encoder::VerifyImageSize(const PackedImage& image,
   }
   size_t info_num_channels =
       (info.num_color_channels + (info.alpha_bits > 0 ? 1 : 0));
-  if (image.xsize != info.xsize || image.ysize != info.ysize ||
+  // TODO(jon): frames do not necessarily have to match image size,
+  // but probably this is still assumed in some encoders
+  if (  // image.xsize != info.xsize || image.ysize != info.ysize ||
       image.format.num_channels != info_num_channels) {
     return JXL_FAILURE("Frame size does not match image size");
   }

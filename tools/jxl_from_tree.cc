@@ -37,6 +37,7 @@
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/noise.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
@@ -432,11 +433,12 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     for (size_t i = 0; i < 8; i++) {
       t = tok();
       size_t num = 0;
-      cparams.manual_noise[i] = std::stof(t, &num);
-      if (num != t.size()) {
+      float v = std::stof(t, &num);
+      if (num != t.size() || v < 0.0f || v > 1.0f) {
         fprintf(stderr, "Invalid noise entry: %s\n", t.c_str());
         return false;
       }
+      cparams.manual_noise[i] = jxl::Clamp1(v, 0.0f, jxl::kNoiseLutMax);
     }
   } else if (t == "XYBFactors") {
     cparams.manual_xyb_factors.resize(3);
@@ -511,7 +513,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   };
   if (!ParseNode(tok, tree, spline_data, cparams, width, height, *io, have_next,
                  x0, y0)) {
-    return 1;
+    return JXL_FAILURE("Failed to ParseNode");
   }
 
   if (tree_out) {
@@ -582,7 +584,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     cparams.manual_noise.clear();
     if (!ParseNode(tok, tree, spline_data, cparams, width, height, *io,
                    have_next, x0, y0)) {
-      return 1;
+      return JXL_FAILURE("Failed to ParseNode");
     }
     cparams.custom_fixed_tree = tree;
     JXL_ASSIGN_OR_RETURN(Image3F image,

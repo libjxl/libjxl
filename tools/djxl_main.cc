@@ -176,6 +176,10 @@ struct DecompressArgs {
                            "Disables rendering of spot colors.",
                            &render_spotcolors, &SetBooleanFalse, 2);
 
+    cmdline->AddOptionFlag('\0', "no_coalescing",
+                           "Disables coalescing of layers.", &coalescing,
+                           &SetBooleanFalse, 2);
+
     cmdline->AddOptionValue('\0', "preview_out", "FILENAME",
                             "If specified, writes the preview image to this "
                             "file.",
@@ -250,6 +254,7 @@ struct DecompressArgs {
   size_t jpeg_quality = 95;
   bool use_sjpeg = false;
   bool render_spotcolors = true;
+  bool coalescing = true;
   bool output_extra_channels = false;
   bool output_frames = false;
   std::string preview_out;
@@ -372,8 +377,8 @@ bool DecompressJxlReconstructJPEG(const jpegxl::tools::DecompressArgs& args,
 bool DecompressJxlToPackedPixelFile(
     const jpegxl::tools::DecompressArgs& args,
     const std::vector<uint8_t>& compressed,
-    const std::vector<JxlPixelFormat>& accepted_formats, void* runner,
-    jxl::extras::PackedPixelFile* ppf, size_t* decoded_bytes,
+    const std::vector<JxlPixelFormat>& accepted_formats, bool accepts_cmyk,
+    void* runner, jxl::extras::PackedPixelFile* ppf, size_t* decoded_bytes,
     jpegxl::tools::SpeedStats* stats) {
   jxl::extras::JXLDecompressParams dparams;
   dparams.max_downsampling = args.downsampling;
@@ -381,9 +386,11 @@ bool DecompressJxlToPackedPixelFile(
   dparams.display_nits = args.display_nits;
   dparams.color_space = args.color_space;
   dparams.render_spotcolors = args.render_spotcolors;
+  dparams.coalescing = args.coalescing;
   dparams.runner = JxlThreadParallelRunner;
   dparams.runner_opaque = runner;
   dparams.allow_partial_input = args.allow_partial_files;
+  if (!accepts_cmyk) dparams.color_space_for_cmyk = "sRGB";
   if (args.bits_per_sample == 0) {
     dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   } else if (args.bits_per_sample > 0) {
@@ -528,6 +535,7 @@ int main(int argc, const char* argv[]) {
   if (decode_to_pixels) {
     std::vector<JxlPixelFormat> accepted_formats;
     std::unique_ptr<jxl::extras::Encoder> encoder;
+    bool accepts_cmyk = false;
     if (!filename_out.empty()) {
       encoder = jxl::extras::Encoder::FromExtension(extension);
       if (encoder == nullptr) {
@@ -545,6 +553,7 @@ int main(int argc, const char* argv[]) {
       if (args.alpha_blend) {
         AddFormatsWithAlphaChannel(&accepted_formats);
       }
+      accepts_cmyk = encoder->AcceptsCmyk();
     }
     if (filename_out.empty()) {
       // Decoding to pixels only, fill in float pixel formats
@@ -559,8 +568,8 @@ int main(int argc, const char* argv[]) {
     size_t decoded_bytes = 0;
     for (size_t i = 0; i < num_reps; ++i) {
       if (!DecompressJxlToPackedPixelFile(args, compressed, accepted_formats,
-                                          runner.get(), &ppf, &decoded_bytes,
-                                          &stats)) {
+                                          accepts_cmyk, runner.get(), &ppf,
+                                          &decoded_bytes, &stats)) {
         fprintf(stderr, "DecompressJxlToPackedPixelFile failed\n");
         return EXIT_FAILURE;
       }
@@ -598,7 +607,9 @@ int main(int argc, const char* argv[]) {
       size_t nlayers = args.output_extra_channels
                            ? 1 + encoded_image.extra_channel_bitstreams.size()
                            : 1;
-      size_t nframes = args.output_frames ? encoded_image.bitstreams.size() : 1;
+      size_t nframes = (args.output_frames || !args.coalescing)
+                           ? encoded_image.bitstreams.size()
+                           : 1;
       for (size_t i = 0; i < nlayers; ++i) {
         for (size_t j = 0; j < nframes; ++j) {
           const std::vector<uint8_t>& bitstream =

@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           egress-policy: audit
 
@@ -51,7 +51,7 @@ jobs:
           git checkout ${{ matrix.tag }}
       - name: Update deps.sh
         run: |
-          NEWHASH=`git submodule status third_party/highway | cut -d' ' -f1 | cut -c2-`
+          NEWHASH=`git -C third_party/highway rev-parse HEAD`
           sed -i "s/\(THIRD_PARTY_HIGHWAY=\"\)[^\"]*/\1$NEWHASH/" deps.sh
       - name: Commit
         run: |

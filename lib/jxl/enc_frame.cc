@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -95,7 +94,7 @@ Status ParamsPostInit(CompressParams* p) {
   if (!p->manual_xyb_factors.empty() && p->manual_xyb_factors.size() != 3) {
     return JXL_FAILURE("Invalid number of XYB quantization factors");
   }
-  if (!p->modular_mode && p->butteraugli_distance == 0.0) {
+  if (!p->modular_mode && p->butteraugli_distance < kMinButteraugliDistance) {
     p->butteraugli_distance = kMinButteraugliDistance;
   }
   if (p->original_butteraugli_distance == -1.0) {
@@ -335,26 +334,29 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
   if (cparams.modular_mode) {
     frame_header->encoding = FrameEncoding::kModular;
     if (cparams.modular_group_size_shift == -1) {
-      frame_header->group_size_shift = 1;
+      // By default, use the smallest group size for faster decoding 2
+      // and higher. Greatly speeds up decoding via multithreading at
+      // the cost of density.
+      if (cparams.decoding_speed_tier >= 2 ||
+        // Force decoding speed to tier 2 for progressive lossless.
+        (cparams.decoding_speed_tier >= 1 && cparams.responsive == 1
+        && cparams.IsLossless())) {
+        frame_header->group_size_shift = 0;
       // no point using groups when only one group is full and the others are
       // less than half full: multithreading will not really help much, while
-      // compression does suffer
-      if (xsize <= 400 && ysize <= 400) {
+      // compression does suffer; but no reason to have group larger than image.
+      } else if (xsize <= 128 && ysize <= 128) {
+        frame_header->group_size_shift = 0;
+      } else if (xsize <= 256 && ysize <= 256) {
+        frame_header->group_size_shift = 1;
+      } else if (xsize <= 400 && ysize <= 400) {
         frame_header->group_size_shift = 2;
+      } else {
+        frame_header->group_size_shift = 1;
       }
     } else {
       frame_header->group_size_shift = cparams.modular_group_size_shift;
     }
-    if (cparams.modular_group_size_shift < 0 && cparams.decoding_speed_tier >= 2) {
-	  frame_header->group_size_shift = 0;
-	  // by default uses the smallest group size for faster decoding 2 and
-	  // higher, greatly speeds up decoding via multithreading at the cost
-	  // of density.
-    } if (cparams.modular_group_size_shift < 0 && cparams.decoding_speed_tier > 1 &&
-	       cparams.responsive == 1) {
-		frame_header->group_size_shift = 0;
-		// Force decoding speed to tier 2 for progressive lossless
-	 }
   }
 
   if (jpeg_data) {
@@ -603,7 +605,7 @@ struct PixelStatsForChromacityAdjustment {
         xmax = std::max(xmax, std::abs(diff_b - diff_prev));
         ymax = std::max(ymax, std::abs(diff_b - diff_prev_row));
         if (exposed_b >= 0) {
-          exposed_b *= fabs(cur_b - prev) + fabs(cur_b - prev_row);
+          exposed_b *= std::abs(cur_b - prev) + std::abs(cur_b - prev_row);
           eb = std::max(eb, exposed_b);
         }
       }
@@ -1648,13 +1650,13 @@ Status ComputeEncodingData(
   }
 
   if (!enc_state.streaming_mode) {
-  // If checks pass here, a Global MA tree is used.
+    // If checks pass here, a Global MA tree is used.
     if (cparams.speed_tier < SpeedTier::kTortoise ||
         !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
         (cparams.responsive == 1 && !cparams.IsLossless()) ||
-      // Allow Local trees for progressive lossless but not lossy.
-	(cparams.buffering && cparams.responsive < 0) ||
-	!cparams.custom_fixed_tree.empty()) {
+        // Allow Local trees for progressive lossless but not lossy.
+        (cparams.buffering && cparams.responsive < 0) ||
+        !cparams.custom_fixed_tree.empty()) {
       // Use local trees if doing lossless modular, unless at very slow speeds.
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
@@ -2495,7 +2497,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     return JXL_FAILURE("Too many levels of progressive DC");
   }
 
-  if (cparams.butteraugli_distance != 0 &&
+  if (cparams.modular_mode == false &&
       cparams.butteraugli_distance < kMinButteraugliDistance) {
     return JXL_FAILURE("Butteraugli distance is too low (%f)",
                        cparams.butteraugli_distance);

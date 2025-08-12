@@ -44,7 +44,7 @@ JXL_EXPORT uint32_t JxlEncoderVersion(void);
  * Allocated and initialized with @ref JxlEncoderCreate().
  * Cleaned up and deallocated with @ref JxlEncoderDestroy().
  */
-typedef struct JxlEncoderStruct JxlEncoder;
+typedef struct JxlEncoder JxlEncoder;
 
 /**
  * Settings and metadata for a single image frame. This includes encoder options
@@ -54,7 +54,7 @@ typedef struct JxlEncoderStruct JxlEncoder;
  * Cleaned up and deallocated when the encoder is destroyed with
  * @ref JxlEncoderDestroy().
  */
-typedef struct JxlEncoderFrameSettingsStruct JxlEncoderFrameSettings;
+typedef struct JxlEncoderFrameSettings JxlEncoderFrameSettings;
 
 /**
  * Return value for multiple encoder functions.

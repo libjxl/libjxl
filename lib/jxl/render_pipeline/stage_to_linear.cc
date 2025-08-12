@@ -11,7 +11,6 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_xyb.h"
@@ -34,13 +33,13 @@ namespace {
 using hwy::HWY_NAMESPACE::IfThenZeroElse;
 
 struct OpLinear {
-  explicit OpLinear(const OutputEncodingInfo&) {}
+  explicit OpLinear(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {}
 };
 
 struct OpRgb {
-  explicit OpRgb(const OutputEncodingInfo&) {}
+  explicit OpRgb(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
@@ -78,7 +77,7 @@ struct OpHlg {
 };
 
 struct Op709 {
-  explicit Op709(const OutputEncodingInfo&) {}
+  explicit Op709(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
@@ -101,7 +100,7 @@ struct OpGamma {
 };
 
 struct OpInvalid {
-  explicit OpInvalid(const OutputEncodingInfo&) {}
+  explicit OpInvalid(const OutputEncodingInfo& output_encoding_info) {}
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {}
 };

@@ -27,12 +27,14 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/c_callback_support.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -78,7 +80,7 @@ TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = 0;
+  basic_info.uses_original_profile = JXL_FALSE;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
@@ -888,7 +890,7 @@ TEST(EncodeTest, CodestreamLevelTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = 0;
+  basic_info.uses_original_profile = JXL_FALSE;
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
@@ -1078,7 +1080,7 @@ TEST(EncodeTest, BasicInfoTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = 0;
+  basic_info.uses_original_profile = JXL_FALSE;
   basic_info.have_animation = 1;
   basic_info.intensity_target = 123.4;
   basic_info.min_nits = 5.0;
@@ -1816,7 +1818,7 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
                            const StreamingTestParam& p,
                            const JxlBasicInfo& basic_info,
                            size_t number_extra_channels, bool streaming) {
-    JxlEncoderStruct* enc = frame_settings->enc;
+    JxlEncoder* enc = frame_settings->enc;
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
     if (p.fast_lossless()) {
       EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -2089,7 +2091,7 @@ TEST(EncoderTest, CMYK) {
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
   JxlEncoderPtr enc_ptr = JxlEncoderMake(nullptr);
-  JxlEncoderStruct* enc = enc_ptr.get();
+  JxlEncoder* enc = enc_ptr.get();
   ASSERT_NE(nullptr, enc);
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);

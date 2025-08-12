@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
       with:
         egress-policy: audit
 
@@ -82,12 +82,18 @@ jobs:
           - name: SVE2_128
             os: ubuntu-24.04-arm
             cflags: -DHWY_DISABLED_TARGETS=HWY_SVE2_128-1
+            cc: gcc
+            cxx: g++
           - name: SVE2
             os: ubuntu-24.04-arm
             cflags: -DHWY_DISABLED_TARGETS=HWY_SVE2-1
+            cc: gcc
+            cxx: g++
           - name: SVE
             os: ubuntu-24.04-arm
             cflags: -DHWY_DISABLED_TARGETS=HWY_SVE-1
+            cc: gcc
+            cxx: g++
           - name: NEON_WITHOUT_AES
             os: ubuntu-24.04-arm
             cflags: -DHWY_DISABLED_TARGETS=HWY_NEON_WITHOUT_AES-1
@@ -95,7 +101,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
       with:
         egress-policy: audit
 
@@ -129,7 +135,8 @@ jobs:
       run: |
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
-        CC=clang CXX=clang++ CMAKE_FLAGS="${{ matrix.cflags }}" \
+        CC=${{ matrix.cc || 'clang' }} CXX=${{ matrix.cxx || 'clang++' }} \
+        CMAKE_FLAGS="${{ matrix.cflags }} -DHWY_BROKEN_TARGETS=0" \
         SKIP_TEST=1 TARGETS="hwy_list_targets tools/djxl" \
         ./ci.sh ${{ matrix.build_type || 'release' }} \
           -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
@@ -169,7 +176,7 @@ jobs:
         target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN, SVE2_128, SVE2, SVE, NEON_WITHOUT_AES]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
       with:
         egress-policy: audit
 
@@ -245,7 +252,12 @@ jobs:
           grep -q ' ASAN ' djxl_version.txt || exit 1
           TARGET=${TARGET%_ASAN}
         fi
-        grep -q _${TARGET}_ djxl_version.txt || exit 1
+
+        # Old HWY versions does not report selected target
+        SELECTED=_
+        grep -E "(\[|,)_.*_(,|\])" djxl_version.txt || SELECTED=
+
+        grep -q ${SELECTED}${TARGET}${SELECTED} djxl_version.txt || exit 1
 
         python conformance.py \
           --decoder="${EMULATOR} ${HERE}/djxl" \

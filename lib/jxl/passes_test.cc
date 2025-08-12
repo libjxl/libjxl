@@ -23,6 +23,7 @@
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
@@ -115,7 +116,7 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
   };
 
   auto run1 = std::async(std::launch::async, test, 1.0f, 0.25f);
-  auto run2 = std::async(std::launch::async, test, 2.0f, 0.0f);
+  auto run2 = std::async(std::launch::async, test, 2.1f, 0.0f);
 }
 
 TEST(PassesTest, RoundtripLargeFastPasses) {

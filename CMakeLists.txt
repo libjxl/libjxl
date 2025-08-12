@@ -217,7 +217,7 @@ if (NOT CMAKE_C_COMPILER_ID STREQUAL CMAKE_CXX_COMPILER_ID)
 endif()
 
 message(STATUS
-    "Compiler IDs C:${CMAKE_C_COMPILER_ID}, C++:${CMAKE_CXX_COMPILER_ID}")
+    "Compiler IDs C:${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}, C++:${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 
 set(JXL_HWY_INCLUDE_DIRS "$<BUILD_INTERFACE:$<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>>")
 # Always disable SSSE3 since it is rare to have SSSE3 but not SSE4
@@ -365,7 +365,7 @@ else ()
 
   # Machine flags.
   add_compile_options(-funwind-tables)
-  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "riscv")
     add_compile_options("SHELL:-Xclang -mrelax-all")
   endif()
   if (CXX_CONSTRUCTOR_ALIASES_SUPPORTED)
