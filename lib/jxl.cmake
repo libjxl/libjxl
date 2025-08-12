@@ -272,22 +272,17 @@ set(JPEGXL_LIBRARY_REQUIRES
 # MSVCRT bundles math functions so no explicit libm dependency is required
 if (BUILD_SHARED_LIBS)
   set(JPEGXL_REQUIRES_TYPE "Requires.private")
-  if(NOT MSVC)
+  if(NOT MSVC AND NOT APPLE)
     set(JPEGXL_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
   endif()
 else()
   set(JPEGXL_REQUIRES_TYPE "Requires")
-  if(NOT MSVC)
+  if(NOT MSVC AND NOT APPLE)
     set(JPEGXL_PUBLIC_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
   endif()
 endif()
 
-set(JPEGXL_MATH_LIBRARY "-lm")
 set(JPEGXL_LIBRARY_MAIN jxl)
-
-if (WIN32 OR APPLE)
-  set(JPEGXL_MATH_LIBRARY "")
-endif()
 
 # Fix pkg-config file on MSVC when building static libraries.
 if (MSVC AND NOT BUILD_SHARED_LIBS)
