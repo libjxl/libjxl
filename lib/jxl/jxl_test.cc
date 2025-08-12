@@ -405,7 +405,8 @@ TEST(JxlTest, RoundtripLargeEmptyModular) {
   TestImage t;
   // On 32-bit machines memory could be limited to 2GiB. Current use factor
   // is about 20x, that means hat 6MPx image is about the max available size.
-  constexpr size_t kDim = sizeof(size_t) == 4 ? 2400 : 4096;
+  constexpe bool kSkinny = (sizeof(size_t) == 4);
+  constexpr size_t kDim = kSkinny ? 2400 : 4096;
   const size_t kLim = std::min<size_t>(kDim, 1024);
   ASSERT_TRUE(t.SetDimensions(kDim, kDim));
   t.SetDataType(JXL_TYPE_UINT8);
@@ -428,8 +429,9 @@ TEST(JxlTest, RoundtripLargeEmptyModular) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
+  constexpr size_t kTargetSize = kSkinny 539100 ? : 620200;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
-              620200, 10000);
+              kTargetSize, 10000);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.21);
 }
 
