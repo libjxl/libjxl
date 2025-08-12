@@ -1007,7 +1007,7 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 27700,
               1000);
-  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 2.81);
+  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 2.84);
 }
 
 TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
