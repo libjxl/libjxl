@@ -272,14 +272,21 @@ set(JPEGXL_LIBRARY_REQUIRES
 # MSVCRT bundles math functions so no explicit libm dependency is required
 if (BUILD_SHARED_LIBS)
   set(JPEGXL_REQUIRES_TYPE "Requires.private")
-  if(NOT MSVC)
+  if(NOT MSVC AND NOT APPLE)
     set(JPEGXL_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
   endif()
 else()
   set(JPEGXL_REQUIRES_TYPE "Requires")
-  if(NOT MSVC)
+  if(NOT MSVC AND NOT APPLE)
     set(JPEGXL_PUBLIC_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
   endif()
+endif()
+
+set(JPEGXL_LIBRARY_MAIN jxl)
+
+# Fix pkg-config file on MSVC when building static libraries.
+if (MSVC AND NOT BUILD_SHARED_LIBS)
+  set(JPEGXL_LIBRARY_MAIN jxl-static)
 endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
