@@ -168,7 +168,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
       with:
         egress-policy: audit
 
@@ -260,7 +260,7 @@ jobs:
         MODE="${{ matrix.mode }}"
         BUILD_TESTS=$([ "${WILL_TEST}" == "true" ] && echo "ON" || echo "OFF")
         [[ -n "${MODE}" ]] || MODE="${{ matrix.name }}"
-        SKIP_TEST=1 TARGETS=all CMAKE_CXX_FLAGS='${{ matrix.cxxflags }}' \
+        SKIP_TEST=1 TARGETS=all CMAKE_CXX_FLAGS='${{ matrix.cxxflags }}' CMAKE_FLAGS='-DHWY_BROKEN_TARGETS=0' \
         ./ci.sh ${MODE} \
           -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
