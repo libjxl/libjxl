@@ -429,7 +429,7 @@ TEST(JxlTest, RoundtripLargeEmptyModular) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  constexpr size_t kTargetSize = kSkinny 539100 ? : 620200;
+  constexpr size_t kTargetSize = kSkinny ? 539100 : 620200;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
               kTargetSize, 10000);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.21);
