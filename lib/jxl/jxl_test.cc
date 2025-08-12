@@ -405,7 +405,7 @@ TEST(JxlTest, RoundtripLargeEmptyModular) {
   TestImage t;
   // On 32-bit machines memory could be limited to 2GiB. Current use factor
   // is about 20x, that means hat 6MPx image is about the max available size.
-  constexpe bool kSkinny = (sizeof(size_t) == 4);
+  constexpr bool kSkinny = (sizeof(size_t) == 4);
   constexpr size_t kDim = kSkinny ? 2400 : 4096;
   const size_t kLim = std::min<size_t>(kDim, 1024);
   ASSERT_TRUE(t.SetDimensions(kDim, kDim));
