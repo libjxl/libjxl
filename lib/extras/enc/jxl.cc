@@ -63,6 +63,7 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
     JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &extra_channel_info);
     extra_channel_info.bits_per_sample = ppf.info.alpha_bits;
     extra_channel_info.exponent_bits_per_sample = ppf.info.alpha_exponent_bits;
+    extra_channel_info.alpha_premultiplied = ppf.info.alpha_premultiplied;
     if (params.premultiply != -1) {
       if (params.premultiply != 0 && params.premultiply != 1) {
         fprintf(stderr, "premultiply must be one of: -1, 0, 1.\n");
