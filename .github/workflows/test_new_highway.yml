@@ -63,6 +63,7 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@d91a481090679876dfc4178fef17f286781251df # v0.8.0
         with:
-          github_token: ${{ secrets.TOKEN }}
+          # This token expires on 15 August every year.
+          github_token: ${{ secrets.PUSH_NEW_HWY_TOKEN }}
           branch: 'refs/heads/${{ matrix.branch }}'
           force: true
