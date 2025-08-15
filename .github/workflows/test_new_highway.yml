@@ -65,4 +65,4 @@ jobs:
       - name: Push changes
         # NB: token expires on 15 August every year.
         run: |
-          git push https://oauth2:${{ secrets.PUSH_NEW_HWY_TOKEN }}/@github.com/libjxl/libjxl.git HEAD:refs/heads/${{ matrix.branch }} --force
+          git push https://oauth2:${{ secrets.PUSH_NEW_HWY_TOKEN }}@github.com/libjxl/libjxl.git HEAD:refs/heads/${{ matrix.branch }} --force
