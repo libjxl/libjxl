@@ -63,6 +63,8 @@ jobs:
           git commit -m "Update highway submodule" || echo "No changes to commit"
 
       - name: Push changes
-        # NB: token expires on 15 August every year.
+        env:
+          # NB: token expires on 15 August every year.
+          TOKEN: ${{ secrets.PUSH_NEW_HWY_TOKEN }}
         run: |
-          git push https://oauth2:${{ secrets.PUSH_NEW_HWY_TOKEN }}@github.com/libjxl/libjxl.git HEAD:refs/heads/${{ matrix.branch }} --force
+          git push https://oauth2:${TOKEN%$'\n'}@github.com/libjxl/libjxl.git HEAD:refs/heads/${{ matrix.branch }} --force
