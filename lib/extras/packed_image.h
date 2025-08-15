@@ -47,9 +47,21 @@ class PackedImage {
   }
 
   PackedImage Copy() const {
-    PackedImage copy(xsize, ysize, format, CalcStride(format, xsize));
-    memcpy(reinterpret_cast<uint8_t*>(copy.pixels()),
-           reinterpret_cast<const uint8_t*>(pixels()), pixels_size);
+    size_t copy_stride = CalcStride(format, xsize);
+    PackedImage copy(xsize, ysize, format, copy_stride);
+    const uint8_t* orig_pixels = reinterpret_cast<const uint8_t*>(pixels());
+    uint8_t* copy_pixels = reinterpret_cast<uint8_t*>(copy.pixels());
+    if (stride == copy_stride) {
+      // Same stride -> copy in one go.
+      memcpy(copy_pixels, orig_pixels, ysize * stride);
+    } else {
+      // Otherwise, copy row-wise.
+      JXL_DASSERT(copy_stride < stride);
+      for (size_t y = 0; y < ysize; ++y) {
+        memcpy(copy_pixels + y * copy_stride, orig_pixels + y * stride,
+               copy_stride);
+      }
+    }
     return copy;
   }
 
@@ -151,6 +163,16 @@ class PackedImage {
     }
   }
 
+  // Logical resize; use Copy() for storage reallocation, if necessary.
+  Status ShrinkTo(size_t new_xsize, size_t new_ysize) {
+    if (new_xsize > xsize || new_ysize > ysize) {
+      return JXL_FAILURE("Cannot shrink PackedImage to a larger size");
+    }
+    xsize = new_xsize;
+    ysize = new_ysize;
+    return true;
+  }
+
  private:
   PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format,
               size_t stride)
@@ -207,6 +229,17 @@ class PackedFrame {
       copy.extra_channels.emplace_back(ec.Copy());
     }
     return copy;
+  }
+
+  // Logical resize; use Copy() for storage reallocation, if necessary.
+  Status ShrinkTo(size_t new_xsize, size_t new_ysize) {
+    JXL_RETURN_IF_ERROR(color.ShrinkTo(new_xsize, new_ysize));
+    for (auto& ec : extra_channels) {
+      JXL_RETURN_IF_ERROR(ec.ShrinkTo(new_xsize, new_ysize));
+    }
+    frame_info.layer_info.xsize = new_xsize;
+    frame_info.layer_info.ysize = new_ysize;
+    return true;
   }
 
   // The Frame metadata.
@@ -302,6 +335,16 @@ class PackedPixelFile {
   }
   size_t xsize() const { return info.xsize; }
   size_t ysize() const { return info.ysize; }
+
+  // Logical resize; storage is not reallocated; stride is unchanged.
+  Status ShrinkTo(size_t new_xsize, size_t new_ysize) {
+    for (auto& frame : frames) {
+      JXL_RETURN_IF_ERROR(frame.ShrinkTo(new_xsize, new_ysize));
+    }
+    info.xsize = new_xsize;
+    info.ysize = new_ysize;
+    return true;
+  }
 };
 
 }  // namespace extras
