@@ -2123,9 +2123,16 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
         jxl::jpeg::ParseJPG(memory_manager, jxl::Bytes(buffer, size)));
     return true;
   };
-  if (!decode_jpg()) {
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
-                         "Error during decode of input JPEG");
+  jxl::Status status = decode_jpg();
+  if (!status) {
+    if (status.code() == jxl::StatusCode::kUnsupported) {
+      return JXL_API_ERROR(
+          frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+          "Unsupported JPEG feature (CMYK, arithmetic coding, etc.)");
+    } else {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
+                           "Error during decode of input JPEG");
+    }
   }
 
   if (!frame_settings->enc->color_encoding_set) {
