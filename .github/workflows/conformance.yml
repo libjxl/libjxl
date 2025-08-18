@@ -65,7 +65,7 @@ jobs:
         include:
           - name: AVX3
             cflags: -DHWY_DISABLED_TARGETS=HWY_AVX3-1
-            cmake_args: -DJPEGXL_ENABLE_AVX512=ON
+            cmake_args: -DJPEGXL_ENABLE_HWY_AVX3=ON
           - name: AVX2
             cflags: -DHWY_DISABLED_TARGETS=HWY_AVX2-1
           - name: SSE4

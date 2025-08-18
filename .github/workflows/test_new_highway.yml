@@ -31,6 +31,8 @@ jobs:
             tag: '1.1.0'
           - branch: 'test_highway_1.2.0'
             tag: '1.2.0'
+          - branch: 'test_highway_1.3.0'
+            tag: '1.3.0'
 
     steps:
       - name: Harden Runner
@@ -61,8 +63,8 @@ jobs:
           git commit -m "Update highway submodule" || echo "No changes to commit"
 
       - name: Push changes
-        uses: ad-m/github-push-action@d91a481090679876dfc4178fef17f286781251df # v0.8.0
-        with:
-          github_token: ${{ secrets.TOKEN }}
-          branch: 'refs/heads/${{ matrix.branch }}'
-          force: true
+        env:
+          # NB: token expires on 15 August every year.
+          TOKEN: ${{ secrets.PUSH_NEW_HWY_TOKEN }}
+        run: |
+          git push https://oauth2:${TOKEN%$'\n'}@github.com/libjxl/libjxl.git HEAD:refs/heads/${{ matrix.branch }} --force
