@@ -120,10 +120,13 @@ jobs:
         - ubuntu:20.04
         - debian:bullseye
         - debian:bookworm
-        # GIMP-2 package is removed: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1078402
-        # GIMP-3 package has incompatible API: https://github.com/libjxl/libjxl/issues/4037
-        # - debian:trixie
-        # - debian:sid
+        - debian:trixie
+        - debian:sid
+        include:
+          - os: debian:trixie
+            exclude_debian_packages: libjxl-gimp-plugin
+          - os: debian:sid
+            exclude_debian_packages: libjxl-gimp-plugin
 
     container:
       image: ${{ matrix.os }}
@@ -142,6 +145,7 @@ jobs:
           build-essential \
           devscripts \
           python3 \
+          sed \
         #
 
     - name: Calculate artifact suffix
@@ -203,7 +207,7 @@ jobs:
     - name: Build libjxl
       run: |
         apt build-dep -y .
-        ./ci.sh debian_build jpeg-xl
+        EXCLUDE_DEBIAN_PACKAGES="${{ matrix.exclude_debian_packages || '' }}" ./ci.sh debian_build jpeg-xl
 
     - name: Stats
       run: |
