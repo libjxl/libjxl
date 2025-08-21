@@ -147,22 +147,24 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
           std::max(kMinButteraugliDistance,
                    enc_state->cparams.butteraugli_distance * 0.1f);
     }
-    ImageBundle ib(memory_manager, &shared.metadata->m);
+    auto ib =
+        jxl::make_unique<ImageBundle>(memory_manager, &shared.metadata->m);
     // This is a lie - dc is in XYB
     // (but EncodeFrame will skip RGB->XYB conversion anyway)
-    JXL_RETURN_IF_ERROR(ib.SetFromImage(
+    JXL_RETURN_IF_ERROR(ib->SetFromImage(
         std::move(dc),
         ColorEncoding::LinearSRGB(shared.metadata->m.color_encoding.IsGray())));
-    if (!ib.metadata()->extra_channel_info.empty()) {
+    if (!ib->metadata()->extra_channel_info.empty()) {
       // Add placeholder extra channels to the patch image: dc_level frames do
       // not yet support extra channels, but the codec expects that the amount
       // of extra channels in frames matches that in the metadata of the
       // codestream.
       std::vector<ImageF> extra_channels;
-      extra_channels.reserve(ib.metadata()->extra_channel_info.size());
-      for (size_t i = 0; i < ib.metadata()->extra_channel_info.size(); i++) {
+      extra_channels.reserve(ib->metadata()->extra_channel_info.size());
+      for (size_t i = 0; i < ib->metadata()->extra_channel_info.size(); i++) {
         JXL_ASSIGN_OR_RETURN(
-            ImageF ch, ImageF::Create(memory_manager, ib.xsize(), ib.ysize()));
+            ImageF ch,
+            ImageF::Create(memory_manager, ib->xsize(), ib->ysize()));
         extra_channels.emplace_back(std::move(ch));
         // Must initialize the image with data to not affect blending with
         // uninitialized memory.
@@ -170,7 +172,7 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
         // instead.
         ZeroFillImage(&extra_channels.back());
       }
-      JXL_RETURN_IF_ERROR(ib.SetExtraChannels(std::move(extra_channels)));
+      JXL_RETURN_IF_ERROR(ib->SetExtraChannels(std::move(extra_channels)));
     }
     auto special_frame = jxl::make_unique<BitWriter>(memory_manager);
     FrameInfo dc_frame_info;
@@ -180,7 +182,7 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     dc_frame_info.save_before_color_transform = true;  // Implicitly true
     AuxOut dc_aux_out;
     JXL_RETURN_IF_ERROR(EncodeFrame(
-        memory_manager, cparams, dc_frame_info, shared.metadata, ib, cms, pool,
+        memory_manager, cparams, dc_frame_info, shared.metadata, *ib, cms, pool,
         special_frame.get(), aux_out ? &dc_aux_out : nullptr));
     if (aux_out) {
       for (const auto& l : dc_aux_out.layers) {
@@ -190,7 +192,8 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     const Span<const uint8_t> encoded = special_frame->GetSpan();
     enc_state->special_frames.emplace_back(std::move(special_frame));
 
-    ImageBundle decoded(memory_manager, &shared.metadata->m);
+    auto decoded =
+        jxl::make_unique<ImageBundle>(memory_manager, &shared.metadata->m);
     std::unique_ptr<PassesDecoderState> dec_state =
         jxl::make_unique<PassesDecoderState>(memory_manager);
     JXL_RETURN_IF_ERROR(
@@ -198,11 +201,11 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     const uint8_t* frame_start = encoded.data();
     size_t encoded_size = encoded.size();
     for (int i = 0; i <= cparams.progressive_dc; ++i) {
-      JXL_RETURN_IF_ERROR(
-          DecodeFrame(dec_state.get(), pool, frame_start, encoded_size,
-                      /*frame_header=*/nullptr, &decoded, *shared.metadata));
-      frame_start += decoded.decoded_bytes();
-      encoded_size -= decoded.decoded_bytes();
+      JXL_RETURN_IF_ERROR(DecodeFrame(
+          dec_state.get(), pool, frame_start, encoded_size,
+          /*frame_header=*/nullptr, decoded.get(), *shared.metadata));
+      frame_start += decoded->decoded_bytes();
+      encoded_size -= decoded->decoded_bytes();
     }
     // TODO(lode): frame_header.dc_level should be equal to
     // dec_state.frame_header.dc_level - 1 here, since above we set

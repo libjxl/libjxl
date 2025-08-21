@@ -28,6 +28,7 @@ target_include_directories(image_loading PRIVATE
   $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
 )
 target_link_libraries(image_loading PUBLIC
+  Qt6::Concurrent
   Qt6::Widgets
   jxl-internal
   jxl_threads

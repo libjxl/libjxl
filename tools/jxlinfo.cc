@@ -5,67 +5,95 @@
 
 // This example prints information from the main codestream header.
 
+#include <jxl/color_encoding.h>
 #include <jxl/compressed_icc.h>
 #include <jxl/decode.h>
 #include <jxl/gain_map.h>
 
-// NB: this is a .c file, C++ headers are not allowed.
-#include <inttypes.h>  // PRIu64
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <array>
+#include <cinttypes>  // PRIu64
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
 
-static void PrintColorEncoding(const JxlColorEncoding* color_encoding) {
-  const char* const cs_string[4] = {"RGB", "Grayscale", "XYB", "Unknown"};
-  const char* const wp_string[12] = {"", "D65", "Custom", "", "",  "",
-                                     "", "",    "",       "", "E", "P3"};
-  const char* const pr_string[12] = {"", "sRGB", "Custom",   "", "",  "", "",
-                                     "", "",     "Rec.2100", "", "P3"};
-  const char* const tf_string[19] = {
-      "", "709", "Unknown", "",     "", "", "",   "",    "Linear", "",
-      "", "",    "",        "sRGB", "", "", "PQ", "DCI", "HLG"};
-  const char* const ri_string[4] = {"Perceptual", "Relative", "Saturation",
-                                    "Absolute"};
-  printf("%s, ", cs_string[(*color_encoding).color_space]);
-  printf("%s, ", wp_string[(*color_encoding).white_point]);
-  if ((*color_encoding).white_point == JXL_WHITE_POINT_CUSTOM) {
-    printf("white_point(x=%f,y=%f), ", (*color_encoding).white_point_xy[0],
-           (*color_encoding).white_point_xy[1]);
+template <size_t N, typename E>
+static const char* EnumToString(E e, const std::array<const char*, N>& names) {
+  size_t idx = static_cast<size_t>(e);
+  if (idx >= N || names[idx] == nullptr) return "ERROR";
+  return names[idx];
+}
+
+static void PrintColorEncoding(const char* padding,
+                               const JxlColorEncoding* color_encoding) {
+  static const std::array<const char*, 4> cs_names = {"RGB", "Grayscale", "XYB",
+                                                      "Unknown"};
+  static const std::array<const char*, 12> wp_names = {
+      nullptr, "D65",   "Custom", nullptr, nullptr, nullptr,
+      nullptr, nullptr, nullptr,  nullptr, "E",     "P3"};
+  static const std::array<const char*, 12> pr_names = {
+      nullptr, "sRGB",  "Custom", nullptr,    nullptr, nullptr,
+      nullptr, nullptr, nullptr,  "Rec.2100", nullptr, "P3"};
+  static const std::array<const char*, 19> tf_names = {
+      nullptr, "709",    "Unknown", nullptr, nullptr, nullptr, nullptr,
+      nullptr, "Linear", nullptr,   nullptr, nullptr, nullptr, "sRGB",
+      "",      "",       "PQ",      "DCI",   "HLG"};
+  static const std::array<const char*, 4> ri_names = {"Perceptual", "Relative",
+                                                      "Saturation", "Absolute"};
+
+  const auto& color_space = color_encoding->color_space;
+  const auto& white_point = color_encoding->white_point;
+  const auto& primaries = color_encoding->primaries;
+  const auto& tf = color_encoding->transfer_function;
+
+  const auto printXy = [](const char* prefix, const double xy[2]) {
+    printf("%s(x=%f,y=%f)", prefix, xy[0], xy[1]);
+  };
+
+  printf("%sColor space: %s\n", padding, EnumToString(color_space, cs_names));
+
+  printf("%sWhite point: %s", padding, EnumToString(white_point, wp_names));
+  if (white_point == JXL_WHITE_POINT_CUSTOM) {
+    printXy(" ", color_encoding->white_point_xy);
   }
-  if ((*color_encoding).color_space == JXL_COLOR_SPACE_RGB ||
-      (*color_encoding).color_space == JXL_COLOR_SPACE_UNKNOWN) {
-    printf("%s primaries", pr_string[(*color_encoding).primaries]);
-    if ((*color_encoding).primaries == JXL_PRIMARIES_CUSTOM) {
-      printf(": red(x=%f,y=%f),", (*color_encoding).primaries_red_xy[0],
-             (*color_encoding).primaries_red_xy[1]);
-      printf(" green(x=%f,y=%f),", (*color_encoding).primaries_green_xy[0],
-             (*color_encoding).primaries_green_xy[1]);
-      printf(" blue(x=%f,y=%f)", (*color_encoding).primaries_blue_xy[0],
-             (*color_encoding).primaries_blue_xy[1]);
+  printf("\n");
+
+  if (color_space == JXL_COLOR_SPACE_RGB ||
+      color_space == JXL_COLOR_SPACE_UNKNOWN) {
+    printf("%sPrimaries: %s", padding, EnumToString(primaries, pr_names));
+    if (primaries == JXL_PRIMARIES_CUSTOM) {
+      printXy(" - red", color_encoding->primaries_red_xy);
+      printXy(", green", color_encoding->primaries_green_xy);
+      printXy(", blue", color_encoding->primaries_blue_xy);
     }
-    printf(", ");
+    printf("\n");
   }
-  if ((*color_encoding).transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
-    printf("gamma(%f) transfer function, ", (*color_encoding).gamma);
+
+  printf("%sTransfer function: ", padding);
+  if (tf == JXL_TRANSFER_FUNCTION_GAMMA) {
+    printf("gamma(%f)", color_encoding->gamma);
   } else {
-    printf("%s transfer function, ",
-           tf_string[(*color_encoding).transfer_function]);
+    printf("%s", EnumToString(tf, tf_names));
   }
-  printf("rendering intent: %s", ri_string[(*color_encoding).rendering_intent]);
+  printf("\n");
+
+  printf("%sRendering intent: %s\n", padding,
+         EnumToString(color_encoding->rendering_intent, ri_names));
 }
 
 static int PrintBasicInfo(FILE* file, int verbose) {
-  uint8_t* data = NULL;
+  uint8_t* data = nullptr;
   size_t data_size = 0;
   // In how large chunks to read from the file and try decoding the basic info.
   const size_t chunk_size = 2048;
-  uint8_t* box_data = NULL;
+  uint8_t* box_data = nullptr;
   size_t box_size = 0;
   size_t box_index = 0;
   JxlBoxType box_type = {0};
 
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
   if (!dec) {
     fprintf(stderr, "JxlDecoderCreate failed\n");
     return 0;
@@ -108,7 +136,13 @@ static int PrintBasicInfo(FILE* file, int verbose) {
       }
       // resize the buffer to append one more chunk of data
       // TODO(lode): avoid unnecessary reallocations
-      data = (uint8_t*)realloc(data, remaining + chunk_size);
+      uint8_t* temp =
+          reinterpret_cast<uint8_t*>(realloc(data, remaining + chunk_size));
+      if (temp == nullptr) {
+        fprintf(stderr, "Memory reallocation failed\n");
+        break;
+      }
+      data = temp;
       // append bytes read from the file behind the remaining bytes
       size_t read_size = fread(data + remaining, 1, chunk_size, file);
       if (read_size == 0 && feof(file)) {
@@ -174,8 +208,8 @@ static int PrintBasicInfo(FILE* file, int verbose) {
       }
       printf("\n");
       if (verbose) {
-        printf("num_color_channels: %d\n", info.num_color_channels);
-        printf("num_extra_channels: %d\n", info.num_extra_channels);
+        printf("Number of color channels: %d\n", info.num_color_channels);
+        printf("Number of extra channels: %d\n", info.num_extra_channels);
 
         for (uint32_t i = 0; i < info.num_extra_channels; i++) {
           JxlExtraChannelInfo extra;
@@ -184,38 +218,36 @@ static int PrintBasicInfo(FILE* file, int verbose) {
             fprintf(stderr, "JxlDecoderGetExtraChannelInfo failed\n");
             break;
           }
-          printf("extra channel %u:\n", i);
+          printf("Extra channel %u:\n", i);
           printf("  type: %s\n", (extra.type < ec_type_names_size
                                       ? ec_type_names[extra.type]
                                       : "Unknown, please update your libjxl"));
-          printf("  bits_per_sample: %u\n", extra.bits_per_sample);
+          printf("  bits per sample: %u\n", extra.bits_per_sample);
           if (extra.exponent_bits_per_sample > 0) {
             printf("  float, with exponent_bits_per_sample: %u\n",
                    extra.exponent_bits_per_sample);
           }
           if (extra.dim_shift > 0) {
-            printf("  dim_shift: %u (upsampled %ux)\n", extra.dim_shift,
-                   1 << extra.dim_shift);
+            printf("  upsampled %ux\n", 1 << extra.dim_shift);
           }
           if (extra.name_length) {
-            char* name = malloc(extra.name_length + 1);
-            if (JXL_DEC_SUCCESS != JxlDecoderGetExtraChannelName(
-                                       dec, i, name, extra.name_length + 1)) {
+            std::vector<char> name(extra.name_length + 1);
+            if (JXL_DEC_SUCCESS !=
+                JxlDecoderGetExtraChannelName(dec, i, name.data(),
+                                              extra.name_length + 1)) {
               fprintf(stderr, "JxlDecoderGetExtraChannelName failed\n");
-              free(name);
               break;
             }
-            printf("  name: %s\n", name);
-            free(name);
+            printf("  name: %s\n", name.data());
           }
           if (extra.type == JXL_CHANNEL_ALPHA) {
-            printf("  alpha_premultiplied: %d (%s)\n",
+            printf("  alpha premultiplied: %d (%s)\n",
                    extra.alpha_premultiplied,
                    extra.alpha_premultiplied ? "Premultiplied"
                                              : "Non-premultiplied");
           }
           if (extra.type == JXL_CHANNEL_SPOT_COLOR) {
-            printf("  spot_color: (%f, %f, %f) with opacity %f\n",
+            printf("  spot color: (%f, %f, %f) with opacity %f\n",
                    extra.spot_color[0], extra.spot_color[1],
                    extra.spot_color[2], extra.spot_color[3]);
           }
@@ -227,22 +259,22 @@ static int PrintBasicInfo(FILE* file, int verbose) {
       if (info.intensity_target != 255.f || info.min_nits != 0.f ||
           info.relative_to_max_display != 0 ||
           info.relative_to_max_display != 0.f) {
-        printf("intensity_target: %f nits\n", info.intensity_target);
-        printf("min_nits: %f\n", info.min_nits);
-        printf("relative_to_max_display: %d\n", info.relative_to_max_display);
-        printf("linear_below: %f\n", info.linear_below);
+        printf("Intensity target: %f nits\n", info.intensity_target);
+        printf("Min nits: %f\n", info.min_nits);
+        printf("Relative to max display: %d\n", info.relative_to_max_display);
+        printf("Linear below: %f\n", info.linear_below);
       }
-      if (verbose) printf("have_preview: %d\n", info.have_preview);
+      if (verbose) printf("Have preview: %d\n", info.have_preview);
       if (info.have_preview) {
         printf("Preview image: %ux%u\n", info.preview.xsize,
                info.preview.ysize);
       }
-      if (verbose) printf("have_animation: %d\n", info.have_animation);
+      if (verbose) printf("Have animation: %d\n", info.have_animation);
       if (verbose && info.have_animation) {
-        printf("ticks per second (numerator / denominator): %u / %u\n",
+        printf("Ticks per second (numerator / denominator): %u / %u\n",
                info.animation.tps_numerator, info.animation.tps_denominator);
-        printf("num_loops: %u\n", info.animation.num_loops);
-        printf("have_timecodes: %d\n", info.animation.have_timecodes);
+        printf("Num loops: %u\n", info.animation.num_loops);
+        printf("Have timecodes: %d\n", info.animation.have_timecodes);
       }
       if (info.xsize != info.intrinsic_xsize ||
           info.ysize != info.intrinsic_ysize || verbose) {
@@ -263,14 +295,11 @@ static int PrintBasicInfo(FILE* file, int verbose) {
         fprintf(stderr, "Invalid orientation\n");
       }
     } else if (status == JXL_DEC_COLOR_ENCODING) {
-      printf("Color space: ");
-
       JxlColorEncoding color_encoding;
       if (JXL_DEC_SUCCESS ==
           JxlDecoderGetColorAsEncodedProfile(
               dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &color_encoding)) {
-        PrintColorEncoding(&color_encoding);
-        puts("");
+        PrintColorEncoding("", &color_encoding);
       } else {
         // The profile is not in JPEG XL encoded form, get as ICC profile
         // instead.
@@ -281,23 +310,22 @@ static int PrintBasicInfo(FILE* file, int verbose) {
           fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
           continue;
         }
-        printf("%" PRIu64 "-byte ICC profile, ", (uint64_t)profile_size);
+        printf("%" PRIu64 "-byte ICC profile, ",
+               static_cast<uint64_t>(profile_size));
         if (profile_size < 132) {
           fprintf(stderr, "ICC profile too small\n");
           continue;
         }
-        uint8_t* profile = (uint8_t*)malloc(profile_size);
+        std::vector<uint8_t> profile(profile_size);
         if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
                                    dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
-                                   profile, profile_size)) {
+                                   profile.data(), profile_size)) {
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
-          free(profile);
           continue;
         }
-        printf("CMM type: \"%.4s\", ", profile + 4);
-        printf("color space: \"%.4s\", ", profile + 16);
-        printf("rendering intent: %d\n", (int)profile[67]);
-        free(profile);
+        printf("CMM type: \"%.4s\", ", profile.data() + 4);
+        printf("Color space: \"%.4s\", ", profile.data() + 16);
+        printf("Rendering intent: %d\n", static_cast<int>(profile[67]));
       }
     } else if (status == JXL_DEC_FRAME) {
       if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &frame_header)) {
@@ -308,9 +336,9 @@ static int PrintBasicInfo(FILE* file, int verbose) {
         if (frame_header.is_last && framecount == 0 &&
             frame_header.name_length == 0)
           continue;
-        printf("layer: ");
+        printf("Layer: ");
       } else {
-        printf("frame: ");
+        printf("Frame: ");
       }
       framecount++;
       if (frame_header.layer_info.have_crop) {
@@ -318,7 +346,7 @@ static int PrintBasicInfo(FILE* file, int verbose) {
                frame_header.layer_info.ysize, frame_header.layer_info.crop_x0,
                frame_header.layer_info.crop_y0);
       } else {
-        printf("full image size");
+        printf("Full image size");
       }
       if (info.have_animation) {
         float ms = frame_header.duration * 1000.f *
@@ -331,15 +359,14 @@ static int PrintBasicInfo(FILE* file, int verbose) {
         }
       }
       if (frame_header.name_length) {
-        char* name = malloc(frame_header.name_length + 1);
+        std::vector<char> name(frame_header.name_length + 1);
         if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetFrameName(dec, name, frame_header.name_length + 1)) {
+            JxlDecoderGetFrameName(dec, name.data(),
+                                   frame_header.name_length + 1)) {
           fprintf(stderr, "JxlDecoderGetFrameName failed\n");
-          free(name);
           break;
         }
-        printf(", name: \"%s\"", name);
-        free(name);
+        printf(", name: \"%s\"", name.data());
       }
       printf("\n");
     } else if (status == JXL_DEC_BOX) {
@@ -349,8 +376,8 @@ static int PrintBasicInfo(FILE* file, int verbose) {
       JxlDecoderGetBoxSizeRaw(dec, &size);
       JxlDecoderGetBoxSizeContents(dec, &contents_size);
       if (verbose) {
-        printf("box: type: \"%.4s\" size: %" PRIu64 ", contents size: %" PRIu64
-               "\n",
+        printf("Box:\n  type: \"%.4s\"\n  size: %" PRIu64
+               "\n  contents size: %" PRIu64 "\n",
                box_type, size, contents_size);
       }
       if (!strncmp(box_type, "JXL ", 4)) {
@@ -375,21 +402,23 @@ static int PrintBasicInfo(FILE* file, int verbose) {
                " compressed bytes\n",
                box_type, size);
       } else if (!strncmp(box_type, "jhgm", 4)) {
-        box_data = malloc(chunk_size);
+        box_data = reinterpret_cast<uint8_t*>(malloc(chunk_size));
+        if (box_data == nullptr) {
+          fprintf(stderr, "Memory reallocation failed\n");
+          break;
+        }
         box_size = chunk_size;
         JxlDecoderSetBoxBuffer(dec, box_data, box_size);
       } else {
-        printf("unknown box: type: \"%.4s\" size: %" PRIu64 "\n", box_type,
-               size);
+        printf("Unknown box:\n  type: \"%.4s\"\n  size: %" PRIu64 "\n",
+               box_type, size);
       }
     } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
       const size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
       box_size += chunk_size;
       box_index += chunk_size - remaining;
-      void* temp = realloc(box_data, box_size);
-      if (temp == NULL) {
-        free(box_data);
-        box_data = NULL;
+      uint8_t* temp = reinterpret_cast<uint8_t*>(realloc(box_data, box_size));
+      if (temp == nullptr) {
         box_size = 0;
         box_index = 0;
         fprintf(stderr, "Memory reallocation failed\n");
@@ -407,10 +436,10 @@ static int PrintBasicInfo(FILE* file, int verbose) {
                                   &bytes_read)) {
           fprintf(stderr, "Invalid gain map box found\n");
         } else {
-          uint8_t* icc = NULL;
+          uint8_t* icc = nullptr;
           size_t icc_size = 0;
-          JxlMemoryManager manager = {
-              .opaque = NULL, .alloc = NULL, .free = NULL};
+          JxlMemoryManager manager = {/*opaque*/ nullptr, /*alloc*/ nullptr,
+                                      /*free*/ nullptr};
           if (gain_map_bundle.alt_icc_size > 0 &&
               !JxlICCProfileDecode(&manager, gain_map_bundle.alt_icc,
                                    gain_map_bundle.alt_icc_size, &icc,
@@ -421,20 +450,20 @@ static int PrintBasicInfo(FILE* file, int verbose) {
           }
           printf("Gain map (jhgm) box: version = %u",
                  gain_map_bundle.jhgm_version);
-          if (gain_map_bundle.has_color_encoding) {
-            printf(", color encoding = ");
-            PrintColorEncoding(&gain_map_bundle.color_encoding);
-          }
           if (icc_size > 0) {
-            printf(", %lu-byte ICC profile", (unsigned long)icc_size);
+            printf("  %lu-byte ICC profile\n",
+                   static_cast<unsigned long>(icc_size));
           }
-          printf(", %u-byte gain map, %u-byte metadata\n",
+          printf("  %u-byte gain map, %u-byte metadata\n",
                  gain_map_bundle.gain_map_size,
                  gain_map_bundle.gain_map_metadata_size);
+          if (gain_map_bundle.has_color_encoding) {
+            PrintColorEncoding("  ", &gain_map_bundle.color_encoding);
+          }
           free(icc);
         }
         free(box_data);
-        box_data = NULL;
+        box_data = nullptr;
         box_size = 0;
         box_index = 0;
       } else {
@@ -455,7 +484,8 @@ static int PrintBasicInfo(FILE* file, int verbose) {
            (info.animation.num_loops ? "" : " (looping)"));
   }
   JxlDecoderDestroy(dec);
-  free(data);
+  if (box_data != nullptr) free(box_data);
+  if (data != nullptr) free(data);
 
   return seen_basic_info;
 }
@@ -485,23 +515,22 @@ static int print_basic_info_filename(const char* jxl_filename, int verbose) {
   return 0;
 }
 
-static int is_flag(const char* arg, const char* const* opts) {
-  for (int i = 0; opts[i] != NULL; i++) {
-    if (!strcmp(opts[i], arg)) {
-      return 1;
+template <size_t N>
+static bool is_flag(const char* arg, std::array<const char*, N> opts) {
+  for (auto opt : opts) {
+    if (!strcmp(opt, arg)) {
+      return true;
     }
   }
-  return 0;
+  return false;
 }
 
 int main(int argc, char* argv[]) {
   int verbose = 0;
   int status = 0;
   const char* const name = argv[0];
-  const char* const* help_opts =
-      (const char* const[]){"--help", "-h", "-?", NULL};
-  const char* const* verbose_opts =
-      (const char* const[]){"--verbose", "-v", NULL};
+  std::array<const char*, 3> help_opts = {"--help", "-h", "-?"};
+  std::array<const char*, 2> verbose_opts = {"--verbose", "-v"};
   if (argc < 2) {
     print_usage(name);
     return 2;

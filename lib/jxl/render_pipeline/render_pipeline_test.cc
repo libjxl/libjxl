@@ -332,7 +332,8 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
       {3, 8}, {128, 128}, {256, 256}, {258, 258}, {533, 401}, {777, 777},
   };
 
-  RenderPipelineTestInputSettings stub;
+  auto stub_heap = jxl::make_unique<RenderPipelineTestInputSettings>();
+  RenderPipelineTestInputSettings& stub = *stub_heap;
   stub.input_path = "jxl/flower/flower.png";
 
   // Base settings.
@@ -343,7 +344,8 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
   stub.cparams.epf = 0;
   stub.cparams.color_transform = ColorTransform::kXYB;
 
-  RenderPipelineTestInputSettings s;
+  auto s_heap = jxl::make_unique<RenderPipelineTestInputSettings>();
+  RenderPipelineTestInputSettings& s = *s_heap;
 
   for (auto size : sizes) {
     stub.xsize = size.first;

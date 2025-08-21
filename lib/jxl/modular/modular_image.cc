@@ -61,6 +61,7 @@ StatusOr<Image> Image::Create(JxlMemoryManager *memory_manager, size_t iw,
   for (int i = 0; i < nb_chans; i++) {
     JXL_ASSIGN_OR_RETURN(Channel c, Channel::Create(memory_manager, iw, ih));
     result.channel.emplace_back(std::move(c));
+    result.channel.back().component = i;
   }
   return result;
 }
@@ -93,7 +94,9 @@ StatusOr<Image> Image::Clone(const Image &that) {
   for (const Channel &ch : that.channel) {
     JXL_ASSIGN_OR_RETURN(Channel a, Channel::Create(memory_manager, ch.w, ch.h,
                                                     ch.hshift, ch.vshift));
+
     JXL_RETURN_IF_ERROR(CopyImageTo(ch.plane, &a.plane));
+    a.component = ch.component;
     clone.channel.push_back(std::move(a));
   }
   return clone;

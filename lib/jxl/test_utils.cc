@@ -74,8 +74,9 @@
 namespace jxl {
 namespace test {
 
-void Check(bool ok) {
+void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
   if (!ok) {
+    fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
     JXL_CRASH();
   }
 }
@@ -280,7 +281,7 @@ bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
 size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
                  const extras::JXLCompressParams& cparams,
                  const extras::JXLDecompressParams& dparams, ThreadPool* pool,
-                 extras::PackedPixelFile* ppf_out) {
+                 extras::PackedPixelFile* ppf_out, size_t* decoded_size) {
   extras::JXLDecompressParams local_dparams(dparams);
   DefaultAcceptedFormats(local_dparams);
   SetThreadParallelRunner(cparams, pool);
@@ -291,7 +292,11 @@ size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
   size_t decoded_bytes = 0;
   Check(extras::DecodeImageJXL(compressed.data(), compressed.size(),
                                local_dparams, &decoded_bytes, ppf_out));
-  Check(decoded_bytes == compressed.size());
+  if (decoded_size) {
+    *decoded_size = decoded_bytes;
+  } else {
+    Check(decoded_bytes == compressed.size());
+  }
   return compressed.size();
 }
 
@@ -775,10 +780,10 @@ bool SamePixels(const extras::PackedPixelFile& a,
 
 Status ReadICC(BitReader* JXL_RESTRICT reader,
                std::vector<uint8_t>* JXL_RESTRICT icc) {
-  JxlMemoryManager* memort_manager = jxl::test::MemoryManager();
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   icc->clear();
-  ICCReader icc_reader{memort_manager};
-  PaddedBytes icc_buffer{memort_manager};
+  ICCReader icc_reader{memory_manager};
+  PaddedBytes icc_buffer{memory_manager};
   JXL_RETURN_IF_ERROR(icc_reader.Init(reader));
   JXL_RETURN_IF_ERROR(icc_reader.Process(reader, &icc_buffer));
   Bytes(icc_buffer).AppendTo(*icc);

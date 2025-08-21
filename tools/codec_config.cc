@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <hwy/base.h>
 #include <hwy/per_target.h>
 #include <hwy/targets.h>
 #include <string>
@@ -73,6 +74,12 @@ std::string CodecConfigString(uint32_t lib_version) {
   }
   config.resize(config.size() - 1);  // remove trailing comma
   config += "]";
+
+#if defined(JPEGXL_COMPILER_ID)
+  config += " {";
+  config += JPEGXL_COMPILER_ID;
+  config += "}";
+#endif
 
   return config;
 }

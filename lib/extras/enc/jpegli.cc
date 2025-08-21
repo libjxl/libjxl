@@ -387,7 +387,6 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
 
   // We need to declare all the non-trivial destructor local variables
   // before the call to setjmp().
-  std::vector<uint8_t> pixels;
   unsigned char* output_buffer = nullptr;
   unsigned long output_size = 0;  // NOLINT
   std::vector<uint8_t> row_bytes;

@@ -36,6 +36,7 @@ class Channel {
   jxl::Plane<pixel_type> plane;
   size_t w, h;
   int hshift, vshift;  // w ~= image.w >> hshift;  h ~= image.h >> vshift
+  int component = -1;
   Channel(const Channel& other) = delete;
   Channel& operator=(const Channel& other) = delete;
 
@@ -48,6 +49,7 @@ class Channel {
     h = other.h;
     hshift = other.hshift;
     vshift = other.vshift;
+    component = other.component;
     plane = std::move(other.plane);
     return *this;
   }

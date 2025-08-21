@@ -362,7 +362,7 @@ float MaskingSqrt(const float v) {
   return GetLane(MaskingSqrt(DScalar(), vscalar));
 }
 
-void StoreMin4(const float v, float& min0, float& min1, float& min2,
+inline void StoreMin4(const float v, float& min0, float& min1, float& min2,
                float& min3) {
   if (v < min3) {
     if (v < min0) {
@@ -394,30 +394,22 @@ Status FuzzyErosion(const float butteraugli_target, const Rect& from_rect,
   static_assert(kStep == 1, "Step must be 1");
   JXL_ENSURE(to_rect.xsize() * 2 == from_rect.xsize());
   JXL_ENSURE(to_rect.ysize() * 2 == from_rect.ysize());
-  static const float kMulBase0 = 0.125;
-  static const float kMulBase1 = 0.10;
-  static const float kMulBase2 = 0.09;
-  static const float kMulBase3 = 0.06;
-  static const float kMulAdd0 = 0.0;
-  static const float kMulAdd1 = -0.10;
-  static const float kMulAdd2 = -0.09;
-  static const float kMulAdd3 = -0.06;
-
+  static const float kMulBase[4] = { 0.125, 0.1, 0.09, 0.06 };
+  static const float kMulAdd[4] = { 0.0, -0.1, -0.09, -0.06 };
   float mul = 0.0;
   if (butteraugli_target < 2.0f) {
     mul = (2.0f - butteraugli_target) * (1.0f / 2.0f);
   }
-  float kMul0 = kMulBase0 + mul * kMulAdd0;
-  float kMul1 = kMulBase1 + mul * kMulAdd1;
-  float kMul2 = kMulBase2 + mul * kMulAdd2;
-  float kMul3 = kMulBase3 + mul * kMulAdd3;
+  float kMul[4] = { 0 };
+  float norm_sum = 0.0;
+  for (size_t ii = 0; ii < 4; ++ii) {
+    kMul[ii] = kMulBase[ii] + mul * kMulAdd[ii];
+    norm_sum += kMul[ii];
+  }
   static const float kTotal = 0.29959705784054957;
-  float norm = kTotal / (kMul0 + kMul1 + kMul2 + kMul3);
-  kMul0 *= norm;
-  kMul1 *= norm;
-  kMul2 *= norm;
-  kMul3 *= norm;
-
+  for (size_t ii = 0; ii < 4; ++ii) {
+    kMul[ii] *= kTotal / norm_sum;
+  }
   for (size_t fy = 0; fy < from_rect.ysize(); ++fy) {
     size_t y = fy + from_rect.y0();
     size_t ym1 = y >= kStep ? y - kStep : y;
@@ -430,25 +422,22 @@ Status FuzzyErosion(const float butteraugli_target, const Rect& from_rect,
       size_t x = fx + from_rect.x0();
       size_t xm1 = x >= kStep ? x - kStep : x;
       size_t xp1 = x + kStep < xsize ? x + kStep : x;
-      float min0 = row[x];
-      float min1 = row[xm1];
-      float min2 = row[xp1];
-      float min3 = rowt[xm1];
+      float min[4] = { row[x], row[xm1], row[xp1], rowt[xm1] };
       // Sort the first four values.
-      if (min0 > min1) std::swap(min0, min1);
-      if (min0 > min2) std::swap(min0, min2);
-      if (min0 > min3) std::swap(min0, min3);
-      if (min1 > min2) std::swap(min1, min2);
-      if (min1 > min3) std::swap(min1, min3);
-      if (min2 > min3) std::swap(min2, min3);
+      if (min[0] > min[1]) std::swap(min[0], min[1]);
+      if (min[0] > min[2]) std::swap(min[0], min[2]);
+      if (min[0] > min[3]) std::swap(min[0], min[3]);
+      if (min[1] > min[2]) std::swap(min[1], min[2]);
+      if (min[1] > min[3]) std::swap(min[1], min[3]);
+      if (min[2] > min[3]) std::swap(min[2], min[3]);
       // The remaining five values of a 3x3 neighbourhood.
-      StoreMin4(rowt[x], min0, min1, min2, min3);
-      StoreMin4(rowt[xp1], min0, min1, min2, min3);
-      StoreMin4(rowb[xm1], min0, min1, min2, min3);
-      StoreMin4(rowb[x], min0, min1, min2, min3);
-      StoreMin4(rowb[xp1], min0, min1, min2, min3);
+      StoreMin4(rowt[x], min[0], min[1], min[2], min[3]);
+      StoreMin4(rowt[xp1], min[0], min[1], min[2], min[3]);
+      StoreMin4(rowb[xm1], min[0], min[1], min[2], min[3]);
+      StoreMin4(rowb[x], min[0], min[1], min[2], min[3]);
+      StoreMin4(rowb[xp1], min[0], min[1], min[2], min[3]);
 
-      float v = kMul0 * min0 + kMul1 * min1 + kMul2 * min2 + kMul3 * min3;
+      float v = kMul[0] * min[0] + kMul[1] * min[1] + kMul[2] * min[2] + kMul[3] * min[3];
       if (fx % 2 == 0 && fy % 2 == 0) {
         row_out[fx / 2] = v;
       } else {
@@ -648,8 +637,7 @@ Status Blur1x1Masking(JxlMemoryManager* memory_manager, ThreadPool* pool,
   // Before blurring it contains an image of absolute value of the
   // Laplacian of the intensity channel.
   static const float kFilterMask1x1[5] = {
-      0.364911248234571,   0.05, 0.16888880219733757,
-      0.22106918336976511, 0.30656350405423149,
+    0.364911248, 0.05, 0.1688888021, 0.221069183, 0.306563504,
   };
   double sum =
       1.0 + 4 * (kFilterMask1x1[0] + kFilterMask1x1[1] + kFilterMask1x1[2] +
@@ -658,14 +646,13 @@ Status Blur1x1Masking(JxlMemoryManager* memory_manager, ThreadPool* pool,
     sum = 1e-5;
   }
   const float normalize = static_cast<float>(1.0 / sum);
-  const float normalize_mul = normalize;
   WeightsSymmetric5 weights =
       WeightsSymmetric5{{HWY_REP4(normalize)},
-                        {HWY_REP4(normalize_mul * kFilterMask1x1[0])},
-                        {HWY_REP4(normalize_mul * kFilterMask1x1[2])},
-                        {HWY_REP4(normalize_mul * kFilterMask1x1[1])},
-                        {HWY_REP4(normalize_mul * kFilterMask1x1[4])},
-                        {HWY_REP4(normalize_mul * kFilterMask1x1[3])}};
+                        {HWY_REP4(normalize * kFilterMask1x1[0])},
+                        {HWY_REP4(normalize * kFilterMask1x1[2])},
+                        {HWY_REP4(normalize * kFilterMask1x1[1])},
+                        {HWY_REP4(normalize * kFilterMask1x1[4])},
+                        {HWY_REP4(normalize * kFilterMask1x1[3])}};
   JXL_ASSIGN_OR_RETURN(
       ImageF temp, ImageF::Create(memory_manager, rect.xsize(), rect.ysize()));
   JXL_RETURN_IF_ERROR(

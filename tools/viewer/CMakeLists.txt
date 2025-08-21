@@ -3,7 +3,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-find_package(Qt6 QUIET COMPONENTS Widgets)
+find_package(Qt6 QUIET COMPONENTS Concurrent Widgets)
 if (NOT Qt6_FOUND)
   message(WARNING "Qt6 was not found. The directory viewer will not be built.")
   return()
@@ -31,6 +31,7 @@ target_include_directories(viewer PRIVATE
   "${PROJECT_SOURCE_DIR}"
 )
 target_link_libraries(viewer
+  Qt6::Concurrent
   Qt6::Widgets
   icc_detect
   jxl

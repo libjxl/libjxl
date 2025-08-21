@@ -7,6 +7,7 @@
 #define LIB_JXL_MODULAR_ENCODING_ENC_MA_H_
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -19,6 +20,11 @@
 #include "lib/jxl/modular/options.h"
 
 namespace jxl {
+
+struct ResidualToken {
+  uint8_t tok;
+  uint8_t nbits;
+};
 
 // Struct to collect all the data needed to build a tree.
 struct TreeSamples {
@@ -34,8 +40,13 @@ struct TreeSamples {
   Status SetProperties(const std::vector<uint32_t> &properties,
                        ModularOptions::TreeMode wp_tree_mode);
 
+  const std::vector<ResidualToken>& RTokens(size_t pred) const {
+    return residuals[pred];
+  }
+  const ResidualToken &RToken(size_t pred, size_t i) const {
+    return residuals[pred][i];
+  }
   size_t Token(size_t pred, size_t i) const { return residuals[pred][i].tok; }
-  size_t NBits(size_t pred, size_t i) const { return residuals[pred][i].nbits; }
   size_t Count(size_t i) const { return sample_counts[i]; }
   size_t PredictorIndex(Predictor predictor) const {
     const auto predictor_elem =
@@ -52,9 +63,15 @@ struct TreeSamples {
   size_t NumPropertyValues(size_t property_index) const {
     return compact_properties[property_index].size() + 1;
   }
+  size_t NumStaticProps() const { return num_static_props; }
   // Returns the *quantized* property value.
+  template<bool S>
   size_t Property(size_t property_index, size_t i) const {
-    return props[property_index][i];
+    if (S) {
+      return static_props[property_index][i];
+    } else {
+      return props[property_index][i];
+    }
   }
   int UnquantizeProperty(size_t property_index, uint32_t quant) const {
     JXL_DASSERT(quant < compact_properties[property_index].size());
@@ -90,8 +107,15 @@ struct TreeSamples {
   void AllSamplesDone() { dedup_table_ = std::vector<uint32_t>(); }
 
   uint32_t QuantizeProperty(uint32_t prop, pixel_type v) const {
+    JXL_DASSERT(prop >= num_static_props);
     v = jxl::Clamp1(v, -kPropertyRange, kPropertyRange) + kPropertyRange;
-    return property_mapping[prop][v];
+    return property_mapping[prop - num_static_props][v];
+  }
+
+  uint32_t QuantizeStaticProperty(uint32_t prop, pixel_type v) const {
+    JXL_DASSERT(prop < num_static_props);
+    v = jxl::Clamp1(v, -kPropertyRange, kPropertyRange) + kPropertyRange;
+    return static_property_mapping[prop][v];
   }
 
   // Swaps samples in position a and b. Does nothing if a == b.
@@ -103,14 +127,13 @@ struct TreeSamples {
   // properties and counts in a single vector to improve locality.
   // A first attempt at doing this actually results in much slower encoding,
   // possibly because of the more complex addressing.
-  struct ResidualToken {
-    uint8_t tok;
-    uint8_t nbits;
-  };
   // Residual information: token and number of extra bits, per predictor.
   std::vector<std::vector<ResidualToken>> residuals;
   // Number of occurrences of each sample.
   std::vector<uint16_t> sample_counts;
+  // Quantized static property values
+  size_t num_static_props;
+  std::array<std::vector<uint32_t>, kNumStaticProperties> static_props;
   // Property values, quantized to at most 256 distinct values.
   std::vector<std::vector<uint8_t>> props;
   // Decompactification info for `props`.
@@ -121,6 +144,8 @@ struct TreeSamples {
   std::vector<Predictor> predictors;
   // Mapping property value -> quantized property value.
   static constexpr int32_t kPropertyRange = 511;
+  std::array<std::vector<uint16_t>, kNumStaticProperties>
+      static_property_mapping;
   std::vector<std::vector<uint8_t>> property_mapping;
   // Number of samples seen.
   size_t num_samples = 0;

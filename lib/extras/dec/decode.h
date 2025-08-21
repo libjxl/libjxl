@@ -56,7 +56,8 @@ Status DecodeBytes(Span<const uint8_t> bytes, const ColorHints& color_hints,
                    extras::PackedPixelFile* ppf,
                    const SizeConstraints* constraints = nullptr,
                    Codec* orig_codec = nullptr,
-                   JxlMemoryManager* memory_manager = nullptr);
+                   JxlMemoryManager* memory_manager = nullptr,
+                   bool coalescing = true);
 
 }  // namespace extras
 }  // namespace jxl

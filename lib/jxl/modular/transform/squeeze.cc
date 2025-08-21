@@ -503,10 +503,10 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
                            Channel::Create(memory_manager, w, h));
       placeholder.hshift = image.channel[c].hshift;
       placeholder.vshift = image.channel[c].vshift;
-
+      placeholder.component = image.channel[c].component;
       image.channel.insert(image.channel.begin() + offset + (c - beginc),
                            std::move(placeholder));
-      JXL_DEBUG_V(8, "MetaSqueeze applied, current image: %s",
+      JXL_DEBUG_V(0, "MetaSqueeze applied, current image: %s",
                   image.DebugString().c_str());
     }
   }

@@ -20,6 +20,8 @@ Please add missing software to this list.
 - Basilisk: supported since version v2023.01.07, [release notes](https://www.basilisk-browser.org/releasenotes.shtml)
 - Pale Moon: supported since version 31.4.0, [release notes](https://www.palemoon.org/releasenotes-archived.shtml#v31.4.0)
 - Waterfox: [enabled by default](https://github.com/WaterfoxCo/Waterfox/pull/2936)
+- Zen: supported since version v1.0.0-a.39 [release notes](https://zen-browser.app/release-notes/#1.0.0-a.39)
+- Floorp: supported since at least 2024 [discussion](https://github.com/Floorp-Projects/Floorp/discussions/1289)
 
 For all browsers and to track browsers progress see [Can I Use](https://caniuse.com/jpegxl).
 
@@ -44,6 +46,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 ## OS-level support / UI frameworks / file browser plugins
 
 - Qt / KDE: [plugin available](https://github.com/novomesk/qt-jpegxl-image-plugin)
+- [KDE's kimageformats](https://invent.kde.org/frameworks/kimageformats)
 - GDK-pixbuf: plugin available in libjxl repo
 - [gThumb](https://ubuntuhandbook.org/index.php/2021/04/gthumb-3-11-3-adds-jpeg-xl-support/)
 - [MacOS viewer/QuickLook plugin](https://github.com/yllan/JXLook)
@@ -77,6 +80,8 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Swayimg](https://github.com/artemsen/swayimg)
 - [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi/releases/tag/v0.12.1)
 - [XnView](https://www.xnview.com/en/)
+- [tev](https://github.com/Tom94/tev)
+- [Oculante](https://github.com/woelper/oculante)
 - Any viewer based on Qt, KDE, GDK-pixbuf, EFL, ImageMagick, libvips or imlib2 (see above)
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
   - GTK viewers: Eye of Gnome (eog), gThumb, Geeqie
@@ -85,6 +90,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 ## Duplicate image finders
 
 - [AntiDupl.NET](https://github.com/ermig1979/AntiDupl/releases)
+- [Czkawka](https://github.com/qarmin/czkawka); Only basic support at this time
 
 ## Online tools
 

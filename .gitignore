@@ -21,3 +21,6 @@ tools/conformance/__pycache__
 
 # Editor configuration
 *.code-workspace
+
+# macOS Finder state files
+.DS_Store

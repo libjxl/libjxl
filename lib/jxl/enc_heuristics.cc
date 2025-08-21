@@ -788,10 +788,11 @@ StatusOr<Image3F> ReconstructImage(
                           FrameHeader::kSplines);
   frame_header.color_transform = ColorTransform::kNone;
 
-  CodecMetadata metadata = *frame_header.nonserialized_metadata;
-  metadata.m.extra_channel_info.clear();
-  metadata.m.num_extra_channels = metadata.m.extra_channel_info.size();
-  frame_header.nonserialized_metadata = &metadata;
+  auto metadata = jxl::make_unique<CodecMetadata>();
+  *metadata = *frame_header.nonserialized_metadata;
+  metadata->m.extra_channel_info.clear();
+  metadata->m.num_extra_channels = metadata->m.extra_channel_info.size();
+  frame_header.nonserialized_metadata = metadata.get();
   frame_header.extra_channel_upsampling.clear();
 
   const bool is_gray = shared.metadata->m.color_encoding.IsGray();

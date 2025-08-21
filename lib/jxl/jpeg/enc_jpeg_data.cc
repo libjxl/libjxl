@@ -241,7 +241,8 @@ Status SetColorTransformFromJpegData(const JPEGData& jpg,
                                      ColorTransform* color_transform) {
   size_t nbcomp = jpg.components.size();
   if (nbcomp != 1 && nbcomp != 3) {
-    return JXL_FAILURE("Cannot recompress JPEGs with neither 1 nor 3 channels");
+    return JXL_UNSUPPORTED(
+        "Cannot recompress JPEGs with neither 1 nor 3 channels");
   }
   bool is_rgb = false;
   {
@@ -363,10 +364,9 @@ StatusOr<std::unique_ptr<JPEGData>> ParseJPG(JxlMemoryManager* memory_manager,
                                              const Bytes bytes) {
   if (!IsJPG(bytes)) return JXL_FAILURE("Not JPEG");
   auto jpeg_data = jxl::make_unique<jxl::jpeg::JPEGData>();
-  if (!jpeg::ReadJpeg(bytes.data(), bytes.size(), jpeg::JpegReadMode::kReadAll,
-                      jpeg_data.get())) {
-    return JXL_FAILURE("Error reading JPEG");
-  }
+  JXL_RETURN_IF_ERROR(jpeg::ReadJpeg(bytes.data(), bytes.size(),
+                                     jpeg::JpegReadMode::kReadAll,
+                                     jpeg_data.get()));
   return jpeg_data;
 }
 

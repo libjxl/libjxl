@@ -42,6 +42,7 @@ fi
 POST_MESSAGE_ON_ERROR="${POST_MESSAGE_ON_ERROR:-1}"
 # By default, do a lightweight debian HWY package build.
 HWY_PKG_OPTIONS="${HWY_PKG_OPTIONS:---set-envvar=HWY_EXTRA_CONFIG=-DBUILD_TESTING=OFF -DHWY_ENABLE_EXAMPLES=OFF -DHWY_ENABLE_CONTRIB=OFF}"
+EXCLUDE_DEBIAN_PACKAGES="${EXCLUDE_DEBIAN_PACKAGES:-}"
 
 # Set default compilers to clang if not already set
 export CC=${CC:-clang}
@@ -1387,6 +1388,11 @@ build_debian_pkg() {
       ln -s "${srcdir}/$f" "${builddir}/$f"
     fi
   done
+  if [[ -n "${EXCLUDE_DEBIAN_PACKAGES}" ]]; then
+    # TODO(eustas): support comma-separated list
+    rm -f "${builddir}"/debian/${EXCLUDE_DEBIAN_PACKAGES}.install
+    sed -i "/Package: ${EXCLUDE_DEBIAN_PACKAGES}/,/\n/d" "${builddir}"/debian/control
+  fi
   (
     cd "${builddir}"
     debuild "${options}" -b -uc -us

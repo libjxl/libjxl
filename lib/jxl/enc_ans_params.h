@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/ans_common.h"
@@ -104,9 +105,7 @@ struct HistogramParams {
 struct Histogram {
   Histogram() = default;
 
-  explicit Histogram(size_t length) {
-    counts.resize(DivCeil(length, kRounding) * kRounding);
-  }
+  explicit Histogram(size_t length) { EnsureCapacity(length); }
 
   // Create flat histogram
   static Histogram Flat(int length, int total_count) {
@@ -127,6 +126,16 @@ struct Histogram {
     ++counts[symbol];
     ++total_count;
   }
+
+  // Use this before FastAdd sequence.
+  void EnsureCapacity(size_t length) {
+    counts.resize(DivCeil(length, kRounding) * kRounding);
+  }
+  // Just increment symbol counter; caller must stretch Histogram beforehead.
+  void FastAdd(size_t symbol) { (*(counts.data() + symbol))++; }
+  // Should be called after sequence of FastAdd to actualize total_count.
+  void Condition();
+
   void AddHistogram(const Histogram& other) {
     if (other.counts.size() > counts.size()) {
       counts.resize(other.counts.size());
@@ -145,11 +154,25 @@ struct Histogram {
     return 0;
   }
 
+  size_t MaxSymbol() const {
+    if (total_count == 0) return 0;
+    for (int i = counts.size() - 1; i > 0; --i) {
+      if (counts[i]) return i;
+    }
+    return 0;
+  }
+
   // Returns an estimate of the number of bits required to encode the given
   // histogram (header bits plus data bits).
   StatusOr<float> ANSPopulationCost() const;
 
   float ShannonEntropy() const;
+
+  void swap(Histogram& other) {
+    counts.swap(other.counts);
+    std::swap(total_count, other.total_count);
+    std::swap(entropy, other.entropy);
+  }
 
   std::vector<ANSHistBin> counts;
   size_t total_count = 0;

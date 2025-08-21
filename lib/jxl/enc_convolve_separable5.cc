@@ -285,13 +285,14 @@ class Separable5Impl {
   // Returns IndicesFromVec(d, indices) such that TableLookupLanes on the
   // rightmost unaligned vector (rightmost sample in its most-significant lane)
   // returns the mirrored values, with the mirror outside the last valid sample.
-  template <size_t M>
+  template <int M>
   static JXL_INLINE I MirrorLanes() {
     static_assert(M >= 1 && M <= 2, "Only M in range {1..2} is supported");
     D d;
     DI32 di32;
     const VI32 up = Min(Iota(di32, M), Set(di32, Lanes(d) - 1));
-    const VI32 down = Max(Iota(di32, M - Lanes(d)), Zero(di32));
+    const VI32 down =
+        Max(Iota(di32, M - static_cast<int>(Lanes(d))), Zero(di32));
     return IndicesFromVec(d, Sub(up, down));
   }
 
