@@ -152,13 +152,16 @@ JXL_NORETURN inline JXL_NOINLINE bool Abort() {
                    ##__VA_ARGS__)
 
 // An error Status with a message. The JXL_STATUS() macro will return a Status
-// object with a kGenericError code, but the comma operator helps with
-// clang-tidy inference and potentially with optimizations.
+// object with a kGenericError/kUnsupported/kNotEnoughBytes code, but the comma
+// operator helps with clang-tidy inference and potentially with optimizations.
 #define JXL_FAILURE(format, ...)                                              \
   ((void)JXL_STATUS(::jxl::StatusCode::kGenericError, "JXL_FAILURE: " format, \
                     ##__VA_ARGS__),                                           \
    ::jxl::Status(::jxl::StatusCode::kGenericError))
-
+#define JXL_UNSUPPORTED(format, ...)                            \
+  ((void)JXL_STATUS(::jxl::StatusCode::kUnsupported,            \
+                    "JXL_UNSUPPORTED: " format, ##__VA_ARGS__), \
+   ::jxl::Status(::jxl::StatusCode::kUnsupported))
 #define JXL_NOT_ENOUGH_BYTES(format, ...)                            \
   ((void)JXL_STATUS(::jxl::StatusCode::kNotEnoughBytes,              \
                     "JXL_NOT_ENOUGH_BYTES: " format, ##__VA_ARGS__), \
@@ -218,6 +221,7 @@ enum class StatusCode : int32_t {
 
   // Fatal-errors (positive values)
   kGenericError = 1,
+  kUnsupported = 2,
 };
 
 // Drop-in replacement for bool that raises compiler warnings if not used
