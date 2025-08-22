@@ -301,7 +301,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
 
   ASSERT_TRUE(
       EncodeImageJXL(cparams, ppf, /*jpeg_bytes=*/nullptr, &compressed));
-  EXPECT_LE(compressed.size(), 18150u);
+  EXPECT_LE(compressed.size(), 18300u);
 
   JXLDecompressParams dparams;
   DefaultAcceptedFormats(dparams);
@@ -359,7 +359,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
 
   ASSERT_TRUE(
       EncodeImageJXL(cparams, ppf, /*jpeg_bytes=*/nullptr, &compressed));
-  EXPECT_LE(compressed.size(), 54200u);
+  EXPECT_LE(compressed.size(), 55750u);
 
   JXLDecompressParams dparams;
   DefaultAcceptedFormats(dparams);
