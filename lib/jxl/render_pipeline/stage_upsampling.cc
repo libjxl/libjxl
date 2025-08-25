@@ -40,6 +40,10 @@ using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
 using hwy::HWY_NAMESPACE::Store;
 
+namespace {
+constexpr static size_t kChunkSize = 1024;
+}  // namespace
+
 class UpsamplingStage : public RenderPipelineStage {
  public:
   explicit UpsamplingStage(JxlMemoryManager* memory_manager,
@@ -266,7 +270,6 @@ class UpsamplingStage : public RenderPipelineStage {
   }
 
   // Process row in chunks to keep per-thread buffers compact.
-  static const size_t kChunkSize = 1024;
   std::array<std::vector<AlignedMemory>, 3> temp_;
   size_t c_;
   float kernel_[64 * 25];
