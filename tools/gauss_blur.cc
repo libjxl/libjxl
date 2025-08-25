@@ -403,7 +403,7 @@ Status FastGaussianVertical(JxlMemoryManager* memory_manager,
       VerticalStrip<16>(rg, x, ysize, ring_buffer, zero, in, out);
     }
   } else {
-    JXL_UNREACHABLE("Unexpected vector size");
+    return JXL_UNREACHABLE("Unexpected vector size");
   }
   for (; x < xsize; x += Lanes(df)) {
     VerticalStrip<1>(rg, x, ysize, ring_buffer, zero, in, out);
