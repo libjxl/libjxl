@@ -12,7 +12,6 @@
 #include <cstdint>
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/status.h"
 
 namespace jxl {
 // Encodes non-negative (X) into (2 * X), negative (-X) into (2 * X - 1)

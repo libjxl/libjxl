@@ -395,9 +395,9 @@ size_t WriteBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
 }  // namespace jxl
 
 template <typename WriteBox>
-jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
-                                        bool unbounded, size_t box_max_size,
-                                        const WriteBox& write_box) {
+jxl::Status JxlEncoder::AppendBox(const jxl::BoxType& type, bool unbounded,
+                                  size_t box_max_size,
+                                  const WriteBox& write_box) {
   size_t current_position = output_processor.CurrentPosition();
   bool large_box = false;
   size_t box_header_size = 0;
@@ -437,8 +437,8 @@ jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
 }
 
 template <typename BoxContents>
-jxl::Status JxlEncoderStruct::AppendBoxWithContents(
-    const jxl::BoxType& type, const BoxContents& contents) {
+jxl::Status JxlEncoder::AppendBoxWithContents(const jxl::BoxType& type,
+                                              const BoxContents& contents) {
   size_t size = std::end(contents) - std::begin(contents);
   return AppendBox(type, /*unbounded=*/false, size,
                    [&]() { return AppendData(output_processor, contents); });
@@ -756,7 +756,7 @@ void FastLosslessRunnerAdapter(void* void_ticket, void* opaque,
 
 }  // namespace
 
-jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
+jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
   jxl::PaddedBytes header_bytes{&memory_manager};
 
   jxl::JxlEncoderQueuedInput& input = input_queue[0];
@@ -1308,6 +1308,7 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
     JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &channel_info);
     channel_info.bits_per_sample = info->alpha_bits;
     channel_info.exponent_bits_per_sample = info->alpha_exponent_bits;
+    channel_info.alpha_premultiplied = info->alpha_premultiplied;
     if (JxlEncoderSetExtraChannelInfo(enc, 0, &channel_info)) {
       return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                            "Problem setting extra channel info for alpha");
@@ -1361,13 +1362,14 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   }
   std::string level_message;
   int required_level = VerifyLevelSettings(enc, &level_message);
+  int verified_level = (required_level == -1) ? 10 : enc->codestream_level;
   if (required_level == -1 ||
       (static_cast<int>(enc->codestream_level) < required_level &&
        enc->codestream_level != -1)) {
     return JXL_API_ERROR(
         enc, JXL_ENC_ERR_API_USAGE, "%s",
         ("Codestream level verification for level " +
-         std::to_string(enc->codestream_level) + " failed: " + level_message)
+         std::to_string(verified_level) + " failed: " + level_message)
             .c_str());
   }
   return JxlErrorOrStatus::Success();
@@ -1467,13 +1469,14 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
   channel.spot_color[3] = info->spot_color[3];
   std::string level_message;
   int required_level = VerifyLevelSettings(enc, &level_message);
+  int verified_level = (required_level == -1) ? 10 : enc->codestream_level;
   if (required_level == -1 ||
       (static_cast<int>(enc->codestream_level) < required_level &&
        enc->codestream_level != -1)) {
     return JXL_API_ERROR(
         enc, JXL_ENC_ERR_API_USAGE, "%s",
         ("Codestream level verification for level " +
-         std::to_string(enc->codestream_level) + " failed: " + level_message)
+         std::to_string(verified_level) + " failed: " + level_message)
             .c_str());
   }
   return JxlErrorOrStatus::Success();
@@ -1530,10 +1533,13 @@ JxlEncoderStatus JxlEncoderSetFrameDistance(
                          "Distance has to be in [0.0..25.0] (corresponding to "
                          "quality in [0.0..100.0])");
   }
-  if (distance > 0.f && distance < 0.01f) {
-    distance = 0.01f;
+  if (distance > 0.f && distance < jxl::kMinButteraugliDistance) {
+    distance = jxl::kMinButteraugliDistance;
   }
   frame_settings->values.cparams.butteraugli_distance = distance;
+  if (distance == 0.f) {
+    return JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+  }
   return JxlErrorOrStatus::Success();
 }
 
@@ -2117,9 +2123,16 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
         jxl::jpeg::ParseJPG(memory_manager, jxl::Bytes(buffer, size)));
     return true;
   };
-  if (!decode_jpg()) {
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
-                         "Error during decode of input JPEG");
+  jxl::Status status = decode_jpg();
+  if (!status) {
+    if (status.code() == jxl::StatusCode::kUnsupported) {
+      return JXL_API_ERROR(
+          frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+          "Unsupported JPEG feature (CMYK, arithmetic coding, etc.)");
+    } else {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
+                           "Error during decode of input JPEG");
+    }
   }
 
   if (!frame_settings->enc->color_encoding_set) {

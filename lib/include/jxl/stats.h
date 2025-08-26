@@ -26,7 +26,7 @@ extern "C" {
  * Allocated and initialized with @ref JxlEncoderStatsCreate().
  * Cleaned up and deallocated with @ref JxlEncoderStatsDestroy().
  */
-typedef struct JxlEncoderStatsStruct JxlEncoderStats;
+typedef struct JxlEncoderStats JxlEncoderStats;
 
 /**
  * Creates an instance of JxlEncoderStats and initializes it.

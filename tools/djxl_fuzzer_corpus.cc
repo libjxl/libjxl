@@ -61,7 +61,7 @@ const size_t kMaxBitDepth = 24;  // The maximum reasonable bit depth supported.
 
 std::mutex stderr_mutex;
 
-typedef std::function<uint8_t()> PixelGenerator;
+using PixelGenerator = std::function<uint8_t()>;
 
 // ImageSpec needs to be a packed struct to allow us to use the raw memory of
 // the struct for hashing to create a consistent.

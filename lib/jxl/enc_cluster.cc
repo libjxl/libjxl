@@ -6,7 +6,6 @@
 #include "lib/jxl/enc_cluster.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -25,14 +24,17 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/fast_math-inl.h"
-#include "lib/jxl/enc_ans.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::AllTrue;
 using hwy::HWY_NAMESPACE::Eq;
+using hwy::HWY_NAMESPACE::GetLane;
 using hwy::HWY_NAMESPACE::IfThenZeroElse;
+using hwy::HWY_NAMESPACE::SumOfLanes;
+using hwy::HWY_NAMESPACE::Zero;
 
 template <class V>
 V Entropy(V count, V inv_total, V total) {
@@ -42,6 +44,21 @@ V Entropy(V count, V inv_total, V total) {
   return IfThenZeroElse(
       Eq(count, total),
       Sub(zero, Mul(count, FastLog2f(d, Mul(inv_total, count)))));
+}
+
+void HistogramCondition(Histogram& a) {
+  const HWY_CAPPED(int32_t, Histogram::kRounding) di;
+  const auto kZero = Zero(di);
+  auto total = kZero;
+  int nz_pos = -static_cast<int>(Lanes(di));
+  for (size_t i = 0; i < a.counts.size(); i += Lanes(di)) {
+    const auto counts = LoadU(di, &a.counts[i]);
+    const bool nz = !AllTrue(di, Eq(counts, kZero));
+    total = Add(total, counts);
+    if (nz) nz_pos = i;
+  }
+  a.counts.resize(nz_pos + Lanes(di));
+  a.total_count = GetLane(SumOfLanes(di, total));
 }
 
 void HistogramEntropy(const Histogram& a) {
@@ -199,6 +216,9 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 HWY_EXPORT(FastClusterHistograms);  // Local function
 HWY_EXPORT(HistogramEntropy);       // Local function
+HWY_EXPORT(HistogramCondition);     // Local function
+
+void Histogram::Condition() { HWY_DYNAMIC_DISPATCH(HistogramCondition)(*this); }
 
 float Histogram::ShannonEntropy() const {
   HWY_DYNAMIC_DISPATCH(HistogramEntropy)(*this);

@@ -224,9 +224,9 @@ set_target_properties(jxl_dec PROPERTIES
 # Check whether the linker support excluding libs
 set(LINKER_EXCLUDE_LIBS_FLAG "-Wl,--exclude-libs=ALL")
 include(CheckCSourceCompiles)
-list(APPEND CMAKE_EXE_LINKER_FLAGS ${LINKER_EXCLUDE_LIBS_FLAG})
+list(APPEND CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
 check_c_source_compiles("int main(){return 0;}" LINKER_SUPPORT_EXCLUDE_LIBS)
-list(REMOVE_ITEM CMAKE_EXE_LINKER_FLAGS ${LINKER_EXCLUDE_LIBS_FLAG})
+list(REMOVE_ITEM CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
 
 if(NOT BUILD_SHARED_LIBS)
   target_compile_definitions(jxl PUBLIC -DJXL_STATIC_DEFINE)
@@ -269,12 +269,24 @@ install(TARGETS jxl
 set(JPEGXL_LIBRARY_REQUIRES
     "libhwy libbrotlienc libbrotlidec libjxl_cms")
 
+# MSVCRT bundles math functions so no explicit libm dependency is required
 if (BUILD_SHARED_LIBS)
   set(JPEGXL_REQUIRES_TYPE "Requires.private")
-  set(JPEGXL_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+  if(NOT MSVC AND NOT APPLE)
+    set(JPEGXL_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+  endif()
 else()
   set(JPEGXL_REQUIRES_TYPE "Requires")
-  set(JPEGXL_PUBLIC_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+  if(NOT MSVC AND NOT APPLE)
+    set(JPEGXL_PUBLIC_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+  endif()
+endif()
+
+set(JPEGXL_LIBRARY_MAIN jxl)
+
+# Fix pkg-config file on MSVC when building static libraries.
+if (MSVC AND NOT BUILD_SHARED_LIBS)
+  set(JPEGXL_LIBRARY_MAIN jxl-static)
 endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"

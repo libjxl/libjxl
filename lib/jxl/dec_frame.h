@@ -10,6 +10,7 @@
 #include <jxl/types.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -24,6 +25,7 @@
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_modular.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
@@ -241,12 +243,14 @@ class FrameDecoder {
   }
 
  private:
+  using PassesReaders = std::array<BitReader*, kMaxNumPasses>;
+
   Status ProcessDCGlobal(BitReader* br);
   Status ProcessDCGroup(size_t dc_group_id, BitReader* br);
   Status FinalizeDC();
   Status AllocateOutput();
   Status ProcessACGlobal(BitReader* br);
-  Status ProcessACGroup(size_t ac_group_id, BitReader* JXL_RESTRICT* br,
+  Status ProcessACGroup(size_t ac_group_id, PassesReaders& br,
                         size_t num_passes, size_t thread, bool force_draw,
                         bool dc_only);
   void MarkSections(const SectionInfo* sections, size_t num,
@@ -271,6 +275,8 @@ class FrameDecoder {
       JXL_RETURN_IF_ERROR(dec_state_->render_pipeline->PrepareForThreads(
           storage_size, use_group_ids));
     }
+    JXL_RETURN_IF_ERROR(
+        dec_state_->upsampler8x->PrepareForThreads(num_threads));
     return true;
   }
 

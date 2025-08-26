@@ -13,7 +13,6 @@
 #include <cstring>
 #include <vector>
 
-#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_ans_params.h"
 

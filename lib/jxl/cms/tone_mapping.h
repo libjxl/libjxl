@@ -18,7 +18,7 @@
 
 namespace jxl {
 
-typedef std::array<float, 2> Range;
+using Range = std::array<float, 2>;
 
 class Rec2408ToneMapperBase {
  public:

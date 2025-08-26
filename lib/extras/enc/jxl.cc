@@ -63,6 +63,7 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
     JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &extra_channel_info);
     extra_channel_info.bits_per_sample = ppf.info.alpha_bits;
     extra_channel_info.exponent_bits_per_sample = ppf.info.alpha_exponent_bits;
+    extra_channel_info.alpha_premultiplied = ppf.info.alpha_premultiplied;
     if (params.premultiply != -1) {
       if (params.premultiply != 0 && params.premultiply != 1) {
         fprintf(stderr, "premultiply must be one of: -1, 0, 1.\n");
@@ -89,6 +90,15 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
                                  enc, num_interleaved_alpha + i, &ec_info)) {
         fprintf(stderr, "JxlEncoderSetExtraChannelInfo() failed.\n");
         return false;
+      }
+      const auto& ec_name = ppf.extra_channels_info[i].name;
+      if (!ec_name.empty()) {
+        if (JXL_ENC_SUCCESS !=
+            JxlEncoderSetExtraChannelName(enc, num_interleaved_alpha + i,
+                                          ec_name.c_str(), ec_name.size())) {
+          fprintf(stderr, "JxlEncoderSetExtraChannelName() failed.\n");
+          return false;
+        }
       }
     }
   }
@@ -348,12 +358,12 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       }
       // Only set extra channel buffer if it is provided non-interleaved.
       for (size_t i = 0; i < pframe.extra_channels.size(); ++i) {
-        if (JXL_ENC_SUCCESS !=
-            JxlEncoderSetExtraChannelBuffer(settings, &ppixelformat,
-                                            pframe.extra_channels[i].pixels(),
-                                            pframe.extra_channels[i].stride *
-                                                pframe.extra_channels[i].ysize,
-                                            num_interleaved_alpha + i)) {
+        if (JXL_ENC_SUCCESS != JxlEncoderSetExtraChannelBuffer(
+                                   settings, &pframe.extra_channels[i].format,
+                                   pframe.extra_channels[i].pixels(),
+                                   pframe.extra_channels[i].stride *
+                                       pframe.extra_channels[i].ysize,
+                                   num_interleaved_alpha + i)) {
           fprintf(stderr, "JxlEncoderSetExtraChannelBuffer() failed.\n");
           return false;
         }

@@ -22,8 +22,10 @@
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
+#include "lib/jxl/loop_filter.h"
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/render_pipeline/render_pipeline.h"
 #include "lib/jxl/render_pipeline/stage_blending.h"
@@ -180,7 +182,8 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
          ec++) {
       if (frame_header.extra_channel_upsampling[ec] != 1) {
         JXL_RETURN_IF_ERROR(builder.AddStage(GetUpsamplingStage(
-            frame_header.nonserialized_metadata->transform_data, 3 + ec,
+            memory_manager, frame_header.nonserialized_metadata->transform_data,
+            3 + ec,
             CeilLog2Nonzero(frame_header.extra_channel_upsampling[ec]))));
       }
     }
@@ -202,8 +205,8 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         (late_ec_upsample ? frame_header.extra_channel_upsampling.size() : 0);
     for (size_t c = 0; c < nb_channels; c++) {
       JXL_RETURN_IF_ERROR(builder.AddStage(GetUpsamplingStage(
-          frame_header.nonserialized_metadata->transform_data, c,
-          CeilLog2Nonzero(frame_header.upsampling))));
+          memory_manager, frame_header.nonserialized_metadata->transform_data,
+          c, CeilLog2Nonzero(frame_header.upsampling))));
     }
   }
   if (render_noise) {
@@ -341,6 +344,11 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         }
       }
       linear = false;
+    } else {
+      auto cms_stage = GetCmsStage(output_encoding_info, false);
+      if (cms_stage) {
+        JXL_RETURN_IF_ERROR(builder.AddStage(std::move(cms_stage)));
+      }
     }
     (void)linear;
 

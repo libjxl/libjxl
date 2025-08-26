@@ -28,7 +28,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -41,7 +41,7 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
       with:
         egress-policy: audit
 
@@ -72,7 +72,7 @@ jobs:
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: true
         fetch-depth: 1
@@ -92,24 +92,18 @@ jobs:
 
     - name: Package release tarball
       run: |
+        ROOT=`pwd`
         cd build
-        tar -zcvf ${{ runner.workspace }}/release_file.tar.gz \
+        tar -zcvf ${ROOT}/jxl-linux-x86_64-static.tar.gz \
           LICENSE* tools/{cjxl,djxl,benchmark_xl,cjpegli,djpegli,jxlinfo,butteraugli_main,ssimulacra2}
-        ln -s ${{ runner.workspace }}/release_file.tar.gz \
-          ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
 
-    - name: Upload artifacts
+    - name: Upload release tarball
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: jxl-linux-x86_64-static
-        path: ${{ runner.workspace }}/release_file.tar.gz
+        path: jxl-linux-x86_64-static.tar.gz
+        compression-level: 0
 
-    - name: Upload binaries to release
-      if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
-      with:
-        files: ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
 
 
   # Build .deb packages Ubuntu/Debian
@@ -126,28 +120,22 @@ jobs:
         - ubuntu:20.04
         - debian:bullseye
         - debian:bookworm
-        # GIMP-2 package is removed: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1078402
-        # GIMP-3 package has incompatible API: https://github.com/libjxl/libjxl/issues/4037
-        # - debian:trixie
-        # - debian:sid
+        - debian:trixie
+        - debian:sid
+        include:
+          - os: debian:trixie
+            exclude_debian_packages: libjxl-gimp-plugin
+          - os: debian:sid
+            exclude_debian_packages: libjxl-gimp-plugin
 
     container:
       image: ${{ matrix.os }}
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
       with:
         egress-policy: audit
-
-    - name: Set env
-      shell: 'bash'
-      id: 'env'
-      run: |
-        matrix_os=${{ matrix.os }}
-        artifact_name="jxl-debs-amd64-${matrix_os/:/-}"
-        echo ${artifact_name}
-        echo "artifact_name=${artifact_name}" >> $GITHUB_OUTPUT
 
     - name: Install build deps
       run: |
@@ -156,7 +144,16 @@ jobs:
         DEBIAN_FRONTEND=noninteractive apt install -y \
           build-essential \
           devscripts \
+          python3 \
+          sed \
         #
+
+    - name: Calculate artifact suffix
+      shell: python3 {0}
+      run: |
+        import os
+        artifact_suffix="${{ matrix.os}}".replace(':', '-')
+        open(os.getenv("GITHUB_ENV"), "a").write(f"ARTIFACT_SUFFIX={artifact_suffix}\n")
 
     - name: Set git safe dir
       run: |
@@ -164,7 +161,7 @@ jobs:
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: true
         fetch-depth: 1
@@ -210,39 +207,30 @@ jobs:
     - name: Build libjxl
       run: |
         apt build-dep -y .
-        ./ci.sh debian_build jpeg-xl
+        EXCLUDE_DEBIAN_PACKAGES="${{ matrix.exclude_debian_packages || '' }}" ./ci.sh debian_build jpeg-xl
 
     - name: Stats
       run: |
         ./ci.sh debian_stats
 
-    - name: Upload artifacts
+    - name: Package release tarball
+      run: |
+        ROOT=`pwd`
+        cd build/debs/
+        tar -zcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz *jxl*.*
+
+    - name: Upload release tarball
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
-        name: ${{ steps.env.outputs.artifact_name }}
-        path: |
-          build/debs/*jxl*.*
-
-    - name: Package release tarball
-      if: github.event_name == 'release'
-      run: |
-        (cd build/debs/; find -maxdepth 1 -name '*jxl*.*') | \
-        tar -zcvf release_file.tar.gz -C build/debs/ -T -
-        ln -s release_file.tar.gz \
-          ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
-
-    - name: Upload binaries to release
-      if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
-      with:
-        files: ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        name: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}
+        path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz
+        compression-level: 0
 
 
   windows_build:
     name: Windows Build (vcpkg / ${{ matrix.triplet }})
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
-    runs-on: [windows-2022]
+    runs-on: [windows-latest]
     strategy:
       fail-fast: false
       matrix:
@@ -262,23 +250,23 @@ jobs:
             tools: 'OFF'
 
     env:
-      VCPKG_VERSION: '2023.12.12'
+      VCPKG_VERSION: '2025.07.25'
       VCPKG_ROOT: vcpkg
       VCPKG_DISABLE_METRICS: 1
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+    - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -365,24 +353,37 @@ jobs:
         export PATH=$PATH:`pwd`/build/lib
         BUILD_CONFIG=Release/ BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-      with:
-        name: jxl-${{matrix.triplet}}
-        path: |
-          prefix/bin/*
-          prefix/lib/*
-
     - name: Package release zip
-      if: github.event_name == 'release'
       shell: 'powershell'
       run: |
         Compress-Archive -Path prefix\bin\*, prefix\lib\* `
           -DestinationPath jxl-${{matrix.triplet}}.zip
 
-    - name: Upload binaries to release
-      if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
+    - name: Upload release zip
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
-        files: jxl-${{matrix.triplet}}.zip
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        name: jxl-${{matrix.triplet}}
+        path: jxl-${{matrix.triplet}}.zip
+        compression-level: 0
+
+
+  publish_release_assets:
+    name: Publish release assets
+    needs: [ubuntu_static_x86_64, release_ubuntu_pkg, windows_build]
+    if: github.event_name == 'release'
+    runs-on: [ubuntu-latest]
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v5
+      with:
+        path: release_assets
+        merge-multiple: true
+
+    - name: Publish assets
+      if: false
+      uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8
+      with:
+        files: release_assets/*

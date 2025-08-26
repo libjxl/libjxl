@@ -37,6 +37,8 @@ namespace HWY_NAMESPACE {
 using hwy::HWY_NAMESPACE::Abs;
 using hwy::HWY_NAMESPACE::Add;
 using hwy::HWY_NAMESPACE::And;
+using hwy::HWY_NAMESPACE::DupEven;
+using hwy::HWY_NAMESPACE::DupOdd;
 using hwy::HWY_NAMESPACE::Gt;
 using hwy::HWY_NAMESPACE::IfThenElse;
 using hwy::HWY_NAMESPACE::IfThenZeroElse;
@@ -80,11 +82,21 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
     // Compute a3 = absBa / 3
     auto a3eh = MulEven(absBa, onethird);
     auto a3oh = MulOdd(absBa, onethird);
+
+#if (HWY_MAJOR > 1 || (HWY_MAJOR == 1 && HWY_MINOR >= 2))
 #if HWY_IS_LITTLE_ENDIAN
     auto a3 = InterleaveOdd(d, BitCast(d, a3eh), BitCast(d, a3oh));
-#else
+#else  // not little endian
     auto a3 = InterleaveEven(d, BitCast(d, a3eh), BitCast(d, a3oh));
-#endif
+#endif  // endianness
+#else  // hwy < 1.2
+#if HWY_IS_LITTLE_ENDIAN
+    auto a3 = OddEven(BitCast(d, a3oh), DupOdd(BitCast(d, a3eh)));
+#else  // not little endian
+    auto a3 = OddEven(DupEven(BitCast(d, a3oh)), BitCast(d, a3eh))
+#endif  // endianness
+#endif  // hwy version
+
     a3 = Add(a3, Add(absBn, Set(d, 2)));
     auto absdiff = ShiftRight<2>(a3);
     auto skipdiff = Ne(Ba, Zero(d));
@@ -491,10 +503,10 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
                            Channel::Create(memory_manager, w, h));
       placeholder.hshift = image.channel[c].hshift;
       placeholder.vshift = image.channel[c].vshift;
-
+      placeholder.component = image.channel[c].component;
       image.channel.insert(image.channel.begin() + offset + (c - beginc),
                            std::move(placeholder));
-      JXL_DEBUG_V(8, "MetaSqueeze applied, current image: %s",
+      JXL_DEBUG_V(0, "MetaSqueeze applied, current image: %s",
                   image.DebugString().c_str());
     }
   }

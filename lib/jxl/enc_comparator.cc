@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <memory>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
@@ -78,18 +80,20 @@ Status ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
                     bool ignore_alpha) {
   JxlMemoryManager* memory_manager = rgb0.memory_manager();
   // Convert to linear sRGB (unless already in that space)
-  ImageMetadata metadata0 = *rgb0.metadata();
-  ImageBundle store0(memory_manager, &metadata0);
+  auto metadata0 = jxl::make_unique<ImageMetadata>();
+  *metadata0 = *rgb0.metadata();
+  auto store0 = jxl::make_unique<ImageBundle>(memory_manager, metadata0.get());
   const ImageBundle* linear_srgb0;
   JXL_RETURN_IF_ERROR(
       TransformIfNeeded(rgb0, ColorEncoding::LinearSRGB(rgb0.IsGray()), cms,
-                        pool, &store0, &linear_srgb0));
-  ImageMetadata metadata1 = *rgb1.metadata();
-  ImageBundle store1(memory_manager, &metadata1);
+                        pool, store0.get(), &linear_srgb0));
+  auto metadata1 = jxl::make_unique<ImageMetadata>();
+  *metadata1 = *rgb1.metadata();
+  auto store1 = jxl::make_unique<ImageBundle>(memory_manager, metadata1.get());
   const ImageBundle* linear_srgb1;
   JXL_RETURN_IF_ERROR(
       TransformIfNeeded(rgb1, ColorEncoding::LinearSRGB(rgb1.IsGray()), cms,
-                        pool, &store1, &linear_srgb1));
+                        pool, store1.get(), &linear_srgb1));
 
   // No alpha: skip blending, only need a single call to Butteraugli.
   if (ignore_alpha || (!rgb0.HasAlpha() && !rgb1.HasAlpha())) {

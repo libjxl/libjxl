@@ -199,6 +199,8 @@ class PAMEncoder : public BasePNMEncoder {
     }
     return formats;
   }
+  bool AcceptsCmyk() const override { return true; }
+
   Status EncodeFrame(const PackedPixelFile& ppf, const PackedFrame& frame,
                      std::vector<uint8_t>* bytes) const override {
     const PackedImage& color = frame.color;

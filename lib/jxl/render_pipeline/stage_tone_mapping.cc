@@ -13,6 +13,7 @@
 #include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/tone_mapping.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
@@ -22,7 +23,6 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/cms/tone_mapping-inl.h"
-#include "lib/jxl/dec_xyb-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {

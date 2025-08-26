@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <hwy/targets.h>
@@ -37,11 +38,13 @@ constexpr const size_t kStreamingTargetNumberOfChunks = 128;
 using ::jpegxl::tools::kGiB;
 using ::jpegxl::tools::TrackingMemoryManager;
 
-void Check(bool ok) {
+void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
   if (!ok) {
+    fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
     JXL_CRASH();
   }
 }
+#define Check(OK) CheckImpl((OK), #OK, __FILE__, __LINE__)
 
 // Options for the fuzzing
 struct FuzzSpec {
@@ -82,9 +85,11 @@ void Consume(const T& entry) {
 // it in one shot.
 bool DecodeJpegXl(const uint8_t* jxl, size_t size,
                   JxlMemoryManager* memory_manager, size_t max_pixels,
-                  const FuzzSpec& spec, std::vector<uint8_t>* pixels,
-                  std::vector<uint8_t>* jpeg, size_t* xsize, size_t* ysize,
+                  size_t max_total_pixels, const FuzzSpec& spec,
+                  std::vector<uint8_t>* pixels, std::vector<uint8_t>* jpeg,
+                  size_t* xsize, size_t* ysize,
                   std::vector<uint8_t>* icc_profile) {
+  size_t total_pixels = 0;
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
   // itself is already multithreaded.
   size_t num_threads =
@@ -150,19 +155,22 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
 
   std::vector<uint8_t> extra_channel_pixels;
 
+  struct CalledRow {
+    std::vector<int> delta;
+    // Use the pixel values.
+    uint32_t value = 0;
+  };
+
   // Callback function used when decoding with use_callback.
   struct DecodeCallbackData {
     JxlBasicInfo info;
     size_t xsize = 0;
     size_t ysize = 0;
-    std::mutex called_rows_mutex;
+    std::unique_ptr<std::mutex[]> called_rows_mutex;
     // For each row stores the segments of the row being called. For each row
     // the sum of all the int values in the map up to [i] (inclusive) tell how
     // many times a callback included the pixel i of that row.
-    std::vector<std::map<uint32_t, int>> called_rows;
-
-    // Use the pixel values.
-    uint32_t value = 0;
+    std::vector<CalledRow> called_rows;
   };
   DecodeCallbackData decode_callback_data;
   auto decode_callback = +[](void* opaque, size_t x, size_t y,
@@ -174,10 +182,11 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
     if (num_pixels && !pixels) abort();
     // Keep track of the segments being called by the callback.
     {
-      const std::lock_guard<std::mutex> lock(data->called_rows_mutex);
-      data->called_rows[y][x]++;
-      data->called_rows[y][x + num_pixels]--;
-      data->value += *static_cast<const uint8_t*>(pixels);
+      const std::lock_guard<std::mutex> lock(data->called_rows_mutex.get()[y]);
+      auto& called_row = data->called_rows[y];
+      called_row.delta[x]++;
+      called_row.delta[x + num_pixels]--;
+      called_row.value += *static_cast<const uint8_t*>(pixels);
     }
   };
 
@@ -345,10 +354,22 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
         }
         decode_callback_data.xsize = frame_header.layer_info.xsize;
         decode_callback_data.ysize = frame_header.layer_info.ysize;
+        size_t num_pixels = static_cast<size_t>(frame_header.layer_info.xsize) *
+                            frame_header.layer_info.ysize;
+        if (num_pixels > max_pixels) return false;
+        if (total_pixels > max_total_pixels) return false;
+        total_pixels += num_pixels;
         if (!spec.coalescing) {
           decode_callback_data.called_rows.clear();
         }
+        decode_callback_data.called_rows_mutex =
+            jxl::make_unique<std::mutex[]>(decode_callback_data.ysize);
         decode_callback_data.called_rows.resize(decode_callback_data.ysize);
+        for (size_t y = 0; y < decode_callback_data.ysize; ++y) {
+          decode_callback_data.called_rows[y].delta.clear();
+          decode_callback_data.called_rows[y].delta.resize(
+              decode_callback_data.xsize + 1);
+        }
         Consume(frame_header);
         std::vector<char> frame_name(frame_header.name_length + 1);
         if (JXL_DEC_SUCCESS != JxlDecoderGetFrameName(dec.get(),
@@ -460,16 +481,11 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
       if (seen_need_image_out && spec.use_callback && spec.coalescing) {
         // Check that the callback sent all the pixels
         for (uint32_t y = 0; y < decode_callback_data.ysize; y++) {
-          // Check that each row was at least called once.
-          if (decode_callback_data.called_rows[y].empty()) abort();
-          uint32_t last_idx = 0;
-          int calls = 0;
-          for (auto it : decode_callback_data.called_rows[y]) {
-            if (it.first > last_idx) {
-              if (static_cast<uint32_t>(calls) != 1) abort();
-            }
-            calls += it.second;
-            last_idx = it.first;
+          const auto& deltas = decode_callback_data.called_rows[y].delta;
+          if (deltas[0] != 1) abort();
+          if (deltas[decode_callback_data.xsize] != -1) abort();
+          for (size_t i = 1; i < decode_callback_data.xsize; ++i) {
+            if (deltas[i] != 0) abort();
           }
         }
       }
@@ -483,16 +499,11 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
       if (seen_need_image_out && spec.use_callback && spec.coalescing) {
         // Check that the callback sent all the pixels
         for (uint32_t y = 0; y < decode_callback_data.ysize; y++) {
-          // Check that each row was at least called once.
-          if (decode_callback_data.called_rows[y].empty()) abort();
-          uint32_t last_idx = 0;
-          int calls = 0;
-          for (auto it : decode_callback_data.called_rows[y]) {
-            if (it.first > last_idx) {
-              if (static_cast<uint32_t>(calls) != num_frames) abort();
-            }
-            calls += it.second;
-            last_idx = it.first;
+          const auto& deltas = decode_callback_data.called_rows[y].delta;
+          if (deltas[0] != static_cast<int>(num_frames)) abort();
+          if (deltas[decode_callback_data.xsize] != -1) abort();
+          for (size_t i = 1; i < decode_callback_data.xsize; ++i) {
+            if (deltas[i] != 0) abort();
           }
         }
       }
@@ -573,13 +584,14 @@ int DoTestOneInput(const uint8_t* data, size_t size) {
   size_t xsize;
   size_t ysize;
   size_t max_pixels = 1 << 21;
+  size_t max_total_pixels = 5 * max_pixels;
 
   TrackingMemoryManager memory_manager{/* cap */ 1 * kGiB,
                                        /* total_cap */ 5 * kGiB};
   const auto targets = hwy::SupportedAndGeneratedTargets();
   hwy::SetSupportedTargetsForTest(targets[getFlag(targets.size() - 1)]);
-  DecodeJpegXl(data, size, memory_manager.get(), max_pixels, spec, &pixels,
-               &jpeg, &xsize, &ysize, &icc);
+  DecodeJpegXl(data, size, memory_manager.get(), max_pixels, max_total_pixels,
+               spec, &pixels, &jpeg, &xsize, &ysize, &icc);
   hwy::SetSupportedTargetsForTest(0);
   Check(memory_manager.Reset());
 

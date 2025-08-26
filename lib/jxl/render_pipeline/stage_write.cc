@@ -23,6 +23,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/image.h"
@@ -100,6 +101,10 @@ const float kDither[(2 * 8) * 8] = {
     0.4609375, -0.0390625, 0.3359375, -0.1640625,  //
 };
 
+namespace {
+constexpr static size_t kChunkSize = 1024;
+}  // namespace
+
 using DF = HWY_FULL(float);
 
 // Converts `v` to an appropriate value for the given unsigned type.
@@ -143,7 +148,7 @@ class WriteToOutputStage : public RenderPipelineStage {
         flip_x_(ShouldFlipX(undo_orientation)),
         flip_y_(ShouldFlipY(undo_orientation)),
         transpose_(ShouldTranspose(undo_orientation)),
-        opaque_alpha_(kMaxPixelsPerCall, 1.0f),
+        opaque_alpha_(kChunkSize, 1.0f),
         memory_manager_(memory_manager) {
     for (size_t ec = 0; ec < extra_output.size(); ++ec) {
       if (extra_output[ec].callback.IsPresent() || extra_output[ec].buffer) {
@@ -181,9 +186,9 @@ class WriteToOutputStage : public RenderPipelineStage {
       ypos = height_ - 1u - ypos;
     }
     size_t limit = std::min(xsize, width_ - xpos);
-    for (size_t x0 = 0; x0 < limit; x0 += kMaxPixelsPerCall) {
+    for (size_t x0 = 0; x0 < limit; x0 += kChunkSize) {
       size_t xstart = xpos + x0;
-      size_t len = std::min<size_t>(kMaxPixelsPerCall, limit - x0);
+      size_t len = std::min<size_t>(kChunkSize, limit - x0);
 
       const float* line_buffers[4];
       for (size_t c = 0; c < num_color_; c++) {
@@ -236,7 +241,7 @@ class WriteToOutputStage : public RenderPipelineStage {
     Status PrepareForThreads(size_t num_threads) {
       if (pixel_callback_.IsPresent()) {
         run_opaque_ =
-            pixel_callback_.Init(num_threads, /*num_pixels=*/kMaxPixelsPerCall);
+            pixel_callback_.Init(num_threads, /*num_pixels=*/kChunkSize);
         JXL_RETURN_IF_ERROR(run_opaque_ != nullptr);
       } else {
         JXL_RETURN_IF_ERROR(buffer_ != nullptr);
@@ -262,16 +267,15 @@ class WriteToOutputStage : public RenderPipelineStage {
       JXL_RETURN_IF_ERROR(extra.PrepareForThreads(num_threads));
     }
     temp_out_.resize(num_threads);
+    size_t alloc_size = sizeof(float) * kChunkSize;
     for (AlignedMemory& temp : temp_out_) {
-      size_t alloc_size =
-          sizeof(float) * kMaxPixelsPerCall * main_.num_channels_;
-      JXL_ASSIGN_OR_RETURN(temp,
-                           AlignedMemory::Create(memory_manager_, alloc_size));
+      JXL_ASSIGN_OR_RETURN(
+          temp, AlignedMemory::Create(memory_manager_,
+                                      alloc_size * main_.num_channels_));
     }
     if ((has_alpha_ && want_alpha_ && unpremul_alpha_) || flip_x_) {
       temp_in_.resize(num_threads * main_.num_channels_);
       for (AlignedMemory& temp : temp_in_) {
-        size_t alloc_size = sizeof(float) * kMaxPixelsPerCall;
         JXL_ASSIGN_OR_RETURN(
             temp, AlignedMemory::Create(memory_manager_, alloc_size));
       }
@@ -532,7 +536,7 @@ class WriteToOutputStage : public RenderPipelineStage {
     }
   }
 
-  static constexpr size_t kMaxPixelsPerCall = 1024;
+  // Process row in chunks to keep per-thread buffers compact.
   size_t width_;
   size_t height_;
   Output main_;  // color + alpha
@@ -550,10 +554,6 @@ class WriteToOutputStage : public RenderPipelineStage {
   std::vector<AlignedMemory> temp_in_;
   std::vector<AlignedMemory> temp_out_;
 };
-
-#if JXL_CXX_LANG < JXL_CXX_17
-constexpr size_t WriteToOutputStage::kMaxPixelsPerCall;
-#endif
 
 std::unique_ptr<RenderPipelineStage> GetWriteToOutputStage(
     const ImageOutput& main_output, size_t width, size_t height, bool has_alpha,

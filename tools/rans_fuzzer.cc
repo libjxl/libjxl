@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <vector>
 
 #include "lib/jxl/base/common.h"
@@ -29,11 +30,13 @@ using ::jxl::BitReaderScopedCloser;
 using ::jxl::Bytes;
 using ::jxl::Status;
 
-void Check(bool ok) {
+void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
   if (!ok) {
+    fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
     JXL_CRASH();
   }
 }
+#define Check(OK) CheckImpl((OK), #OK, __FILE__, __LINE__)
 
 Status Run(const uint8_t* data, size_t size, JxlMemoryManager* memory_manager,
            size_t num_contexts) {
