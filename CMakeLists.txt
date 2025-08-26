@@ -124,6 +124,12 @@ else()
   set(ENABLE_SKCMS_DEFAULT YES)
 endif()
 
+set(JPEGXL_HWY_TARGETS AVX2 AVX3 AVX3_DL AVX3_SPR AVX3_ZEN4 EMU128 NEON NEON_BF16 NEON_WITHOUT_AES PPC10 PPC8 PPC9 RVV SCALAR SSE2 SSE4 SSSE3 SVE SVE_256 SVE2 SVE2_128 WASM WASM_EMU256 Z14 Z15)
+set(JPEGXL_HWY_TARGETS_OFF_BY_DEFAULT AVX3 AVX3_SPR AVX3_ZEN4 RVV SSSE3 SVE_256)
+if (NOT CXX_SVE_SUPPORTED)
+  list(APPEND JPEGXL_HWY_TARGETS_OFF_BY_DEFAULT SVE SVE2 SVE_256 SVE2_128)
+endif()
+
 # Standard cmake naming for building shared libraries.
 get_property(SHARED_LIBS_SUPPORTED GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS)
 option(BUILD_SHARED_LIBS "Build shared libraries instead of static ones" ${SHARED_LIBS_SUPPORTED})
@@ -170,8 +176,6 @@ set(JPEGXL_ENABLE_PLUGINS false CACHE BOOL
     "Build third-party plugins to support JPEG XL in other applications.")
 set(JPEGXL_ENABLE_COVERAGE false CACHE BOOL
     "Enable code coverage tracking for libjxl. This also enables debug and disables optimizations.")
-set(JPEGXL_ENABLE_SIZELESS_VECTORS false CACHE BOOL
-    "Builds in support for SVE/RVV vectorization")
 set(JPEGXL_ENABLE_TRANSCODE_JPEG true CACHE BOOL
     "Builds in support for decoding transcoded JXL files back to JPEG,\
  disabling it makes the decoder reject JXL_DEC_JPEG_RECONSTRUCTION events,\
@@ -190,14 +194,18 @@ set(JPEGXL_FORCE_NEON false CACHE BOOL
     "Set flags to enable NEON in arm if not enabled by your toolchain.")
 set(JPEGXL_TEST_TOOLS false CACHE BOOL
     "Run scripts that test the encoding / decoding tools.")
-set(JPEGXL_ENABLE_AVX512 false CACHE BOOL
-    "Build with AVX512 support (faster on CPUs that support it, but larger binary size).")
-set(JPEGXL_ENABLE_AVX512_SPR false CACHE BOOL
-    "Build with AVX-512FP16 support (faster on CPUs that support it, but larger binary size).")
-set(JPEGXL_ENABLE_AVX512_ZEN4 false CACHE BOOL
-"Build with Zen4-optimized AVX512 support (faster on CPUs that support it, but larger binary size).")
 set(JPEGXL_ENABLE_WASM_THREADS true CACHE BOOL
     "Builds WASM modules with threads support")
+
+# HWY codegen levers
+foreach(tgt IN LISTS JPEGXL_HWY_TARGETS)
+  set(JPEGXL_ENABLE_HWY_${tgt}_DEFAULT true)
+  if (${tgt} IN_LIST JPEGXL_HWY_TARGETS_OFF_BY_DEFAULT)
+    set(JPEGXL_ENABLE_HWY_${tgt}_DEFAULT false)
+  endif()
+  set(JPEGXL_ENABLE_HWY_${tgt} ${JPEGXL_ENABLE_HWY_${tgt}_DEFAULT} CACHE BOOL
+    "Build with ${tgt} support (faster on CPUs that support it, but larger binary size).")
+endforeach()
 
 # Force system dependencies.
 set(JPEGXL_FORCE_SYSTEM_BROTLI false CACHE BOOL
@@ -220,24 +228,25 @@ message(STATUS
     "Compiler IDs C:${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}, C++:${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 
 set(JXL_HWY_INCLUDE_DIRS "$<BUILD_INTERFACE:$<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>>")
-# Always disable SSSE3 since it is rare to have SSSE3 but not SSE4
-# Also always disable SVE_256 for now since it fails conformance testing
-set(HWY_DISABLED_TARGETS "HWY_SSSE3|HWY_SVE_256")
-if (NOT JPEGXL_ENABLE_AVX512)
-  message(STATUS "Disabled AVX512 (set JPEGXL_ENABLE_AVX512 to enable it)")
-  set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_AVX3")
-  add_definitions(-DFJXL_ENABLE_AVX512=0)
-endif()
-if (NOT JPEGXL_ENABLE_AVX512_SPR)
-  message(STATUS "Disabled AVX512_SPR (set JPEGXL_ENABLE_AVX512_SPR to enable it)")
-  set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_AVX3_SPR")
-endif()
-if (NOT JPEGXL_ENABLE_AVX512_ZEN4)
-  message(STATUS "Disabled AVX512_ZEN4 (set JPEGXL_ENABLE_AVX512_ZEN4 to enable it)")
-  set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_AVX3_ZEN4")
-endif()
 
-
+if (JXL_HWY_DISABLED_TARGETS_FORCED)
+  message(WARNING "HWY_DISABLED_TARGETS is overridden; JPEGXL_ENABLE_hwy_target will be ignored")
+else()
+  set(HWY_DISABLED_TARGETS_LIST "")
+  foreach(tgt IN LISTS JPEGXL_HWY_TARGETS)
+    message(STATUS "HWY ${tgt} enabled: ${JPEGXL_ENABLE_HWY_${tgt}}")
+    if (NOT JPEGXL_ENABLE_HWY_${tgt})
+      list(APPEND HWY_DISABLED_TARGETS_LIST HWY_${tgt})
+    endif()
+  endforeach()
+  if (NOT JPEGXL_ENABLE_HWY_AVX3)
+    add_definitions(-DFJXL_ENABLE_AVX512=0)
+  endif()
+  if (HWY_DISABLED_TARGETS_LIST)
+    list(JOIN HWY_DISABLED_TARGETS_LIST "|" HWY_DISABLED_TARGETS)
+    add_compile_options($<$<NOT:$<COMPILE_LANGUAGE:RC>>:-DHWY_DISABLED_TARGETS=\(${HWY_DISABLED_TARGETS}\)>)
+  endif()
+endif()
 
 # CMAKE_EXPORT_COMPILE_COMMANDS is used to generate the compilation database
 # used by clang-tidy.
@@ -351,21 +360,9 @@ else ()
     -D__TIME__="redacted"
   )
 
-  # TODO(eustas): JXL currently compiles, but does not pass tests...
-  if (NOT JXL_HWY_DISABLED_TARGETS_FORCED)
-    # For AppleClang ("Scalable vectors function return values not yet supported")
-    if (NOT CXX_SVE_SUPPORTED)
-      set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_SVE|HWY_SVE2|HWY_SVE_256|HWY_SVE2_128")
-    endif()
-    if (NOT JPEGXL_ENABLE_SIZELESS_VECTORS)
-      set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_RVV")
-    endif()
-    add_compile_options($<$<NOT:$<COMPILE_LANGUAGE:RC>>:-DHWY_DISABLED_TARGETS=\(${HWY_DISABLED_TARGETS}\)>)
-  endif()
-
   # Machine flags.
   add_compile_options(-funwind-tables)
-  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "riscv")
     add_compile_options("SHELL:-Xclang -mrelax-all")
   endif()
   if (CXX_CONSTRUCTOR_ALIASES_SUPPORTED)

@@ -944,10 +944,8 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
     }
   }
   // JPEG DC is from -1024 to 1023.
-  std::vector<size_t> dc_counts[3] = {};
-  dc_counts[0].resize(2048);
-  dc_counts[1].resize(2048);
-  dc_counts[2].resize(2048);
+  std::vector<size_t> dc_counts;
+  dc_counts.resize(2048);
   size_t total_dc[3] = {};
   for (size_t c : {1, 0, 2}) {
     if (jpeg_data.components.size() == 1 && c != 1) {
@@ -956,7 +954,6 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
       }
       ZeroFillImage(&dc.Plane(c));
       // Ensure no division by 0.
-      dc_counts[c][1024] = 1;
       total_dc[c] = 1;
       continue;
     }
@@ -990,8 +987,9 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
           } else {
             idc = inputjpeg[base] + 1024 / qt_dc[c];
           }
-          dc_counts[c][std::min(static_cast<uint32_t>(idc + 1024),
-                                static_cast<uint32_t>(2047))]++;
+          if (c == 1) {
+            dc_counts[std::min<uint32_t>(idc + 1024, 2047)]++;
+          }
           total_dc[c]++;
           fdc[bx >> hshift] = idc * dcquantization_r[c];
           if (c == 1 || !enc_state->cparams.force_cfl_jpeg_recompression ||
@@ -1035,40 +1033,50 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
 
   auto& dct = enc_state->shared.block_ctx_map.dc_thresholds;
   auto& num_dc_ctxs = enc_state->shared.block_ctx_map.num_dc_ctxs;
-  num_dc_ctxs = 1;
+
   for (size_t i = 0; i < 3; i++) {
     dct[i].clear();
-    int num_thresholds = (CeilLog2Nonzero(total_dc[i]) - 12) / 2;
-    // up to 3 buckets per channel:
-    // dark/medium/bright, yellow/unsat/blue, green/unsat/red
-    num_thresholds = jxl::Clamp1(num_thresholds, 0, 2);
-    size_t cumsum = 0;
-    size_t cut = total_dc[i] / (num_thresholds + 1);
-    for (int j = 0; j < 2048; j++) {
-      cumsum += dc_counts[i][j];
-      if (cumsum > cut) {
-        dct[i].push_back(j - 1025);
-        cut = total_dc[i] * (dct[i].size() + 1) / (num_thresholds + 1);
-      }
-    }
-    num_dc_ctxs *= dct[i].size() + 1;
   }
+  // use more contexts for larger and higher quality images
+  int num_thresholds = CeilLog2Nonzero(total_dc[1]) -
+                       CeilLog2Nonzero(static_cast<unsigned>(
+                           qt[1] + qt[2] + qt[3] + qt[4] + qt[5])) -
+                       7;
+  // up to 8 buckets, based on luma only
+  num_thresholds = jxl::Clamp1(num_thresholds, 1, 7);
+  size_t cumsum = 0;
+  size_t cut = total_dc[1] / (num_thresholds + 1);
+  for (int j = 0; j < 2048; j++) {
+    cumsum += dc_counts[j];
+    if (cumsum > cut) {
+      dct[1].push_back(j - 1025);
+      cut = total_dc[1] * (dct[1].size() + 1) / (num_thresholds + 1);
+    }
+  }
+  num_dc_ctxs = dct[1].size() + 1;
 
   auto& ctx_map = enc_state->shared.block_ctx_map.ctx_map;
   ctx_map.clear();
   ctx_map.resize(3 * kNumOrders * num_dc_ctxs, 0);
 
-  int lbuckets = (dct[1].size() + 1);
   for (size_t i = 0; i < num_dc_ctxs; i++) {
-    // up to 9 contexts for luma
-    ctx_map[i] = i / lbuckets;
-    // up to 3 contexts for chroma
-    ctx_map[kNumOrders * num_dc_ctxs + i] =
-        ctx_map[2 * kNumOrders * num_dc_ctxs + i] =
-            num_dc_ctxs / lbuckets + (i % lbuckets);
+    // luma: one context per luma DC bucket
+    ctx_map[i] = i;
+    if (jpeg_data.components.size() == 1) {
+      // grayscale -> one context for all chroma
+      ctx_map[kNumOrders * num_dc_ctxs + i] =
+          ctx_map[2 * kNumOrders * num_dc_ctxs + i] = num_dc_ctxs;
+    } else {
+      // color -> multiple contexts per chroma component
+      ctx_map[kNumOrders * num_dc_ctxs + i] = num_dc_ctxs + i / 2;
+      ctx_map[2 * kNumOrders * num_dc_ctxs + i] =
+          num_dc_ctxs + (num_dc_ctxs - 1) / 2 + 1 + i / 2;
+    }
   }
   enc_state->shared.block_ctx_map.num_ctxs =
       *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
+
+  JXL_ENSURE(enc_state->shared.block_ctx_map.num_ctxs <= 16);
 
   // disable DC frame for now
   auto compute_dc_coeffs = [&](const uint32_t group_index,
@@ -1512,9 +1520,9 @@ Status ComputeEncodingData(
   const size_t black_idx = black_eci - metadata->m.extra_channel_info.data();
   const ColorEncoding c_enc = metadata->m.color_encoding;
 
-  // Make the image patch bigger than the currently processed group in streaming
-  // mode so that we can take into account border pixels around the group when
-  // computing inverse Gaborish and adaptive quantization map.
+  // Make the image patch bigger than the currently processed group in
+  // streaming mode so that we can take into account border pixels around the
+  // group when computing inverse Gaborish and adaptive quantization map.
   int max_border = enc_state.streaming_mode ? kBlockDim : 0;
   Rect frame_rect(0, 0, frame_data.xsize, frame_data.ysize);
   Rect frame_area_rect = Rect(x0, y0, xsize, ysize);
@@ -1565,9 +1573,9 @@ Status ComputeEncodingData(
                                 pool, &color, cms, linear));
     } else {
       // Nothing to do.
-      // RGB or YCbCr: forward YCbCr is not implemented, this is only used when
-      // the input is already in YCbCr
-      // If encoding a special DC or reference frame: input is already in XYB.
+      // RGB or YCbCr: forward YCbCr is not implemented, this is only used
+      // when the input is already in YCbCr If encoding a special DC or
+      // reference frame: input is already in XYB.
     }
     bool lossless = cparams.IsLossless();
     if (alpha && !alpha_eci->alpha_associated &&
@@ -1584,8 +1592,8 @@ Status ComputeEncodingData(
     JXL_RETURN_IF_ERROR(PadImageToBlockMultipleInPlace(&color));
   }
 
-  // Rectangle within color that corresponds to the currently processed group in
-  // streaming mode.
+  // Rectangle within color that corresponds to the currently processed group
+  // in streaming mode.
   Rect group_rect(x0 - patch_rect.x0(), y0 - patch_rect.y0(),
                   RoundUpToBlockDim(xsize), RoundUpToBlockDim(ysize));
 

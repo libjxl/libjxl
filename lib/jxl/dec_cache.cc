@@ -182,7 +182,8 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
          ec++) {
       if (frame_header.extra_channel_upsampling[ec] != 1) {
         JXL_RETURN_IF_ERROR(builder.AddStage(GetUpsamplingStage(
-            frame_header.nonserialized_metadata->transform_data, 3 + ec,
+            memory_manager, frame_header.nonserialized_metadata->transform_data,
+            3 + ec,
             CeilLog2Nonzero(frame_header.extra_channel_upsampling[ec]))));
       }
     }
@@ -204,8 +205,8 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         (late_ec_upsample ? frame_header.extra_channel_upsampling.size() : 0);
     for (size_t c = 0; c < nb_channels; c++) {
       JXL_RETURN_IF_ERROR(builder.AddStage(GetUpsamplingStage(
-          frame_header.nonserialized_metadata->transform_data, c,
-          CeilLog2Nonzero(frame_header.upsampling))));
+          memory_manager, frame_header.nonserialized_metadata->transform_data,
+          c, CeilLog2Nonzero(frame_header.upsampling))));
     }
   }
   if (render_noise) {

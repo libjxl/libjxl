@@ -72,7 +72,7 @@ jobs:
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: true
         fetch-depth: 1
@@ -120,10 +120,13 @@ jobs:
         - ubuntu:20.04
         - debian:bullseye
         - debian:bookworm
-        # GIMP-2 package is removed: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1078402
-        # GIMP-3 package has incompatible API: https://github.com/libjxl/libjxl/issues/4037
-        # - debian:trixie
-        # - debian:sid
+        - debian:trixie
+        - debian:sid
+        include:
+          - os: debian:trixie
+            exclude_debian_packages: libjxl-gimp-plugin
+          - os: debian:sid
+            exclude_debian_packages: libjxl-gimp-plugin
 
     container:
       image: ${{ matrix.os }}
@@ -142,6 +145,7 @@ jobs:
           build-essential \
           devscripts \
           python3 \
+          sed \
         #
 
     - name: Calculate artifact suffix
@@ -157,7 +161,7 @@ jobs:
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: true
         fetch-depth: 1
@@ -203,7 +207,7 @@ jobs:
     - name: Build libjxl
       run: |
         apt build-dep -y .
-        ./ci.sh debian_build jpeg-xl
+        EXCLUDE_DEBIAN_PACKAGES="${{ matrix.exclude_debian_packages || '' }}" ./ci.sh debian_build jpeg-xl
 
     - name: Stats
       run: |
@@ -246,7 +250,7 @@ jobs:
             tools: 'OFF'
 
     env:
-      VCPKG_VERSION: '2023.12.12'
+      VCPKG_VERSION: '2025.07.25'
       VCPKG_ROOT: vcpkg
       VCPKG_DISABLE_METRICS: 1
 
@@ -257,12 +261,12 @@ jobs:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+    - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -373,7 +377,7 @@ jobs:
 
     steps:
     - name: Download all artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         path: release_assets
         merge-multiple: true

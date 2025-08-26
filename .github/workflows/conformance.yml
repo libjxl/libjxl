@@ -41,13 +41,13 @@ jobs:
         egress-policy: audit
 
     - name: Checkout the conformance source
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         repository: libjxl/conformance
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
@@ -65,7 +65,7 @@ jobs:
         include:
           - name: AVX3
             cflags: -DHWY_DISABLED_TARGETS=HWY_AVX3-1
-            cmake_args: -DJPEGXL_ENABLE_AVX512=ON
+            cmake_args: -DJPEGXL_ENABLE_HWY_AVX3=ON
           - name: AVX2
             cflags: -DHWY_DISABLED_TARGETS=HWY_AVX2-1
           - name: SSE4
@@ -106,7 +106,7 @@ jobs:
         egress-policy: audit
 
     - name: Checkout the jxl source
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: true
         fetch-depth: 2
@@ -121,7 +121,7 @@ jobs:
         echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
     - name: ccache
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -181,7 +181,7 @@ jobs:
         egress-policy: audit
 
     - name: Checkout install_deps.sh
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         sparse-checkout: tools/scripts/install_deps.sh
         sparse-checkout-cone-mode: false
@@ -193,7 +193,7 @@ jobs:
 
     - name: Cache SDE
       if: ${{ matrix.target == 'AVX3' }}
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: ${{ github.workspace }}/sde
         key: sde-${{ env.SDE_ID }}
@@ -211,20 +211,20 @@ jobs:
         cd ..
 
     - name: Checkout the conformance source
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         repository: libjxl/conformance
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests
