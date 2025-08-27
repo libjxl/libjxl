@@ -986,8 +986,8 @@ TEST(JxlTest, RoundtripAlphaResampling) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 12300, 130);
-  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 5.2);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 13700, 130);
+  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 4.85);
 }
 
 TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
@@ -1007,9 +1007,9 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
   extras::JXLDecompressParams dparams;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 27700,
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 33136,
               1000);
-  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 2.84);
+  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.52);
 }
 
 TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
