@@ -38,7 +38,7 @@ void Mul3x3Vector(const Matrix& a, const Vector& b, Vector& c) {
   for (size_t y = 0; y < 3; y++) {
     double e = 0;
     for (size_t x = 0; x < 3; x++) {
-      e += a[y][x] * b[x];
+      e += static_cast<double>(a[y][x]) * b[x];
     }
     c[y] = e;
   }

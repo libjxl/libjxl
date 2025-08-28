@@ -695,8 +695,9 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
 
       // If necessary, get the output buffers.
       if (mode == RenderPipelineChannelMode::kInOut) {
-        for (size_t iy = 0; iy < (1u << shifty); iy++) {
-          output_rows[c][iy] = rows.GetBuffer(i, y * (1 << shifty) + iy, c);
+        size_t bundle = static_cast<size_t>(1u) << shifty;
+        for (size_t iy = 0; iy < bundle; iy++) {
+          output_rows[c][iy] = rows.GetBuffer(i, y * bundle + iy, c);
         }
       }
     }
