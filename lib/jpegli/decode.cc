@@ -514,7 +514,8 @@ void AllocateOutputBuffers(j_decompress_ptr cinfo) {
     const auto& comp = cinfo->comp_info[c];
     size_t cheight = comp.v_samp_factor * m->scaled_dct_size[c];
     int downsampled_width = output_stride / m->h_factor[c];
-    m->raw_height_[c] = comp.height_in_blocks * m->scaled_dct_size[c];
+    m->raw_height_[c] =
+        static_cast<size_t>(comp.height_in_blocks) * m->scaled_dct_size[c];
     if (m->need_context_rows_) {
       cheight *= 3;
     }

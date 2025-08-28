@@ -62,7 +62,7 @@ Status EncodeImagePGX(const PackedFrame& frame, const JxlBasicInfo& info,
   JXL_RETURN_IF_ERROR(PackedImage::ValidateDataType(format.data_type));
   size_t data_bits_per_sample = PackedImage::BitsPerChannel(format.data_type);
   size_t bytes_per_sample = data_bits_per_sample / kBitsPerByte;
-  size_t num_samples = info.xsize * info.ysize;
+  size_t num_samples = static_cast<size_t>(info.xsize) * info.ysize;
 
   if (info.bits_per_sample != data_bits_per_sample) {
     return JXL_FAILURE("Bit depth does not match pixel data type");
