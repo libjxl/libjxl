@@ -31,7 +31,8 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       BUILD_TARGET: wasm32
       EM_VERSION: 3.1.51
-      NODE_VERSION: 21
+      # As of 28.08.2025 ubuntu-latest is 24.04; it is shipped with node 22.18
+      NODE_VERSION: 22
 
     strategy:
       fail-fast: false
