@@ -188,6 +188,10 @@ const float kDither[1024] = {
     0.11774, 0.02509, 0.47289, 0.07142, 0.33392, -0.38410, -0.17950, 0.28373,
 };
 
+namespace {
+constexpr static size_t kChunkSize = 1024;
+}  // namespace
+
 using DF = HWY_FULL(float);
 
 // Converts `v` to an appropriate value for the given unsigned type.
@@ -620,7 +624,6 @@ class WriteToOutputStage : public RenderPipelineStage {
   }
 
   // Process row in chunks to keep per-thread buffers compact.
-  static const size_t kChunkSize = 1024;
   size_t width_;
   size_t height_;
   Output main_;  // color + alpha

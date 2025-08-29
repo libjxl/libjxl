@@ -74,8 +74,9 @@
 namespace jxl {
 namespace test {
 
-void Check(bool ok) {
+void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
   if (!ok) {
+    fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
     JXL_CRASH();
   }
 }
@@ -280,7 +281,7 @@ bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
 size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
                  const extras::JXLCompressParams& cparams,
                  const extras::JXLDecompressParams& dparams, ThreadPool* pool,
-                 extras::PackedPixelFile* ppf_out) {
+                 extras::PackedPixelFile* ppf_out, size_t* decoded_size) {
   extras::JXLDecompressParams local_dparams(dparams);
   DefaultAcceptedFormats(local_dparams);
   SetThreadParallelRunner(cparams, pool);
@@ -291,7 +292,11 @@ size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
   size_t decoded_bytes = 0;
   Check(extras::DecodeImageJXL(compressed.data(), compressed.size(),
                                local_dparams, &decoded_bytes, ppf_out));
-  Check(decoded_bytes == compressed.size());
+  if (decoded_size) {
+    *decoded_size = decoded_bytes;
+  } else {
+    Check(decoded_bytes == compressed.size());
+  }
   return compressed.size();
 }
 
@@ -546,7 +551,7 @@ size_t ComparePixels(const uint8_t* a, const uint8_t* b, size_t xsize,
   if (format_a.data_type == JXL_TYPE_FLOAT16 ||
       format_b.data_type == JXL_TYPE_FLOAT16) {
     // Lower the precision for float16, because it currently looks like the
-    // scalar and wasm implementations of hwy have 1 less bit of precision
+    // scalar and WASM implementations of hwy have 1 less bit of precision
     // than the x86 implementations.
     // TODO(lode): Set the required precision back to 11 bits when possible.
     precision = 0.5 * threshold_multiplier / ((1ull << (bits - 1)) - 1ull);
