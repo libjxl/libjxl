@@ -244,8 +244,9 @@ Status FrameDecoder::InitFrameOutput() {
           1 << frame_header_.chroma_subsampling.RawHShift(c);
       component.v_samp_factor =
           1 << frame_header_.chroma_subsampling.RawVShift(c);
-      component.coeffs.resize(component.width_in_blocks *
-                              component.height_in_blocks * jxl::kDCTBlockSize);
+      size_t num_blocks = static_cast<size_t>(component.width_in_blocks) *
+                          component.height_in_blocks;
+      component.coeffs.resize(num_blocks * jxl::kDCTBlockSize);
     }
   }
 

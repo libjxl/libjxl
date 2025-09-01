@@ -226,7 +226,8 @@ void ValidateScanScript(j_compress_ptr cinfo) {
       for (int j = 0; j < si.comps_in_scan; ++j) {
         int ci = si.component_index[j];
         jpeg_component_info* comp = &cinfo->comp_info[ci];
-        mcu_size += comp->h_samp_factor * comp->v_samp_factor;
+        mcu_size +=
+            static_cast<size_t>(comp->h_samp_factor) * comp->v_samp_factor;
       }
       if (mcu_size > C_MAX_BLOCKS_IN_MCU) {
         JPEGLI_ERROR("MCU size too big");
@@ -306,7 +307,8 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
   size_t total_iMCU_cols = DivCeil(cinfo->image_width, iMCU_width);
   cinfo->total_iMCU_rows = DivCeil(cinfo->image_height, iMCU_height);
   m->xsize_blocks = total_iMCU_cols * cinfo->max_h_samp_factor;
-  m->ysize_blocks = cinfo->total_iMCU_rows * cinfo->max_v_samp_factor;
+  m->ysize_blocks =
+      static_cast<size_t>(cinfo->total_iMCU_rows) * cinfo->max_v_samp_factor;
 
   size_t blocks_per_iMCU = 0;
   for (int c = 0; c < cinfo->num_components; ++c) {
@@ -321,7 +323,8 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
     comp->downsampled_height = DivCeil(cinfo->image_height, m->v_factor[c]);
     comp->width_in_blocks = DivCeil(comp->downsampled_width, DCTSIZE);
     comp->height_in_blocks = DivCeil(comp->downsampled_height, DCTSIZE);
-    blocks_per_iMCU += comp->h_samp_factor * comp->v_samp_factor;
+    blocks_per_iMCU +=
+        static_cast<size_t>(comp->h_samp_factor) * comp->v_samp_factor;
   }
   m->blocks_per_iMCU_row = total_iMCU_cols * blocks_per_iMCU;
   // Disable adaptive quantization for subsampled luma channel.
@@ -367,7 +370,8 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
       for (int j = 0; j < scan_info->comps_in_scan; ++j) {
         int comp_idx = scan_info->component_index[j];
         jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
-        sti->blocks_in_MCU += comp->h_samp_factor * comp->v_samp_factor;
+        sti->blocks_in_MCU +=
+            static_cast<size_t>(comp->h_samp_factor) * comp->v_samp_factor;
       }
     }
     size_t num_MCUs = sti->MCU_rows_in_scan * sti->MCUs_per_row;

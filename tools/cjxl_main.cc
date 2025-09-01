@@ -1064,7 +1064,7 @@ int main(int argc, char** argv) {
       }
       codec = jxl::extras::Codec::kPNM;
       args.lossless_jpeg = JXL_FALSE;
-      pixels = ppf.info.xsize * ppf.info.ysize;
+      pixels = static_cast<size_t>(ppf.info.xsize) * ppf.info.ysize;
       try_non_streaming = false;
     }
   }
@@ -1099,7 +1099,7 @@ int main(int argc, char** argv) {
         std::cerr << "No frames on input file.\n";
         exit(EXIT_FAILURE);
       }
-      pixels = ppf.info.xsize * ppf.info.ysize;
+      pixels = static_cast<size_t>(ppf.info.xsize) * ppf.info.ysize;
       const double t1 = jxl::Now();
       decode_mps = pixels * ppf.info.num_color_channels * 1E-6 / (t1 - t0);
     }
