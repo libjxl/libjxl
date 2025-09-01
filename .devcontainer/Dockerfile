@@ -3,7 +3,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-FROM debian:stable
+FROM debian:trixie@sha256:6d87375016340817ac2391e670971725a9981cfc24e221c47734681ed0f6c0f5
 
 RUN apt update
 RUN apt install -y cmake clang doxygen g++ extra-cmake-modules \
