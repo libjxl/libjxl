@@ -107,7 +107,7 @@ std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
 struct ImageSpec {
   bool Validate() const {
     if (width > kMaxWidth || height > kMaxHeight ||
-        width * height > kMaxPixels) {
+        static_cast<size_t>(width) * height > kMaxPixels) {
       return false;
     }
     return true;

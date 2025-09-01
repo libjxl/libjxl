@@ -97,8 +97,8 @@ endif()
 # *cms
 if (JPEGXL_ENABLE_SKCMS)
   if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/skcms/skcms.h" )
-    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-            "build dependencies.")
+    message(FATAL_ERROR "Please provide skcms or "
+            "run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the build dependencies.")
   endif()
   include(skcms.cmake)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/skcms/LICENSE"
@@ -108,7 +108,7 @@ if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS OR JPEGXL_ENABLE_PLUGINS)
   if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lcms/.git" OR JPEGXL_FORCE_SYSTEM_LCMS2 )
     find_package(LCMS2 2.12)
     if ( NOT LCMS2_FOUND )
-      message(FATAL_ERROR "Please install lcms2 or run git submodule update --init")
+      message(FATAL_ERROR "Please provide lcms2 or run git submodule update --init")
     endif ()
   else()
     include(lcms2.cmake)
@@ -120,8 +120,8 @@ endif()
 # libpng
 if (JPEGXL_BUNDLE_LIBPNG AND EMSCRIPTEN)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
-  message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-          "build dependencies.")
+    message(FATAL_ERROR "Please provide libpng or "
+            "run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the build dependencies.")
   endif()
   file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/libpng/scripts/pnglibconf.h.prebuilt" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/libpng")
   file(RENAME "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h.prebuilt" "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h")
@@ -132,8 +132,8 @@ if (JPEGXL_BUNDLE_LIBPNG AND EMSCRIPTEN)
   set(PNG_LIBRARIES "" PARENT_SCOPE)
 elseif (JPEGXL_BUNDLE_LIBPNG)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
-    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-            "build dependencies.")
+    message(FATAL_ERROR "Please provide libpng or "
+            "run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the build dependencies.")
   endif()
   file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/libpng/scripts/pnglibconf.h.prebuilt" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/libpng")
   file(RENAME "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h.prebuilt" "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h")
@@ -171,8 +171,8 @@ endif()
 # sjpeg
 if (JPEGXL_ENABLE_SJPEG)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/CMakeLists.txt")
-    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-            "build dependencies.")
+    message(FATAL_ERROR "Please provide sjpeg or "
+            "run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the build dependencies.")
   endif()
   include(sjpeg.cmake)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/COPYING"

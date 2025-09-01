@@ -56,7 +56,8 @@ Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
     JXL_RETURN_IF_ERROR(bits_per_sample > 8 && bits_per_sample <= 16);
   } else if (format.data_type != JXL_TYPE_FLOAT16 &&
              format.data_type != JXL_TYPE_FLOAT) {
-    JXL_FAILURE("unsupported pixel format data type %d", format.data_type);
+    return JXL_FAILURE("unsupported pixel format data type %d",
+                       format.data_type);
   }
 
   JXL_ENSURE(channel->xsize() == xsize);
