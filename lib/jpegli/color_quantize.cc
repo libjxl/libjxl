@@ -266,7 +266,8 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
     JPEGLI_ERROR("Two-pass quantizer must use RGB output color space.");
   }
   jpeg_decomp_master* m = cinfo->master;
-  const size_t num_pixels = cinfo->output_width * cinfo->output_height;
+  const size_t num_pixels =
+      static_cast<size_t>(cinfo->output_width) * cinfo->output_height;
   const int max_color_count = std::max<size_t>(num_pixels, 1u << 18);
   const int max_palette_size = cinfo->desired_number_of_colors;
   auto red_storage = jxl::make_uninitialized_vector<uint8_t>(max_color_count);
