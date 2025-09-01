@@ -97,8 +97,8 @@ float ComputePSNR(j_compress_ptr cinfo, int sampling) {
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     const float* qmc = m->quant_mul[c];
-    const int h_factor = m->h_factor[c];
-    const int v_factor = m->v_factor[c];
+    const size_t h_factor = m->h_factor[c];
+    const size_t v_factor = m->v_factor[c];
     const float* zero_bias_offset = m->zero_bias_offset[c];
     const float* zero_bias_mul = m->zero_bias_mul[c];
     HWY_ALIGN float iqmc[64];
@@ -122,8 +122,8 @@ void ReQuantizeCoeffs(j_compress_ptr cinfo) {
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     const float* qmc = m->quant_mul[c];
-    const int h_factor = m->h_factor[c];
-    const int v_factor = m->v_factor[c];
+    const size_t h_factor = m->h_factor[c];
+    const size_t v_factor = m->v_factor[c];
     const float* zero_bias_offset = m->zero_bias_offset[c];
     const float* zero_bias_mul = m->zero_bias_mul[c];
     for (JDIMENSION by = 0; by < comp->height_in_blocks; ++by) {
