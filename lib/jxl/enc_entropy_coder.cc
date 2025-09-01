@@ -233,7 +233,7 @@ Status TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
               histo_offset + ZeroDensityContext(nzeros, k, covered_blocks,
                                                 log2_covered_blocks, prev);
           uint32_t u_coeff = PackSigned(coeff);
-          output->emplace_back(ctx, u_coeff);
+          output->emplace_back(static_cast<uint32_t>(ctx), u_coeff);
           prev = (coeff != 0) ? 1 : 0;
           nzeros -= prev;
         }

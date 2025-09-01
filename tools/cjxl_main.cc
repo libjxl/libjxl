@@ -613,19 +613,20 @@ bool IsJPG(const std::vector<uint8_t>& image_data) {
           image_data[1] == 0xD8);
 }
 
-using flag_check_fn = std::function<std::string(int64_t)>;
-using flag_check_float_fn = std::function<std::string(float)>;
+template <typename T>
+using flag_check_fn = std::function<bool(T)>;
 
 template <typename T>
 void ProcessFlag(
     const char* flag_name, T flag_value,
     JxlEncoderFrameSettingId encoder_option,
     jxl::extras::JXLCompressParams* params,
-    const flag_check_fn& flag_check = [](T x) { return std::string(); }) {
-  std::string error = flag_check(flag_value);
-  if (!error.empty()) {
-    std::cerr << "Invalid flag value for --" << flag_name << ": " << error
-              << "\n";
+    const flag_check_fn<T>& flag_check = [](T x) { return true; },
+    const std::string& error = "") {
+  bool ok = flag_check(flag_value);
+  if (!ok) {
+    std::cerr << "Invalid flag value for --" << flag_name
+              << (error.empty() ? "." : ": ") << error << "\n";
     exit(EXIT_FAILURE);
   }
   params->options.emplace_back(
@@ -715,46 +716,43 @@ void ProcessFlags(const jxl::extras::Codec codec,
     }
   }
 
-  ProcessFlag(
-      "effort", static_cast<int64_t>(args->effort),
-      JXL_ENC_FRAME_SETTING_EFFORT, params, [args](int64_t x) -> std::string {
-        if (args->allow_expert_options) {
-          return (1 <= x && x <= 11) ? "" : "Valid range is {1, 2, ..., 11}.";
-        } else {
-          return (1 <= x && x <= 10) ? "" : "Valid range is {1, 2, ..., 10}.";
-        }
-      });
-  ProcessFlag("brotli_effort", static_cast<int64_t>(args->brotli_effort),
-              JXL_ENC_FRAME_SETTING_BROTLI_EFFORT, params,
-              [](int64_t x) -> std::string {
-                return (-1 <= x && x <= 11)
-                           ? ""
-                           : "Valid range is {-1, 0, 1, ..., 11}.";
-              });
-  ProcessFlag(
+  if (args->allow_expert_options) {
+    ProcessFlag<int64_t>(
+        "effort", args->effort, JXL_ENC_FRAME_SETTING_EFFORT, params,
+        [](int64_t x) { return (1 <= x && x <= 11); },
+        "Valid range is {1, 2, ..., 11}.");
+  } else {
+    ProcessFlag<int64_t>(
+        "effort", args->effort, JXL_ENC_FRAME_SETTING_EFFORT, params,
+        [](int64_t x) { return (1 <= x && x <= 10); },
+        "Valid range is {1, 2, ..., 10}.");
+  }
+  ProcessFlag<int64_t>(
+      "brotli_effort", args->brotli_effort, JXL_ENC_FRAME_SETTING_BROTLI_EFFORT,
+      params, [](int64_t x) { return (-1 <= x && x <= 11); },
+      "Valid range is {-1, 0, 1, ..., 11}.");
+  ProcessFlag<int64_t>(
       "epf", args->epf, JXL_ENC_FRAME_SETTING_EPF, params,
-      [](int64_t x) -> std::string {
-        return (-1 <= x && x <= 3) ? "" : "Valid range is {-1, 0, 1, 2, 3}.\n";
-      });
-  ProcessFlag("faster_decoding", static_cast<int64_t>(args->faster_decoding),
-              JXL_ENC_FRAME_SETTING_DECODING_SPEED, params,
-              [](int64_t x) -> std::string {
-                return (0 <= x && x <= 4) ? ""
-                                          : "Valid range is {0, 1, 2, 3, 4}.\n";
-              });
-  ProcessFlag("resampling", args->resampling, JXL_ENC_FRAME_SETTING_RESAMPLING,
-              params, [](int64_t x) -> std::string {
-                return (x == -1 || x == 1 || x == 2 || x == 4 || x == 8)
-                           ? ""
-                           : "Valid values are {-1, 1, 2, 4, 8}.\n";
-              });
-  ProcessFlag("ec_resampling", args->ec_resampling,
-              JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING, params,
-              [](int64_t x) -> std::string {
-                return (x == -1 || x == 1 || x == 2 || x == 4 || x == 8)
-                           ? ""
-                           : "Valid values are {-1, 1, 2, 4, 8}.\n";
-              });
+      [](int64_t x) { return (-1 <= x && x <= 3); },
+      "Valid range is {-1, 0, 1, 2, 3}.");
+  ProcessFlag<int64_t>(
+      "faster_decoding", args->faster_decoding,
+      JXL_ENC_FRAME_SETTING_DECODING_SPEED, params,
+      [](int64_t x) { return (0 <= x && x <= 4); },
+      "Valid range is {0, 1, 2, 3, 4}.");
+  ProcessFlag<int64_t>(
+      "resampling", args->resampling, JXL_ENC_FRAME_SETTING_RESAMPLING, params,
+      [](int64_t x) {
+        return (x == -1 || x == 1 || x == 2 || x == 4 || x == 8);
+      },
+      "Valid values are {-1, 1, 2, 4, 8}.");
+  ProcessFlag<int64_t>(
+      "ec_resampling", args->ec_resampling,
+      JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING, params,
+      [](int64_t x) {
+        return (x == -1 || x == 1 || x == 2 || x == 4 || x == 8);
+      },
+      "Valid values are {-1, 1, 2, 4, 8}.");
   ProcessFlag("photon_noise_iso", args->photon_noise_iso,
               JXL_ENC_FRAME_SETTING_PHOTON_NOISE, params);
   ProcessFlag("already_downsampled",
@@ -783,30 +781,21 @@ void ProcessFlags(const jxl::extras::Codec codec,
               << "requires setting --group_order=1.\n";
     exit(EXIT_FAILURE);
   }
-  ProcessFlag("center_x", args->center_x,
-              JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X, params,
-              [](int64_t x) -> std::string {
-                if (x < -1) {
-                  return "Valid values are: -1 or [0 .. xsize).";
-                }
-                return "";
-              });
-  ProcessFlag("center_y", args->center_y,
-              JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y, params,
-              [](int64_t x) -> std::string {
-                if (x < -1) {
-                  return "Valid values are: -1 or [0 .. ysize).";
-                }
-                return "";
-              });
+  ProcessFlag<int64_t>(
+      "center_x", args->center_x, JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X,
+      params, [](int64_t x) { return (x >= -1); },
+      "Valid values are: -1 or [0 .. xsize).");
+  ProcessFlag<int64_t>(
+      "center_y", args->center_y, JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y,
+      params, [](int64_t y) { return y >= -1; },
+      "Valid values are: -1 or [0 .. ysize).");
 
   // Progressive/responsive mode settings.
-  ProcessFlag("progressive_dc", args->progressive_dc,
-              JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, params,
-              [](int64_t x) -> std::string {
-                return (-1 <= x && x <= 2) ? ""
-                                           : "Valid range is {-1, 0, 1, 2}.\n";
-              });
+  ProcessFlag<int64_t>(
+      "progressive_dc", args->progressive_dc,
+      JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, params,
+      [](int64_t x) { return (-1 <= x && x <= 2); },
+      "Valid range is {-1, 0, 1, 2}.");
   ProcessFlag("progressive_ac", static_cast<int64_t>(args->progressive_ac),
               JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC, params);
 
@@ -820,47 +809,32 @@ void ProcessFlags(const jxl::extras::Codec codec,
   }
 
   // Modular mode related.
-  ProcessFlag("modular_group_size", args->modular_group_size,
-              JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, params,
-              [](int64_t x) -> std::string {
-                return (-1 <= x && x <= 3)
-                           ? ""
-                           : "Invalid --modular_group_size. Valid "
-                             "range is {-1, 0, 1, 2, 3}.\n";
-              });
-  ProcessFlag("modular_predictor", args->modular_predictor,
-              JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, params,
-              [](int64_t x) -> std::string {
-                return (-1 <= x && x <= 15)
-                           ? ""
-                           : "Invalid --modular_predictor. Valid "
-                             "range is {-1, 0, 1, ..., 15}.\n";
-              });
-  ProcessFlag("modular_colorspace", args->modular_colorspace,
-              JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE, params,
-              [](int64_t x) -> std::string {
-                return (-1 <= x && x <= 41)
-                           ? ""
-                           : "Invalid --modular_colorspace. Valid range is "
-                             "{-1, 0, 1, ..., 41}.\n";
-              });
-  ProcessFlag("modular_ma_tree_learning_percent",
-              args->modular_ma_tree_learning_percent,
-              JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT, params,
-              [](float x) -> std::string {
-                return -1 <= x && x <= 100
-                           ? ""
-                           : "Invalid --modular_ma_tree_learning_percent, Valid"
-                             "rang is [-1, 100].\n";
-              });
-  ProcessFlag("modular_nb_prev_channels", args->modular_nb_prev_channels,
-              JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS, params,
-              [](int64_t x) -> std::string {
-                return (-1 <= x && x <= 11)
-                           ? ""
-                           : "Invalid --modular_nb_prev_channels. Valid "
-                             "range is {-1, 0, 1, ..., 11}.\n";
-              });
+  ProcessFlag<int64_t>(
+      "modular_group_size", args->modular_group_size,
+      JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, params,
+      [](int64_t x) { return (-1 <= x && x <= 3); },
+      "Valid range is {-1, 0, 1, 2, 3}.");
+  ProcessFlag<int64_t>(
+      "modular_predictor", args->modular_predictor,
+      JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, params,
+      [](int64_t x) { return (-1 <= x && x <= 15); },
+      "Valid range is {-1, 0, 1, ..., 15}.");
+  ProcessFlag<int64_t>(
+      "modular_colorspace", args->modular_colorspace,
+      JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE, params,
+      [](int64_t x) { return (-1 <= x && x <= 41); },
+      "Valid range is {-1, 0, 1, ..., 41}.");
+  ProcessFlag<float>(
+      "modular_ma_tree_learning_percent",
+      args->modular_ma_tree_learning_percent,
+      JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT, params,
+      [](float x) { return (-1 <= x && x <= 100); },
+      "Valid range is [-1, 100].");
+  ProcessFlag<int64_t>(
+      "modular_nb_prev_channels", args->modular_nb_prev_channels,
+      JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS, params,
+      [](int64_t x) { return (-1 <= x && x <= 11); },
+      "Valid range is {-1, 0, 1, ..., 11}.");
   if (args->modular_lossy_palette) {
     if (args->progressive || args->qprogressive_ac) {
       fprintf(stderr,
@@ -872,33 +846,23 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessFlag("modular_lossy_palette",
               static_cast<int64_t>(args->modular_lossy_palette),
               JXL_ENC_FRAME_SETTING_LOSSY_PALETTE, params);
-  ProcessFlag("modular_palette_colors", args->modular_palette_colors,
-              JXL_ENC_FRAME_SETTING_PALETTE_COLORS, params,
-              [](int64_t x) -> std::string {
-                return -1 <= x ? ""
-                               : "Invalid --modular_palette_colors, must "
-                                 "be -1 or non-negative\n";
-              });
-  ProcessFlag("modular_channel_colors_global_percent",
-              args->modular_channel_colors_global_percent,
-              JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT, params,
-              [](float x) -> std::string {
-                return (-1 <= x && x <= 100)
-                           ? ""
-                           : "Invalid --modular_channel_colors_global_percent. "
-                             "Valid "
-                             "range is [-1, 100].\n";
-              });
-  ProcessFlag("modular_channel_colors_group_percent",
-              args->modular_channel_colors_group_percent,
-              JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT, params,
-              [](float x) -> std::string {
-                return (-1 <= x && x <= 100)
-                           ? ""
-                           : "Invalid --modular_channel_colors_group_percent. "
-                             "Valid "
-                             "range is [-1, 100].\n";
-              });
+  ProcessFlag<int64_t>(
+      "modular_palette_colors", args->modular_palette_colors,
+      JXL_ENC_FRAME_SETTING_PALETTE_COLORS, params,
+      [](int64_t x) { return (-1 <= x); },
+      "Valid values are: -1 or non-negative.");
+  ProcessFlag<float>(
+      "modular_channel_colors_global_percent",
+      args->modular_channel_colors_global_percent,
+      JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT, params,
+      [](float x) { return (-1 <= x && x <= 100); },
+      "Valid range is [-1, 100].");
+  ProcessFlag<float>(
+      "modular_channel_colors_group_percent",
+      args->modular_channel_colors_group_percent,
+      JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT, params,
+      [](float x) { return (-1 <= x && x <= 100); },
+      "Valid range is [-1, 100].");
 
   if (args->num_threads < -1) {
     std::cerr

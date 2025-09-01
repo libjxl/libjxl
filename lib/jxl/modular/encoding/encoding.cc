@@ -671,7 +671,7 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
                                 const Tree *tree, const ANSCode *code,
                                 const std::vector<uint8_t> *ctx_map,
                                 bool allow_truncated_group) {
-  std::vector<std::pair<uint32_t, uint32_t>> req_sizes;
+  std::vector<std::pair<size_t, size_t>> req_sizes;
   req_sizes.reserve(image.channel.size());
   for (const auto &c : image.channel) {
     req_sizes.emplace_back(c.w, c.h);
