@@ -1048,15 +1048,17 @@ Status TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
       tokens->emplace_back(kMultiplierLogContext, mul_log);
       tokens->emplace_back(kMultiplierBitsContext, mul_bits);
       JXL_ENSURE(tree[cur].predictor < Predictor::Best);
-      decoder_tree->emplace_back(-1, 0, leaf_id++, 0, tree[cur].predictor,
-                                 tree[cur].predictor_offset,
-                                 tree[cur].multiplier);
+      decoder_tree->emplace_back(
+          -1, 0, static_cast<int>(leaf_id), 0, tree[cur].predictor,
+          tree[cur].predictor_offset, tree[cur].multiplier);
+      leaf_id++;
       continue;
     }
-    decoder_tree->emplace_back(tree[cur].property, tree[cur].splitval,
-                               decoder_tree->size() + q.size() + 1,
-                               decoder_tree->size() + q.size() + 2,
-                               Predictor::Zero, 0, 1);
+    decoder_tree->emplace_back(
+        tree[cur].property, tree[cur].splitval,
+        static_cast<int>(decoder_tree->size() + q.size() + 1),
+        static_cast<int>(decoder_tree->size() + q.size() + 2), Predictor::Zero,
+        0, 1);
     q.push(tree[cur].lchild);
     q.push(tree[cur].rchild);
     tokens->emplace_back(kSplitValContext, PackSigned(tree[cur].splitval));
