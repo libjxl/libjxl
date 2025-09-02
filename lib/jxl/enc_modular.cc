@@ -129,7 +129,8 @@ Status MergeTrees(const std::vector<Tree>& trees,
   size_t mid = (begin + end) / 2;
   size_t splitval = tree_splits[mid] - 1;
   size_t cur = tree->size();
-  tree->emplace_back(1 /*stream_id*/, splitval, 0, 0, Predictor::Zero, 0, 1);
+  tree->emplace_back(1 /*stream_id*/, static_cast<int>(splitval), 0, 0,
+                     Predictor::Zero, 0, 1);
   (*tree)[cur].lchild = tree->size();
   JXL_RETURN_IF_ERROR(MergeTrees(trees, tree_splits, mid, end, tree));
   (*tree)[cur].rchild = tree->size();
