@@ -13,7 +13,11 @@ if (JPEGXL_ENABLE_TRANSCODE_JPEG OR JPEGXL_ENABLE_TOOLS OR JPEGXL_ENABLE_DEVTOOL
 list(APPEND JPEGXL_INTERNAL_DEC_SOURCES ${JPEGXL_INTERNAL_DEC_JPEG_SOURCES})
 endif()
 
-set(FJXL_COMPILE_FLAGS "-O3")
+if (MSVC)
+  set(FJXL_COMPILE_FLAGS "/O2")
+else()
+  set(FJXL_COMPILE_FLAGS "-O3")
+endif()
 
 set_source_files_properties(jxl/enc_fast_lossless.cc PROPERTIES COMPILE_FLAGS "${FJXL_COMPILE_FLAGS}")
 
@@ -222,11 +226,17 @@ set_target_properties(jxl_dec PROPERTIES
   SOVERSION ${JPEGXL_LIBRARY_SOVERSION})
 
 # Check whether the linker support excluding libs
-set(LINKER_EXCLUDE_LIBS_FLAG "-Wl,--exclude-libs=ALL")
-include(CheckCSourceCompiles)
-list(APPEND CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
-check_c_source_compiles("int main(){return 0;}" LINKER_SUPPORT_EXCLUDE_LIBS)
-list(REMOVE_ITEM CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
+if (MSVC)
+  # MSVC ignores this flag (with a warning), so CMake thinks it supports that.
+  set(LINKER_EXCLUDE_LIBS_FLAG "")
+  set(LINKER_SUPPORT_EXCLUDE_LIBS FALSE)
+else()
+  set(LINKER_EXCLUDE_LIBS_FLAG "-Wl,--exclude-libs=ALL")
+  include(CheckCSourceCompiles)
+  list(APPEND CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
+  check_c_source_compiles("int main(){return 0;}" LINKER_SUPPORT_EXCLUDE_LIBS)
+  list(REMOVE_ITEM CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
+endif()
 
 if(NOT BUILD_SHARED_LIBS)
   target_compile_definitions(jxl PUBLIC -DJXL_STATIC_DEFINE)
