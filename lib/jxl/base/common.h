@@ -80,11 +80,25 @@ struct UninitializedAllocator : std::allocator<T> {
   static_assert(std::is_trivially_copyable<T>::value,
                 "Uninitialized values have to be trivially destructible");
   using value_type = T;
+
+  UninitializedAllocator() noexcept = default;
+  UninitializedAllocator(const UninitializedAllocator& other) noexcept =
+      default;
+
+  template <typename U>
+  explicit UninitializedAllocator(
+      const UninitializedAllocator<U>& other) noexcept {}
+
   template <typename U>
   struct rebind {
     using other = UninitializedAllocator<U>;
   };
-  void construct(T* place) {}
+
+  template <typename U, typename... Args>
+  void construct(U* place, Args&&... args) {}
+
+  template <typename U>
+  void destroy(U* place) {}
 };
 
 template <typename T>
