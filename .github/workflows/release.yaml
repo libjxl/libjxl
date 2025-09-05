@@ -390,7 +390,7 @@ jobs:
         merge-multiple: true
 
     - name: Publish assets
-      if: false
-      uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8
-      with:
-        files: release_assets/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release upload ${{ github.event.release.tag_name }} ./release_assets/*
