@@ -993,15 +993,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
       int shift = ch.hshift + ch.vshift;  // number of pixel halvings
       if (shift > 16) shift = 16;
       if (shift > 0) shift--;
+      int component = (do_color ? 0 : 3) + ch.component;
       int q;
-      // assuming default Squeeze here
-      int component =
-          (do_color ? 0 : 3) + ((i - gi.nb_meta_channels) % nb_chans);
-      // last 4 channels are final chroma residuals
-      if (nb_chans > 2 && i >= gi.channel.size() - 4 && cparams_.responsive) {
-        component = 1;
-      }
-      component = ch.component;
       if (cparams_.color_transform == ColorTransform::kXYB && component < 3) {
         q = quantizers[component] * squeeze_quality_factor_xyb *
             squeeze_xyb_qtable[component][shift];
