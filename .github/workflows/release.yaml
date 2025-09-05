@@ -352,7 +352,7 @@ jobs:
       if: matrix.run_benchmark && true
       run: |
         systeminfo | grep -A 1 Processor
-        wmic cpu get Name, NumberofCores, NumberOfLogicalProcessors, MaxClockSpeed
+        powershell -c "Get-CimInstance -ClassName Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed"
         mkdir tmp
         export TMPDIR=`pwd`/tmp
         export PATH=$PATH:`pwd`/build/lib
