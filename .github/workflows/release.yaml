@@ -11,7 +11,7 @@
 # In the GitHub release case, in addition to build the release binaries it also
 # uploads the binaries to the given release automatically.
 
-name: Release build / deploy
+name: Release build / upload
 on:
   merge_group:
   push:
@@ -36,7 +36,7 @@ concurrency:
 
 jobs:
   ubuntu_static_x86_64:
-    name: Release linux x86_64 static
+    name: linux x86_64 static
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [ubuntu-latest]
     steps:
@@ -108,7 +108,7 @@ jobs:
 
   # Build .deb packages Ubuntu/Debian
   release_ubuntu_pkg:
-    name: .deb packages / ${{ matrix.os }}
+    name: .deb / ${{ matrix.os }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     strategy:
@@ -228,7 +228,7 @@ jobs:
 
 
   windows_build:
-    name: Windows Build (vcpkg / ${{ matrix.triplet }})
+    name: vcpkg / ${{ matrix.triplet }} ${{ matrix.build_type || 'Release'}}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [windows-latest]
     strategy:
@@ -240,6 +240,10 @@ jobs:
           - triplet: x64-windows-static
             arch: '-A x64'
             run_benchmark: true
+          - triplet: x64-windows-static
+            arch: '-A x64'
+            build_type: Debug
+            upload: 'OFF'
           - triplet: x86-windows
             arch: '-A Win32'
             static: 'OFF'
@@ -253,6 +257,7 @@ jobs:
       VCPKG_VERSION: '2025.07.25'
       VCPKG_ROOT: vcpkg
       VCPKG_DISABLE_METRICS: 1
+      BUILD_TYPE: ${{ matrix.build_type || 'Release' }}
 
     steps:
     - name: Harden Runner
@@ -311,7 +316,7 @@ jobs:
           -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
           -DJPEGXL_ENABLE_TOOLS=${{ matrix.tools || 'ON'}} \
           -DBUILD_TESTING=OFF \
-          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
           -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
           -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
@@ -326,12 +331,12 @@ jobs:
       shell: 'bash'
       run: |
         set -x
-        cmake --build build --config Release
+        cmake --build build --config ${{ env.BUILD_TYPE }}
     - name: Install
       shell: 'bash'
       run: |
         set -x
-        cmake --build build --config Release --target install
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target install
         for pkg in giflib libjpeg-turbo libpng libwebp zlib; do
           cp vcpkg/installed/${{matrix.triplet}}/share/${pkg}/copyright \
             prefix/bin/LICENSE.${pkg}
@@ -347,19 +352,21 @@ jobs:
       if: matrix.run_benchmark && true
       run: |
         systeminfo | grep -A 1 Processor
-        wmic cpu get Name, NumberofCores, NumberOfLogicalProcessors, MaxClockSpeed
+        powershell -c "Get-CimInstance -ClassName Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed"
         mkdir tmp
         export TMPDIR=`pwd`/tmp
         export PATH=$PATH:`pwd`/build/lib
         BUILD_CONFIG=Release/ BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
 
     - name: Package release zip
+      if: matrix.upload != 'OFF'
       shell: 'powershell'
       run: |
         Compress-Archive -Path prefix\bin\*, prefix\lib\* `
           -DestinationPath jxl-${{matrix.triplet}}.zip
 
     - name: Upload release zip
+      if: matrix.upload != 'OFF'
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: jxl-${{matrix.triplet}}
