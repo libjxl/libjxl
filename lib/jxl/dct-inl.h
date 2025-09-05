@@ -40,7 +40,7 @@ constexpr size_t kMaxLanes = MaxLanes(HWY_FULL(float)());
 #endif
 
 // Implementation of Lowest Complexity Self Recursive Radix-2 DCT II/III
-// Algorithms, by Siriani M. Perera and Jianhua Liu.
+// Algorithms, by Sirani M. Perera and Jianhua Liu.
 
 template <size_t N, size_t SZ>
 struct CoeffBundle {
