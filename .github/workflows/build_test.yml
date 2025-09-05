@@ -155,6 +155,12 @@ jobs:
             test_stack_limit: 128
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
+          - name: debug:osx-13
+            # The last "free" X86 OSX runnde
+            os: macos-13
+            mode: debug
+            cmake_args: >-
+              -DCMAKE_FIND_FRAMEWORK=NEVER
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
