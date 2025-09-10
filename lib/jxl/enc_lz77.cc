@@ -165,12 +165,14 @@ std::vector<std::vector<Token>> ApplyLZ77_RLE(
         continue;
       }
       // Output the LZ77 length
-      out.emplace_back(in[i].context, lz77_len);
+      out.emplace_back(in[i].context, static_cast<uint32_t>(lz77_len));
       out.back().is_lz77_length = true;
       i += num_to_copy - 1;
       bit_decrease += cost - lz77_cost;
       // Output the LZ77 copy distance.
-      out.emplace_back(lz77.nonserialized_distance_context, distance_symbol);
+      out.emplace_back(
+          static_cast<uint32_t>(lz77.nonserialized_distance_context),
+          static_cast<uint32_t>(distance_symbol));
     }
   }
 
@@ -524,7 +526,9 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
         if (lz77_cost <= cost) {
           out.back().value = len - min_length;
           out.back().is_lz77_length = true;
-          out.emplace_back(lz77.nonserialized_distance_context, dist_symbol);
+          out.emplace_back(
+              static_cast<uint32_t>(lz77.nonserialized_distance_context),
+              static_cast<uint32_t>(dist_symbol));
           bit_decrease += cost - lz77_cost;
         } else {
           // LZ77 match ignored, and symbol already pushed. Push all other
@@ -672,10 +676,14 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
       bool is_lz77_length = prefix_costs[pos].dist_symbol != 0;
       if (is_lz77_length) {
         size_t dist_symbol = prefix_costs[pos].dist_symbol - 1;
-        out.emplace_back(lz77.nonserialized_distance_context, dist_symbol);
+        out.emplace_back(
+            static_cast<uint32_t>(lz77.nonserialized_distance_context),
+            static_cast<uint32_t>(dist_symbol));
       }
-      size_t val = is_lz77_length ? prefix_costs[pos].len - min_length
-                                  : in[pos - 1].value;
+      uint32_t val =
+          is_lz77_length
+              ? (prefix_costs[pos].len - static_cast<uint32_t>(min_length))
+              : in[pos - 1].value;
       out.emplace_back(prefix_costs[pos].ctx, val);
       out.back().is_lz77_length = is_lz77_length;
       pos -= prefix_costs[pos].len;
