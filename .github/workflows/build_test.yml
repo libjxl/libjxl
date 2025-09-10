@@ -123,6 +123,7 @@ jobs:
             mode: release
             cc: gcc
             cxx: g++
+            run_bench: true
           - name: release:gcc-old
             os: ubuntu-24.04
             mode: release
@@ -144,6 +145,26 @@ jobs:
             mode: release
             cc: clang
             cxx: clang++
+          # LTO builds
+          - name: release_lto
+            os: ubuntu-latest
+            mode: release
+            cc: clang-17
+            cxx: clang++-17
+            apt_pkgs: lld
+            cmake_args: >-
+              -DJPEGXL_ENABLE_LTO=ON
+              -DCMAKE_LINKER_TYPE=LLD
+            run_bench: true
+          - name: release_lto:gcc
+            os: ubuntu-latest
+            mode: release
+            cc: gcc
+            cxx: g++
+            cmake_args: >-
+              -DJPEGXL_ENABLE_LTO=ON
+            run_bench: true
+          # OSX builds
           - name: release:osx
             os: macos-latest
             mode: release

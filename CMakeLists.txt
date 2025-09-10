@@ -9,6 +9,14 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 project(LIBJXL LANGUAGES C CXX)
 
+message(STATUS "CMake version: ${CMAKE_VERSION}")
+message(STATUS "Compiler IDs\
+ C:${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION},\
+ C++:${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+message(STATUS "Linker IDs\
+ C:${CMAKE_C_COMPILER_LINKER_ID} ${CMAKE_C_COMPILER_LINKER_VERSION},\
+ C++:${CMAKE_CXX_COMPILER_LINKER_ID} ${CMAKE_CXX_COMPILER_LINKER_VERSION}")
+
 # TODO(sboukortt): remove once oss-fuzz passes -DBUILD_SHARED_LIBS=OFF
 if(JPEGXL_ENABLE_FUZZERS)
   message(STATUS "Fuzzer build detected, building static libs")
@@ -179,11 +187,11 @@ set(JPEGXL_ENABLE_COVERAGE false CACHE BOOL
 set(JPEGXL_ENABLE_TRANSCODE_JPEG true CACHE BOOL
     "Builds in support for decoding transcoded JXL files back to JPEG,\
  disabling it makes the decoder reject JXL_DEC_JPEG_RECONSTRUCTION events,\
- (default enabled)")
+ (default enabled).")
 set(JPEGXL_ENABLE_BOXES true CACHE BOOL
     "Builds in support for decoding boxes in JXL files,\
  disabling it makes the decoder reject JXL_DEC_BOX events,\
- (default enabled)")
+ (default enabled).")
 set(JPEGXL_STATIC false CACHE BOOL
     "Build tools as static binaries.")
 set(JPEGXL_WARNINGS_AS_ERRORS false CACHE BOOL
@@ -195,7 +203,9 @@ set(JPEGXL_FORCE_NEON false CACHE BOOL
 set(JPEGXL_TEST_TOOLS false CACHE BOOL
     "Run scripts that test the encoding / decoding tools.")
 set(JPEGXL_ENABLE_WASM_THREADS true CACHE BOOL
-    "Builds WASM modules with threads support")
+    "Builds WASM modules with threads support.")
+set(JPEGXL_ENABLE_LTO false CACHE BOOL
+    "Set flags to enable LTO.")
 
 # HWY codegen levers
 foreach(tgt IN LISTS JPEGXL_HWY_TARGETS)
@@ -223,9 +233,6 @@ if (NOT CMAKE_C_COMPILER_ID STREQUAL CMAKE_CXX_COMPILER_ID)
   message(FATAL_ERROR "Different C/C++ compilers set: "
           "${CMAKE_C_COMPILER_ID} vs ${CMAKE_CXX_COMPILER_ID}")
 endif()
-
-message(STATUS
-    "Compiler IDs C:${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}, C++:${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 
 set(JXL_HWY_INCLUDE_DIRS "$<BUILD_INTERFACE:$<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>>")
 
@@ -334,6 +341,12 @@ if (EMSCRIPTEN AND JPEGXL_ENABLE_WASM_THREADS)
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
+endif()
+
+if (JPEGXL_ENABLE_LTO)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -flto")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto")
 endif()
 
 if (CXX_MACRO_PREFIX_MAP)
