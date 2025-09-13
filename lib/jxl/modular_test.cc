@@ -115,7 +115,7 @@ void TestLarge(size_t dim, size_t co_dim, size_t group_size_shift) {
     extras::PackedPixelFile ppf_out;
     size_t compressed_size =
         Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
-    EXPECT_LE(compressed_size, 16384);
+    EXPECT_LE(compressed_size, 16384u);
   }
 }
 
@@ -437,7 +437,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
       }
     }
   }
-  EXPECT_EQ(different, 0);
+  EXPECT_EQ(different, 0u);
 }
 
 TEST(ModularTest, RoundtripLosslessCustomFloat) {
@@ -568,7 +568,7 @@ TEST(ModularTest, PredictorIntegerOverflow) {
   params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
                              nullptr, &ppf));
-  ASSERT_EQ(1, ppf.frames.size());
+  ASSERT_EQ(1u, ppf.frames.size());
   const auto& img = ppf.frames[0].color;
   const auto* pixels = reinterpret_cast<const float*>(img.pixels());
   EXPECT_EQ(-1.0f, pixels[0]);
@@ -619,7 +619,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
   params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
                              nullptr, &ppf));
-  ASSERT_EQ(1, ppf.frames.size());
+  ASSERT_EQ(1u, ppf.frames.size());
   const auto& img = ppf.frames[0].color;
   const float* pixels = reinterpret_cast<const float*>(img.pixels());
   for (size_t x = 0; x < xsize; ++x) {

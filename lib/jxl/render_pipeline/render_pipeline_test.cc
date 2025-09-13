@@ -146,7 +146,7 @@ TEST(RenderPipelineTest, CallAllGroups) {
     ASSERT_TRUE(input_buffers.Done());
   }
 
-  EXPECT_EQ(pipeline->PassesWithAllInput(), 1);
+  EXPECT_EQ(pipeline->PassesWithAllInput(), 1u);
 }
 
 TEST(RenderPipelineTest, BuildFast) {
@@ -188,7 +188,7 @@ TEST(RenderPipelineTest, CallAllGroupsFast) {
     ASSERT_TRUE(input_buffers.Done());
   }
 
-  EXPECT_EQ(pipeline->PassesWithAllInput(), 1);
+  EXPECT_EQ(pipeline->PassesWithAllInput(), 1u);
 }
 
 struct RenderPipelineTestInputSettings {
