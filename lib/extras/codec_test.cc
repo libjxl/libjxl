@@ -281,7 +281,7 @@ void TestRoundTrip(const TestImageParams& params, ThreadPool* pool) {
   CreateTestImage(params, &ppf_in);
   EncodedImage encoded;
   ASSERT_TRUE(encoder->Encode(ppf_in, &encoded, pool));
-  ASSERT_EQ(encoded.bitstreams.size(), 1);
+  ASSERT_EQ(encoded.bitstreams.size(), 1u);
 
   PackedPixelFile ppf_out;
   ColorHints color_hints;
@@ -310,7 +310,7 @@ void TestRoundTrip(const TestImageParams& params, ThreadPool* pool) {
     EXPECT_EQ(ppf_in.icc, ppf_out.icc);
   }
 
-  ASSERT_EQ(ppf_out.frames.size(), 1);
+  ASSERT_EQ(ppf_out.frames.size(), 1u);
   const auto& frame_in = ppf_in.frames[0];
   const auto& frame_out = ppf_out.frames[0];
   VerifySameImage(frame_in.color, ppf_in.info.bits_per_sample, frame_out.color,
@@ -383,7 +383,7 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
       auto encoder = Encoder::FromExtension(extension);
       ASSERT_TRUE(encoder.get());
       ASSERT_TRUE(encoder->Encode(ppf, &encoded, pool.get()));
-      ASSERT_EQ(encoded.bitstreams.size(), 1);
+      ASSERT_EQ(encoded.bitstreams.size(), 1u);
       ASSERT_EQ(orig.size(), encoded.bitstreams[0].size());
       EXPECT_EQ(0,
                 memcmp(orig.data(), encoded.bitstreams[0].data(), orig.size()));
@@ -486,14 +486,14 @@ TEST(CodecTest, EncodeToPNG) {
   EncodedImage encoded_png;
   ASSERT_TRUE(png_encoder->Encode(ppf, &encoded_png, pool));
   EXPECT_TRUE(encoded_png.icc.empty());
-  ASSERT_EQ(encoded_png.bitstreams.size(), 1);
+  ASSERT_EQ(encoded_png.bitstreams.size(), 1u);
 
   PackedPixelFile decoded_ppf;
   ASSERT_TRUE(extras::DecodeBytes(Bytes(encoded_png.bitstreams.front()),
                                   ColorHints(), &decoded_ppf));
 
   ASSERT_EQ(decoded_ppf.info.bits_per_sample, ppf.info.bits_per_sample);
-  ASSERT_EQ(decoded_ppf.frames.size(), 1);
+  ASSERT_EQ(decoded_ppf.frames.size(), 1u);
   VerifySameImage(ppf.frames[0].color, ppf.info.bits_per_sample,
                   decoded_ppf.frames[0].color,
                   decoded_ppf.info.bits_per_sample);
