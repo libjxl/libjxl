@@ -90,7 +90,7 @@ foreach(path ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
 endforeach()
 
 add_library(jxl_base INTERFACE)
-target_include_directories(jxl_base SYSTEM BEFORE INTERFACE
+target_include_directories(jxl_base BEFORE INTERFACE
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
 )
 target_include_directories(jxl_base BEFORE INTERFACE

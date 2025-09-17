@@ -723,8 +723,9 @@ void TreeSamples::AddSample(pixel_type_w pixel, const Properties &properties,
     HybridUintConfig(4, 1, 2).Encode(PackSigned(v), &tok, &nbits, &bits);
     JXL_DASSERT(tok < 256);
     JXL_DASSERT(nbits < 256);
-    residuals[i].emplace_back(
-        ResidualToken{static_cast<uint8_t>(tok), static_cast<uint8_t>(nbits)});
+    ResidualToken token = {static_cast<uint8_t>(tok),
+                           static_cast<uint8_t>(nbits)};
+    residuals[i].push_back(token);
   }
   for (size_t i = 0; i < num_static_props; ++i) {
     static_props[i].push_back(QuantizeStaticProperty(i, properties[i]));

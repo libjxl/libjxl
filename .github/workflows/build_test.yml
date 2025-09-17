@@ -123,6 +123,7 @@ jobs:
             mode: release
             cc: gcc
             cxx: g++
+            run_bench: true
           - name: release:gcc-old
             os: ubuntu-24.04
             mode: release
@@ -144,6 +145,26 @@ jobs:
             mode: release
             cc: clang
             cxx: clang++
+          # LTO builds
+          - name: release_lto
+            os: ubuntu-latest
+            mode: release
+            cc: clang-17
+            cxx: clang++-17
+            apt_pkgs: lld
+            cmake_args: >-
+              -DJPEGXL_ENABLE_LTO=ON
+              -DCMAKE_LINKER_TYPE=LLD
+            run_bench: true
+          - name: release_lto:gcc
+            os: ubuntu-latest
+            mode: release
+            cc: gcc
+            cxx: g++
+            cmake_args: >-
+              -DJPEGXL_ENABLE_LTO=ON
+            run_bench: true
+          # OSX builds
           - name: release:osx
             os: macos-latest
             mode: release
@@ -336,7 +357,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@fdcc8476540edceab3de004e990f80d881c6cc00 # v5.5.0
+      uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
       with:
         flags: unittests
         files: build/coverage.xml

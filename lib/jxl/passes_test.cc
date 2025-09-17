@@ -75,7 +75,7 @@ TEST(PassesTest, RoundtripSmallPasses) {
 
   PackedPixelFile ppf2;
   size_t compressed_size = Roundtrip(ppf, cparams, {}, pool, &ppf2);
-  EXPECT_LE(compressed_size, 5600);
+  EXPECT_LE(compressed_size, 5600u);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(ppf, ppf2, pool), 1.0);
 }
 
@@ -91,7 +91,7 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
 
   PackedPixelFile ppf2;
   size_t compressed_size = Roundtrip(ppf, cparams, {}, pool, &ppf2);
-  EXPECT_LE(compressed_size, 5200);
+  EXPECT_LE(compressed_size, 5200u);
 
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(ppf, ppf2, pool), 1.72);
 }
@@ -420,7 +420,7 @@ TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
 
   PackedPixelFile ppf2;
   size_t compressed_size = Roundtrip(ppf, cparams, {}, pool, &ppf2);
-  EXPECT_LE(compressed_size, 5700);
+  EXPECT_LE(compressed_size, 5700u);
 
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(ppf, ppf2, pool), 1.0);
 }

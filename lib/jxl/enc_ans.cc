@@ -673,7 +673,10 @@ StatusOr<size_t> EntropyEncodingData::BuildAndStoreANSEncodingData(
   JXL_ASSIGN_OR_RETURN(
       ANSEncodingHistogram normalized,
       ANSEncodingHistogram::ComputeBest(histogram, ans_histogram_strategy));
+
+  // TODO(eustas): fix: 2KiB on stack
   AliasTable::Entry a[ANS_MAX_ALPHABET_SIZE];
+
   JXL_RETURN_IF_ERROR(
       InitAliasTable(normalized.Counts(), ANS_LOG_TAB_SIZE, log_alpha_size, a));
   normalized.ANSBuildInfoTable(a, log_alpha_size, info);

@@ -101,7 +101,7 @@ Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
       }
     }
 
-    int length = DecodeVarLenUint8(input) + 3;
+    const size_t length = DecodeVarLenUint8(input) + 3;
     counts->resize(length);
     int total_count = 0;
 
@@ -124,12 +124,12 @@ Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
         {3, 10}, {4, 4},  {3, 7}, {4, 1}, {3, 6}, {3, 8}, {3, 9}, {4, 2},
     };
 
-    std::vector<int> logcounts(counts->size());
+    std::vector<int> logcounts(length);
     int omit_log = -1;
     int omit_pos = -1;
     // This array remembers which symbols have an RLE length.
-    std::vector<int> same(counts->size(), 0);
-    for (size_t i = 0; i < logcounts.size(); ++i) {
+    std::vector<int> same(length);
+    for (size_t i = 0; i < length; ++i) {
       input->Refill();  // for PeekFixedBits + Advance
       int idx = input->PeekFixedBits<7>();
       input->Consume(huff[idx][0]);
@@ -148,13 +148,13 @@ Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
     }
     // Invalid input, e.g. due to invalid usage of RLE.
     if (omit_pos < 0) return JXL_FAILURE("Invalid histogram.");
-    if (static_cast<size_t>(omit_pos) + 1 < logcounts.size() &&
+    if (static_cast<size_t>(omit_pos) + 1 < length &&
         logcounts[omit_pos + 1] == ANS_LOG_TAB_SIZE) {
       return JXL_FAILURE("Invalid histogram.");
     }
     int prev = 0;
     int numsame = 0;
-    for (size_t i = 0; i < logcounts.size(); ++i) {
+    for (size_t i = 0; i < length; ++i) {
       if (same[i]) {
         // RLE sequence, let this loop output the same count for the next
         // iterations.
