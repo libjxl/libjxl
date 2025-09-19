@@ -325,7 +325,8 @@ if(JPEGXL_STATIC)
     link_libraries(-Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic)
   elseif(CMAKE_USE_PTHREADS_INIT)
     # "whole-archive" is not supported on OSX.
-    if (NOT APPLE)
+    # On Android, libc (bionic) has pthreads built-in.
+    if (NOT APPLE AND NOT ANDROID)
       # Set pthreads as a whole-archive, otherwise weak symbols in the static
       # libraries will discard pthreads symbols leading to segmentation fault at
       # runtime.
