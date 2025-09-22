@@ -182,9 +182,12 @@ uint32_t DetectCpuFeatures() {
   const bool os_has_xsave = check_bit(abcd[2], 27);
   if (os_has_xsave) {
     const uint32_t xcr0 = ReadXCR0();
-    if (!check_bit(xcr0, 1) || !check_bit(xcr0, 2) || !check_bit(xcr0, 5) ||
-        !check_bit(xcr0, 6) || !check_bit(xcr0, 7)) {
-      flags = 0;  // TODO(eustas): be more selective?
+    if (!check_bit(xcr0, 1) || !check_bit(xcr0, 2)) {
+      flags = 0;
+    } else if (!check_bit(xcr0, 5) || !check_bit(xcr0, 6) ||
+               !check_bit(xcr0, 7)) {
+      // No AVX-512; disable everything but AVX2 if present
+      flags &= CpuFeatureBit(CpuFeature::kAVX2);
     }
   }
 

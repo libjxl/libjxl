@@ -123,7 +123,6 @@ jobs:
             mode: release
             cc: gcc
             cxx: g++
-            run_bench: true
           - name: release:gcc-old
             os: ubuntu-24.04
             mode: release
@@ -155,7 +154,6 @@ jobs:
             cmake_args: >-
               -DJPEGXL_ENABLE_LTO=ON
               -DCMAKE_LINKER_TYPE=LLD
-            run_bench: true
           - name: release_lto:gcc
             os: ubuntu-latest
             mode: release
@@ -163,7 +161,6 @@ jobs:
             cxx: g++
             cmake_args: >-
               -DJPEGXL_ENABLE_LTO=ON
-            run_bench: true
           # OSX builds
           - name: release:osx
             os: macos-latest
@@ -195,9 +192,16 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
       with:
         egress-policy: audit
+
+    - name: Check workflow configuration
+      run: |
+        if [[ "${{ matrix.run_bench && !matrix.test_in_pr }}" == "true" ]]; then
+          echo "::error title::Configuration Error::'run_bench' requires 'test_in_pr'"
+          exit 1
+        fi
 
     - name: Install build deps MacOS
       if: startsWith(matrix.os, 'macos-')
