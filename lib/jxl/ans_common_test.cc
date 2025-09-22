@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
