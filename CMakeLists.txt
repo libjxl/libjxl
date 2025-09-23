@@ -344,7 +344,7 @@ if (EMSCRIPTEN AND JPEGXL_ENABLE_WASM_THREADS)
 endif()
 
 if (JPEGXL_ENABLE_LTO)
-  if (WIN32 AND MINGW)
+  if (WIN32 AND MINGW AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(MSYSTEM_ENV "$ENV{MSYSTEM}") # Get MSYS2 environment
     if (MSYSTEM_ENV STREQUAL "CLANG64")
       message(STATUS "Clang64 environment detected.")
