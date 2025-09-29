@@ -10,12 +10,16 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <future>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
