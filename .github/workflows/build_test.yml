@@ -179,12 +179,31 @@ jobs:
             mode: debug
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
+          # Android builds
+          - name: release_android
+            os: ubuntu-latest
+            mode: release
+            skip_install: true
+            skip_stats: true
+            skip_test: true # can't finish "linking" tests without emulator
+            force_system_brotli: OFF
+            cmake_args: >-
+              -DANDROID_ABI=arm64-v8a
+              -DANDROID_PLATFORM=28
+              -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_LATEST_HOME}/build/cmake/android.toolchain.cmake
+              -DJPEGXL_ENABLE_BENCHMARK=OFF
+              -DJPEGXL_ENABLE_OPENEXR=OFF
+              -DJPEGXL_ENABLE_PLUGINS=OFF
+              -DJPEGXL_ENABLE_VIEWERS=OFF
+              -DSJPEG_ANDROID_NDK_PATH=${ANDROID_NDK_LATEST_HOME}
+              -DJPEGXL_BUNDLE_LIBPNG=ON
+
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
       EMIT_STACK_SIZES: ${{ matrix.emit_stack_sizes }}
       TEST_STACK_LIMIT: ${{ matrix.test_stack_limit }}
-      WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
+      WILL_TEST: ${{ !matrix.skip_test && (github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }} 
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
       WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
@@ -293,7 +312,7 @@ jobs:
         [[ -n "${MODE}" ]] || MODE="${{ matrix.name }}"
         SKIP_TEST=1 TARGETS=all CMAKE_CXX_FLAGS='${{ matrix.cxxflags }}' CMAKE_FLAGS='-DHWY_BROKEN_TARGETS=0' \
         ./ci.sh ${MODE} \
-          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+          -DJPEGXL_FORCE_SYSTEM_BROTLI=${{ matrix.force_system_brotli || 'ON'}} \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
           -DBUILD_TESTING=${BUILD_TESTS} \
@@ -308,7 +327,7 @@ jobs:
       run: ccache --show-stats
 
     - name: Build stats ${{ matrix.name }}
-      if: env.WILL_BUILD == 'true' && matrix.mode == 'release'
+      if: env.WILL_BUILD == 'true' && matrix.mode == 'release' && !matrix.skip_stats
       run: |
         SHARED_LIB_EXT="${{ startsWith(matrix.os, 'macos-') && 'dylib' || 'so' }}"
         SELECT_BINUTILS="${{ startsWith(matrix.os, 'macos-') && '--binutils `brew --prefix binutils`/bin/' || '' }}"
