@@ -688,7 +688,7 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
       out.back().is_lz77_length = is_lz77_length;
       pos -= prefix_costs[pos].len;
     }
-    std::reverse(out.begin(), out.end());
+    if (!out.empty()) std::reverse(out.begin(), out.end());
   }
   return tokens_lz77;
 }
