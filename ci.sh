@@ -15,6 +15,10 @@ OS=`uname -s`
 SELF=$(realpath "$0")
 MYDIR=$(dirname "${SELF}")
 
+### Colors
+TEXT_BOLD_PURPLE="\033[1;35m"
+TEXT_RESET="\033[0m"
+
 ### Environment parameters:
 # TODO(eustas): tighten; only several items need more than 48KiB
 TEST_STACK_LIMIT="${TEST_STACK_LIMIT:-128}"
@@ -1239,6 +1243,8 @@ cmd_lint() {
       echo 'To fix them run (from the base directory):' >&2
       echo '  buildifier `git ls-files | grep -E "/BUILD$|WORKSPACE|.bzl$"`' >&2
     fi
+  else
+    echo -e "${TEXT_BOLD_PURPLE}SKIPPED:${TEXT_RESET} buildifier (not installed)"
   fi
 
   # It is ok, if spell-checker is not installed.
@@ -1247,7 +1253,7 @@ cmd_lint() {
     local sources=`git -C "${MYDIR}" ls-files | grep -E "\.(${src_ext})$"`
     typos -c "${MYDIR}/tools/scripts/typos.toml" ${sources}
   else
-    echo "Consider installing https://github.com/crate-ci/typos for spell-checking"
+    echo -e "${TEXT_BOLD_PURPLE}SKIPPED:${TEXT_RESET} typos not installed; try: cargo install typos-cli"
   fi
 
   local installed=()
