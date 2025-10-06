@@ -1513,9 +1513,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     nb_wp_modes = 2;
   }
   if (nb_wp_modes > 1 &&
-      (stream_options_[stream_id].predictor == Predictor::Weighted ||
-       stream_options_[stream_id].predictor == Predictor::Best ||
-       stream_options_[stream_id].predictor == Predictor::Variable)) {
+      PredictorHasWeighted(stream_options_[stream_id].predictor)) {
     float best_cost = std::numeric_limits<float>::max();
     stream_options_[stream_id].wp_mode = 0;
     for (size_t i = 0; i < nb_wp_modes; i++) {
