@@ -248,7 +248,7 @@ float EstimateWPCost(const Image& img, size_t i) {
   weighted::Header wp_header;
   PredictorMode(i, &wp_header);
   for (const Channel& ch : img.channel) {
-    const intptr_t onerow = ch.plane.PixelsPerRow();
+    const ptrdiff_t onerow = ch.plane.PixelsPerRow();
     weighted::State wp_state(wp_header, ch.w, ch.h);
     Properties properties(1);
     for (size_t y = 0; y < ch.h; y++) {

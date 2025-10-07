@@ -10,7 +10,6 @@
 #include <memory>
 
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
@@ -125,7 +124,7 @@ class FromLinearStage : public RenderPipelineStage {
     msan::UnpoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
          x += Lanes(d)) {
       auto r = LoadU(d, row0 + x);
       auto g = LoadU(d, row1 + x);

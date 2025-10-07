@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <vector>
 
-#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/frame_dimensions.h"
@@ -226,7 +225,7 @@ Status TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
         const size_t histo_offset =
             block_ctx_map.ZeroDensityContextsOffset(block_ctx);
         // Skip LLF.
-        size_t prev = (nzeros > static_cast<ssize_t>(size / 16) ? 0 : 1);
+        size_t prev = (nzeros > static_cast<ptrdiff_t>(size / 16) ? 0 : 1);
         for (size_t k = covered_blocks; k < size && nzeros != 0; ++k) {
           int32_t coeff = block[order[k]];
           size_t ctx =
