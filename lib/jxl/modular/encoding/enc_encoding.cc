@@ -607,7 +607,7 @@ StatusOr<Tree> LearnTree(
 
     // encode transforms
     Bundle::Init(&wp_header);
-    if (options[i].predictor == Predictor::Weighted) {
+    if (PredictorHasWeighted(options[i].predictor)) {
       weighted::PredictorMode(options[i].wp_mode, &wp_header);
     }
 
@@ -648,7 +648,7 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
 
   // encode transforms
   Bundle::Init(&header);
-  if (options.predictor == Predictor::Weighted) {
+  if (PredictorHasWeighted(options.predictor)) {
     weighted::PredictorMode(options.wp_mode, &header.wp_header);
   }
   header.transforms = image.transform;
@@ -719,7 +719,7 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
   // encode transforms
   GroupHeader header;
   Bundle::Init(&header);
-  if (options.predictor == Predictor::Weighted) {
+  if (PredictorHasWeighted(options.predictor)) {
     weighted::PredictorMode(options.wp_mode, &header.wp_header);
   }
   header.transforms = image.transform;

@@ -288,6 +288,35 @@ inline void PredictorMode(int i, Header *header) {
 }
 }  // namespace weighted
 
+// Returns true if the (meta)predictor makes use of the weighted predictor.
+inline bool PredictorHasWeighted(Predictor predictor) {
+  // Use a non-defaulted switch to generate a warning if a case is missing.
+  switch (predictor) {
+    case Predictor::Zero:
+    case Predictor::Left:
+    case Predictor::Top:
+    case Predictor::Average0:
+    case Predictor::Select:
+    case Predictor::Gradient:
+      return false;
+    case Predictor::Weighted:
+      return true;
+    case Predictor::TopRight:
+    case Predictor::TopLeft:
+    case Predictor::LeftLeft:
+    case Predictor::Average1:
+    case Predictor::Average2:
+    case Predictor::Average3:
+    case Predictor::Average4:
+      return false;
+    case Predictor::Best:
+    case Predictor::Variable:
+      return true;
+  }
+
+  return false;
+}
+
 // Stores a node and its two children at the same time. This significantly
 // reduces the number of branches needed during decoding.
 struct FlatDecisionNode {
