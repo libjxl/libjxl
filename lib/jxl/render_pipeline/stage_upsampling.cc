@@ -12,7 +12,6 @@
 #include <memory>
 
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image_metadata.h"
@@ -88,7 +87,7 @@ class UpsamplingStage : public RenderPipelineStage {
     size_t shift = settings_.shift_x;
     size_t N = 1 << shift;
     const size_t xsize_v = RoundUpTo(xsize, Lanes(df));
-    for (ssize_t iy = -2; iy <= 2; iy++) {
+    for (ptrdiff_t iy = -2; iy <= 2; iy++) {
       msan::UnpoisonMemory(GetInputRow(input_rows, c_, iy) + xsize + 2,
                            sizeof(float) * (xsize_v - xsize));
     }
@@ -200,7 +199,7 @@ class UpsamplingStage : public RenderPipelineStage {
     }
   }
 
-  template <ssize_t N>
+  template <ptrdiff_t N>
   void ProcessRowImpl(const RowInfo& input_rows, const RowInfo& output_rows,
                       size_t x0, size_t len, size_t thread_id) const {
     constexpr HWY_FULL(float) df;
@@ -229,8 +228,8 @@ class UpsamplingStage : public RenderPipelineStage {
     float* JXL_RESTRICT mins = temp_[2][thread_id].address<float>();
     float* JXL_RESTRICT maxs = temp_[0][thread_id].address<float>();
     std::array<float*, 25> input;
-    for (ssize_t iy = -2; iy <= 2; ++iy) {
-      for (ssize_t ix = -2; ix <= 2; ++ix) {
+    for (ptrdiff_t iy = -2; iy <= 2; ++iy) {
+      for (ptrdiff_t ix = -2; ix <= 2; ++ix) {
         input[5 * (iy + 2) + (ix + 2)] = GetInputRow(input_rows, c_, iy) + ix;
       }
     }

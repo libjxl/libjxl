@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_cache.h"
@@ -138,12 +137,12 @@ class BlendingStage : public RenderPipelineStage {
     JXL_ENSURE(initialized_);
     JxlMemoryManager* memory_manager = state_.memory_manager;
     const FrameOrigin& frame_origin = frame_header_.frame_origin;
-    ssize_t bg_xpos = frame_origin.x0 + static_cast<ssize_t>(xpos);
-    ssize_t bg_ypos = frame_origin.y0 + static_cast<ssize_t>(ypos);
+    ptrdiff_t bg_xpos = frame_origin.x0 + static_cast<ptrdiff_t>(xpos);
+    ptrdiff_t bg_ypos = frame_origin.y0 + static_cast<ptrdiff_t>(ypos);
     int offset = 0;
-    if (bg_xpos + static_cast<ssize_t>(xsize) <= 0 ||
-        frame_origin.x0 >= static_cast<ssize_t>(image_xsize_) || bg_ypos < 0 ||
-        bg_ypos >= static_cast<ssize_t>(image_ysize_)) {
+    if (bg_xpos + static_cast<ptrdiff_t>(xsize) <= 0 ||
+        frame_origin.x0 >= static_cast<ptrdiff_t>(image_xsize_) || bg_ypos < 0 ||
+        bg_ypos >= static_cast<ptrdiff_t>(image_ysize_)) {
       // TODO(eustas): or fail?
       return true;
     }
@@ -154,7 +153,7 @@ class BlendingStage : public RenderPipelineStage {
     }
     if (bg_xpos + xsize > image_xsize_) {
       xsize =
-          std::max<ssize_t>(0, static_cast<ssize_t>(image_xsize_) - bg_xpos);
+          std::max<ptrdiff_t>(0, static_cast<ptrdiff_t>(image_xsize_) - bg_xpos);
     }
     std::vector<const float*> bg_row_ptrs_(input_rows.size());
     std::vector<float*> fg_row_ptrs_(input_rows.size());

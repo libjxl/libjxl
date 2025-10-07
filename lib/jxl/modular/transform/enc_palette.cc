@@ -405,8 +405,8 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
   pch.hshift = -1;
   pch.vshift = -1;
   pixel_type *JXL_RESTRICT p_palette = pch.Row(0);
-  intptr_t onerow = pch.plane.PixelsPerRow();
-  intptr_t onerow_image = input.channel[begin_c].plane.PixelsPerRow();
+  ptrdiff_t onerow = pch.plane.PixelsPerRow();
+  ptrdiff_t onerow_image = input.channel[begin_c].plane.PixelsPerRow();
   const int bit_depth = std::min(input.bitdepth, 24);
 
   if (lossy) {

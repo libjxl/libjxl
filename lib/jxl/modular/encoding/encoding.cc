@@ -271,7 +271,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     } else if (predictor == Predictor::Gradient && offset == 0 &&
                multiplier == 1) {
       JXL_DEBUG_V(8, "Gradient very fast track.");
-      const intptr_t onerow = channel.plane.PixelsPerRow();
+      const ptrdiff_t onerow = channel.plane.PixelsPerRow();
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         for (size_t x = 0; x < channel.w; x++) {
@@ -299,7 +299,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
 
   if (is_gradient_only) {
     JXL_DEBUG_V(8, "Gradient fast track.");
-    const intptr_t onerow = channel.plane.PixelsPerRow();
+    const ptrdiff_t onerow = channel.plane.PixelsPerRow();
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT r = channel.Row(y);
       for (size_t x = 0; x < channel.w; x++) {
@@ -384,7 +384,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     JXL_DEBUG_V(8, "Slow track.");
     MATreeLookup tree_lookup(tree);
     Properties properties = Properties(num_props);
-    const intptr_t onerow = channel.plane.PixelsPerRow();
+    const ptrdiff_t onerow = channel.plane.PixelsPerRow();
     JXL_ASSIGN_OR_RETURN(
         Channel references,
         Channel::Create(memory_manager,
@@ -433,7 +433,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     JXL_DEBUG_V(8, "Slowest track.");
     MATreeLookup tree_lookup(tree);
     Properties properties = Properties(num_props);
-    const intptr_t onerow = channel.plane.PixelsPerRow();
+    const ptrdiff_t onerow = channel.plane.PixelsPerRow();
     JXL_ASSIGN_OR_RETURN(
         Channel references,
         Channel::Create(memory_manager,

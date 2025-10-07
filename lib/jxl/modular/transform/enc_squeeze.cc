@@ -91,7 +91,7 @@ Status FwdVSqueeze(Image &input, int c, int rc) {
   chout.component = chin.component;
   chout_residual.component = chin.component;
 
-  intptr_t onerow_in = chin.plane.PixelsPerRow();
+  ptrdiff_t onerow_in = chin.plane.PixelsPerRow();
   for (size_t y = 0; y < chout_residual.h; y++) {
     const pixel_type *JXL_RESTRICT p_in = chin.Row(y * 2);
     pixel_type *JXL_RESTRICT p_out = chout.Row(y);
@@ -113,7 +113,7 @@ Status FwdVSqueeze(Image &input, int c, int rc) {
         next_avg = p_in[x + 2 * onerow_in];
       }
       pixel_type top =
-          (y > 0 ? p_in[static_cast<ssize_t>(x) - onerow_in] : avg);
+          (y > 0 ? p_in[static_cast<ptrdiff_t>(x) - onerow_in] : avg);
       pixel_type tendency = SmoothTendency(top, avg, next_avg);
 
       p_res[x] = diff - tendency;

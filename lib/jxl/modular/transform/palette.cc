@@ -48,8 +48,8 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   }
   const Channel &palette = input.channel[0];
   const pixel_type *JXL_RESTRICT p_palette = input.channel[0].Row(0);
-  intptr_t onerow = input.channel[0].plane.PixelsPerRow();
-  intptr_t onerow_image = input.channel[c0].plane.PixelsPerRow();
+  ptrdiff_t onerow = input.channel[0].plane.PixelsPerRow();
+  ptrdiff_t onerow_image = input.channel[c0].plane.PixelsPerRow();
   const int bit_depth = std::min(input.bitdepth, 24);
 
   if (w == 0) {

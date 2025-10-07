@@ -65,7 +65,7 @@ StatusOr<float> EstimateCost(const Image& img) {
   constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
   Histogram histo[nc] = {};
   for (const Channel& ch : img.channel) {
-    const intptr_t onerow = ch.plane.PixelsPerRow();
+    const ptrdiff_t onerow = ch.plane.PixelsPerRow();
     for (size_t y = 0; y < ch.h; y++) {
       const pixel_type* JXL_RESTRICT r = ch.Row(y);
       for (size_t x = 0; x < ch.w; x++) {

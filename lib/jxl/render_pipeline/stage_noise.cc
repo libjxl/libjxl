@@ -12,7 +12,6 @@
 #include <memory>
 
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
@@ -270,12 +269,12 @@ class ConvolveNoiseStage : public RenderPipelineStage {
         rows[i] = GetInputRow(input_rows, c, i - 2);
       }
       float* JXL_RESTRICT row_out = GetOutputRow(output_rows, c, 0);
-      for (ssize_t x = -RoundUpTo(xextra, Lanes(d));
-           x < static_cast<ssize_t>(xsize + xextra); x += Lanes(d)) {
+      for (ptrdiff_t x = -RoundUpTo(xextra, Lanes(d));
+           x < static_cast<ptrdiff_t>(xsize + xextra); x += Lanes(d)) {
         const auto p00 = LoadU(d, rows[2] + x);
         auto others = Zero(d);
         // TODO(eustas): sum loaded values to reduce the calculation chain
-        for (ssize_t i = -2; i <= 2; i++) {
+        for (ptrdiff_t i = -2; i <= 2; i++) {
           others = Add(others, LoadU(d, rows[0] + x + i));
           others = Add(others, LoadU(d, rows[1] + x + i));
           others = Add(others, LoadU(d, rows[3] + x + i));

@@ -43,7 +43,7 @@ using hwy::HWY_NAMESPACE::ShiftLeftLanes;
 #endif
 using hwy::HWY_NAMESPACE::Vec;
 
-void FastGaussian1D(const RecursiveGaussian& rg, const intptr_t xsize,
+void FastGaussian1D(const RecursiveGaussian& rg, const ptrdiff_t xsize,
                     const float* JXL_RESTRICT in, float* JXL_RESTRICT out) {
   // Although the current output depends on the previous output, we can unroll
   // up to 4x by precomputing up to fourth powers of the constants. Beyond that,
@@ -69,14 +69,14 @@ void FastGaussian1D(const RecursiveGaussian& rg, const intptr_t xsize,
   V prev2_3 = Zero(d);
   V prev2_5 = Zero(d);
 
-  const intptr_t N = static_cast<intptr_t>(rg.radius);
+  const ptrdiff_t N = static_cast<ptrdiff_t>(rg.radius);
 
-  intptr_t n = -N + 1;
+  ptrdiff_t n = -N + 1;
   // Left side with bounds checks and only write output after n >= 0.
-  const intptr_t first_aligned = RoundUpTo(N + 1, Lanes(d));
+  const ptrdiff_t first_aligned = RoundUpTo(N + 1, Lanes(d));
   for (; n < std::min(first_aligned, xsize); ++n) {
-    const intptr_t left = n - N - 1;
-    const intptr_t right = n + N - 1;
+    const ptrdiff_t left = n - N - 1;
+    const ptrdiff_t right = n + N - 1;
     const float left_val = left >= 0 ? in[left] : 0.0f;
     const float right_val = (right < xsize) ? in[right] : 0.0f;
     const V sum = Set(d, left_val + right_val);
@@ -177,8 +177,8 @@ void FastGaussian1D(const RecursiveGaussian& rg, const intptr_t xsize,
 
   // Remainder handling with bounds checks
   for (; n < xsize; ++n) {
-    const intptr_t left = n - N - 1;
-    const intptr_t right = n + N - 1;
+    const ptrdiff_t left = n - N - 1;
+    const ptrdiff_t right = n + N - 1;
     const float left_val = left >= 0 ? in[left] : 0.0f;
     const float right_val = (right < xsize) ? in[right] : 0.0f;
     const V sum = Set(d, left_val + right_val);
@@ -263,7 +263,7 @@ class TwoInputs {
 template <size_t kVectors, class V, class Input, class Output>
 void VerticalBlock(const V& d1_1, const V& d1_3, const V& d1_5, const V& n2_1,
                    const V& n2_3, const V& n2_5, const Input& input,
-                   const ssize_t n, float* ring_buffer, const Output output,
+                   const ptrdiff_t n, float* ring_buffer, const Output output,
                    float* JXL_RESTRICT out_pos) {
   const HWY_FULL(float) d;
   // More cache-friendly to process an entirely cache line at a time
@@ -332,7 +332,7 @@ void VerticalStrip(const RecursiveGaussian& rg, const size_t x,
          3 * kVectors * Lanes(d) * kRingBufferLen * sizeof(float));
 
   // Warmup: top is out of bounds (zero padded), bottom is usually in-bounds.
-  ssize_t n = -static_cast<ssize_t>(N) + 1;
+  ptrdiff_t n = -static_cast<ptrdiff_t>(N) + 1;
   for (; n < 0; ++n) {
     // bottom is always non-negative since n is initialized in -N + 1.
     const size_t bottom = n + N - 1;
@@ -351,7 +351,7 @@ void VerticalStrip(const RecursiveGaussian& rg, const size_t x,
 
   // Interior outputs with prefetching and without bounds checks.
   constexpr size_t kPrefetchRows = 8;
-  for (; n < static_cast<ssize_t>(ysize - N + 1 - kPrefetchRows); ++n) {
+  for (; n < static_cast<ptrdiff_t>(ysize - N + 1 - kPrefetchRows); ++n) {
     const size_t top = n - N - 1;
     const size_t bottom = n + N - 1;
     VerticalBlock<kVectors>(d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
@@ -423,7 +423,7 @@ HWY_EXPORT(FastGaussian1D);
 void FastGaussian1D(const RecursiveGaussian& rg, const size_t xsize,
                     const float* JXL_RESTRICT in, float* JXL_RESTRICT out) {
   HWY_DYNAMIC_DISPATCH(FastGaussian1D)
-  (rg, static_cast<intptr_t>(xsize), in, out);
+  (rg, static_cast<ptrdiff_t>(xsize), in, out);
 }
 
 HWY_EXPORT(FastGaussianVertical);  // Local function.
@@ -532,7 +532,7 @@ Status FastGaussianHorizontal(const RecursiveGaussian& rg, const size_t xsize,
   const auto process_line = [&](const uint32_t task,
                                 size_t /*thread*/) -> Status {
     const size_t y = task;
-    FastGaussian1D(rg, static_cast<intptr_t>(xsize), in(y), out(y));
+    FastGaussian1D(rg, static_cast<ptrdiff_t>(xsize), in(y), out(y));
     return true;
   };
 
