@@ -745,19 +745,23 @@ Status DownsampleColorChannels(const CompressParams& cparams,
 }
 
 template <size_t L, typename V, typename R>
-void FindIndexOfSumMaximum(const V* array, R* idx, V* sum) {
+void FindAvgIndexOfSumMaximum(const V* array, R* idx, V* sum) {
   static_assert(L > 0, "Empty arrays have undefined maximum");
   V maxval = 0;
   V val = 0;
-  R maxidx = 0;
+  R maxidx_begin = 0;
+  R maxidx_end = 0;
   for (size_t i = 0; i < L; ++i) {
     val += array[i];
     if (val > maxval) {
       maxval = val;
-      maxidx = i;
+      maxidx_begin = i;
+    }
+    if (val == maxval) {
+      maxidx_end = i;
     }
   }
-  *idx = maxidx;
+  *idx = (maxidx_begin + maxidx_end + 1) >> 1;
   *sum = maxval;
 }
 
@@ -920,7 +924,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
           }
           int best = 0;
           int32_t best_sum = 0;
-          FindIndexOfSumMaximum<256>(d_num_zeros, &best, &best_sum);
+          FindAvgIndexOfSumMaximum<256>(d_num_zeros, &best, &best_sum);
           int32_t offset_sum = 0;
           for (int i = 0; i < 256; ++i) {
             if (i <= kOffset) {
