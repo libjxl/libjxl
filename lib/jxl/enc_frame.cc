@@ -926,10 +926,8 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
           int32_t best_sum = 0;
           FindAvgIndexOfSumMaximum<256>(d_num_zeros, &best, &best_sum);
           int32_t offset_sum = 0;
-          for (int i = 0; i < 256; ++i) {
-            if (i <= kOffset) {
-              offset_sum += d_num_zeros[i];
-            }
+          for (int i = 0; i <= kOffset; ++i) {
+            offset_sum += d_num_zeros[i];
           }
           row_out[tx] = 0;
           if (best_sum > offset_sum + 1) {
