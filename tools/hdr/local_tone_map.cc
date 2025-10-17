@@ -115,15 +115,15 @@ StatusOr<ImageF> Upsample(const ImageF& image, ThreadPool* pool) {
   JXL_ASSIGN_OR_RETURN(ImageF upsampled_horizontally,
                        ImageF::Create(jpegxl::tools::NoMemoryManager(),
                                       2 * image.xsize(), image.ysize()));
-  const auto BoundX = [&image](ssize_t x) {
-    return Clamp1<ssize_t>(x, 0, image.xsize() - 1);
+  const auto BoundX = [&image](ptrdiff_t x) {
+    return Clamp1<ptrdiff_t>(x, 0, image.xsize() - 1);
   };
   const auto process_row_h = [&](const int32_t y,
                                  const int32_t /*thread_id*/) -> Status {
     const float* const JXL_RESTRICT in_row = image.ConstRow(y);
     float* const JXL_RESTRICT out_row = upsampled_horizontally.Row(y);
 
-    for (ssize_t x = 0; x < static_cast<ssize_t>(image.xsize()); ++x) {
+    for (ptrdiff_t x = 0; x < static_cast<ptrdiff_t>(image.xsize()); ++x) {
       out_row[2 * x] = in_row[x];
       out_row[2 * x + 1] =
           0.5625f * (in_row[x] + in_row[BoundX(x + 1)]) -
@@ -138,8 +138,8 @@ StatusOr<ImageF> Upsample(const ImageF& image, ThreadPool* pool) {
   JXL_ASSIGN_OR_RETURN(ImageF upsampled,
                        ImageF::Create(jpegxl::tools::NoMemoryManager(),
                                       2 * image.xsize(), 2 * image.ysize()));
-  const auto BoundY = [&image](ssize_t y) {
-    return Clamp1<ssize_t>(y, 0, image.ysize() - 1);
+  const auto BoundY = [&image](ptrdiff_t y) {
+    return Clamp1<ptrdiff_t>(y, 0, image.ysize() - 1);
   };
   const auto process_row_v = [&](const int32_t y,
                                  const int32_t /*thread_id*/) -> Status {
@@ -154,8 +154,8 @@ StatusOr<ImageF> Upsample(const ImageF& image, ThreadPool* pool) {
         upsampled.Row(2 * y + 1),
     };
 
-    for (ssize_t x = 0;
-         x < static_cast<ssize_t>(upsampled_horizontally.xsize());
+    for (ptrdiff_t x = 0;
+         x < static_cast<ptrdiff_t>(upsampled_horizontally.xsize());
          x += Lanes(df)) {
       Store(Load(df, in_rows[1] + x), df, out_rows[0] + x);
       Store(MulAdd(Set(df, 0.5625f),

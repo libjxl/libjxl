@@ -11,7 +11,6 @@
 #include <cstdint>
 #include <vector>
 
-#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/enc_ans_params.h"
 
 namespace jxl {
@@ -47,7 +46,7 @@ constexpr size_t kNumModularPredictors =
 constexpr size_t kNumModularEncoderPredictors =
     static_cast<size_t>(Predictor::Variable) + 1;
 
-static constexpr ssize_t kNumStaticProperties = 2;  // channel, group_id.
+static constexpr ptrdiff_t kNumStaticProperties = 2;  // channel, group_id.
 
 using StaticPropRange =
     std::array<std::array<uint32_t, 2>, kNumStaticProperties>;
