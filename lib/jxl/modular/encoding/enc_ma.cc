@@ -163,11 +163,10 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     size_t pos;
     size_t begin;
     size_t end;
-    uint64_t used_properties;
     StaticPropRange static_prop_range;
   };
   std::vector<NodeInfo> nodes;
-  nodes.push_back(NodeInfo{0, 0, tree_samples.NumDistinctSamples(), 0,
+  nodes.push_back(NodeInfo{0, 0, tree_samples.NumDistinctSamples(),
                            initial_static_prop_range});
 
   size_t num_predictors = tree_samples.NumPredictors();
@@ -179,7 +178,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     size_t pos = nodes.back().pos;
     size_t begin = nodes.back().begin;
     size_t end = nodes.back().end;
-    uint64_t used_properties = nodes.back().used_properties;
+
     StaticPropRange static_prop_range = nodes.back().static_prop_range;
     nodes.pop_back();
     if (begin == end) continue;
@@ -411,20 +410,17 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
           split += prop_value_used_count[i];
           float rcost = costs_r[i - first_used].cost;
           float lcost = costs_l[i - first_used].cost;
-          // WP was not used + we would use the WP property or predictor
-          bool adds_wp =
-              (tree_samples.PropertyFromIndex(prop) == kWPProp &&
-               (used_properties & (1LU << prop)) == 0) ||
-              ((costs_l[i - first_used].pred == Predictor::Weighted ||
-                costs_r[i - first_used].pred == Predictor::Weighted) &&
-               (*tree)[pos].predictor != Predictor::Weighted);
+
+          bool uses_wp = tree_samples.PropertyFromIndex(prop) == kWPProp ||
+                         costs_l[i - first_used].pred == Predictor::Weighted ||
+                         costs_r[i - first_used].pred == Predictor::Weighted;
           bool zero_entropy_side = rcost == 0 || lcost == 0;
 
           SplitInfo &best_ref =
               tree_samples.PropertyFromIndex(prop) < kNumStaticProperties
                   ? (zero_entropy_side ? best_split_static_constant
                                        : best_split_static)
-                  : (adds_wp ? best_split_nonstatic : best_split_nowp);
+                  : (uses_wp ? best_split_nonstatic : best_split_nowp);
           if (lcost + rcost < best_ref.Cost()) {
             best_ref.prop = prop;
             best_ref.val = i;
@@ -474,25 +470,22 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
                                 best->prop - tree_samples.NumStaticProps(),
                                 best->val);
       }
-      if (p >= kNumStaticProperties) {
-        used_properties |= 1 << best->prop;
-      }
       auto new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
         JXL_DASSERT(static_cast<uint32_t>(dequant + 1) <= new_sp_range[p][1]);
         new_sp_range[p][1] = dequant + 1;
         JXL_DASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
       }
-      nodes.push_back(NodeInfo{(*tree)[pos].rchild, begin, best->pos,
-                               used_properties, new_sp_range});
+      nodes.push_back(
+          NodeInfo{(*tree)[pos].rchild, begin, best->pos, new_sp_range});
       new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
         JXL_DASSERT(new_sp_range[p][0] <= static_cast<uint32_t>(dequant + 1));
         new_sp_range[p][0] = dequant + 1;
         JXL_DASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
       }
-      nodes.push_back(NodeInfo{(*tree)[pos].lchild, best->pos, end,
-                               used_properties, new_sp_range});
+      nodes.push_back(
+          NodeInfo{(*tree)[pos].lchild, best->pos, end, new_sp_range});
     }
   }
 }
