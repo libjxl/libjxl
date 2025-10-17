@@ -470,9 +470,6 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
                                 best->prop - tree_samples.NumStaticProps(),
                                 best->val);
       }
-      if (p >= kNumStaticProperties) {
-        used_properties |= 1 << best->prop;
-      }
       auto new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
         JXL_DASSERT(static_cast<uint32_t>(dequant + 1) <= new_sp_range[p][1]);
