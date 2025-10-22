@@ -58,6 +58,7 @@ function(target_link_skcms TARGET_NAME)
   else()
     target_compile_definitions(${TARGET_NAME} PRIVATE -DSKCMS_DISABLE_HSW)
   endif()
+
   if (_use_avx512)
     list(APPEND _sources "${_sources_dir}/src/skcms_TransformSkx.cc")
     set_source_files_properties("${_sources_dir}/src/skcms_TransformSkx.cc"
@@ -66,6 +67,10 @@ function(target_link_skcms TARGET_NAME)
     )
   else()
     target_compile_definitions(${TARGET_NAME} PRIVATE -DSKCMS_DISABLE_SKX)
+  endif()
+
+  if (MINGW)
+    target_compile_definitions(${TARGET_NAME} PRIVATE -DSKCMS_HAS_MUSTTAIL=0)
   endif()
 
   target_sources(${TARGET_NAME} PRIVATE "${_sources}")
