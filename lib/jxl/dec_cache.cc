@@ -321,8 +321,10 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
       const size_t channels_dst =
           output_encoding_info.color_encoding.Channels();
       bool mixing_color_and_grey = (channels_dst != channels_src);
-      if ((output_encoding_info.color_encoding_is_original) ||
-          (!output_encoding_info.cms_set) || mixing_color_and_grey) {
+      if ((output_encoding_info.color_encoding_is_original &&
+           !(output_encoding_info.color_encoding.WantICC() &&
+             output_encoding_info.xyb_encoded)) || (!output_encoding_info.cms_set)
+           || mixing_color_and_grey) {
         // in those cases we only need a linear stage in other cases we attempt
         // to obtain a cms stage: the cases are
         // - output_encoding_info.color_encoding_is_original: no cms stage
