@@ -203,7 +203,7 @@ jobs:
       # Whether we track the stack size.
       EMIT_STACK_SIZES: ${{ matrix.emit_stack_sizes }}
       TEST_STACK_LIMIT: ${{ matrix.test_stack_limit }}
-      WILL_TEST: ${{ !matrix.skip_test && (github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }} 
+      WILL_TEST: ${{ !matrix.skip_test && (github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
       WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
