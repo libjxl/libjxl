@@ -431,7 +431,7 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
       const auto im = Load(df, inv_matrix + i);
       const auto val = Mul(Sub(in, in_y), Mul(im, quant));
       const auto rval = Round(val);
-      const auto diff = Sub(val, rval);
+      const auto diff = AbsDiff(val, rval);
       const auto m = Load(df, matrix + i);
       Store(Mul(m, diff), df, &mem[i]);
       const auto q = Abs(rval);
