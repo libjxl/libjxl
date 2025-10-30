@@ -610,38 +610,25 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
   JXL_DASSERT(first_trailing_stage_ < first_image_dim_stage_);
   JXL_DASSERT(first_image_dim_stage_ <= stages_.size());
 
-  bool offscreen = (first_image_dim_stage_ == stages_.size());
-  ptrdiff_t frame_x0 = offscreen ? 0 : frame_origin_.x0;
-  ptrdiff_t frame_y0 = offscreen ? 0 : frame_origin_.y0;
-
   // Compute actual x-axis bounds for the current image area in the context of
   // the full image this frame is part of. As the left boundary may be negative,
   // we also create the x_pixels_skip value, defined as follows:
   // - both x_pixels_skip and full_image_x0 are >= 0, and at least one is 0;
   // - full_image_x0 - x_pixels_skip is the position of the current frame area
   //   in the full image.
-  ptrdiff_t full_image_x0 = frame_x0 + image_area_rect.x0();
+  ptrdiff_t full_image_x0 = frame_origin_.x0 + image_area_rect.x0();
   ptrdiff_t x_pixels_skip = 0;
   if (full_image_x0 < 0) {
     x_pixels_skip = -full_image_x0;
     full_image_x0 = 0;
   }
-  ptrdiff_t full_image_x1 = frame_x0 + image_area_rect.x1();
+  ptrdiff_t full_image_x1 = frame_origin_.x0 + image_area_rect.x1();
 
   std::vector<Rect> span(stages_.size());
   for (size_t i = 0; i < stages_.size(); ++i) {
-    if (i < first_trailing_stage_) {
+    if (i < first_image_dim_stage_) {
       span[i] = Rect(group_rect[i].x0(), 0, group_rect[i].xsize(),
                      image_rect_[i].ysize());
-    } else if (i < first_image_dim_stage_) {
-      // Before the first_image_dim_stage_, coordinates are relative to the
-      // current frame.
-      size_t x0 = full_image_x0 - frame_x0;
-      size_t x1 = full_image_x1 - frame_x0;
-      size_t x_max = frame_dimensions_.xsize_upsampled;
-      size_t cropped_x1 = std::min<ptrdiff_t>(x1, x_max);
-      span[i] = Rect(x0, 0, std::max<ptrdiff_t>(0, cropped_x1 - x0),
-                     frame_dimensions_.ysize_upsampled);
     } else {
       size_t x0 = full_image_x0;
       size_t x1 = full_image_x1;
@@ -763,11 +750,8 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     int y = vy - num_extra_rows;
 
     for (size_t c = 0; c < input_data.size(); c++) {
-      // Skip pixels that are not part of the actual final image area.
-      input_rows[first_trailing_stage_][c][0] =
-          rows.GetBuffer(stage_input_for_channel_[first_trailing_stage_][c], y,
-                         c) +
-          x_pixels_skip;
+      input_rows[first_trailing_stage_][c][0] = rows.GetBuffer(
+          stage_input_for_channel_[first_trailing_stage_][c], y, c);
     }
 
     // Check that we are not outside of the bounds for the current rendering
@@ -777,13 +761,6 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
       continue;
     }
 
-    // Avoid running pipeline stages on pixels that are outside the full image
-    // area. As trailing stages have no borders, this is a free optimization
-    // (and may be necessary for correctness, as some stages assume coordinates
-    // are within bounds).
-    ptrdiff_t full_image_y = frame_y0 + image_area_rect.y0() + y;
-    if (full_image_y < 0) continue;
-
     for (size_t i = first_trailing_stage_; i < first_image_dim_stage_; i++) {
       if (span[i].xsize() == 0) continue;
       size_t y0 = image_area_rect.y0() + y;
@@ -792,6 +769,19 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
           input_rows[first_trailing_stage_], output_rows,
           /*xextra=*/0, span[i].xsize(), span[i].x0(), y0, thread_id));
     }
+
+    if (first_image_dim_stage_ == stages_.size()) continue;
+
+    // Skip pixels that are not part of the actual final image area.
+    for (size_t c = 0; c < input_data.size(); c++) {
+      input_rows[first_trailing_stage_][c][0] += x_pixels_skip;
+    }
+    // Avoid running pipeline stages on pixels that are outside the full image
+    // area. As trailing stages have no borders, this is a free optimization
+    // (and may be necessary for correctness, as some stages assume coordinates
+    // are within bounds).
+    ptrdiff_t full_image_y = frame_origin_.y0 + image_area_rect.y0() + y;
+    if (full_image_y < 0) continue;
 
     for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
       if (span[i].xsize() == 0) continue;
