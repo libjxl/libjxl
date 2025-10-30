@@ -502,6 +502,10 @@ int main(int argc, const char* argv[]) {
     args.bits_per_sample = 0;
   }
   if (args.reconstruct_jpeg) {
+    // If output is disabled, still try to reconstruct JPEG
+    if (filename_out.empty()) {
+      codec = jxl::extras::Codec::kJPG;
+    }
     if (codec != jxl::extras::Codec::kJPG) {
       fprintf(stderr,
               "Error: --reconstruct_jpeg requires output format to be JPEG.\n");
