@@ -423,8 +423,9 @@ Status LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
   }
   if (first_image_dim_stage_ != stages_.size()) {
     RectT<ptrdiff_t> image_rect(0, 0, frame_dimensions_.xsize_upsampled,
-                              frame_dimensions_.ysize_upsampled);
-    RectT<ptrdiff_t> full_image_rect(0, 0, full_image_xsize_, full_image_ysize_);
+                                frame_dimensions_.ysize_upsampled);
+    RectT<ptrdiff_t> full_image_rect(0, 0, full_image_xsize_,
+                                     full_image_ysize_);
     image_rect = image_rect.Translate(frame_origin_.x0, frame_origin_.y0);
     image_rect = image_rect.Intersection(full_image_rect);
     if (image_rect.xsize() == 0 || image_rect.ysize() == 0) {
@@ -478,8 +479,9 @@ JXL_INLINE int GetMirroredY(int y, ptrdiff_t group_y0, ptrdiff_t image_ysize) {
   return y;
 }
 
-JXL_INLINE void ApplyXMirroring(float* row, ptrdiff_t borderx, ptrdiff_t group_x0,
-                                ptrdiff_t group_xsize, ptrdiff_t image_xsize) {
+JXL_INLINE void ApplyXMirroring(float* row, ptrdiff_t borderx,
+                                ptrdiff_t group_x0, ptrdiff_t group_xsize,
+                                ptrdiff_t image_xsize) {
   if (image_xsize <= borderx) {
     if (group_x0 == 0) {
       for (ptrdiff_t ix = 0; ix < borderx; ix++) {
@@ -604,16 +606,9 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
                                             channel_shifts_[i][anyc_[i]]));
   }
 
-  ptrdiff_t frame_x0 =
-      first_image_dim_stage_ == stages_.size() ? 0 : frame_origin_.x0;
-  ptrdiff_t frame_y0 =
-      first_image_dim_stage_ == stages_.size() ? 0 : frame_origin_.y0;
-  size_t full_image_xsize = first_image_dim_stage_ == stages_.size()
-                                ? frame_dimensions_.xsize_upsampled
-                                : full_image_xsize_;
-  size_t full_image_ysize = first_image_dim_stage_ == stages_.size()
-                                ? frame_dimensions_.ysize_upsampled
-                                : full_image_ysize_;
+  JXL_DASSERT(0 <= first_trailing_stage_);
+  JXL_DASSERT(first_trailing_stage_ < first_image_dim_stage_);
+  JXL_DASSERT(first_image_dim_stage_ <= stages_.size());
 
   // Compute actual x-axis bounds for the current image area in the context of
   // the full image this frame is part of. As the left boundary may be negative,
@@ -621,20 +616,28 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
   // - both x_pixels_skip and full_image_x0 are >= 0, and at least one is 0;
   // - full_image_x0 - x_pixels_skip is the position of the current frame area
   //   in the full image.
-  ptrdiff_t full_image_x0 = frame_x0 + image_area_rect.x0();
+  ptrdiff_t full_image_x0 = frame_origin_.x0 + image_area_rect.x0();
   ptrdiff_t x_pixels_skip = 0;
   if (full_image_x0 < 0) {
     x_pixels_skip = -full_image_x0;
     full_image_x0 = 0;
   }
-  ptrdiff_t full_image_x1 = frame_x0 + image_area_rect.x1();
-  full_image_x1 = std::min<ptrdiff_t>(full_image_x1, full_image_xsize);
+  ptrdiff_t full_image_x1 = frame_origin_.x0 + image_area_rect.x1();
 
-  // If the current image area is entirely outside of the visible image, there
-  // is no point in proceeding. Note: this uses the assumption that if there is
-  // a stage with observable effects (i.e. a kInput stage), it only appears
-  // after the stage that switches to image dimensions.
-  if (full_image_x1 <= full_image_x0) return true;
+  std::vector<Rect> span(stages_.size());
+  for (size_t i = 0; i < stages_.size(); ++i) {
+    if (i < first_image_dim_stage_) {
+      span[i] = Rect(group_rect[i].x0(), 0, group_rect[i].xsize(),
+                     image_rect_[i].ysize());
+    } else {
+      size_t x0 = full_image_x0;
+      size_t x1 = full_image_x1;
+      size_t x_max = full_image_xsize_;
+      size_t cropped_x1 = std::min<ptrdiff_t>(x1, x_max);
+      span[i] = Rect(x0, 0, std::max<ptrdiff_t>(0, cropped_x1 - x0),
+                     full_image_ysize_);
+    }
+  }
 
   // Data structures to hold information about input/output rows and their
   // buffers.
@@ -728,18 +731,17 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
 
       ptrdiff_t image_y = static_cast<ptrdiff_t>(group_rect[i].y0()) + y;
       // Do not produce rows in out-of-bounds areas.
-      if (image_y < 0 ||
-          image_y >= static_cast<ptrdiff_t>(image_rect_[i].ysize())) {
-        continue;
-      }
+      if (image_y < 0) continue;
+      if (image_y >= static_cast<ptrdiff_t>(span[i].y1())) continue;
 
       // Get the input/output rows and potentially apply mirroring to the input.
       prepare_io_rows(y, i);
 
       // Produce output rows.
+      if (span[i].xsize() == 0) continue;
       JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
-          input_rows[i], output_rows, xpadding_for_output_[i],
-          group_rect[i].xsize(), group_rect[i].x0(), image_y, thread_id));
+          input_rows[i], output_rows, xpadding_for_output_[i], span[i].xsize(),
+          span[i].x0(), image_y, thread_id));
     }
 
     // Process trailing stages, i.e. the final set of non-kInOut stages; they
@@ -748,11 +750,8 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     int y = vy - num_extra_rows;
 
     for (size_t c = 0; c < input_data.size(); c++) {
-      // Skip pixels that are not part of the actual final image area.
-      input_rows[first_trailing_stage_][c][0] =
-          rows.GetBuffer(stage_input_for_channel_[first_trailing_stage_][c], y,
-                         c) +
-          x_pixels_skip;
+      input_rows[first_trailing_stage_][c][0] = rows.GetBuffer(
+          stage_input_for_channel_[first_trailing_stage_][c], y, c);
     }
 
     // Check that we are not outside of the bounds for the current rendering
@@ -762,26 +761,35 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
       continue;
     }
 
+    for (size_t i = first_trailing_stage_; i < first_image_dim_stage_; i++) {
+      if (span[i].xsize() == 0) continue;
+      size_t y0 = image_area_rect.y0() + y;
+      if (y0 >= span[i].y1()) continue;
+      JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
+          input_rows[first_trailing_stage_], output_rows,
+          /*xextra=*/0, span[i].xsize(), span[i].x0(), y0, thread_id));
+    }
+
+    if (first_image_dim_stage_ == stages_.size()) continue;
+
+    // Skip pixels that are not part of the actual final image area.
+    for (size_t c = 0; c < input_data.size(); c++) {
+      input_rows[first_trailing_stage_][c][0] += x_pixels_skip;
+    }
     // Avoid running pipeline stages on pixels that are outside the full image
     // area. As trailing stages have no borders, this is a free optimization
     // (and may be necessary for correctness, as some stages assume coordinates
     // are within bounds).
-    ptrdiff_t full_image_y = frame_y0 + image_area_rect.y0() + y;
-    if (full_image_y < 0 ||
-        full_image_y >= static_cast<ptrdiff_t>(full_image_ysize)) {
-      continue;
-    }
+    ptrdiff_t full_image_y = frame_origin_.y0 + image_area_rect.y0() + y;
+    if (full_image_y < 0) continue;
 
-    for (size_t i = first_trailing_stage_; i < stages_.size(); i++) {
-      // Before the first_image_dim_stage_, coordinates are relative to the
-      // current frame.
-      size_t x0 =
-          i < first_image_dim_stage_ ? full_image_x0 - frame_x0 : full_image_x0;
-      size_t y0 =
-          i < first_image_dim_stage_ ? full_image_y - frame_y0 : full_image_y;
-      JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
-          input_rows[first_trailing_stage_], output_rows,
-          /*xextra=*/0, full_image_x1 - full_image_x0, x0, y0, thread_id));
+    for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
+      if (span[i].xsize() == 0) continue;
+      if (full_image_y >= static_cast<ptrdiff_t>(span[i].y1())) continue;
+      JXL_RETURN_IF_ERROR(
+          stages_[i]->ProcessRow(input_rows[first_trailing_stage_], output_rows,
+                                 /*xextra=*/0, span[i].xsize(), span[i].x0(),
+                                 full_image_y, thread_id));
     }
   }
   return true;
@@ -825,10 +833,11 @@ Status LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
   if (first_image_dim_stage_ != stages_.size()) {
     size_t group_dim = frame_dimensions_.group_dim << base_color_shift_;
     RectT<ptrdiff_t> group_rect(gx * group_dim, gy * group_dim, group_dim,
-                              group_dim);
+                                group_dim);
     RectT<ptrdiff_t> image_rect(0, 0, frame_dimensions_.xsize_upsampled,
-                              frame_dimensions_.ysize_upsampled);
-    RectT<ptrdiff_t> full_image_rect(0, 0, full_image_xsize_, full_image_ysize_);
+                                frame_dimensions_.ysize_upsampled);
+    RectT<ptrdiff_t> full_image_rect(0, 0, full_image_xsize_,
+                                     full_image_ysize_);
     group_rect = group_rect.Translate(frame_origin_.x0, frame_origin_.y0);
     image_rect = image_rect.Translate(frame_origin_.x0, frame_origin_.y0);
     image_rect = image_rect.Intersection(full_image_rect);
