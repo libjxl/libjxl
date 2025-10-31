@@ -141,8 +141,8 @@ class BlendingStage : public RenderPipelineStage {
     ptrdiff_t bg_ypos = frame_origin.y0 + static_cast<ptrdiff_t>(ypos);
     int offset = 0;
     if (bg_xpos + static_cast<ptrdiff_t>(xsize) <= 0 ||
-        frame_origin.x0 >= static_cast<ptrdiff_t>(image_xsize_) || bg_ypos < 0 ||
-        bg_ypos >= static_cast<ptrdiff_t>(image_ysize_)) {
+        frame_origin.x0 >= static_cast<ptrdiff_t>(image_xsize_) ||
+        bg_ypos < 0 || bg_ypos >= static_cast<ptrdiff_t>(image_ysize_)) {
       // TODO(eustas): or fail?
       return true;
     }
@@ -152,8 +152,8 @@ class BlendingStage : public RenderPipelineStage {
       bg_xpos = 0;
     }
     if (bg_xpos + xsize > image_xsize_) {
-      xsize =
-          std::max<ptrdiff_t>(0, static_cast<ptrdiff_t>(image_xsize_) - bg_xpos);
+      xsize = std::max<ptrdiff_t>(
+          0, static_cast<ptrdiff_t>(image_xsize_) - bg_xpos);
     }
     std::vector<const float*> bg_row_ptrs_(input_rows.size());
     std::vector<float*> fg_row_ptrs_(input_rows.size());
