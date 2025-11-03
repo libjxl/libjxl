@@ -247,11 +247,9 @@ jobs:
           - triplet: x86-windows
             arch: '-A Win32'
             static: 'OFF'
-            tools: 'OFF'
           - triplet: x64-windows
             arch: '-A x64'
             static: 'OFF'
-            tools: 'OFF'
 
     env:
       VCPKG_VERSION: '2025.07.25'
@@ -314,7 +312,7 @@ jobs:
         mkdir build
         cmake -Bbuild -H. ${{ matrix.arch }} \
           -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
-          -DJPEGXL_ENABLE_TOOLS=${{ matrix.tools || 'ON'}} \
+          -DJPEGXL_ENABLE_TOOLS='ON' \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
@@ -324,7 +322,7 @@ jobs:
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
-          -DJPEGXL_ENABLE_DEVTOOLS=${{ matrix.tools || 'ON'}} \
+          -DJPEGXL_ENABLE_DEVTOOLS='ON' \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
         #
     - name: Build
