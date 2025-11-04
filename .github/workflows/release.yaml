@@ -98,7 +98,7 @@ jobs:
           LICENSE* tools/{cjxl,djxl,benchmark_xl,cjpegli,djpegli,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       with:
         name: jxl-linux-x86_64-static
         path: jxl-linux-x86_64-static.tar.gz
@@ -220,7 +220,7 @@ jobs:
         tar -zcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz *jxl*.*
 
     - name: Upload release tarball
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       with:
         name: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}
         path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz
@@ -247,11 +247,9 @@ jobs:
           - triplet: x86-windows
             arch: '-A Win32'
             static: 'OFF'
-            tools: 'OFF'
           - triplet: x64-windows
             arch: '-A x64'
             static: 'OFF'
-            tools: 'OFF'
 
     env:
       VCPKG_VERSION: '2025.07.25'
@@ -314,7 +312,7 @@ jobs:
         mkdir build
         cmake -Bbuild -H. ${{ matrix.arch }} \
           -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
-          -DJPEGXL_ENABLE_TOOLS=${{ matrix.tools || 'ON'}} \
+          -DJPEGXL_ENABLE_TOOLS='ON' \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
@@ -324,7 +322,7 @@ jobs:
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
-          -DJPEGXL_ENABLE_DEVTOOLS=${{ matrix.tools || 'ON'}} \
+          -DJPEGXL_ENABLE_DEVTOOLS='ON' \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
         #
     - name: Build
@@ -367,7 +365,7 @@ jobs:
 
     - name: Upload release zip
       if: matrix.upload != 'OFF'
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       with:
         name: jxl-${{matrix.triplet}}
         path: jxl-${{matrix.triplet}}.zip
@@ -390,7 +388,7 @@ jobs:
         fetch-depth: 1
 
     - name: Download all artifacts
-      uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+      uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
       with:
         path: release_assets
         merge-multiple: true
