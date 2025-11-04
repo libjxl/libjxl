@@ -889,12 +889,12 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // ringing next to sky etc. Optimization will find smaller numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
-  const float entropy_mul16X8 = 1.21;
-  const float entropy_mul16X16 = 1.34;
-  const float entropy_mul16X32 = 1.49;
-  const float entropy_mul32X32 = 1.48;
-  const float entropy_mul64X32 = 2.25;
-  const float entropy_mul64X64 = 2.25;
+  const float entropy_mul16X8 = 0.7;
+  const float entropy_mul16X16 = 0.73;
+  const float entropy_mul16X32 = 0.84;
+  const float entropy_mul32X32 = 0.93;
+  const float entropy_mul64X32 = 1.5;
+  const float entropy_mul64X64 = 1.6;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher
@@ -1108,16 +1108,16 @@ Status AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
   //  - estimate of the number of bits that will be used by the block
   //  - information loss due to quantization
   // The following constant controls the relative weights of these components.
-  config.info_loss_multiplier = 1.2;
-  config.zeros_mul = 9.3089059022677905;
-  config.cost_delta = 10.833273317067883;
+  config.info_loss_multiplier = 1.5;
+  config.zeros_mul = 3.5;
+  config.cost_delta = 5;
 
-  static const float kBias = 0.13731742964354549;
+  static const float kBias = 0.12;
   const float ratio = (cparams.butteraugli_distance + kBias) / (1.0f + kBias);
 
-  static const float kPow1 = 0.33677806662454718;
-  static const float kPow2 = 0.50990926717963703;
-  static const float kPow3 = 0.36702940662370243;
+  static const float kPow1 = 0.38;
+  static const float kPow2 = 0.3;
+  static const float kPow3 = 0.35;
   config.info_loss_multiplier *= std::pow(ratio, kPow1);
   config.zeros_mul *= std::pow(ratio, kPow2);
   config.cost_delta *= std::pow(ratio, kPow3);
