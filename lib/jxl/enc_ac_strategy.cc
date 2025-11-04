@@ -890,11 +890,11 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
   const float entropy_mul16X8 = 1.2;
-  const float entropy_mul16X16 = 1.3;
-  const float entropy_mul16X32 = 1.5;
-  const float entropy_mul32X32 = 1.8;
-  const float entropy_mul64X32 = 2.3;
-  const float entropy_mul64X64 = 2.5;
+  const float entropy_mul16X16 = 1.25;
+  const float entropy_mul16X32 = 1.45;
+  const float entropy_mul32X32 = 1.55;
+  const float entropy_mul64X32 = 2.0;
+  const float entropy_mul64X64 = 2.3;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher
@@ -1108,8 +1108,8 @@ Status AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
   //  - estimate of the number of bits that will be used by the block
   //  - information loss due to quantization
   // The following constant controls the relative weights of these components.
-  config.info_loss_multiplier = 1.5;
-  config.zeros_mul = 3.5;
+  config.info_loss_multiplier = 1.3;
+  config.zeros_mul = 2.6;
   config.cost_delta = 5;
 
   static const float kBias = 0.12;
