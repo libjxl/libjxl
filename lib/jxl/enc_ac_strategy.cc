@@ -1109,15 +1109,15 @@ Status AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
   //  - information loss due to quantization
   // The following constant controls the relative weights of these components.
   config.info_loss_multiplier = 1.3;
-  config.zeros_mul = 2.6;
-  config.cost_delta = 5;
+  config.zeros_mul = 9.31;
+  config.cost_delta = 10.8;
 
-  static const float kBias = 0.12;
+  static const float kBias = 0.14;
   const float ratio = (cparams.butteraugli_distance + kBias) / (1.0f + kBias);
 
-  static const float kPow1 = 0.38;
-  static const float kPow2 = 0.3;
-  static const float kPow3 = 0.35;
+  static const float kPow1 = 0.337;
+  static const float kPow2 = 0.51;
+  static const float kPow3 = 0.367;
   config.info_loss_multiplier *= std::pow(ratio, kPow1);
   config.zeros_mul *= std::pow(ratio, kPow2);
   config.cost_delta *= std::pow(ratio, kPow3);
