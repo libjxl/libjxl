@@ -50,6 +50,8 @@ using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::NearestInt;
 using hwy::HWY_NAMESPACE::Or;
 using hwy::HWY_NAMESPACE::Rebind;
+using hwy::HWY_NAMESPACE::RebindToSigned;
+using hwy::HWY_NAMESPACE::RebindToUnsigned;
 using hwy::HWY_NAMESPACE::ShiftLeftSame;
 using hwy::HWY_NAMESPACE::ShiftRightSame;
 using hwy::HWY_NAMESPACE::VFromD;
@@ -204,6 +206,8 @@ template <typename T>
 VFromD<Rebind<T, DF>> MakeUnsigned(VFromD<DF> v, size_t x0, size_t y0,
                                    VFromD<DF> mul) {
   static_assert(std::is_unsigned<T>::value, "T must be an unsigned type");
+  using DI32 = RebindToSigned<DF>;
+  using DU32 = RebindToUnsigned<DF>;
   using DU = Rebind<T, DF>;
   v = Mul(v, mul);
   // TODO(veluca): if constexpr with C++17
@@ -217,7 +221,9 @@ VFromD<Rebind<T, DF>> MakeUnsigned(VFromD<DF> v, size_t x0, size_t y0,
     v = Add(v, dither);
   }
   v = Clamp(Zero(DF()), v, mul);
-  return DemoteTo(DU(), NearestInt(v));
+  VFromD<DI32> ni = NearestInt(v);
+  VFromD<DU32> nu = BitCast(DU32(), ni);
+  return DemoteTo(DU(), nu);
 }
 
 class WriteToOutputStage : public RenderPipelineStage {
