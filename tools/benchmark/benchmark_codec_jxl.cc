@@ -391,7 +391,7 @@ class JxlCodec : public ImageCodec {
     if (jxlargs->debug_image_dir.empty()) return true;
     ticket->debug_prefix =
         JoinPath(jxlargs->debug_image_dir, FileBaseName(filename)) +
-        ".jxl_" + params_ + ".dbg";
+        ".jxl-" + params_ + ".dbg";
     JXL_RETURN_IF_ERROR(MakeDir(ticket->debug_prefix));
     cparams->debug_image_opaque = ticket;
     cparams->debug_image = &DebugCallback;
