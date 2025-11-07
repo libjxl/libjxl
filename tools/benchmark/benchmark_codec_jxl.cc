@@ -381,7 +381,7 @@ class JxlCodec : public ImageCodec {
     if (encoded.bitstreams.empty()) {
       return JXL_FAILURE("Internal logic error");
     }
-    std::string fn = JoinPath(ticket->debug_prefix + std::string(label) + ".png");
+    std::string fn = JoinPath(ticket->debug_prefix, std::string(label) + ".png");
     WriteFile(fn, encoded.bitstreams[0]);
     return true;
   }
