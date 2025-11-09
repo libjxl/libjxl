@@ -2014,6 +2014,8 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->basic_info_set = false;
   enc->color_encoding_set = false;
   enc->intensity_target_set = false;
+  enc->patches_possible = false;
+  enc->used_reference_3 = false;
   enc->use_container = false;
   enc->use_boxes = false;
   enc->store_jpeg_metadata = false;
