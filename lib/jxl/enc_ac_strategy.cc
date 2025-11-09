@@ -526,52 +526,52 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
       {
           AcStrategyType::DCT,
           9,
-          0.8,
+          0.83,
       },
       {
           AcStrategyType::DCT4X4,
           5,
-          1.08,
+          0.78,
       },
       {
           AcStrategyType::DCT2X2,
           5,
-          0.95,
+          0.8,
       },
       {
           AcStrategyType::DCT4X8,
           4,
-          0.85931637428340035,
+          0.8,
       },
       {
           AcStrategyType::DCT8X4,
           4,
-          0.85931637428340035,
+          0.8,
       },
       {
           AcStrategyType::IDENTITY,
           5,
-          1.0427542510634957,
+          0.9,
       },
       {
           AcStrategyType::AFV0,
           4,
-          0.81779489591359944,
+          0.78,
       },
       {
           AcStrategyType::AFV1,
           4,
-          0.81779489591359944,
+          0.78,
       },
       {
           AcStrategyType::AFV2,
           4,
-          0.81779489591359944,
+          0.78,
       },
       {
           AcStrategyType::AFV3,
           4,
-          0.81779489591359944,
+          0.78,
       },
   };
   double best = 1e30;
@@ -890,7 +890,7 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
   const float entropy_mul16X8 = 1.3;
-  const float entropy_mul16X16 = 1.35;
+  const float entropy_mul16X16 = 1.4;
   const float entropy_mul16X32 = 1.55;
   const float entropy_mul32X32 = 1.65;
   const float entropy_mul64X32 = 2.0;
