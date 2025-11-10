@@ -52,7 +52,7 @@
 
 // Set JXL_DEBUG_AC_STRATEGY to 1 to enable debugging.
 #ifndef JXL_DEBUG_AC_STRATEGY
-#define JXL_DEBUG_AC_STRATEGY 0
+#define JXL_DEBUG_AC_STRATEGY 1
 #endif
 
 // This must come before the begin/end_target, but HWY_ONCE is only true
@@ -536,7 +536,7 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
       {
           AcStrategyType::DCT2X2,
           5,
-          0.8,
+          0.83,
       },
       {
           AcStrategyType::DCT4X8,
@@ -889,10 +889,10 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // ringing next to sky etc. Optimization will find smaller numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
-  const float entropy_mul16X8 = 1.3;
-  const float entropy_mul16X16 = 1.4;
+  const float entropy_mul16X8 = 1.25;
+  const float entropy_mul16X16 = 1.35;
   const float entropy_mul16X32 = 1.55;
-  const float entropy_mul32X32 = 1.65;
+  const float entropy_mul32X32 = 1.7;
   const float entropy_mul64X32 = 2.0;
   const float entropy_mul64X64 = 2.2;
   // TODO(jyrki): Consider this feedback in further changes:
