@@ -536,7 +536,7 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
       {
           AcStrategyType::DCT2X2,
           5,
-          0.86,
+          0.9,
       },
       {
           AcStrategyType::DCT4X8,
@@ -551,7 +551,7 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
       {
           AcStrategyType::IDENTITY,
           5,
-          0.9,
+          0.93,
       },
       {
           AcStrategyType::AFV0,
@@ -891,8 +891,8 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // help stop ringing.
   const float entropy_mul16X8 = 1.25;
   const float entropy_mul16X16 = 1.35;
-  const float entropy_mul16X32 = 1.55;
-  const float entropy_mul32X32 = 1.7;
+  const float entropy_mul16X32 = 1.6;
+  const float entropy_mul32X32 = 1.75;
   const float entropy_mul64X32 = 2.2;
   const float entropy_mul64X64 = 2.5;
   // TODO(jyrki): Consider this feedback in further changes:
