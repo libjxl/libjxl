@@ -536,7 +536,7 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
       {
           AcStrategyType::DCT2X2,
           5,
-          0.83,
+          0.86,
       },
       {
           AcStrategyType::DCT4X8,
@@ -893,8 +893,8 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   const float entropy_mul16X16 = 1.35;
   const float entropy_mul16X32 = 1.55;
   const float entropy_mul32X32 = 1.7;
-  const float entropy_mul64X32 = 2.0;
-  const float entropy_mul64X64 = 2.2;
+  const float entropy_mul64X32 = 2.2;
+  const float entropy_mul64X64 = 2.5;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher
