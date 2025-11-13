@@ -33,7 +33,6 @@ jobs:
           - name: asan
           - name: release-nojpeg
           - name: release-lcms2
-          - name: release:gcc8
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
