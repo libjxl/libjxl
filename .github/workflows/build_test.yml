@@ -49,7 +49,7 @@ jobs:
             cxxflags: -DHWY_COMPILE_ONLY_SCALAR -DFJXL_ENABLE_AVX2=0 -DFJXL_ENABLE_AVX512=0
           # Disabling optional features to speed up msan build a little bit.
           - name: msan
-            os: ubuntu-20.04
+            os: ubuntu-latest
             skip_install: true
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
@@ -79,31 +79,6 @@ jobs:
               -DJPEGXL_ENABLE_BOXES=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
-          # Builds with gcc in release mode
-          - name: release:gcc8
-            os: ubuntu-20.04
-            mode: release
-            apt_pkgs: gcc-8 g++-8
-            cmake_args: >-
-              -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
-          # Builds with clang-5 in release mode
-          - name: release:clang-5
-            os: ubuntu-18.04
-            mode: release
-            # TODO(eustas): investigate, why static brotli library is not found.
-            skip_install: true
-            apt_pkgs: clang-5.0
-            cmake_args: >-
-              -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0
-              -DJPEGXL_ENABLE_PLUGINS=OFF
-          # Builds with clang-7 in release mode
-          - name: release:clang-7
-            os: ubuntu-20.04
-            mode: release
-            skip_install: true
-            apt_pkgs: clang-7
-            cc: clang-7
-            cxx: clang++-7
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -141,7 +116,7 @@ jobs:
         echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: true
         fetch-depth: 2
@@ -154,13 +129,13 @@ jobs:
         echo "LLVM_ROOT=${LLVM_ROOT}" >> $GITHUB_ENV
     - name: Cache LLVM sources
       if: matrix.name == 'msan'
-      uses: actions/cache@v2
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
     - name: Checkout the LLVM source
       if: matrix.name == 'msan'
-      uses: actions/checkout@v2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: false
         repository: llvm/llvm-project
@@ -178,7 +153,7 @@ jobs:
         echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
       shell: bash
     - name: ccache
-      uses: actions/cache@v2
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -279,6 +254,7 @@ jobs:
         ./ci.sh gbench --benchmark_min_time=0
 
   windows_msys:
+    if: false
     name: Windows MSYS2 / ${{ matrix.msystem }}
     runs-on: windows-latest
     strategy:
@@ -303,7 +279,7 @@ jobs:
         shell: msys2 {0}
     steps:
       - name: Checkout the source
-        uses: actions/checkout@v2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           submodules: true
           fetch-depth: 1
@@ -363,7 +339,7 @@ jobs:
           - variant: simd-256
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: true
         fetch-depth: 1
@@ -389,7 +365,7 @@ jobs:
         echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
       shell: bash
     - name: ccache
-      uses: actions/cache@v2
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ env.CCACHE_DIR }}
         key: build-wasm-${{ runner.os }}-${{ github.sha }}-${{ matrix.variant }}

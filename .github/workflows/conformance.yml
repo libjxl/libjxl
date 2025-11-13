@@ -15,7 +15,7 @@ on:
     types: [opened, reopened, labeled, synchronize]
 
 env:
-  LIBJXL_VERSION:  0.8.3
+  LIBJXL_VERSION:  0.8.4
   LIBJXL_ABI_VERSION:  0.8
 
 concurrency:
@@ -28,14 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout the conformance source
-      uses: actions/checkout@v2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         repository: libjxl/conformance
         # TODO(eustas): move ref to a global variable / file?
         ref: 5399ecf01e50ec5230912aa2df82286dc1c379c9
         path: conformance
     - name: Cache
-      uses: actions/cache@v2
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
@@ -96,7 +96,7 @@ jobs:
         echo "CC=clang" >> $GITHUB_ENV
         echo "CXX=clang++" >> $GITHUB_ENV
     - name: Checkout the jxl source
-      uses: actions/checkout@v2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: true
         fetch-depth: 2
@@ -106,7 +106,7 @@ jobs:
         echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
       shell: bash
     - name: ccache
-      uses: actions/cache@v2
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -133,7 +133,7 @@ jobs:
         cp build/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
       env:
         SKIP_TEST: 1
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       with:
         name: conformance_binary-${{ matrix.name }}
         path: |
@@ -157,22 +157,27 @@ jobs:
     steps:
     - name: Install deps
       run: |
+        sudo rm -f /var/lib/man-db/auto-update
+        sudo apt update
+        sudo apt install -y \
+          libopenexr-3-1-30 \
+          libgif7
         pip install numpy
     - name: Checkout the conformance source
-      uses: actions/checkout@v2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         repository: libjxl/conformance
         ref: 5399ecf01e50ec5230912aa2df82286dc1c379c9
         path: conformance
     - name: Cache
-      uses: actions/cache@v2
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests

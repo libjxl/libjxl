@@ -513,7 +513,7 @@ strip_dead_code() {
 ### Externally visible commands
 
 cmd_debug() {
-  CMAKE_BUILD_TYPE="Debug"
+  CMAKE_BUILD_TYPE="DebugOpt"
   cmake_configure "$@"
   cmake_build_and_test
 }

@@ -41,6 +41,10 @@ check_cxx_compiler_flag("-Xclang -mconstructor-aliases" CXX_CONSTRUCTOR_ALIASES_
 check_cxx_compiler_flag("-fmacro-prefix-map=OLD=NEW" CXX_MACRO_PREFIX_MAP)
 check_cxx_compiler_flag("-fno-rtti" CXX_NO_RTTI_SUPPORTED)
 
+# Add "DebugOpt" CMake build type. Unlike builtin DEBUG it is optimized.
+string(REGEX REPLACE "-DNDEBUG " "" CMAKE_CXX_FLAGS_DEBUGOPT "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -DDEBUG" )
+string(REGEX REPLACE "-DNDEBUG " "" CMAKE_C_FLAGS_DEBUGOPT "${CMAKE_C_FLAGS_RELWITHDEBINFO} -DDEBUG" )
+
 # Enabled PIE binaries by default if supported.
 include(CheckPIESupported OPTIONAL RESULT_VARIABLE CHECK_PIE_SUPPORTED)
 if(CHECK_PIE_SUPPORTED)
@@ -372,7 +376,6 @@ if(DOXYGEN_FOUND)
 set(DOXYGEN_GENERATE_HTML "YES")
 set(DOXYGEN_GENERATE_XML "YES")
 set(DOXYGEN_STRIP_FROM_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lib/include")
-set(DOXYGEN_USE_MDFILE_AS_MAINPAGE "README.md")
 if(JPEGXL_WARNINGS_AS_ERRORS)
 set(DOXYGEN_WARN_AS_ERROR "YES")
 endif()
