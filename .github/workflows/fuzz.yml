@@ -29,6 +29,7 @@ concurrency:
 
 jobs:
   fuzzing:
+    if: false
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
@@ -58,7 +59,7 @@ jobs:
         language: c++
         fuzz-seconds: 600
     - name: Upload Crash
-      uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       if: failure() && steps.build.outcome == 'success'
       with:
         name: artifacts

@@ -72,7 +72,7 @@ jobs:
         echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
     - name: ccache
-      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ env.CCACHE_DIR }}
         key: build-wasm-${{ runner.os }}-${{ github.sha }}-${{ matrix.variant }}
