@@ -64,6 +64,4 @@ Status DecodeBlockCtxMap(BitReader* br, BlockCtxMap* block_ctx_map) {
   return true;
 }
 
-constexpr uint8_t BlockCtxMap::kDefaultCtxMap[];  // from ac_context.h
-
 }  // namespace jxl
