@@ -16,7 +16,7 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
     - name: Check AUTHORS file
       run:
         ./ci.sh authors
@@ -31,7 +31,7 @@ jobs:
           clang-format \
         #
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
     - name: clang-format
       run:
         ./ci.sh lint >&2

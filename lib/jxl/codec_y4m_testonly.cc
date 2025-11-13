@@ -107,10 +107,8 @@ class Y4MParser {
 
  private:
   Status ExpectString(const char* str, size_t len) {
-    // Unlikely to happen.
-    if (pos_ + len < pos_) return JXL_FAILURE("Y4M: overflow");
-
-    if (pos_ + len > end_ || strncmp(str, (const char*)pos_, len) != 0) {
+    size_t tail = end_ - pos_;
+    if (len > tail || strncmp(str, (const char*)pos_, len) != 0) {
       return JXL_FAILURE("Y4M: expected %s", str);
     }
     pos_ += len;
