@@ -9,7 +9,7 @@
 
 #include "jxl/decode.h"
 
-int main() {
+int main(void) {
   if (!JxlDecoderVersion()) return 1;
   JxlDecoder* dec = JxlDecoderCreate(NULL);
   if (!dec) return 1;
