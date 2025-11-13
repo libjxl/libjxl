@@ -32,7 +32,7 @@ MIN_STACK_SIZE = 32
 
 IS_OSX = (platform.system() == 'Darwin')
 
-Symbol = collections.namedtuple('Symbol', ['address', 'size', 'typ', 'name'])
+Symbol = collections.namedtuple('Symbol', ['address', 'size', 'kind', 'name'])
 
 # Represents the stack size information of a function (defined by its address).
 SymbolStack = collections.namedtuple('SymbolStack',
@@ -213,10 +213,10 @@ def TargetSize(symbols, symbol_filter=None):
     if not sym.size or (symbol_filter is not None and
                         sym.name not in symbol_filter):
       continue
-    t = sym.typ.lower()
+    t = sym.kind.lower()
     # We can remove symbols if they appear in multiple objects since they will
     # be merged by the linker.
-    if symbol_filter is not None and (t == sym.typ or t in 'wv'):
+    if symbol_filter is not None and (t == sym.kind or t in 'wv'):
       symbol_filter.remove(sym.name)
     ret.setdefault(t, 0)
     ret[t] += sym.size
@@ -232,13 +232,13 @@ def PrintStats(stats):
   for objstat in stats:
     bin_size = 0
     ram_size = 0
-    for typ, size in objstat.size_map.items():
-      if typ in BIN_SIZE:
+    for kind, size in objstat.size_map.items():
+      if kind in BIN_SIZE:
         bin_size += size
-      if typ in RAM_SIZE:
+      if kind in RAM_SIZE:
         ram_size += size
-      if typ not in BIN_SIZE + RAM_SIZE:
-        raise Exception('Unknown type "%s"' % typ)
+      if kind not in BIN_SIZE + RAM_SIZE:
+        raise Exception('Unknown type "%s"' % kind)
     if objstat.in_partition:
       sum_bin_size += bin_size
       sum_ram_size += ram_size
@@ -274,8 +274,8 @@ def PrintTopSymbols(tgt_top_symbols):
   if not tgt_top_symbols:
     return
   print(' Size     T Symbol name')
-  for size, typ, name in tgt_top_symbols:
-    print('%9d %s %s' % (size, typ, name))
+  for size, kind, name in tgt_top_symbols:
+    print('%9d %s %s' % (size, kind, name))
   print()
 
 
@@ -317,19 +317,19 @@ def SizeStats(args):
     tgt_syms = syms[target]
     used_syms = set()
     for sym in tgt_syms:
-      if sym.typ.lower() in BIN_SIZE + RAM_SIZE:
+      if sym.kind.lower() in BIN_SIZE + RAM_SIZE:
         used_syms.add(sym.name)
-      elif sym.typ.lower() in IGNORE_SYMBOLS:
+      elif sym.kind.lower() in IGNORE_SYMBOLS:
         continue
       else:
-        print('Unknown: %s %s' % (sym.typ, sym.name))
+        print('Unknown: %s %s' % (sym.kind, sym.name))
 
     target_path = os.path.join(args.build_dir, tgt.filename)
     sym_stacks = []
     if not target_path.endswith('.a'):
       sym_stacks = LoadStackSizes(target_path, args.binutils)
     symbols_by_addr = {sym.address: sym for sym in tgt_syms
-                          if sym.typ.lower() in 'tw'}
+                          if sym.kind.lower() in 'tw'}
     tgt_stack_sizes = collections.OrderedDict()
     for sym_stack in sorted(sym_stacks, key=lambda s: -s.stack_size):
       tgt_stack_sizes[
@@ -337,7 +337,7 @@ def SizeStats(args):
 
     tgt_top_symbols = []
     if args.top_symbols:
-      tgt_top_symbols = [(sym.size, sym.typ, sym.name) for sym in tgt_syms
+      tgt_top_symbols = [(sym.size, sym.kind, sym.name) for sym in tgt_syms
                          if sym.name in used_syms and sym.size]
       tgt_top_symbols.sort(key=lambda t: (-t[0], t[2]))
       tgt_top_symbols = tgt_top_symbols[:args.top_symbols]
@@ -354,7 +354,7 @@ def SizeStats(args):
       for sym in tgt_syms:
         if not sym.size or mangled not in sym.name:
           continue
-        t = sym.typ.lower()
+        t = sym.kind.lower()
         ret.setdefault(t, 0)
         ret[t] += sym.size
       # SIMD namespaces are not part of the partition, they are already included

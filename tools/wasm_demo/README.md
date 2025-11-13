@@ -106,7 +106,7 @@ python3 ./tools/wasm_demo/build_site.py ./tools/wasm_demo/ ./build-wasm32/tools/
 Then you need to put your image files in the correct same place and are should be good to go.
 
 
-To summarize, using the wasm decoder together with a service workder amounts to adding
+To summarize, using the wasm decoder together with a service worker amounts to adding
 ```html
 <script src="service_worker.js"></script>
 ```
