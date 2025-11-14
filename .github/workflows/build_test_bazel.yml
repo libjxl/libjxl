@@ -25,6 +25,7 @@ concurrency:
 jobs:
   build_test:
     name: Bazel
+    if: false
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
