@@ -79,21 +79,20 @@ static JXL_INLINE size_t ZeroDensityContext(size_t nonzeros_left, size_t k,
          prev;
 }
 
+constexpr uint8_t kDefaultCtxMap[] = {
+    // Default ctx map clusters all the large transforms together.
+    0, 1, 2, 2, 3,  3,  4,  5,  6,  6,  6,  6,  6,   //
+    7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14,  //
+    7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14,  //
+};
+static_assert(3 * kNumOrders == sizeof(kDefaultCtxMap) / sizeof *kDefaultCtxMap,
+              "Update default context map");
+
 struct BlockCtxMap {
   std::vector<int> dc_thresholds[3];
   std::vector<uint32_t> qf_thresholds;
   std::vector<uint8_t> ctx_map;
   size_t num_ctxs, num_dc_ctxs;
-
-  static constexpr uint8_t kDefaultCtxMap[] = {
-      // Default ctx map clusters all the large transforms together.
-      0, 1, 2, 2, 3,  3,  4,  5,  6,  6,  6,  6,  6,   //
-      7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14,  //
-      7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14,  //
-  };
-  static_assert(3 * kNumOrders ==
-                    sizeof(kDefaultCtxMap) / sizeof *kDefaultCtxMap,
-                "Update default context map");
 
   size_t Context(int dc_idx, uint32_t qf, size_t ord, size_t c) const {
     size_t qf_idx = 0;
@@ -141,6 +140,12 @@ struct BlockCtxMap {
     ctx_map.assign(std::begin(kDefaultCtxMap), std::end(kDefaultCtxMap));
     num_ctxs = *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
     num_dc_ctxs = 1;
+  }
+
+  bool hasDefaultCtxMapPrefix(size_t len) const {
+    return (len < sizeof(kDefaultCtxMap) / sizeof *kDefaultCtxMap) &&
+           ctx_map.size() == len &&
+           std::equal(ctx_map.begin(), ctx_map.end(), kDefaultCtxMap);
   }
 };
 

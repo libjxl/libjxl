@@ -106,20 +106,6 @@ jobs:
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
           # Builds with gcc in release mode
-          - name: release:gcc8
-            os: ubuntu-20.04
-            mode: release
-            apt_pkgs: gcc-8 g++-8
-            cmake_args: >-
-              -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
-          # Builds with clang-7 in release mode
-          - name: release:clang-7
-            os: ubuntu-20.04
-            mode: release
-            skip_install: true
-            apt_pkgs: clang-7
-            cc: clang-7
-            cxx: clang++-7
           - name: release:osx
             os: macos-latest
             mode: release
@@ -211,7 +197,7 @@ jobs:
 
     - name: Cache LLVM sources
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
@@ -242,7 +228,7 @@ jobs:
       shell: bash
 
     - name: ccache
-      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild

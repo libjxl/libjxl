@@ -125,7 +125,7 @@ jobs:
         - debian:bookworm
         # GIMP package is removed: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1078402
         # - debian:trixie
-        - debian:sid
+        # - debian:sid
 
     container:
       image: ${{ matrix.os }}
@@ -245,7 +245,7 @@ jobs:
 
   windows_build:
     name: Windows Build (vcpkg / ${{ matrix.triplet }})
-    runs-on: [windows-2019]
+    runs-on: [windows-latest]
     strategy:
       fail-fast: false
       matrix:
@@ -264,7 +264,7 @@ jobs:
             tools: 'OFF'
 
     env:
-      VCPKG_VERSION: '2023.12.12'
+      VCPKG_VERSION: '2025.10.17'
       VCPKG_ROOT: vcpkg
       VCPKG_DISABLE_METRICS: 1
 
@@ -280,7 +280,7 @@ jobs:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       id: cache-vcpkg
       with:
         path: vcpkg

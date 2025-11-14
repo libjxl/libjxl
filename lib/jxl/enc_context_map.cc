@@ -135,8 +135,7 @@ void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
       (dct[0].size() + dct[1].size() + dct[2].size() + qft.size()) * 34 + 1 +
           4 + 4 + ctx_map.size() * 10 + 1024);
   if (dct[0].empty() && dct[1].empty() && dct[2].empty() && qft.empty() &&
-      ctx_map.size() == 21 &&
-      std::equal(ctx_map.begin(), ctx_map.end(), BlockCtxMap::kDefaultCtxMap)) {
+      block_ctx_map.hasDefaultCtxMapPrefix(21)) {
     writer->Write(1, 1);  // default
     allotment.ReclaimAndCharge(writer, kLayerAC, aux_out);
     return;

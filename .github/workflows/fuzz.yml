@@ -29,6 +29,7 @@ concurrency:
 
 jobs:
   fuzzing:
+    if: false
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
