@@ -1100,16 +1100,16 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
             JxlDecoderGetColorAsEncodedProfile(
                 dec, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
   EXPECT_EQ(JXL_PRIMARIES_SRGB, pixel_encoding.primaries);
-  // The API returns LINEAR by default when the colorspace cannot be represented
+  // The API returns SRGB by default when the colorspace cannot be represented
   // by enum values.
-  EXPECT_EQ(JXL_TRANSFER_FUNCTION_LINEAR, pixel_encoding.transfer_function);
+  EXPECT_EQ(JXL_TRANSFER_FUNCTION_SRGB, pixel_encoding.transfer_function);
 
   // Test the same but with integer format.
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderGetColorAsEncodedProfile(
                 dec, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
   EXPECT_EQ(JXL_PRIMARIES_SRGB, pixel_encoding.primaries);
-  EXPECT_EQ(JXL_TRANSFER_FUNCTION_LINEAR, pixel_encoding.transfer_function);
+  EXPECT_EQ(JXL_TRANSFER_FUNCTION_SRGB, pixel_encoding.transfer_function);
 
   // Test after setting the preferred color profile to non-linear sRGB:
   // for XYB images with ICC profile, this setting is expected to take effect.
