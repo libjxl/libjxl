@@ -381,8 +381,9 @@ typedef struct {
   /** After blending, save the frame as reference frame with this ID (0-3).
    * Special case: if the frame duration is nonzero, ID 0 means "will not be
    * referenced in the future". This value is not used for the last frame.
-   * When encoding, ID 3 is reserved to frames that are generated internally by
-   * the encoder, and should not be used by applications.
+   * When encoding, ID 3 is used for patch frames that are generated internally
+   * by the encoder, and cannot be used by applications unless patches
+   * are disabled for all frames (@ref JXL_ENC_FRAME_SETTING_PATCHES).
    */
   uint32_t save_as_reference;
 } JxlLayerInfo;
