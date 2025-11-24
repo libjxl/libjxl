@@ -41,7 +41,7 @@ jobs:
         egress-policy: audit
 
     - name: Checkout the conformance source
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       with:
         repository: libjxl/conformance
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
@@ -106,7 +106,7 @@ jobs:
         egress-policy: audit
 
     - name: Checkout the jxl source
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       with:
         submodules: true
         fetch-depth: 2
@@ -181,7 +181,7 @@ jobs:
         egress-policy: audit
 
     - name: Checkout install_deps.sh
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       with:
         sparse-checkout: tools/scripts/install_deps.sh
         sparse-checkout-cone-mode: false
@@ -211,7 +211,7 @@ jobs:
         cd ..
 
     - name: Checkout the conformance source
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       with:
         repository: libjxl/conformance
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
