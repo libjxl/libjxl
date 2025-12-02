@@ -310,7 +310,7 @@ jobs:
       run: |
         set -x
         mkdir build
-        cmake -Bbuild -H. ${{ matrix.arch }} \
+        cmake -Bbuild -H. ${{ matrix.arch }} -T ClangCL \
           -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
           -DJPEGXL_ENABLE_TOOLS='ON' \
           -DBUILD_TESTING=OFF \
