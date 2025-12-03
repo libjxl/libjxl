@@ -324,6 +324,7 @@ jobs:
           -DJPEGXL_ENABLE_VIEWERS=OFF \
           -DJPEGXL_ENABLE_DEVTOOLS='ON' \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+          -DX_VCPKG_APPLOCAL_DEPS_INSTALL=${{ matrix.static == 'OFF' && 'ON' || 'OFF' }} \
         #
     - name: Build
       shell: 'bash'
@@ -335,15 +336,16 @@ jobs:
       run: |
         set -x
         cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+        mkdir prefix/licenses
         for pkg in giflib libjpeg-turbo libpng libwebp zlib; do
           cp vcpkg/installed/${{matrix.triplet}}/share/${pkg}/copyright \
-            prefix/bin/LICENSE.${pkg}
+            prefix/licenses/LICENSE.${pkg}
         done
-        cp third_party/sjpeg/COPYING prefix/bin/LICENSE.sjpeg
-        cp third_party/skcms/LICENSE prefix/bin/LICENSE.skcms
-        cp third_party/highway/LICENSE prefix/bin/LICENSE.highway
-        cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
-        cp LICENSE prefix/bin/LICENSE.libjxl
+        cp third_party/sjpeg/COPYING prefix/licenses/LICENSE.sjpeg
+        cp third_party/skcms/LICENSE prefix/licenses/LICENSE.skcms
+        cp third_party/highway/LICENSE prefix/licenses/LICENSE.highway
+        cp third_party/brotli/LICENSE prefix/licenses/LICENSE.brotli
+        cp LICENSE prefix/licenses/LICENSE.libjxl
 
     - name: Fast benchmark ${{ matrix.triplet }}
       shell: 'bash'
@@ -360,7 +362,7 @@ jobs:
       if: matrix.upload != 'OFF'
       shell: 'powershell'
       run: |
-        Compress-Archive -Path prefix\bin\*, prefix\lib\* `
+        Compress-Archive -Path prefix\bin\*, prefix\include, prefix\lib, prefix\licenses `
           -DestinationPath jxl-${{matrix.triplet}}.zip
 
     - name: Upload release zip
