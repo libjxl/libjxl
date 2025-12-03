@@ -228,28 +228,33 @@ jobs:
 
 
   windows_build:
-    name: vcpkg / ${{ matrix.triplet }} ${{ matrix.build_type || 'Release'}}
+    name: vcpkg / ${{ matrix.name }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [windows-latest]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - triplet: x86-windows-static
+          - name: x86-windows
+            triplet: x86-windows
             arch: '-A Win32'
-          - triplet: x64-windows-static
+          - name: x64-windows
+            triplet: x64-windows
             arch: '-A x64'
             run_benchmark: true
-          - triplet: x64-windows-static
+          - name: x64-windows-debug
+            triplet: x64-windows
             arch: '-A x64'
             build_type: Debug
             upload: 'OFF'
-          - triplet: x86-windows
+          - name: x86-windows-dev
+            triplet: x86-windows-static
             arch: '-A Win32'
-            static: 'OFF'
-          - triplet: x64-windows
+            static: 'ON'
+          - name: x64-windows-dev
+            triplet: x64-windows-static
             arch: '-A x64'
-            static: 'OFF'
+            static: 'ON'
 
     env:
       VCPKG_VERSION: '2025.10.17'
@@ -311,8 +316,8 @@ jobs:
         set -x
         mkdir build
         cmake -Bbuild -H. ${{ matrix.arch }} \
-          -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
-          -DJPEGXL_ENABLE_TOOLS='ON' \
+          -DJPEGXL_STATIC=${{ matrix.static || 'OFF' }} \
+          -DJPEGXL_ENABLE_TOOLS=${{ matrix.static && 'OFF' || 'ON' }} \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
@@ -322,8 +327,9 @@ jobs:
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
-          -DJPEGXL_ENABLE_DEVTOOLS='ON' \
+          -DJPEGXL_ENABLE_DEVTOOLS=${{ matrix.static && 'OFF' || 'ON' }} \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+          -DX_VCPKG_APPLOCAL_DEPS_INSTALL=${{ matrix.static && 'OFF' || 'ON' }} \
         #
     - name: Build
       shell: 'bash'
@@ -335,17 +341,18 @@ jobs:
       run: |
         set -x
         cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+        mkdir prefix/licenses
         for pkg in giflib libjpeg-turbo libpng libwebp zlib; do
           cp vcpkg/installed/${{matrix.triplet}}/share/${pkg}/copyright \
-            prefix/bin/LICENSE.${pkg}
+            prefix/licenses/LICENSE.${pkg}
         done
-        cp third_party/sjpeg/COPYING prefix/bin/LICENSE.sjpeg
-        cp third_party/skcms/LICENSE prefix/bin/LICENSE.skcms
-        cp third_party/highway/LICENSE prefix/bin/LICENSE.highway
-        cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
-        cp LICENSE prefix/bin/LICENSE.libjxl
+        cp third_party/sjpeg/COPYING prefix/licenses/LICENSE.sjpeg
+        cp third_party/skcms/LICENSE prefix/licenses/LICENSE.skcms
+        cp third_party/highway/LICENSE prefix/licenses/LICENSE.highway
+        cp third_party/brotli/LICENSE prefix/licenses/LICENSE.brotli
+        cp LICENSE prefix/licenses/LICENSE.libjxl
 
-    - name: Fast benchmark ${{ matrix.triplet }}
+    - name: Fast benchmark ${{ matrix.name }}
       shell: 'bash'
       if: matrix.run_benchmark && true
       run: |
@@ -353,22 +360,21 @@ jobs:
         powershell -c "Get-CimInstance -ClassName Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed"
         mkdir tmp
         export TMPDIR=`pwd`/tmp
-        export PATH=$PATH:`pwd`/build/lib
-        BUILD_CONFIG=Release/ BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
+        TOOLS_DIR=`pwd`/prefix/bin BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
 
     - name: Package release zip
       if: matrix.upload != 'OFF'
       shell: 'powershell'
       run: |
-        Compress-Archive -Path prefix\bin\*, prefix\lib\* `
-          -DestinationPath jxl-${{matrix.triplet}}.zip
+        Compress-Archive -Path ${{ matrix.static && 'prefix\lib, prefix\include' || 'prefix\bin\*' }}, prefix\licenses `
+          -DestinationPath jxl-${{matrix.name}}.zip
 
     - name: Upload release zip
       if: matrix.upload != 'OFF'
       uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       with:
-        name: jxl-${{matrix.triplet}}
-        path: jxl-${{matrix.triplet}}.zip
+        name: jxl-${{matrix.name}}
+        path: jxl-${{matrix.name}}.zip
         compression-level: 0
 
 

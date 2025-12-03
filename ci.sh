@@ -42,6 +42,7 @@ if [[ -n "${BUILD_TARGET}" ]]; then
 else
   BUILD_DIR="${BUILD_DIR:-${MYDIR}/build}"
 fi
+TOOLS_DIR="${TOOLS_DIR:-${BUILD_DIR}/tools}"
 # Whether we should post a message in the MR when the build fails.
 POST_MESSAGE_ON_ERROR="${POST_MESSAGE_ON_ERROR:-1}"
 # By default, do a lightweight debian HWY package build.
@@ -87,12 +88,6 @@ fi
 if [[ "${ENABLE_WASM_SIMD}" -eq "2" ]]; then
   CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -DHWY_WANT_WASM2"
   CMAKE_C_FLAGS="${CMAKE_C_FLAGS} -DHWY_WANT_WASM2"
-fi
-
-if [[ -z "${BUILD_CONFIG}" ]]; then
-  TOOLS_DIR="${BUILD_DIR}/tools"
-else
-  TOOLS_DIR="${BUILD_DIR}/tools/${BUILD_CONFIG}"
 fi
 
 if [[ ! -z "${HWY_BASELINE_TARGETS}" ]]; then
