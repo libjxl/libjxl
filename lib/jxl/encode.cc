@@ -980,8 +980,8 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
       }
       if (patches_possible && used_reference_3) {
         return JXL_API_ERROR(this, JXL_ENC_ERR_API_USAGE,
-                             "Cannot use save_as_reference value 3 when "
-                             "patches are enabled for any frame");
+                             "Cannot use save_as_reference value 3 unless "
+                             "patches are disabled for all frames");
       }
 
       jxl::FrameInfo frame_info;
