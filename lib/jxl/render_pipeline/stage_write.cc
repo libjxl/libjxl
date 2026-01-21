@@ -59,9 +59,9 @@ using hwy::HWY_NAMESPACE::VFromD;
 // 32x32 blue noise dithering pattern from
 // https://momentsingraphics.de/BlueNoise.html#Downloads scaled to have
 // an average of 0 and be fully contained in (0.49219 to -0.49219).
-// In SIMD codepath we could load up to 128 bits, so need 3 extra (32-bit)
+// In SIMD codepath we could load up to 128 bits, so need extra (32-bit)
 // elements for zero-cost wrapping.
-const float kDither[1024 + 3] = {
+const float kDither[1024 + 16] = {
     -0.26057, 0.32619, 0.21039, -0.03281, -0.10616, 0.16792, 0.43042, -0.48061,
     -0.00965, -0.31075, 0.24899, -0.35322, -0.02509, -0.25285, 0.02895, 0.10230,
     -0.28373, -0.00193, 0.23355, 0.43428, -0.23741, 0.18336, -0.31847, -0.11002,
@@ -191,7 +191,8 @@ const float kDither[1024 + 3] = {
     -0.48447, -0.20653, -0.10616, -0.38796, 0.31847, 0.07528, -0.01737, 0.44586,
     0.11774, 0.02509, 0.47289, 0.07142, 0.33392, -0.38410, -0.17950, 0.28373,
     // Wrapped values
-    -0.26057, 0.32619, 0.21039
+    -0.26057, 0.32619, 0.21039, -0.03281, -0.10616, 0.16792, 0.43042, -0.48061,
+    -0.00965, -0.31075, 0.24899, -0.35322, -0.02509, -0.25285, 0.02895, 0.10230
 };
 
 namespace {
@@ -213,11 +214,7 @@ VFromD<Rebind<T, DF>> MakeUnsigned(VFromD<DF> v, size_t x0, size_t y0,
   // TODO(veluca): if constexpr with C++17
   if (sizeof(T) == 1) {
     size_t pos = (y0 % 32) * 32 + (x0 % 32);
-#if HWY_TARGET != HWY_SCALAR
-    auto dither = LoadDup128(DF(), kDither + pos);
-#else
     auto dither = LoadU(DF(), kDither + pos);
-#endif
     v = Add(v, dither);
   }
   v = Clamp(Zero(DF()), v, mul);
