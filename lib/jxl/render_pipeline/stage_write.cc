@@ -205,7 +205,7 @@ using DF = HWY_FULL(float);
 // If the unsigned type is an 8-bit type, performs ordered dithering.
 template <typename T>
 VFromD<Rebind<T, DF>> MakeUnsigned(VFromD<DF> v, size_t x0, size_t y0,
-                                   VFromD<DF> mul) {
+                                   VFromD<DF> mul, size_t c) {
   static_assert(std::is_unsigned<T>::value, "T must be an unsigned type");
   using DI32 = RebindToSigned<DF>;
   using DU32 = RebindToUnsigned<DF>;
@@ -213,7 +213,9 @@ VFromD<Rebind<T, DF>> MakeUnsigned(VFromD<DF> v, size_t x0, size_t y0,
   v = Mul(v, mul);
   // TODO(veluca): if constexpr with C++17
   if (sizeof(T) == 1) {
-    size_t pos = (y0 % 32) * 32 + (x0 % 32);
+    size_t x_off = (x0 + c * 23) % 32;
+    size_t y_off = (y0 + c * 13) % 32;
+    size_t pos = y_off * 32 + x_off;
     auto dither = LoadU(DF(), kDither + pos);
     v = Add(v, dither);
   }
@@ -494,31 +496,31 @@ class WriteToOutputStage : public RenderPipelineStage {
     }
     if (out.num_channels_ == 1) {
       for (size_t i = 0; i < len; i += Lanes(d)) {
-        StoreU(MakeUnsigned<T>(LoadU(d, &input[0][i]), xstart + i, ypos, mul),
+        StoreU(MakeUnsigned<T>(LoadU(d, &input[0][i]), xstart + i, ypos, mul, 0),
                du, &output[i]);
       }
     } else if (out.num_channels_ == 2) {
       for (size_t i = 0; i < len; i += Lanes(d)) {
         StoreInterleaved2(
-            MakeUnsigned<T>(LoadU(d, &input[0][i]), xstart + i, ypos, mul),
-            MakeUnsigned<T>(LoadU(d, &input[1][i]), xstart + i, ypos, mul), du,
+            MakeUnsigned<T>(LoadU(d, &input[0][i]), xstart + i, ypos, mul, 0),
+            MakeUnsigned<T>(LoadU(d, &input[1][i]), xstart + i, ypos, mul, 1), du,
             &output[2 * i]);
       }
     } else if (out.num_channels_ == 3) {
       for (size_t i = 0; i < len; i += Lanes(d)) {
         StoreInterleaved3(
-            MakeUnsigned<T>(LoadU(d, &input[0][i]), xstart + i, ypos, mul),
-            MakeUnsigned<T>(LoadU(d, &input[1][i]), xstart + i, ypos, mul),
-            MakeUnsigned<T>(LoadU(d, &input[2][i]), xstart + i, ypos, mul), du,
+            MakeUnsigned<T>(LoadU(d, &input[0][i]), xstart + i, ypos, mul, 0),
+            MakeUnsigned<T>(LoadU(d, &input[1][i]), xstart + i, ypos, mul, 1),
+            MakeUnsigned<T>(LoadU(d, &input[2][i]), xstart + i, ypos, mul, 2), du,
             &output[3 * i]);
       }
     } else if (out.num_channels_ == 4) {
       for (size_t i = 0; i < len; i += Lanes(d)) {
         StoreInterleaved4(
-            MakeUnsigned<T>(LoadU(d, &input[0][i]), xstart + i, ypos, mul),
-            MakeUnsigned<T>(LoadU(d, &input[1][i]), xstart + i, ypos, mul),
-            MakeUnsigned<T>(LoadU(d, &input[2][i]), xstart + i, ypos, mul),
-            MakeUnsigned<T>(LoadU(d, &input[3][i]), xstart + i, ypos, mul), du,
+            MakeUnsigned<T>(LoadU(d, &input[0][i]), xstart + i, ypos, mul, 0),
+            MakeUnsigned<T>(LoadU(d, &input[1][i]), xstart + i, ypos, mul, 1),
+            MakeUnsigned<T>(LoadU(d, &input[2][i]), xstart + i, ypos, mul, 2),
+            MakeUnsigned<T>(LoadU(d, &input[3][i]), xstart + i, ypos, mul, 3), du,
             &output[4 * i]);
       }
     }
