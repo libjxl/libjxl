@@ -119,9 +119,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
                                            PipelineOptions options) {
   JxlMemoryManager* memory_manager = this->memory_manager();
   size_t num_c = 3 + frame_header.nonserialized_metadata->m.num_extra_channels;
-  bool render_noise =
-      (options.render_noise && (frame_header.flags & FrameHeader::kNoise) != 0);
-  size_t num_tmp_c = render_noise ? 3 : 0;
+  size_t num_tmp_c = options.render_noise ? 3 : 0;
 
   if (frame_header.CanBeReferenced()) {
     // Necessary so that SetInputSizes() can allocate output buffers as needed.
@@ -209,7 +207,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
           c, CeilLog2Nonzero(frame_header.upsampling))));
     }
   }
-  if (render_noise) {
+  if (options.render_noise) {
     JXL_RETURN_IF_ERROR(builder.AddStage(GetConvolveNoiseStage(num_c)));
     JXL_RETURN_IF_ERROR(builder.AddStage(GetAddNoiseStage(
         shared->image_features.noise_params, shared->cmap.base(), num_c)));
