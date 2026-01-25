@@ -68,7 +68,7 @@ struct OutputEncodingInfo {
   bool cms_set = false;
   JxlCmsInterface color_management_system;
 
-  Status SetFromMetadata(const CodecMetadata& metadata);
+  Status SetFromMetadata(const CodecMetadata& metadata, bool is_float_output = true);
   Status MaybeSetColorEncoding(const ColorEncoding& c_desired);
 
  private:
