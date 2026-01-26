@@ -140,7 +140,7 @@ bool CanOutputToColorEncoding(const ColorEncoding& c_desired) {
   return true;
 }
 
-Status OutputEncodingInfo::SetFromMetadata(const CodecMetadata& metadata, bool is_float_output) {
+Status OutputEncodingInfo::SetFromMetadata(const CodecMetadata& metadata) {
   orig_color_encoding = metadata.m.color_encoding;
   orig_intensity_target = metadata.m.IntensityTarget();
   desired_intensity_target = orig_intensity_target;
@@ -158,30 +158,9 @@ Status OutputEncodingInfo::SetFromMetadata(const CodecMetadata& metadata, bool i
             opsin_params.quant_biases);
   bool orig_ok = CanOutputToColorEncoding(orig_color_encoding);
   bool orig_grey = orig_color_encoding.IsGray();
-  ColorEncoding c_out;
-  if (!xyb_encoded || orig_ok) {
-      c_out = orig_color_encoding;
-  } else {
-      // If we are synthesizing the output encoding (XYB -> RGB):
-      c_out = ColorEncoding::SRGB(orig_grey);
-  }
-
-  // If the user requests FLOAT (is_float_output=true), we prefer Linear Light 
-  // to avoid unnecessary gamma correction steps for HDR/Compute.
-  // If the user requests UINT8/16 (is_float_output=false), we MUST use a non-linear 
-  // transfer function (like sRGB gamma) to avoid banding in shadows.
-  if (is_float_output) {
-      c_out.Tf().SetTransferFunction(TransferFunction::kLinear);
-  } else {
-      // Ensure we aren't using Linear for 8-bit. 
-      // If the original was already SRGB/709/PQ, keep it. 
-      // But if it was Linear, force it to sRGB Gamma.
-      if (c_out.Tf().IsLinear()) {
-          c_out.Tf().SetTransferFunction(TransferFunction::kSRGB);
-      }
-  }
-
-  return SetColorEncoding(c_out);
+  return SetColorEncoding(!xyb_encoded || orig_ok
+                              ? orig_color_encoding
+                              : ColorEncoding::SRGB(orig_grey));
 }
 
 Status OutputEncodingInfo::MaybeSetColorEncoding(

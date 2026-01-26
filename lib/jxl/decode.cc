@@ -679,32 +679,6 @@ bool CheckSizeLimit(JxlDecoder* dec, size_t xsize, size_t ysize) {
   return true;
 }
 
-JxlDecoderStatus UpdateOutputEncoding(JxlDecoder* dec) {
-  if (!dec->passes_state) return JXL_DEC_SUCCESS;
-
-  // Default to Float (Linear) if the user hasn't specified a buffer yet.
-  bool is_float = true;
-
-  // If the user has already set the output buffer, check the format.
-  if (dec->image_out_buffer_set) {
-    if (dec->image_out_format.data_type == JXL_TYPE_UINT8 ||
-        dec->image_out_format.data_type == JXL_TYPE_UINT16) {
-      is_float = false;
-    }
-  }
-
-  // Pass the flag to the modified SetFromMetadata
-  JXL_API_RETURN_IF_ERROR(
-      dec->passes_state->output_encoding_info.SetFromMetadata(dec->metadata, is_float));
-
-  // Restore intensity target if custom
-  if (dec->desired_intensity_target > 0) {
-    dec->passes_state->output_encoding_info.desired_intensity_target =
-        dec->desired_intensity_target;
-  }
-  return JXL_DEC_SUCCESS;
-}
-
 }  // namespace
 
 // Resets the state that must be reset for both Rewind and Reset
@@ -2479,8 +2453,6 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
   dec->image_out_size = size;
   dec->image_out_format = *format;
 
-  return UpdateOutputEncoding(dec);
-
   return JXL_DEC_SUCCESS;
 }
 
@@ -2577,8 +2549,6 @@ JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
   dec->image_out_destroy_callback = destroy_callback;
   dec->image_out_init_opaque = init_opaque;
   dec->image_out_format = *format;
-
-  return UpdateOutputEncoding(dec);
 
   return JXL_DEC_SUCCESS;
 }
@@ -2880,6 +2850,5 @@ JxlDecoderStatus JxlDecoderSetImageOutBitDepth(JxlDecoder* dec,
   JXL_API_RETURN_IF_ERROR(
       VerifyOutputBitDepth(*bit_depth, dec->metadata.m, dec->image_out_format));
   dec->image_out_bit_depth = *bit_depth;
-  return UpdateOutputEncoding(dec);
   return JXL_DEC_SUCCESS;
 }
