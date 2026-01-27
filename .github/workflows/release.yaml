@@ -98,7 +98,7 @@ jobs:
           LICENSE* tools/{cjxl,djxl,benchmark_xl,cjpegli,djpegli,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
-      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: jxl-linux-x86_64-static
         path: jxl-linux-x86_64-static.tar.gz
@@ -220,7 +220,7 @@ jobs:
         tar -zcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz *jxl*.*
 
     - name: Upload release tarball
-      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}
         path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz
@@ -365,7 +365,7 @@ jobs:
 
     - name: Upload release zip
       if: matrix.upload != 'OFF'
-      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: jxl-${{matrix.triplet}}
         path: jxl-${{matrix.triplet}}.zip
