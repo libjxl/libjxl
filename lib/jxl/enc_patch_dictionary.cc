@@ -538,7 +538,7 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
       QuantizedPatch& patch = info.back().first;
       patch.xsize = max_x - min_x + 1;
       patch.ysize = max_y - min_y + 1;
-      int max_value = 0;
+      bool is_small = true;
       for (size_t c : {1, 0, 2}) {
         for (size_t iy = min_y; iy <= max_y; iy++) {
           for (size_t ix = min_x; ix <= max_x; ix++) {
@@ -547,11 +547,11 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
                 opsin_rows[c][iy * opsin_stride + ix] - ref[c];
             int val = pci.Quantize(patch.fpixels[c][offset], c);
             patch.pixels[c][offset] = val;
-            max_value = std::max(max_value, std::abs(val));
+            is_small &= (val < kMinPeak) && (val > -kMinPeak);
           }
         }
       }
-      if (max_value < kMinPeak) {
+      if (is_small) {
         info.pop_back();
         continue;
       }
