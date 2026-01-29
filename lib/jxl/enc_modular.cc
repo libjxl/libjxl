@@ -557,32 +557,37 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       case SpeedTier::kHare:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 4);
-        cparams_.options.max_property_values = 24;
+        cparams_.options.max_property_values = 48;
+        cparams_.options.nb_repeats *= 0.5f;
         break;
       case SpeedTier::kWombat:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 5);
-        cparams_.options.max_property_values = 32;
+        cparams_.options.max_property_values = 64;
+        cparams_.options.nb_repeats *= 0.7f;
         break;
       case SpeedTier::kSquirrel:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 7);
-        cparams_.options.max_property_values = 48;
+        cparams_.options.max_property_values = 96;
         break;
       case SpeedTier::kKitten:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 10);
-        cparams_.options.max_property_values = 96;
+        cparams_.options.max_property_values = 128;
+        cparams_.options.nb_repeats *= 1.1f;
         break;
       case SpeedTier::kGlacier:
       case SpeedTier::kTortoise:
         cparams_.options.splitting_heuristics_properties = prop_order;
         cparams_.options.max_property_values = 256;
+        cparams_.options.nb_repeats *= 1.3f;
         break;
       default:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 3);
-        cparams_.options.max_property_values = 16;
+        cparams_.options.max_property_values = 32;
+        cparams_.options.nb_repeats *= 0.3f;
         break;
     }
     if (cparams_.speed_tier > SpeedTier::kTortoise) {
@@ -599,6 +604,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       }
     }
   }
+  cparams_.options.nb_repeats = std::min(1.0f, cparams_.options.nb_repeats);
 
   if ((cparams_.options.predictor == Predictor::Average0 ||
        cparams_.options.predictor == Predictor::Average1 ||
