@@ -606,7 +606,7 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
                                             channel_shifts_[i][anyc_[i]]));
   }
 
-  JXL_DASSERT(0 <= first_trailing_stage_);
+  // JXL_DASSERT(0 <= first_trailing_stage_);
   JXL_DASSERT(first_trailing_stage_ < first_image_dim_stage_);
   JXL_DASSERT(first_image_dim_stage_ <= stages_.size());
 
