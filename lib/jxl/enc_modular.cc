@@ -195,12 +195,19 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
       continue;
     }
     int exp = (f >> 23) - 127;
-    if (exp == 128) return JXL_FAILURE("Inf/NaN not allowed");
     int mantissa = (f & 0x007fffff);
     // broke up the binary32 into its parts, now reassemble into
     // arbitrary float
+    if (exp == 128) {
+      // NaN or infinity
+      f = (signbit ? sign : 0);
+      f |= ((1 << exp_bits) - 1) << mant_bits;
+      f |= mantissa >> mant_shift;
+      row_out[x] = static_cast<pixel_type>(f);
+      continue;
+    }
     exp += exp_bias;
-    if (exp < 0) {  // will become a subnormal number
+    if (exp <= 0) {  // will become a subnormal number
       // add implicit leading 1 to mantissa
       mantissa |= 0x00800000;
       if (exp < -mant_bits) {
@@ -213,8 +220,8 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
       exp = 0;
     }
     // exp should be representable in exp_bits, otherwise input was
-    // invalid
-    if (exp > max_exp) return JXL_FAILURE("Invalid float exponent");
+    // invalid; max_exp is NaN or infinity
+    if (exp >= max_exp) return JXL_FAILURE("Invalid float exponent");
     if (mantissa & ((1 << mant_shift) - 1)) {
       return JXL_FAILURE("%g is losing precision (mant: %x)", row_in[x],
                          mantissa);
@@ -241,7 +248,7 @@ float EstimateWPCost(const Image& img, size_t i) {
   weighted::Header wp_header;
   PredictorMode(i, &wp_header);
   for (const Channel& ch : img.channel) {
-    const intptr_t onerow = ch.plane.PixelsPerRow();
+    const ptrdiff_t onerow = ch.plane.PixelsPerRow();
     weighted::State wp_state(wp_header, ch.w, ch.h);
     Properties properties(1);
     for (size_t y = 0; y < ch.h; y++) {
@@ -1513,9 +1520,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     nb_wp_modes = 2;
   }
   if (nb_wp_modes > 1 &&
-      (stream_options_[stream_id].predictor == Predictor::Weighted ||
-       stream_options_[stream_id].predictor == Predictor::Best ||
-       stream_options_[stream_id].predictor == Predictor::Variable)) {
+      PredictorHasWeighted(stream_options_[stream_id].predictor)) {
     float best_cost = std::numeric_limits<float>::max();
     stream_options_[stream_id].wp_mode = 0;
     for (size_t i = 0; i < nb_wp_modes; i++) {
@@ -1532,13 +1537,19 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
 constexpr float q_deadzone = 0.62f;
 int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
                size_t w, weighted::State* wp_state, float value,
-               float inv_factor) {
+               float inv_factor, bool* has_outliers) {
   float svalue = value * inv_factor;
   PredictionResult pred =
       PredictNoTreeWP(w, qrow + x, onerow, x, y, Predictor::Weighted, wp_state);
   svalue -= pred.guess;
   if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
-  int residual = std::round(svalue);
+  int residual = 0;
+  if (svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
+      svalue < static_cast<float>(std::numeric_limits<int>::min())) {
+    *has_outliers = true;
+  } else {
+    residual = std::round(svalue);
+  }
   if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5f) * 2;
   return residual + pred.guess;
 }
@@ -1563,6 +1574,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
   JxlMemoryManager* memory_manager = dc.memory_manager();
   extra_dc_precision[group_index] = nl_dc ? 1 : 0;
   float mul = 1 << extra_dc_precision[group_index];
+  bool has_outliers = false;
 
   size_t stream_id = ModularStreamId::VarDCTDC(group_index).ID(frame_dim_);
   stream_options_[stream_id].max_chan_size = 0xFFFFFF;
@@ -1637,17 +1649,19 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = QuantizeWP(quant_row, stride, c, x, y, r.xsize(),
-                                      &wp_state, row[x], inv_factor);
+            quant_row[x] =
+                QuantizeWP(quant_row, stride, c, x, y, r.xsize(), &wp_state,
+                           row[x], inv_factor, &has_outliers);
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());
           }
         } else {
           int32_t* quant_row_y =
               stream_images_[stream_id].channel[0].plane.Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = QuantizeWP(
-                quant_row, stride, c, x, y, r.xsize(), &wp_state,
-                row[x] - quant_row_y[x] * (y_factor * cfl_factor), inv_factor);
+            quant_row[x] =
+                QuantizeWP(quant_row, stride, c, x, y, r.xsize(), &wp_state,
+                           row[x] - quant_row_y[x] * (y_factor * cfl_factor),
+                           inv_factor, &has_outliers);
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());
           }
         }
@@ -1698,6 +1712,10 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         }
       }
     }
+  }
+
+  if (has_outliers) {
+    return JXL_FAILURE("Unsupported range of DC values");
   }
 
   DequantDC(r, &enc_state->shared.dc_storage, &enc_state->shared.quant_dc,

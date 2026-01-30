@@ -22,6 +22,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  SDE_ID: "813591"
+  SDE_VERSION: "9.33.0-2024-01-07"
+
 jobs:
   compile:
     name: Cross-compiling ${{ matrix.identifier }}
@@ -30,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        identifier: [armhf, i386]
+        identifier: [armhf, i386, x64]
         include:
           - arch: armhf
             os: ubuntu-24.04-arm
@@ -44,17 +48,26 @@ jobs:
             build_target: i686-linux-gnu
             cflags: -m32
 
+          - arch: i686
+            identifier: x64
+            test_in_pr: true
+            cmake_args: >-
+              -DJPEGXL_ENABLE_HWY_AVX3=true
+              -DJPEGXL_ENABLE_HWY_AVX3_DL=true
+              -DJPEGXL_ENABLE_HWY_AVX3_SPR=true
+              -DJPEGXL_ENABLE_HWY_AVX3_ZEN4=true
+
     env:
       WILL_RUN_TESTS: ${{ (github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         submodules: true
         fetch-depth: 1
@@ -62,7 +75,7 @@ jobs:
     - name: Install build deps
       run: |
         sudo ARCH=${{ matrix.arch }} BUILD_TARGET=${{ matrix.build_target }} \
-          ./tools/scripts/install_deps.sh --cross build extras
+          ./tools/scripts/install_deps.sh ${{ matrix.arch != 'i686' && '--cross' || ''}} build extras
 
     - name: Build
       run: |
@@ -72,12 +85,13 @@ jobs:
         SKIP_TEST=1 TARGETS='all_tests cjxl djxl hwy_list_targets libjxl.so libjxl_dec.so' \
         ./ci.sh release \
           -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-          -DJPEGXL_ENABLE_JNI=OFF
+          -DJPEGXL_ENABLE_JNI=OFF \
+          ${{ matrix.cmake_args }}
 
     - name: Build stats
       run: |
         tools/scripts/build_stats.py --save build/stats.json \
-          --binutils ${{ matrix.build_target }}- \
+          ${{ matrix.build_target && format('--binutils {0}-', matrix.build_target) || ''}} \
           --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so
 
@@ -87,7 +101,7 @@ jobs:
         find ./build -regextype egrep -type f -regex '.*\.(a|h|jar|json|log|o)' -delete
         find ./build -type f -executable > executable.lst
 
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+    - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       if: env.WILL_RUN_TESTS == 'true'
       with:
         name: cross_binary-${{ matrix.identifier }}
@@ -104,8 +118,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard_number: [0, 1]
-        identifier: [armhf, i386]
+        shard_number: [0, 1, 2, 3, 5, 6, 7, 8]
+        identifier: [armhf, i386, x64]
         include:
           - arch: armhf
             os: ubuntu-24.04-arm
@@ -118,6 +132,11 @@ jobs:
             test_in_pr: true
             last_shard: 2
 
+          - arch: i686
+            identifier: x64
+            test_in_pr: true
+            last_shard: 8
+
     env:
       UPLOAD_TEST_COST: false
       LAST_SHARD: ${{ false && 1 || matrix.last_shard}}
@@ -126,17 +145,17 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         submodules: true
         fetch-depth: 1
     
-    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+    - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       with:
         name: cross_binary-${{ matrix.identifier }}
@@ -145,10 +164,9 @@ jobs:
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       run: |
         sudo ARCH=${{ matrix.arch }} \
-          ./tools/scripts/install_deps.sh --cross extras_runtime runtime
+          ./tools/scripts/install_deps.sh ${{ matrix.arch != 'i686' && '--cross' || ''}} extras_runtime runtime
 
     - name: Test ranging
-      if: ${{ !matrix.disable_tests }}
       run: |
         mkdir -p ./build/Testing/Temporary
         unzip ./tools/scripts/test_cost-${{ matrix.identifier }}.zip -d ./build/Testing/Temporary
@@ -158,16 +176,40 @@ jobs:
       run: |
         rm build/Testing/Temporary/CTestCostData.txt
 
+    - name: Cache SDE
+      if: ${{ matrix.arch == 'i686' }}
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ${{ github.workspace }}/sde
+        key: sde-${{ env.SDE_ID }}
+    - name: Download SDE ${{ env.SDE_VERSION }}
+      if: ${{ matrix.arch == 'i686' }}
+      run: |
+        mkdir -p sde
+        cd sde
+        SDE_ARCHIVE=sde.tar.xz
+        if [ ! -f "${SDE_ARCHIVE}" ]; then
+          curl -L --show-error -o "${SDE_ARCHIVE}" \
+            https://downloadmirror.intel.com/${{ env.SDE_ID }}/sde-external-${{ env.SDE_VERSION }}-lin.tar.xz
+        fi
+        tar --strip-components=1 -xJf "${SDE_ARCHIVE}"
+        cd ..
+
     - name: Test
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       run: |
+        EMULATOR=
+        if [[ -n '${{ matrix.arch == 'i686' && 'true' || '' }}' ]]; then
+          EMULATOR="sde/sde64 -spr --"
+        fi
+
         chmod +x `cat executable.lst`
         BUILD_DIR=build \
-        ./ci.sh test \
+        ${EMULATOR} ./ci.sh test \
           -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
           -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper|test_jpegli_jni_wrapper)'
 
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+    - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       name: Upload test cost
       if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
       with:
