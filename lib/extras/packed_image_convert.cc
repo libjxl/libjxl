@@ -211,6 +211,8 @@ PackedPixelFile ConvertImage3FToPackedPixelFile(const Image3F& image,
                                           : 0;
   ppf.color_encoding = c_enc.ToExternal();
   ppf.frames.clear();
+  JXL_CHECK(
+      PackedImage::VerifyDimensions(image.xsize(), image.ysize(), format));
   PackedFrame frame(image.xsize(), image.ysize(), format);
   const ImageF* channels[3];
   for (int c = 0; c < 3; ++c) {
@@ -302,6 +304,8 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
                           /*endianness=*/pixel_format.endianness,
                           /*align=*/pixel_format.align};
 
+    JXL_RETURN_IF_ERROR(PackedImage::VerifyDimensions(
+        frame.oriented_xsize(), frame.oriented_ysize(), format));
     PackedFrame packed_frame(frame.oriented_xsize(), frame.oriented_ysize(),
                              format);
     const size_t bits_per_sample =

@@ -668,6 +668,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             if (!processing_finish(png_ptr, info_ptr, &ppf->metadata)) {
               // Allocates the frame buffer.
               uint32_t duration = delay_num * 1000 / delay_den;
+              JXL_RETURN_IF_ERROR(
+                  PackedImage::VerifyDimensions(w0, h0, format));
               frames.push_back(FrameInfo{PackedImage(w0, h0, format), duration,
                                          x0, w0, y0, h0, dop, bop});
               auto& frame = frames.back().data;
@@ -929,6 +931,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                  py0 + pys >= y0 + ysize && use_for_next_frame) {
         // If the new frame is contained within the old frame, we can pad the
         // new frame with zeros and not blend.
+        JXL_RETURN_IF_ERROR(
+            PackedImage::VerifyDimensions(pxs, pys, frame.data.format));
         PackedImage new_data(pxs, pys, frame.data.format);
         memset(new_data.pixels(), 0, new_data.pixels_size);
         for (size_t y = 0; y < ysize; y++) {
@@ -951,6 +955,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         ppf->frames.emplace_back(std::move(new_data));
       } else {
         // If all else fails, insert a placeholder blank frame with kReplace.
+        JXL_RETURN_IF_ERROR(
+            PackedImage::VerifyDimensions(pxs, pys, frame.data.format));
         PackedImage blank(pxs, pys, frame.data.format);
         memset(blank.pixels(), 0, blank.pixels_size);
         ppf->frames.emplace_back(std::move(blank));
