@@ -186,6 +186,8 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
   }
   const PackedRgba background_rgba{background_color.Red, background_color.Green,
                                    background_color.Blue, 0};
+  JXL_RETURN_IF_ERROR(
+      PackedImage::VerifyDimensions(gif->SWidth, gif->SHeight, canvas_format));
   PackedFrame canvas(gif->SWidth, gif->SHeight, canvas_format);
   std::fill_n(static_cast<PackedRgba*>(canvas.color.pixels()),
               canvas.color.xsize * canvas.color.ysize, background_rgba);
@@ -301,6 +303,8 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
     }
 
     // Update the canvas by creating a copy first.
+    JXL_RETURN_IF_ERROR(PackedImage::VerifyDimensions(
+        canvas.color.xsize, canvas.color.ysize, canvas.color.format));
     PackedImage new_canvas_image(canvas.color.xsize, canvas.color.ysize,
                                  canvas.color.format);
     memcpy(new_canvas_image.pixels(), canvas.color.pixels(),

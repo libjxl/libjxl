@@ -20,6 +20,9 @@ void AlphaBlend(PackedFrame* frame, float background[3]) {
     return;
   }
   --format.num_channels;
+  if (!PackedImage::VerifyDimensions(im.xsize, im.ysize, format)) {
+    return;
+  }
   PackedImage blended(im.xsize, im.ysize, format);
   // TODO(szabadka) SIMDify this and make it work for float16.
   for (size_t y = 0; y < im.ysize; ++y) {

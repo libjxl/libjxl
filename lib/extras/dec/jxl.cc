@@ -383,6 +383,8 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         }
       }
     } else if (status == JXL_DEC_FRAME) {
+      JXL_RETURN_IF_ERROR(PackedImage::VerifyDimensions(
+          ppf->info.xsize, ppf->info.ysize, format));
       jxl::extras::PackedFrame frame(ppf->info.xsize, ppf->info.ysize, format);
       if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &frame.frame_info)) {
         fprintf(stderr, "JxlDecoderGetFrameHeader failed\n");
@@ -421,6 +423,8 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         fprintf(stderr, "JxlDecoderPreviewOutBufferSize failed\n");
         return false;
       }
+      JXL_RETURN_IF_ERROR(PackedImage::VerifyDimensions(
+          ppf->info.preview.xsize, ppf->info.preview.ysize, format));
       ppf->preview_frame = std::unique_ptr<jxl::extras::PackedFrame>(
           new jxl::extras::PackedFrame(ppf->info.preview.xsize,
                                        ppf->info.preview.ysize, format));
@@ -490,6 +494,8 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       JxlPixelFormat ec_format = format;
       ec_format.num_channels = 1;
       for (auto& eci : ppf->extra_channels_info) {
+        JXL_RETURN_IF_ERROR(PackedImage::VerifyDimensions(
+            ppf->info.xsize, ppf->info.ysize, ec_format));
         frame.extra_channels.emplace_back(jxl::extras::PackedImage(
             ppf->info.xsize, ppf->info.ysize, ec_format));
         auto& ec = frame.extra_channels.back();
