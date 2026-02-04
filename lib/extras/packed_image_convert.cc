@@ -11,6 +11,7 @@
 
 #include <cstdint>
 
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_external_image.h"
@@ -266,6 +267,8 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
                           /*endianness=*/pixel_format.endianness,
                           /*align=*/pixel_format.align};
 
+    JXL_RETURN_IF_ERROR(PackedImage::VerifyDimensions(
+        frame.oriented_xsize(), frame.oriented_ysize(), format));
     PackedFrame packed_frame(frame.oriented_xsize(), frame.oriented_ysize(),
                              format);
     const size_t bits_per_sample =
