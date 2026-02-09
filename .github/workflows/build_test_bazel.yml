@@ -32,12 +32,12 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
         with:
           egress-policy: audit
 
       - name: Checkout the source
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: true
           fetch-depth: 1
@@ -50,10 +50,10 @@ jobs:
           git checkout 457c891775a7397bdb0376bb1031e6e027af1c48
           git apply ${{ github.workspace }}/.github/workflows/highway.patch
       - name: Build
-        run: bazel build -c opt ...:all
+        run: USE_BAZEL_VERSION=8.5.1 bazelisk build -c opt ...:all
       - name: Test
         if: |
           github.event_name == 'push' ||
           (github.event_name == 'pull_request' &&
            contains(github.event.pull_request.labels.*.name, 'CI:full'))
-        run: bazel test -c opt --test_output=errors ...:all
+        run: USE_BAZEL_VERSION=8.5.1 bazelisk test -c opt --test_output=errors ...:all

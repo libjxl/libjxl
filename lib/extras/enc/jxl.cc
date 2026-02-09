@@ -58,6 +58,16 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
   if (!SetFrameOptions(params.options, frame_index, &option_idx, settings)) {
     return false;
   }
+  if (frame_index < ppf.frames.size()) {
+    const auto& frame_name = ppf.frames[frame_index].name;
+    if (!frame_name.empty()) {
+      if (JXL_ENC_SUCCESS !=
+          JxlEncoderSetFrameName(settings, frame_name.c_str())) {
+        fprintf(stderr, "JxlEncoderSetFrameName() failed.\n");
+        return false;
+      }
+    }
+  }
   if (num_alpha_channels > 0) {
     JxlExtraChannelInfo extra_channel_info;
     JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &extra_channel_info);
