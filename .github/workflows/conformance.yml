@@ -15,7 +15,7 @@ on:
     types: [opened, reopened, labeled, synchronize]
 
 env:
-  LIBJXL_VERSION:  0.8.4
+  LIBJXL_VERSION:  0.8.5
   LIBJXL_ABI_VERSION:  0.8
 
 concurrency:

@@ -1,4 +1,10 @@
-jpeg-xl (0.8.4) UNRELEASED; urgency=medium
+jpeg-xl (0.8.5) UNRELEASED; urgency=medium
+
+  * Bump JPEG XL version to 0.8.5.
+
+ -- JPEG XL Maintainers <jpegxl@google.com>  Mon, 09 Feb 2026 21:25:25 +0100
+
+jpeg-xl (0.8.4) unstable; urgency=medium
 
   * Bump JPEG XL version to 0.8.4.
 
