@@ -2536,7 +2536,8 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     return JXL_FAILURE("Can't add JPEG frame to XYB codestream");
   }
 
-  if (CanDoStreamingEncoding(cparams, frame_info, *metadata, frame_data)) {
+  if (CanDoStreamingEncoding(cparams, frame_info, *metadata, 
+    frame_data, frame_header)) {
     return EncodeFrameStreaming(memory_manager, cparams, frame_info, metadata,
                                 frame_data, cms, pool, output_processor,
                                 aux_out);
