@@ -1774,16 +1774,14 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   }
   if (cparams.buffering == -1) {
     if (cparams.speed_tier < SpeedTier::kTortoise) return false;
-    else if (cparams.speed_tier < SpeedTier::kSquirrel &&
-             cparams.butteraugli_distance > 0.5f) {
+    if (cparams.speed_tier < SpeedTier::kSquirrel &&
+        cparams.butteraugli_distance > 0.5f) {
       return false;
     }
-    else if (cparams.speed_tier == SpeedTier::kSquirrel &&
-             cparams.butteraugli_distance >= 3.f) {
+    if (cparams.speed_tier == SpeedTier::kSquirrel &&
+        cparams.butteraugli_distance >= 3.f) {
       return false;
     }
-    // Default back to group buffering.
-    else cparams.buffering = 2
   }
   if (cparams.buffering == 1 &&
       frame_data.xsize <= 2048 && frame_data.ysize <= 2048) {
@@ -1791,7 +1789,7 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   }
   // Buffering level 3 is currently the same as 2.
   if (cparams.buffering >= 2) {
-    const int group_size = 128 << cparams.modular_group_size_shift;
+    size_t group_size = 128 << cparams.modular_group_size_shift;
     if (frame_data.xsize <= group_size && frame_data.ysize <= group_size) {
     return false;
     }
