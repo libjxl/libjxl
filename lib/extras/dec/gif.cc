@@ -285,7 +285,13 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
                         total_rect.xsize() == canvas.color.xsize &&
                         total_rect.ysize() == canvas.color.ysize;
     if (ppf->info.have_animation) {
-      frame->frame_info.duration = gcb.DelayTime;
+      // Enforce minimum GIF delay for parity with web browsers.
+      // See http://webkit.org/b/26455 for more information.
+      if (gcb.DelayTime <= 1) {
+        frame->frame_info.duration = 10;
+      } else {
+        frame->frame_info.duration = gcb.DelayTime;
+      }
       frame->frame_info.layer_info.have_crop = static_cast<int>(!is_full_size);
       frame->frame_info.layer_info.crop_x0 = total_rect.x0();
       frame->frame_info.layer_info.crop_y0 = total_rect.y0();
