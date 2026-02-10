@@ -1789,7 +1789,7 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   }
   // Buffering level 3 is currently the same as 2.
   if (cparams.buffering >= 2) {
-    size_t group_size = 128 << cparams.modular_group_size_shift;
+    size_t group_size = 128 << frame_header->group_size_shift;
     if (frame_data.xsize <= group_size && frame_data.ysize <= group_size) {
     return false;
     }
