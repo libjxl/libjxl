@@ -239,7 +239,7 @@ struct CompressArgs {
                             &ParseInt64, 2);
 
     cmdline->AddOptionValue('\0', "buffering", "-1..3",
-                            "How frames are buffered for encoding, 
+                            "How frames are buffered for encoding, "
                             "default = -1. -1 = encoder chooses.\n    "
                             "0 = buffer everything. "
                             "1 = stream for images >2048 pixels width or height.\n"
