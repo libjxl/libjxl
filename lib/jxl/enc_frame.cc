@@ -1768,11 +1768,7 @@ Status PermuteGroups(const CompressParams& cparams,
 bool CanDoStreamingEncoding(const CompressParams& cparams,
                             const FrameInfo& frame_info,
                             const CodecMetadata& metadata,
-                            const JxlEncoderChunkedFrameAdapter& frame_data,
-                            size_t group_size_shift) {
-  if (cparams.buffering == 0) {
-    return false;
-  }
+                            const JxlEncoderChunkedFrameAdapter& frame_data) {
   if (cparams.buffering == -1) {
     if (cparams.speed_tier < SpeedTier::kTortoise) return false;
     if (cparams.speed_tier < SpeedTier::kSquirrel &&
@@ -1784,16 +1780,20 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
       return false;
     }
   }
+  if (cparams.buffering == 0) {
+    return false;
+  }
   if (cparams.buffering == 1 &&
       frame_data.xsize <= 2048 && frame_data.ysize <= 2048) {
     return false;
   }
   // Buffering level 3 is currently the same as 2.
-  if (cparams.buffering >= 2) {
-    size_t group_size = 128 << frame_header->group_size_shift;
-    if (frame_data.xsize <= group_size && frame_data.ysize <= group_size) {
+  if (cparams.buffering >= 2 && 
+  // TODO(Jonnyawsom3): Pipe in the current group size and use that instead.
+  // Tried a few different ways but it refused to compile, so using 400
+  // to match the basic heuristcs in MakeFrameHeader.
+      frame_data.xsize <= 400 && frame_data.ysize <= 400) {
     return false;
-    }
   }
   if (frame_data.IsJPEG()) {
     return false;
@@ -2536,8 +2536,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     return JXL_FAILURE("Can't add JPEG frame to XYB codestream");
   }
 
-  if (CanDoStreamingEncoding(cparams, frame_info, *metadata, frame_data,
-                             frame_header->group_size_shift)) {
+  if (CanDoStreamingEncoding(cparams, frame_info, *metadata, frame_data)) {
     return EncodeFrameStreaming(memory_manager, cparams, frame_info, metadata,
                                 frame_data, cms, pool, output_processor,
                                 aux_out);
