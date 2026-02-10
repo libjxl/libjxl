@@ -173,9 +173,9 @@ jobs:
             test_stack_limit: 128
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
-          - name: debug:osx-13
-            # The last "free" X86 OSX runnde
-            os: macos-13
+          - name: debug:osx-15
+            # The last available x86_64 OSX runner
+            os: macos-15-intel
             mode: debug
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
