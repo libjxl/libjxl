@@ -52,7 +52,7 @@
 
 // Set JXL_DEBUG_AC_STRATEGY to 1 to enable debugging.
 #ifndef JXL_DEBUG_AC_STRATEGY
-#define JXL_DEBUG_AC_STRATEGY 0
+#define JXL_DEBUG_AC_STRATEGY 1
 #endif
 
 // This must come before the begin/end_target, but HWY_ONCE is only true
@@ -526,52 +526,52 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
       {
           AcStrategyType::DCT,
           9,
-          0.8,
+          0.83,
       },
       {
           AcStrategyType::DCT4X4,
           5,
-          1.08,
+          0.78,
       },
       {
           AcStrategyType::DCT2X2,
           5,
-          0.95,
+          0.9,
       },
       {
           AcStrategyType::DCT4X8,
           4,
-          0.85931637428340035,
+          0.8,
       },
       {
           AcStrategyType::DCT8X4,
           4,
-          0.85931637428340035,
+          0.8,
       },
       {
           AcStrategyType::IDENTITY,
           5,
-          1.0427542510634957,
+          0.93,
       },
       {
           AcStrategyType::AFV0,
           4,
-          0.81779489591359944,
+          0.78,
       },
       {
           AcStrategyType::AFV1,
           4,
-          0.81779489591359944,
+          0.78,
       },
       {
           AcStrategyType::AFV2,
           4,
-          0.81779489591359944,
+          0.78,
       },
       {
           AcStrategyType::AFV3,
           4,
-          0.81779489591359944,
+          0.78,
       },
   };
   double best = 1e30;
@@ -889,12 +889,12 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // ringing next to sky etc. Optimization will find smaller numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
-  const float entropy_mul16X8 = 1.21;
-  const float entropy_mul16X16 = 1.34;
-  const float entropy_mul16X32 = 1.49;
-  const float entropy_mul32X32 = 1.48;
-  const float entropy_mul64X32 = 2.25;
-  const float entropy_mul64X64 = 2.25;
+  const float entropy_mul16X8 = 1.25;
+  const float entropy_mul16X16 = 1.35;
+  const float entropy_mul16X32 = 1.6;
+  const float entropy_mul32X32 = 1.75;
+  const float entropy_mul64X32 = 2.2;
+  const float entropy_mul64X64 = 2.5;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher
@@ -1108,16 +1108,16 @@ Status AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
   //  - estimate of the number of bits that will be used by the block
   //  - information loss due to quantization
   // The following constant controls the relative weights of these components.
-  config.info_loss_multiplier = 1.2;
-  config.zeros_mul = 9.3089059022677905;
-  config.cost_delta = 10.833273317067883;
+  config.info_loss_multiplier = 1.3;
+  config.zeros_mul = 9.31;
+  config.cost_delta = 10.8;
 
-  static const float kBias = 0.13731742964354549;
+  static const float kBias = 0.14;
   const float ratio = (cparams.butteraugli_distance + kBias) / (1.0f + kBias);
 
-  static const float kPow1 = 0.33677806662454718;
-  static const float kPow2 = 0.50990926717963703;
-  static const float kPow3 = 0.36702940662370243;
+  static const float kPow1 = 0.337;
+  static const float kPow2 = 0.51;
+  static const float kPow3 = 0.367;
   config.info_loss_multiplier *= std::pow(ratio, kPow1);
   config.zeros_mul *= std::pow(ratio, kPow2);
   config.cost_delta *= std::pow(ratio, kPow3);
