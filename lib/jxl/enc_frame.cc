@@ -1768,7 +1768,8 @@ Status PermuteGroups(const CompressParams& cparams,
 bool CanDoStreamingEncoding(const CompressParams& cparams,
                             const FrameInfo& frame_info,
                             const CodecMetadata& metadata,
-                            const JxlEncoderChunkedFrameAdapter& frame_data) {
+                            const JxlEncoderChunkedFrameAdapter& frame_data,
+                            const FrameHeader* frame_header) {
   if (cparams.buffering == 0) {
     return false;
   }
