@@ -735,10 +735,10 @@ namespace {
 class WriteToImageBundleStage : public RenderPipelineStage {
  public:
   explicit WriteToImageBundleStage(
-      ImageBundle* image_bundle, const OutputEncodingInfo& output_encoding_info)
+      ImageBundle* image_bundle, const ColorEncoding* color_encoding)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         image_bundle_(image_bundle),
-        color_encoding_(output_encoding_info.color_encoding) {}
+        color_encoding_(*color_encoding) {}
 
   Status SetInputSizes(
       const std::vector<std::pair<size_t, size_t>>& input_sizes) override {
@@ -840,9 +840,9 @@ class WriteToImage3FStage : public RenderPipelineStage {
 }  // namespace
 
 std::unique_ptr<RenderPipelineStage> GetWriteToImageBundleStage(
-    ImageBundle* image_bundle, const OutputEncodingInfo& output_encoding_info) {
+    ImageBundle* image_bundle, const ColorEncoding* color_encoding) {
   return jxl::make_unique<WriteToImageBundleStage>(image_bundle,
-                                                   output_encoding_info);
+                                                   color_encoding);
 }
 
 std::unique_ptr<RenderPipelineStage> GetWriteToImage3FStage(

@@ -220,7 +220,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
   if (frame_header.CanBeReferenced() &&
       frame_header.save_before_color_transform) {
     JXL_RETURN_IF_ERROR(builder.AddStage(GetWriteToImageBundleStage(
-        &frame_storage_for_referencing, output_encoding_info)));
+        &frame_storage_for_referencing, &metadata->color_encoding)));
   }
 
   bool has_alpha = false;
@@ -276,7 +276,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         linear = false;
       }
       JXL_RETURN_IF_ERROR(builder.AddStage(GetWriteToImageBundleStage(
-          &frame_storage_for_referencing, output_encoding_info)));
+          &frame_storage_for_referencing, &metadata->color_encoding)));
     }
 
     if (options.render_spotcolors &&
@@ -355,8 +355,8 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
           main_output, width, height, has_alpha, unpremul_alpha, alpha_c,
           undo_orientation, extra_output, memory_manager)));
     } else {
-      JXL_RETURN_IF_ERROR(builder.AddStage(
-          GetWriteToImageBundleStage(decoded, output_encoding_info)));
+      JXL_RETURN_IF_ERROR(builder.AddStage(GetWriteToImageBundleStage(
+          decoded, &output_encoding_info.color_encoding)));
     }
   }
   JXL_ASSIGN_OR_RETURN(render_pipeline,
