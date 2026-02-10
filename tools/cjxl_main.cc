@@ -242,7 +242,7 @@ struct CompressArgs {
                             "How frames are buffered for encoding, "
                             "default = -1. -1 = encoder chooses.\n    "
                             "0 = buffer everything. "
-                            "1 = stream for images >2048 pixels width or height.\n"
+                            "1 = stream for images >2048 pixels width or height.\n    "
                             "2 = stream larger than one group (256*256 by default), "
                             "3 = currently the same as 2.",
                             &buffering, &ParseInt64, 2);
