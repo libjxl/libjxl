@@ -1769,7 +1769,7 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
                             const FrameInfo& frame_info,
                             const CodecMetadata& metadata,
                             const JxlEncoderChunkedFrameAdapter& frame_data,
-                            const FrameHeader* frame_header) {
+                            size_t group_size_shift) {
   if (cparams.buffering == 0) {
     return false;
   }
@@ -2536,8 +2536,8 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     return JXL_FAILURE("Can't add JPEG frame to XYB codestream");
   }
 
-  if (CanDoStreamingEncoding(cparams, frame_info, *metadata, 
-    frame_data, frame_header)) {
+  if (CanDoStreamingEncoding(cparams, frame_info, *metadata, frame_data,
+                             frame_header->group_size_shift)) {
     return EncodeFrameStreaming(memory_manager, cparams, frame_info, metadata,
                                 frame_data, cms, pool, output_processor,
                                 aux_out);
