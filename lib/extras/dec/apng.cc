@@ -70,7 +70,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 #include <cstdint>
 #include <cstring>
 #include <limits>
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -248,7 +247,7 @@ Status DecodeGamaChunk(Bytes payload, JxlColorEncoding* color_encoding) {
   return true;
 }
 
-/** Extract information from 'cHTM' chunk. */
+/** Extract information from 'cHRM' chunk. */
 Status DecodeChrmChunk(Bytes payload, JxlColorEncoding* color_encoding) {
   if (payload.size() != 32) return JXL_FAILURE("Wrong cHRM size");
   const uint8_t* data = payload.data();
@@ -461,7 +460,8 @@ constexpr uint32_t MakeTag(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
 /** Reusable image data container. */
 struct Pixels {
   // Use array instead of vector to avoid memory initialization.
-  std::unique_ptr<uint8_t[]> pixels;
+  uninitialized_vector<uint8_t> pixels_storage =
+      jxl::make_uninitialized_vector<uint8_t>(0);
   size_t pixels_size = 0;
   std::vector<uint8_t*> rows;
   std::atomic<uint32_t> has_error{0};
@@ -469,16 +469,12 @@ struct Pixels {
   Status Resize(size_t row_bytes, size_t num_rows) {
     size_t new_size = row_bytes * num_rows;  // it is assumed size is sane
     if (new_size > pixels_size) {
-      pixels.reset(new uint8_t[new_size]);
-      if (!pixels) {
-        // TODO(szabadka): use specialized OOM error code
-        return JXL_FAILURE("Failed to allocate memory for image buffer");
-      }
+      pixels_storage.resize(new_size);
       pixels_size = new_size;
     }
     rows.resize(num_rows);
     for (size_t y = 0; y < num_rows; y++) {
-      rows[y] = pixels.get() + y * row_bytes;
+      rows[y] = pixels_storage.data() + y * row_bytes;
     }
     return true;
   }
@@ -759,13 +755,15 @@ void SetColorData(PackedPixelFile* ppf, uint8_t color_type, uint8_t bit_depth,
 }
 
 // Color profile chunks: cICP has the highest priority, followed by
-// iCCP and sRGB (which shouldn't co-exist, but if they do, we use
-// iCCP), followed finally by gAMA and cHRM.
+// iCCP, followed by sRGB, followed finally by gAMA and cHRM.
 enum class ColorInfoType {
   NONE = 0,
-  GAMA_OR_CHRM = 1,
-  ICCP_OR_SRGB = 2,
-  CICP = 3
+  GAMA = 1,
+  CHRM = 2,
+  GAMA_AND_CHRM = 3,
+  SRGB = 4,
+  ICCP = 5,
+  CICP = 6
 };
 
 }  // namespace
@@ -1072,8 +1070,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
       case MakeTag('c', 'I', 'C', 'P'):
         if (color_info_type == ColorInfoType::CICP) {
-          JXL_DEBUG_V(2, "Excessive colorspace definition; cICP chunk ignored");
-          continue;
+          return JXL_FAILURE("Repeated cICP chunk");
         }
         JXL_RETURN_IF_ERROR(DecodeCicpChunk(payload, &ppf->color_encoding));
         ppf->icc.clear();
@@ -1083,10 +1080,10 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         continue;
 
       case MakeTag('i', 'C', 'C', 'P'): {
-        if (color_info_type == ColorInfoType::ICCP_OR_SRGB) {
-          return JXL_FAILURE("Repeated iCCP / sRGB chunk");
+        if (color_info_type == ColorInfoType::ICCP) {
+          return JXL_FAILURE("Repeated iCCP chunk");
         }
-        if (color_info_type > ColorInfoType::ICCP_OR_SRGB) {
+        if (color_info_type > ColorInfoType::ICCP) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; iCCP chunk ignored");
           continue;
         }
@@ -1109,38 +1106,50 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         }
         ppf->icc.assign(profile, profile + profile_len);
         ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
-        color_info_type = ColorInfoType::ICCP_OR_SRGB;
+        color_info_type = ColorInfoType::ICCP;
         continue;
       }
 
       case MakeTag('s', 'R', 'G', 'B'):
-        if (color_info_type == ColorInfoType::ICCP_OR_SRGB) {
-          return JXL_FAILURE("Repeated iCCP / sRGB chunk");
+        if (color_info_type == ColorInfoType::SRGB) {
+          return JXL_FAILURE("Repeated sRGB chunk");
         }
-        if (color_info_type > ColorInfoType::ICCP_OR_SRGB) {
+        if (color_info_type > ColorInfoType::SRGB) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; sRGB chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeSrgbChunk(payload, &ppf->color_encoding));
-        color_info_type = ColorInfoType::ICCP_OR_SRGB;
+        color_info_type = ColorInfoType::SRGB;
         continue;
 
       case MakeTag('g', 'A', 'M', 'A'):
-        if (color_info_type >= ColorInfoType::GAMA_OR_CHRM) {
+        if (color_info_type == ColorInfoType::GAMA ||
+            color_info_type == ColorInfoType::GAMA_AND_CHRM) {
+          return JXL_FAILURE("Repeated gAMA chunk");
+        }
+        if (color_info_type > ColorInfoType::GAMA_AND_CHRM) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; gAMA chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeGamaChunk(payload, &ppf->color_encoding));
-        color_info_type = ColorInfoType::GAMA_OR_CHRM;
+        color_info_type = color_info_type == ColorInfoType::CHRM
+                              ? ColorInfoType::GAMA_AND_CHRM
+                              : ColorInfoType::GAMA;
         continue;
 
       case MakeTag('c', 'H', 'R', 'M'):
-        if (color_info_type >= ColorInfoType::GAMA_OR_CHRM) {
+        if (color_info_type == ColorInfoType::CHRM ||
+            color_info_type == ColorInfoType::GAMA_AND_CHRM) {
+          return JXL_FAILURE("Repeated cHRM chunk");
+        }
+        if (color_info_type > ColorInfoType::GAMA_AND_CHRM) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; cHRM chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeChrmChunk(payload, &ppf->color_encoding));
-        color_info_type = ColorInfoType::GAMA_OR_CHRM;
+        color_info_type = color_info_type == ColorInfoType::GAMA
+                              ? ColorInfoType::GAMA_AND_CHRM
+                              : ColorInfoType::CHRM;
         continue;
 
       case MakeTag('c', 'L', 'L', 'i'):

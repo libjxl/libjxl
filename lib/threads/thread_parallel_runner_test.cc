@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -60,8 +61,8 @@ TEST(ThreadParallelRunnerTest, TestPool) {
 
 // Verify "thread" parameter when processing few tasks.
 TEST(ThreadParallelRunnerTest, TestSmallAssignments) {
-  const int kMaxThreads = 8;
-  for (int num_threads = 1; num_threads <= kMaxThreads; ++num_threads) {
+  const size_t kMaxThreads = 8u;
+  for (size_t num_threads = 1; num_threads <= kMaxThreads; ++num_threads) {
     ThreadPoolForTests pool(num_threads);
 
     // (Avoid mutex because it may perturb the worker thread scheduling)
@@ -71,7 +72,7 @@ TEST(ThreadParallelRunnerTest, TestSmallAssignments) {
                              const int task, const int thread) -> jxl::Status {
       num_calls.fetch_add(1, std::memory_order_relaxed);
 
-      EXPECT_LT(thread, num_threads);
+      EXPECT_LT(static_cast<size_t>(thread), num_threads);
       uint64_t bits = id_bits.load(std::memory_order_relaxed);
       while (!id_bits.compare_exchange_weak(bits, bits | (1ULL << thread))) {
         // lock-free retry-loop
@@ -84,7 +85,7 @@ TEST(ThreadParallelRunnerTest, TestSmallAssignments) {
     // Correct number of tasks.
     EXPECT_EQ(num_threads, num_calls.load());
 
-    const int num_participants = PopulationCount(id_bits.load());
+    const size_t num_participants = PopulationCount(id_bits.load());
     // Can't expect equality because other workers may have woken up too late.
     EXPECT_LE(num_participants, num_threads);
   }

@@ -15,7 +15,6 @@
 #include "lib/jxl/base/arch_macros.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_group_border.h"
@@ -423,13 +422,14 @@ Status LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
     }
   }
   if (first_image_dim_stage_ != stages_.size()) {
-    RectT<ssize_t> image_rect(0, 0, frame_dimensions_.xsize_upsampled,
-                              frame_dimensions_.ysize_upsampled);
-    RectT<ssize_t> full_image_rect(0, 0, full_image_xsize_, full_image_ysize_);
+    RectT<ptrdiff_t> image_rect(0, 0, frame_dimensions_.xsize_upsampled,
+                                frame_dimensions_.ysize_upsampled);
+    RectT<ptrdiff_t> full_image_rect(0, 0, full_image_xsize_,
+                                     full_image_ysize_);
     image_rect = image_rect.Translate(frame_origin_.x0, frame_origin_.y0);
     image_rect = image_rect.Intersection(full_image_rect);
     if (image_rect.xsize() == 0 || image_rect.ysize() == 0) {
-      image_rect = RectT<ssize_t>(0, 0, 0, 0);
+      image_rect = RectT<ptrdiff_t>(0, 0, 0, 0);
     }
     size_t left_padding = image_rect.x0();
     size_t middle_padding = group_dim;
@@ -468,7 +468,7 @@ std::vector<std::pair<ImageF*, Rect>> LowMemoryRenderPipeline::PrepareBuffers(
 
 namespace {
 
-JXL_INLINE int GetMirroredY(int y, ssize_t group_y0, ssize_t image_ysize) {
+JXL_INLINE int GetMirroredY(int y, ptrdiff_t group_y0, ptrdiff_t image_ysize) {
   if (group_y0 == 0 && (y < 0 || y + group_y0 >= image_ysize)) {
     return Mirror(y, image_ysize);
   }
@@ -479,17 +479,18 @@ JXL_INLINE int GetMirroredY(int y, ssize_t group_y0, ssize_t image_ysize) {
   return y;
 }
 
-JXL_INLINE void ApplyXMirroring(float* row, ssize_t borderx, ssize_t group_x0,
-                                ssize_t group_xsize, ssize_t image_xsize) {
+JXL_INLINE void ApplyXMirroring(float* row, ptrdiff_t borderx,
+                                ptrdiff_t group_x0, ptrdiff_t group_xsize,
+                                ptrdiff_t image_xsize) {
   if (image_xsize <= borderx) {
     if (group_x0 == 0) {
-      for (ssize_t ix = 0; ix < borderx; ix++) {
+      for (ptrdiff_t ix = 0; ix < borderx; ix++) {
         row[kRenderPipelineXOffset - ix - 1] =
             row[kRenderPipelineXOffset + Mirror(-ix - 1, image_xsize)];
       }
     }
     if (group_xsize + borderx + group_x0 >= image_xsize) {
-      for (ssize_t ix = 0; ix < borderx; ix++) {
+      for (ptrdiff_t ix = 0; ix < borderx; ix++) {
         row[kRenderPipelineXOffset + image_xsize + ix - group_x0] =
             row[kRenderPipelineXOffset + Mirror(image_xsize + ix, image_xsize) -
                 group_x0];
@@ -498,12 +499,12 @@ JXL_INLINE void ApplyXMirroring(float* row, ssize_t borderx, ssize_t group_x0,
   } else {
     // Here we know that the one mirroring step is sufficient.
     if (group_x0 == 0) {
-      for (ssize_t ix = 0; ix < borderx; ix++) {
+      for (ptrdiff_t ix = 0; ix < borderx; ix++) {
         row[kRenderPipelineXOffset - ix - 1] = row[kRenderPipelineXOffset + ix];
       }
     }
     if (group_xsize + borderx + group_x0 >= image_xsize) {
-      for (ssize_t ix = 0; ix < borderx; ix++) {
+      for (ptrdiff_t ix = 0; ix < borderx; ix++) {
         row[kRenderPipelineXOffset + image_xsize - group_x0 + ix] =
             row[kRenderPipelineXOffset + image_xsize - group_x0 - ix - 1];
       }
@@ -545,12 +546,12 @@ class Rows {
     }
 
     for (size_t c = 0; c < input_data.size(); c++) {
-      auto tmp = data_max_color_channel_rect.As<ssize_t>()
+      auto tmp = data_max_color_channel_rect.As<ptrdiff_t>()
                      .Translate(-group_data_x_border, -group_data_y_border)
                      .ShiftLeft(base_color_shift);
       JXL_ASSIGN_OR_RETURN(tmp, tmp.CeilShiftRight(group_data_shift[c]));
       auto channel_group_data_rect = tmp.Translate(
-          group_data_x_border - static_cast<ssize_t>(kRenderPipelineXOffset),
+          group_data_x_border - static_cast<ptrdiff_t>(kRenderPipelineXOffset),
           group_data_y_border);
       rows[0][c].base_ptr = channel_group_data_rect.Row(&input_data[c], 0);
       rows[0][c].stride = input_data[c].PixelsPerRow();
@@ -565,7 +566,7 @@ class Rows {
     JXL_DASSERT(stage >= -1);
     const RowInfo& info = rows_[stage + 1][c];
     return info.base_ptr +
-           static_cast<ssize_t>(info.stride) * (y & info.ymod_minus_1);
+           static_cast<ptrdiff_t>(info.stride) * (y & info.ymod_minus_1);
   }
 
  private:
@@ -605,16 +606,9 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
                                             channel_shifts_[i][anyc_[i]]));
   }
 
-  ssize_t frame_x0 =
-      first_image_dim_stage_ == stages_.size() ? 0 : frame_origin_.x0;
-  ssize_t frame_y0 =
-      first_image_dim_stage_ == stages_.size() ? 0 : frame_origin_.y0;
-  size_t full_image_xsize = first_image_dim_stage_ == stages_.size()
-                                ? frame_dimensions_.xsize_upsampled
-                                : full_image_xsize_;
-  size_t full_image_ysize = first_image_dim_stage_ == stages_.size()
-                                ? frame_dimensions_.ysize_upsampled
-                                : full_image_ysize_;
+  // JXL_DASSERT(0 <= first_trailing_stage_);
+  JXL_DASSERT(first_trailing_stage_ < first_image_dim_stage_);
+  JXL_DASSERT(first_image_dim_stage_ <= stages_.size());
 
   // Compute actual x-axis bounds for the current image area in the context of
   // the full image this frame is part of. As the left boundary may be negative,
@@ -622,20 +616,28 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
   // - both x_pixels_skip and full_image_x0 are >= 0, and at least one is 0;
   // - full_image_x0 - x_pixels_skip is the position of the current frame area
   //   in the full image.
-  ssize_t full_image_x0 = frame_x0 + image_area_rect.x0();
-  ssize_t x_pixels_skip = 0;
+  ptrdiff_t full_image_x0 = frame_origin_.x0 + image_area_rect.x0();
+  ptrdiff_t x_pixels_skip = 0;
   if (full_image_x0 < 0) {
     x_pixels_skip = -full_image_x0;
     full_image_x0 = 0;
   }
-  ssize_t full_image_x1 = frame_x0 + image_area_rect.x1();
-  full_image_x1 = std::min<ssize_t>(full_image_x1, full_image_xsize);
+  ptrdiff_t full_image_x1 = frame_origin_.x0 + image_area_rect.x1();
 
-  // If the current image area is entirely outside of the visible image, there
-  // is no point in proceeding. Note: this uses the assumption that if there is
-  // a stage with observable effects (i.e. a kInput stage), it only appears
-  // after the stage that switches to image dimensions.
-  if (full_image_x1 <= full_image_x0) return true;
+  std::vector<Rect> span(stages_.size());
+  for (size_t i = 0; i < stages_.size(); ++i) {
+    if (i < first_image_dim_stage_) {
+      span[i] = Rect(group_rect[i].x0(), 0, group_rect[i].xsize(),
+                     image_rect_[i].ysize());
+    } else {
+      size_t x0 = full_image_x0;
+      size_t x1 = full_image_x1;
+      size_t x_max = full_image_xsize_;
+      size_t cropped_x1 = std::min<ptrdiff_t>(x1, x_max);
+      span[i] = Rect(x0, 0, std::max<ptrdiff_t>(0, cropped_x1 - x0),
+                     full_image_ysize_);
+    }
+  }
 
   // Data structures to hold information about input/output rows and their
   // buffers.
@@ -663,9 +665,9 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
   // function is somewhat inefficient for trailing kInOut or kInput stages,
   // where just filling the input row once ought to be sufficient.
   auto prepare_io_rows = [&](int y, size_t i) {
-    ssize_t bordery = stages_[i]->settings_.border_y;
+    ptrdiff_t bordery = stages_[i]->settings_.border_y;
     size_t shifty = stages_[i]->settings_.shift_y;
-    auto make_row = [&](size_t c, ssize_t iy) {
+    auto make_row = [&](size_t c, ptrdiff_t iy) {
       size_t mirrored_y = GetMirroredY(y + iy - bordery, group_rect[i].y0(),
                                        image_rect_[i].ysize());
       input_rows[i][c][iy] =
@@ -682,21 +684,22 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
       // If we already have rows from a previous iteration, we can just shift
       // the rows by 1 and insert the new one.
       if (input_rows[i][c].size() == 2 * static_cast<size_t>(bordery) + 1) {
-        for (ssize_t iy = 0; iy < 2 * bordery; iy++) {
+        for (ptrdiff_t iy = 0; iy < 2 * bordery; iy++) {
           input_rows[i][c][iy] = input_rows[i][c][iy + 1];
         }
         make_row(c, bordery * 2);
       } else {
         input_rows[i][c].resize(2 * bordery + 1);
-        for (ssize_t iy = 0; iy < 2 * bordery + 1; iy++) {
+        for (ptrdiff_t iy = 0; iy < 2 * bordery + 1; iy++) {
           make_row(c, iy);
         }
       }
 
       // If necessary, get the output buffers.
       if (mode == RenderPipelineChannelMode::kInOut) {
-        for (size_t iy = 0; iy < (1u << shifty); iy++) {
-          output_rows[c][iy] = rows.GetBuffer(i, y * (1 << shifty) + iy, c);
+        size_t bundle = static_cast<size_t>(1u) << shifty;
+        for (size_t iy = 0; iy < bundle; iy++) {
+          output_rows[c][iy] = rows.GetBuffer(i, y * bundle + iy, c);
         }
       }
     }
@@ -726,20 +729,19 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
 
       int y = stage_vy >> channel_shifts_[i][anyc_[i]].second;
 
-      ssize_t image_y = static_cast<ssize_t>(group_rect[i].y0()) + y;
+      ptrdiff_t image_y = static_cast<ptrdiff_t>(group_rect[i].y0()) + y;
       // Do not produce rows in out-of-bounds areas.
-      if (image_y < 0 ||
-          image_y >= static_cast<ssize_t>(image_rect_[i].ysize())) {
-        continue;
-      }
+      if (image_y < 0) continue;
+      if (image_y >= static_cast<ptrdiff_t>(span[i].y1())) continue;
 
       // Get the input/output rows and potentially apply mirroring to the input.
       prepare_io_rows(y, i);
 
       // Produce output rows.
+      if (span[i].xsize() == 0) continue;
       JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
-          input_rows[i], output_rows, xpadding_for_output_[i],
-          group_rect[i].xsize(), group_rect[i].x0(), image_y, thread_id));
+          input_rows[i], output_rows, xpadding_for_output_[i], span[i].xsize(),
+          span[i].x0(), image_y, thread_id));
     }
 
     // Process trailing stages, i.e. the final set of non-kInOut stages; they
@@ -748,40 +750,46 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     int y = vy - num_extra_rows;
 
     for (size_t c = 0; c < input_data.size(); c++) {
-      // Skip pixels that are not part of the actual final image area.
-      input_rows[first_trailing_stage_][c][0] =
-          rows.GetBuffer(stage_input_for_channel_[first_trailing_stage_][c], y,
-                         c) +
-          x_pixels_skip;
+      input_rows[first_trailing_stage_][c][0] = rows.GetBuffer(
+          stage_input_for_channel_[first_trailing_stage_][c], y, c);
     }
 
     // Check that we are not outside of the bounds for the current rendering
     // rect. Not doing so might result in overwriting some rows that have been
     // written (or will be written) by other threads.
-    if (y < 0 || y >= static_cast<ssize_t>(image_area_rect.ysize())) {
+    if (y < 0 || y >= static_cast<ptrdiff_t>(image_area_rect.ysize())) {
       continue;
     }
 
+    for (size_t i = first_trailing_stage_; i < first_image_dim_stage_; i++) {
+      if (span[i].xsize() == 0) continue;
+      size_t y0 = image_area_rect.y0() + y;
+      if (y0 >= span[i].y1()) continue;
+      JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
+          input_rows[first_trailing_stage_], output_rows,
+          /*xextra=*/0, span[i].xsize(), span[i].x0(), y0, thread_id));
+    }
+
+    if (first_image_dim_stage_ == stages_.size()) continue;
+
+    // Skip pixels that are not part of the actual final image area.
+    for (size_t c = 0; c < input_data.size(); c++) {
+      input_rows[first_trailing_stage_][c][0] += x_pixels_skip;
+    }
     // Avoid running pipeline stages on pixels that are outside the full image
     // area. As trailing stages have no borders, this is a free optimization
     // (and may be necessary for correctness, as some stages assume coordinates
     // are within bounds).
-    ssize_t full_image_y = frame_y0 + image_area_rect.y0() + y;
-    if (full_image_y < 0 ||
-        full_image_y >= static_cast<ssize_t>(full_image_ysize)) {
-      continue;
-    }
+    ptrdiff_t full_image_y = frame_origin_.y0 + image_area_rect.y0() + y;
+    if (full_image_y < 0) continue;
 
-    for (size_t i = first_trailing_stage_; i < stages_.size(); i++) {
-      // Before the first_image_dim_stage_, coordinates are relative to the
-      // current frame.
-      size_t x0 =
-          i < first_image_dim_stage_ ? full_image_x0 - frame_x0 : full_image_x0;
-      size_t y0 =
-          i < first_image_dim_stage_ ? full_image_y - frame_y0 : full_image_y;
-      JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
-          input_rows[first_trailing_stage_], output_rows,
-          /*xextra=*/0, full_image_x1 - full_image_x0, x0, y0, thread_id));
+    for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
+      if (span[i].xsize() == 0) continue;
+      if (full_image_y >= static_cast<ptrdiff_t>(span[i].y1())) continue;
+      JXL_RETURN_IF_ERROR(
+          stages_[i]->ProcessRow(input_rows[first_trailing_stage_], output_rows,
+                                 /*xextra=*/0, span[i].xsize(), span[i].x0(),
+                                 full_image_y, thread_id));
     }
   }
   return true;
@@ -824,11 +832,12 @@ Status LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
 
   if (first_image_dim_stage_ != stages_.size()) {
     size_t group_dim = frame_dimensions_.group_dim << base_color_shift_;
-    RectT<ssize_t> group_rect(gx * group_dim, gy * group_dim, group_dim,
-                              group_dim);
-    RectT<ssize_t> image_rect(0, 0, frame_dimensions_.xsize_upsampled,
-                              frame_dimensions_.ysize_upsampled);
-    RectT<ssize_t> full_image_rect(0, 0, full_image_xsize_, full_image_ysize_);
+    RectT<ptrdiff_t> group_rect(gx * group_dim, gy * group_dim, group_dim,
+                                group_dim);
+    RectT<ptrdiff_t> image_rect(0, 0, frame_dimensions_.xsize_upsampled,
+                                frame_dimensions_.ysize_upsampled);
+    RectT<ptrdiff_t> full_image_rect(0, 0, full_image_xsize_,
+                                     full_image_ysize_);
     group_rect = group_rect.Translate(frame_origin_.x0, frame_origin_.y0);
     image_rect = image_rect.Translate(frame_origin_.x0, frame_origin_.y0);
     image_rect = image_rect.Intersection(full_image_rect);

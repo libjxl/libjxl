@@ -47,7 +47,7 @@ std::unique_ptr<jxl::CodecInOut> ConvertTestImage(
     const std::vector<uint8_t>& buf, const size_t xsize, const size_t ysize,
     const JxlPixelFormat& pixel_format, const jxl::Bytes& icc_profile) {
   auto io = jxl::make_unique<jxl::CodecInOut>(jxl::test::MemoryManager());
-  jxl::test::Check(io->SetSize(xsize, ysize));
+  Check(io->SetSize(xsize, ysize));
 
   bool is_gray = pixel_format.num_channels < 3;
   bool has_alpha =

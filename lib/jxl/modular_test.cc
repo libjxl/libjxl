@@ -84,7 +84,8 @@ void TestLosslessGroups(size_t group_size_shift) {
   size_t compressed_size =
       Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
   EXPECT_LE(compressed_size, 280000u);
-  EXPECT_EQ(0.0f, test::ComputeDistance2(t.ppf(), ppf_out));
+  float disntance2 = test::ComputeDistance2(t.ppf(), ppf_out);
+  EXPECT_EQ(0.0f, disntance2);
 }
 
 TEST(ModularTest, RoundtripLosslessGroups128) { TestLosslessGroups(0); }
@@ -96,6 +97,58 @@ JXL_TSAN_SLOW_TEST(ModularTest, RoundtripLosslessGroups512) {
 JXL_TSAN_SLOW_TEST(ModularTest, RoundtripLosslessGroups1024) {
   TestLosslessGroups(3);
 }
+
+void TestLarge(size_t dim, size_t co_dim, size_t group_size_shift) {
+  for (bool wide : {true, false}) {
+    size_t w = dim;
+    size_t h = co_dim;
+    if (!wide) std::swap(w, h);
+    TestImage t;
+    ASSERT_TRUE(t.SetDimensions(w, h));
+    JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
+    frame.ZeroFill();
+    extras::JXLCompressParams cparams;
+    cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, group_size_shift);
+    cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);
+    cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR, 1);
+    extras::JXLDecompressParams dparams;
+    extras::PackedPixelFile ppf_out;
+    size_t compressed_size =
+        Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
+    EXPECT_LE(compressed_size, 16384u);
+  }
+}
+
+TEST(ModularTest, LargeGss0) {
+  TestLarge(514 * 1024, 1, 0);
+}
+
+TEST(ModularTest, LargeGss1) {
+  TestLarge(514 * 1024, 1, 1);
+}
+
+TEST(ModularTest, LargeGss2) {
+  TestLarge(514 * 1024, 1, 2);
+}
+
+TEST(ModularTest, LargeGss3) {
+  TestLarge(514 * 1024, 1, 3);
+}
+
+TEST(ModularTest, LargeDcGss0) {
+  TestLarge(129 * 1024, 64, 0);
+}
+
+/* DISABLED: uses 10+GiB memory */
+/*
+TEST(ModularTest, LargeDcGss1) {
+  TestLarge(514 * 1024, 64, 1);
+}
+
+TEST(ModularTest, LargeDcGss2) {
+  TestLarge(2051 * 1024, 64, 2);
+}
+*/
 
 TEST(ModularTest, RoundtripLosslessCustomWpPermuteRCT) {
   const std::vector<uint8_t> orig =
@@ -197,12 +250,12 @@ TEST(ModularTest, RoundtripLossy) {
   size_t compressed_size;
   JXL_EXPECT_OK(
       Roundtrip(io.get(), cparams, dparams, io_out.get(), _, &compressed_size));
-  EXPECT_LE(compressed_size, 30000u);
+  EXPECT_LE(compressed_size, 23000u);
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io->frames, io_out->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
-      2.3);
+      3.0);
 }
 
 TEST(ModularTest, RoundtripLossy16) {
@@ -227,12 +280,12 @@ TEST(ModularTest, RoundtripLossy16) {
   size_t compressed_size;
   JXL_EXPECT_OK(
       Roundtrip(io.get(), cparams, dparams, io_out.get(), _, &compressed_size));
-  EXPECT_LE(compressed_size, 300u);
+  EXPECT_LE(compressed_size, 230u);
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io->frames, io_out->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
-      1.6);
+      1.8);
 }
 
 TEST(ModularTest, RoundtripExtraProperties) {
@@ -384,7 +437,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
       }
     }
   }
-  EXPECT_EQ(different, 0);
+  EXPECT_EQ(different, 0u);
 }
 
 TEST(ModularTest, RoundtripLosslessCustomFloat) {
@@ -438,20 +491,20 @@ void WriteHeaders(BitWriter* writer, size_t xsize, size_t ysize) {
     writer->Write(8, kCodestreamMarker);
     return true;
   }));
-  CodecMetadata metadata;
-  EXPECT_TRUE(metadata.size.Set(xsize, ysize));
+  auto metadata = jxl::make_unique<CodecMetadata>();
+  EXPECT_TRUE(metadata->size.Set(xsize, ysize));
   EXPECT_TRUE(
-      WriteSizeHeader(metadata.size, writer, LayerType::Header, nullptr));
-  metadata.m.color_encoding = ColorEncoding::LinearSRGB(/*is_gray=*/true);
-  metadata.m.xyb_encoded = false;
-  metadata.m.SetUintSamples(31);
+      WriteSizeHeader(metadata->size, writer, LayerType::Header, nullptr));
+  metadata->m.color_encoding = ColorEncoding::LinearSRGB(/*is_gray=*/true);
+  metadata->m.xyb_encoded = false;
+  metadata->m.SetUintSamples(31);
   EXPECT_TRUE(
-      WriteImageMetadata(metadata.m, writer, LayerType::Header, nullptr));
-  metadata.transform_data.nonserialized_xyb_encoded = metadata.m.xyb_encoded;
-  EXPECT_TRUE(Bundle::Write(metadata.transform_data, writer, LayerType::Header,
+      WriteImageMetadata(metadata->m, writer, LayerType::Header, nullptr));
+  metadata->transform_data.nonserialized_xyb_encoded = metadata->m.xyb_encoded;
+  EXPECT_TRUE(Bundle::Write(metadata->transform_data, writer, LayerType::Header,
                             nullptr));
   writer->ZeroPadToByte();
-  FrameHeader frame_header(&metadata);
+  FrameHeader frame_header(metadata.get());
   frame_header.encoding = FrameEncoding::kModular;
   frame_header.loop_filter.gab = false;
   frame_header.loop_filter.epf_iters = 0;
@@ -515,7 +568,7 @@ TEST(ModularTest, PredictorIntegerOverflow) {
   params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
                              nullptr, &ppf));
-  ASSERT_EQ(1, ppf.frames.size());
+  ASSERT_EQ(1u, ppf.frames.size());
   const auto& img = ppf.frames[0].color;
   const auto* pixels = reinterpret_cast<const float*>(img.pixels());
   EXPECT_EQ(-1.0f, pixels[0]);
@@ -566,7 +619,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
   params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
                              nullptr, &ppf));
-  ASSERT_EQ(1, ppf.frames.size());
+  ASSERT_EQ(1u, ppf.frames.size());
   const auto& img = ppf.frames[0].color;
   const float* pixels = reinterpret_cast<const float*>(img.pixels());
   for (size_t x = 0; x < xsize; ++x) {

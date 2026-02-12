@@ -77,7 +77,8 @@ Status DequantizeSplines(const Splines& splines,
 
 TEST(SplinesTest, Serialization) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  Spline spline1{
+  std::vector<Spline> spline_data;
+  spline_data.push_back(Spline{
       /*control_points=*/{
           {109, 54}, {218, 159}, {80, 3}, {110, 274}, {94, 185}, {17, 277}},
       /*color_dct=*/
@@ -93,8 +94,8 @@ TEST(SplinesTest, Serialization) {
       /*sigma_dct=*/{32.7, 21.5, 44.4, 1.8,  45.8, 90.6, 29.3, 59.2,
                      23.7, 85.2, 84.8, 27.2, 42.1, 84.1, 50.6, 17.6,
                      93.7, 4.9,  2.6,  69.8, 94.9, 52,   24.3, 18.8,
-                     12.1, 95.7, 28.5, 81.4, 89.9, 31.4, 74.8, 52}};
-  Spline spline2{
+                     12.1, 95.7, 28.5, 81.4, 89.9, 31.4, 74.8, 52}});
+  spline_data.push_back(Spline{
       /*control_points=*/{{172, 309},
                           {196, 277},
                           {42, 238},
@@ -116,8 +117,8 @@ TEST(SplinesTest, Serialization) {
       /*sigma_dct=*/{72.5, 2.6,  41.7, 2.2,  39.7, 79.1, 69.6, 19.9,
                      92.3, 71.5, 41.9, 62.1, 30,   49.4, 70.3, 45.3,
                      62.5, 47.2, 46.7, 41.2, 90.8, 46.8, 91.2, 55,
-                     8.1,  69.6, 25.4, 84.7, 61.7, 27.6, 3.7,  46.9}};
-  Spline spline3{
+                     8.1,  69.6, 25.4, 84.7, 61.7, 27.6, 3.7,  46.9}});
+  spline_data.push_back(Spline{
       /*control_points=*/{{100, 186},
                           {257, 97},
                           {170, 49},
@@ -141,8 +142,7 @@ TEST(SplinesTest, Serialization) {
       /*sigma_dct=*/{83.5, 1.7,  25.1, 18.7, 46.5, 75.3, 28,   62.3,
                      50.3, 23.3, 85.6, 96,   45.8, 33.1, 33.4, 52.9,
                      26.3, 58.5, 19.6, 70,   92.6, 22.5, 57,   21.6,
-                     76.8, 87.5, 22.9, 66.3, 35.7, 35.6, 56.8, 67.2}};
-  std::vector<Spline> spline_data{spline1, spline2, spline3};
+                     76.8, 87.5, 22.9, 66.3, 35.7, 35.6, 56.8, 67.2}});
 
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;

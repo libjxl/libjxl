@@ -199,6 +199,8 @@ class PAMEncoder : public BasePNMEncoder {
     }
     return formats;
   }
+  bool AcceptsCmyk() const override { return true; }
+
   Status EncodeFrame(const PackedPixelFile& ppf, const PackedFrame& frame,
                      std::vector<uint8_t>* bytes) const override {
     const PackedImage& color = frame.color;
@@ -229,20 +231,30 @@ class PAMEncoder : public BasePNMEncoder {
     uint32_t depth = color.format.num_channels + ec_info.size();
     char header[kMaxHeaderSize];
     size_t pos = 0;
-    pos += snprintf(header + pos, kMaxHeaderSize - pos,
-                    "P7\nWIDTH %" PRIuS "\nHEIGHT %" PRIuS
-                    "\nDEPTH %u\n"
-                    "MAXVAL %u\nTUPLTYPE %s\n",
-                    color.xsize, color.ysize, depth, maxval,
-                    kColorTypes[color.format.num_channels - 1]);
-    JXL_RETURN_IF_ERROR(pos < kMaxHeaderSize);
-    for (const auto& info : ec_info) {
-      pos += snprintf(header + pos, kMaxHeaderSize - pos, "TUPLTYPE %s\n",
-                      ExtraChannelTypeName(info.ec_info.type).c_str());
-      JXL_RETURN_IF_ERROR(pos < kMaxHeaderSize);
+    int n = snprintf(header + pos, kMaxHeaderSize - pos,
+                     "P7\nWIDTH %" PRIuS "\nHEIGHT %" PRIuS
+                     "\nDEPTH %u\n"
+                     "MAXVAL %u\nTUPLTYPE %s\n",
+                     color.xsize, color.ysize, depth, maxval,
+                     kColorTypes[color.format.num_channels - 1]);
+    if (n < 0 || static_cast<size_t>(n) >= kMaxHeaderSize - pos) {
+      return JXL_FAILURE("PNM header is too long");
     }
-    pos += snprintf(header + pos, kMaxHeaderSize - pos, "ENDHDR\n");
     JXL_RETURN_IF_ERROR(pos < kMaxHeaderSize);
+    pos += n;
+    for (const auto& info : ec_info) {
+      n = snprintf(header + pos, kMaxHeaderSize - pos, "TUPLTYPE %s\n",
+                   ExtraChannelTypeName(info.ec_info.type).c_str());
+     if (n < 0 || static_cast<size_t>(n) >= kMaxHeaderSize - pos) {
+        return JXL_FAILURE("PNM header is too long");
+      }
+      pos += n;
+    }
+    n = snprintf(header + pos, kMaxHeaderSize - pos, "ENDHDR\n");
+    if (n < 0 || static_cast<size_t>(n) >= kMaxHeaderSize - pos) {
+      return JXL_FAILURE("PNM header is too long");
+    }
+    pos += n;
     size_t total_size = color.pixels_size;
     for (const auto& ec : frame.extra_channels) {
       total_size += ec.pixels_size;

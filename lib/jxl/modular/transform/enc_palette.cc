@@ -79,11 +79,13 @@ static int QuantizeColorToImplicitPaletteIndex(
     const std::vector<pixel_type> &color, const int palette_size,
     const int bit_depth, bool high_quality) {
   int index = 0;
+  int quant = (1 << bit_depth) - 1;
+  // When bit_depth == 1, half would be equal quant without this fuse.
+  int half = (bit_depth > 1) ? (1 << (bit_depth - 1)) : 0;
   if (high_quality) {
     int multiplier = 1;
     for (int value : color) {
-      int quantized = ((kLargeCube - 1) * value + (1 << (bit_depth - 1))) /
-                      ((1 << bit_depth) - 1);
+      int quantized = ((kLargeCube - 1) * value + half) / quant;
       JXL_DASSERT((quantized % kLargeCube) == quantized);
       index += quantized * multiplier;
       multiplier *= kLargeCube;
@@ -94,8 +96,7 @@ static int QuantizeColorToImplicitPaletteIndex(
     for (int value : color) {
       value -= 1 << (std::max(0, bit_depth - 3));
       value = std::max(0, value);
-      int quantized = ((kLargeCube - 1) * value + (1 << (bit_depth - 1))) /
-                      ((1 << bit_depth) - 1);
+      int quantized = ((kLargeCube - 1) * value + half) / quant;
       JXL_DASSERT((quantized % kLargeCube) == quantized);
       if (quantized > kSmallCube - 1) {
         quantized = kSmallCube - 1;
@@ -147,7 +148,8 @@ struct PaletteIterationData {
       float delta_distance =
           std::sqrt(palette_internal::ColorDistance({0, 0, 0}, current_delta)) +
           1;
-      delta_frequency.second *= delta_distance * delta_distance_multiplier;
+      delta_frequency.second *=
+          static_cast<double>(delta_distance) * delta_distance_multiplier;
     }
 
     // Sort by weighted frequency.
@@ -403,8 +405,8 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
   pch.hshift = -1;
   pch.vshift = -1;
   pixel_type *JXL_RESTRICT p_palette = pch.Row(0);
-  intptr_t onerow = pch.plane.PixelsPerRow();
-  intptr_t onerow_image = input.channel[begin_c].plane.PixelsPerRow();
+  ptrdiff_t onerow = pch.plane.PixelsPerRow();
+  ptrdiff_t onerow_image = input.channel[begin_c].plane.PixelsPerRow();
   const int bit_depth = std::min(input.bitdepth, 24);
 
   if (lossy) {

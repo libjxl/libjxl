@@ -445,7 +445,9 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
 
     {
       float masku_lut[3] = {
-	12.0, 0.0, 4.0,
+          12.0,
+          0.0,
+          4.0,
       };
       auto masku_off = Set(df8, masku_lut[c]);
       auto lossc = Zero(df8);
@@ -462,9 +464,9 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
                                       ix * kBlockDim + dx);
               if (x + ix * 8 + dx + Lanes(df8) <= config.mask1x1_xsize) {
                 auto masku =
-		  Add(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
-						     y + iy * 8 + dy)),
-		      masku_off);
+                    Add(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
+                                                       y + iy * 8 + dy)),
+                        masku_off);
                 in = Mul(masku, in);
                 in = Mul(in, in);
                 in = Mul(in, in);
@@ -887,7 +889,7 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // ringing next to sky etc. Optimization will find smaller numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
-  const float entropy_mul16X8 = 1.24;
+  const float entropy_mul16X8 = 1.21;
   const float entropy_mul16X16 = 1.34;
   const float entropy_mul16X32 = 1.49;
   const float entropy_mul32X32 = 1.48;

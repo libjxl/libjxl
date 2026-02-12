@@ -161,7 +161,7 @@ Status Symmetric5(const ImageF& in, const Rect& in_rect,
     const int64_t riy = task;
     const int64_t iy = in_rect.y0() + riy;
 
-    if (iy < 2 || iy >= static_cast<ssize_t>(in.ysize()) - 2) {
+    if (iy < 2 || iy >= static_cast<ptrdiff_t>(in.ysize()) - 2) {
       Symmetric5Row<WrapMirror>(in, in_rect, iy, weights,
                                 out_rect.Row(out, riy));
     } else {
