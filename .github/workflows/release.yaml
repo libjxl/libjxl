@@ -256,6 +256,7 @@ jobs:
       VCPKG_ROOT: vcpkg
       VCPKG_DISABLE_METRICS: 1
       BUILD_TYPE: ${{ matrix.build_type || 'Release' }}
+      PREFIX: ${{matrix.triplet}}
 
     steps:
     - name: Harden Runner
@@ -315,7 +316,7 @@ jobs:
           -DJPEGXL_ENABLE_TOOLS='ON' \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-          -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
+          -DCMAKE_INSTALL_PREFIX=`pwd`/${PREFIX} \
           -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
           -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
@@ -336,16 +337,16 @@ jobs:
       run: |
         set -x
         cmake --build build --config ${{ env.BUILD_TYPE }} --target install
-        mkdir prefix/licenses
+        mkdir ${PREFIX}/licenses
         for pkg in giflib libjpeg-turbo libpng libwebp zlib; do
           cp vcpkg/installed/${{matrix.triplet}}/share/${pkg}/copyright \
-            prefix/licenses/LICENSE.${pkg}
+            ${PREFIX}/licenses/LICENSE.${pkg}
         done
-        cp third_party/sjpeg/COPYING prefix/licenses/LICENSE.sjpeg
-        cp third_party/skcms/LICENSE prefix/licenses/LICENSE.skcms
-        cp third_party/highway/LICENSE prefix/licenses/LICENSE.highway
-        cp third_party/brotli/LICENSE prefix/licenses/LICENSE.brotli
-        cp LICENSE prefix/licenses/LICENSE.libjxl
+        cp third_party/sjpeg/COPYING ${PREFIX}/licenses/LICENSE.sjpeg
+        cp third_party/skcms/LICENSE ${PREFIX}/licenses/LICENSE.skcms
+        cp third_party/highway/LICENSE ${PREFIX}/licenses/LICENSE.highway
+        cp third_party/brotli/LICENSE ${PREFIX}/licenses/LICENSE.brotli
+        cp LICENSE ${PREFIX}/licenses/LICENSE.libjxl
 
     - name: Fast benchmark ${{ matrix.triplet }}
       shell: 'bash'
@@ -358,19 +359,21 @@ jobs:
         export PATH=$PATH:`pwd`/build/lib
         BUILD_CONFIG=Release/ BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
 
-    - name: Package release zip
+    - name: Package release
+      shell: 'bash'
       if: matrix.upload != 'OFF'
-      shell: 'powershell'
       run: |
-        Compress-Archive -Path prefix\bin\*, prefix\include, prefix\lib, prefix\licenses `
-          -DestinationPath jxl-${{matrix.triplet}}.zip
+        7z -mx a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
+        7z -mx a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
 
-    - name: Upload release zip
+    - name: Upload release
       if: matrix.upload != 'OFF'
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: jxl-${{matrix.triplet}}
-        path: jxl-${{matrix.triplet}}.zip
+        path: |
+          jxl-${{matrix.triplet}}.7z
+          jxl-${{matrix.triplet}}.zip
         compression-level: 0
 
 
