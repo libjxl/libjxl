@@ -5,8 +5,16 @@
 
 #include "lib/jxl/render_pipeline/stage_xyb.h"
 
+#include <cstddef>
+#include <cstdio>
+#include <memory>
+
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/sanitizers.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_xyb.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_xyb.cc"
@@ -53,7 +61,7 @@ class XYBStage : public RenderPipelineStage {
       const auto offset_x = Set(d, jxl::cms::kScaledXYBOffset[0]);
       const auto offset_y = Set(d, jxl::cms::kScaledXYBOffset[1]);
       const auto offset_bmy = Set(d, jxl::cms::kScaledXYBOffset[2]);
-      for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+      for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
            x += Lanes(d)) {
         const auto in_x = LoadU(d, row0 + x);
         const auto in_y = LoadU(d, row1 + x);
@@ -66,7 +74,7 @@ class XYBStage : public RenderPipelineStage {
         StoreU(out_b, d, row2 + x);
       }
     } else {
-      for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+      for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
            x += Lanes(d)) {
         const auto in_opsin_x = LoadU(d, row0 + x);
         const auto in_opsin_y = LoadU(d, row1 + x);

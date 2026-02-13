@@ -5,12 +5,23 @@
 
 #include "lib/jpegli/entropy_coding.h"
 
+#include <jxl/types.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 #include <vector>
 
+#include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/huffman.h"
+#include "lib/jpegli/memory_manager.h"
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/status.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jpegli/entropy_coding.cc"
@@ -42,7 +53,8 @@ size_t MaxNumTokensPerMCURow(j_compress_ptr cinfo) {
   size_t blocks_per_mcu = 0;
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
-    blocks_per_mcu += comp->h_samp_factor * comp->v_samp_factor;
+    blocks_per_mcu +=
+        static_cast<size_t>(comp->h_samp_factor) * comp->v_samp_factor;
   }
   return kDCTBlockSize * blocks_per_mcu * MCUs_per_row;
 }
@@ -91,7 +103,8 @@ void TokenizeACProgressiveScan(j_compress_ptr cinfo, int scan_index,
   const int Se = scan_info->Se;
   const size_t restart_interval = sti->restart_interval;
   int restarts_to_go = restart_interval;
-  size_t num_blocks = comp->height_in_blocks * comp->width_in_blocks;
+  size_t num_blocks =
+      static_cast<size_t>(comp->height_in_blocks) * comp->width_in_blocks;
   size_t num_restarts =
       restart_interval > 0 ? DivCeil(num_blocks, restart_interval) : 1;
   size_t restart_idx = 0;
@@ -200,7 +213,8 @@ void TokenizeACRefinementScan(j_compress_ptr cinfo, int scan_index,
   RefToken token;
   int eob_run = 0;
   int eob_refbits = 0;
-  size_t num_blocks = comp->height_in_blocks * comp->width_in_blocks;
+  size_t num_blocks =
+      static_cast<size_t>(comp->height_in_blocks) * comp->width_in_blocks;
   size_t num_restarts =
       restart_interval > 0 ? DivCeil(num_blocks, restart_interval) : 1;
   sti->tokens = m->next_refinement_token;
@@ -461,7 +475,8 @@ void TokenizeJpeg(j_compress_ptr cinfo) {
     if (si->Ss > 0 && si->Ah > 0) {
       int comp_idx = si->component_index[0];
       const jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
-      size_t num_blocks = comp->width_in_blocks * comp->height_in_blocks;
+      size_t num_blocks =
+          static_cast<size_t>(comp->width_in_blocks) * comp->height_in_blocks;
       max_refinement_tokens += (1 + (si->Se - si->Ss) / 16) * num_blocks;
     }
   }
@@ -551,7 +566,7 @@ float HistogramCost(const Histogram& histo) {
   for (size_t i = 0; i < kJpegHuffmanAlphabetSize; ++i) {
     if (depths[i] > 0) {
       header_bits += 8;
-      data_bits += counts[i] * depths[i];
+      data_bits += static_cast<size_t>(counts[i]) * depths[i];
     }
   }
   return header_bits + data_bits;
@@ -575,13 +590,21 @@ void ClusterJpegHistograms(j_compress_ptr cinfo, const Histogram* histograms,
   clusters->histogram_indexes.resize(num);
   std::vector<uint32_t> slot_histograms;
   std::vector<float> slot_costs;
+  // Since not all jpeg decoders support the extended sequential mode, i.e. the
+  // 0xff 0xc1 SOF marker, we will limit the number of clusters to 2 in
+  // sequential mode, unless the quantization tables already require the
+  // extended sequential mode.
+  const bool force_baseline =
+      !cinfo->progressive_mode && cinfo->master->force_baseline;
   for (size_t i = 0; i < num; ++i) {
     const Histogram& cur = histograms[i];
     if (IsEmptyHistogram(cur)) {
       continue;
     }
-    float best_cost = HistogramCost(cur);
     size_t best_slot = slot_histograms.size();
+    float best_cost = force_baseline && best_slot > 1
+                          ? std::numeric_limits<float>::max()
+                          : HistogramCost(cur);
     for (size_t j = 0; j < slot_histograms.size(); ++j) {
       size_t prev_idx = slot_histograms[j];
       const Histogram& prev = clusters->histograms[prev_idx];
@@ -604,7 +627,7 @@ void ClusterJpegHistograms(j_compress_ptr cinfo, const Histogram* histograms,
         slot_histograms.push_back(histogram_index);
         slot_costs.push_back(best_cost);
       } else {
-        // TODO(szabadka) Find the best histogram to replce.
+        // TODO(szabadka) Find the best histogram to replace.
         best_slot = (clusters->slot_ids.back() + 1) % 4;
       }
       slot_histograms[best_slot] = histogram_index;

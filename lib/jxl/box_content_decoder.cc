@@ -5,6 +5,9 @@
 
 #include "lib/jxl/box_content_decoder.h"
 
+#include <brotli/decode.h>
+#include <jxl/decode.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -39,8 +42,16 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
                                                size_t avail_in, size_t box_pos,
                                                uint8_t** next_out,
                                                size_t* avail_out) {
-  next_in += pos_ - box_pos;
-  avail_in -= pos_ - box_pos;
+  // The caller provides `box_pos` as the current position (in bytes) within
+  // the box contents corresponding to `next_in`. Our internal `pos_` tracks
+  // how many bytes of box contents have been consumed/processed so far.
+  // If `box_pos` ever exceeds `pos_`, adjusting by `pos_ - box_pos` would
+  // underflow and cause out-of-bounds reads.
+  if (box_pos > pos_) return JXL_DEC_ERROR;
+  const size_t offset = pos_ - box_pos;
+  if (offset > avail_in) return JXL_DEC_ERROR;
+  next_in += offset;
+  avail_in -= offset;
 
   if (brob_decode_) {
     if (!header_done_) {

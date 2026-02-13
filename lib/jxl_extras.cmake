@@ -12,13 +12,12 @@ list(APPEND JPEGXL_EXTRAS_CORE_SOURCES
   "${JPEGXL_INTERNAL_EXTRAS_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_APNG_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_EXR_SOURCES}"
+  "${JPEGXL_INTERNAL_CODEC_GIF_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_JPG_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_JXL_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_PGX_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_PNM_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_NPY_SOURCES}"
-  extras/dec/gif.cc
-  extras/dec/gif.h
 )
 foreach(LIB jxl_extras_core-obj jxl_extras_core_nocodec-obj)
   add_library("${LIB}" OBJECT "${JPEGXL_EXTRAS_CORE_SOURCES}")
@@ -88,29 +87,36 @@ if(PNG_FOUND)
 endif()
 
 if (JPEGXL_ENABLE_OPENEXR)
-pkg_check_modules(OpenEXR IMPORTED_TARGET OpenEXR)
-if (OpenEXR_FOUND)
-  target_include_directories(jxl_extras_core-obj PRIVATE
-    "${OpenEXR_INCLUDE_DIRS}"
-  )
-  target_compile_definitions(jxl_extras_core-obj PRIVATE -DJPEGXL_ENABLE_EXR=1)
-  list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES PkgConfig::OpenEXR)
-  if(JPEGXL_DEP_LICENSE_DIR)
-    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libopenexr-dev/copyright"
-                   ${PROJECT_BINARY_DIR}/LICENSE.libopenexr COPYONLY)
-  endif()  # JPEGXL_DEP_LICENSE_DIR
-  # OpenEXR generates exceptions, so we need exception support to catch them.
-  # Actually those flags counteract the ones set in JPEGXL_INTERNAL_FLAGS.
-  if (NOT WIN32)
-    set_source_files_properties(
-      extras/dec/exr.cc extras/enc/exr.cc PROPERTIES COMPILE_FLAGS -fexceptions)
-    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-      set_source_files_properties(
-	extras/dec/exr.cc extras/enc/exr.cc PROPERTIES COMPILE_FLAGS
-	-fcxx-exceptions)
-    endif()
-  endif()
-endif() # OpenEXR_FOUND
+  pkg_check_modules(OpenEXR IMPORTED_TARGET OpenEXR)
+  if (OpenEXR_FOUND)
+    target_include_directories(jxl_extras_core-obj PRIVATE
+      "${OpenEXR_INCLUDE_DIRS}"
+    )
+    target_compile_definitions(jxl_extras_core-obj PRIVATE -DJPEGXL_ENABLE_EXR=1)
+    list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES PkgConfig::OpenEXR)
+    if(JPEGXL_DEP_LICENSE_DIR)
+      configure_file("${JPEGXL_DEP_LICENSE_DIR}/libopenexr-dev/copyright"
+                    ${PROJECT_BINARY_DIR}/LICENSE.libopenexr COPYONLY)
+    endif()  # JPEGXL_DEP_LICENSE_DIR
+    # OpenEXR generates exceptions, so we need exception support to catch them.
+    # Actually those flags counteract the ones set in JPEGXL_INTERNAL_FLAGS.
+    if (NOT WIN32)
+      set(_exr_flags "")
+      # With "-fexceptions" + LTO GCC fails to link.
+      if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # GCC does not support that
+        set(_exr_flags "-fcxx-exceptions")
+      endif()
+      if ("${OpenEXR_VERSION}" VERSION_LESS "2.5.7")
+        string(APPEND _exr_flags " -Wno-deprecated-copy")
+      endif()
+      set_source_files_properties(extras/dec/exr.cc extras/enc/exr.cc
+        PROPERTIES COMPILE_FLAGS "${_exr_flags}"
+      )
+    endif() # WIN32
+  else()
+    message(WARNING "OpenEXR NOT found")
+  endif() # OpenEXR_FOUND
 endif() # JPEGXL_ENABLE_OPENEXR
 
 # Common settings for the object libraries.

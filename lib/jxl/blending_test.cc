@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/packed_image.h"
@@ -28,7 +29,7 @@ TEST(BlendingTest, Crops) {
   extras::PackedPixelFile decoded;
   ASSERT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,
                              /*decoded_bytes=*/nullptr, &decoded));
-  ASSERT_EQ(decoded.frames.size(), 4);
+  ASSERT_EQ(decoded.frames.size(), 4u);
 
   int i = 0;
   for (auto&& decoded_frame : decoded.frames) {

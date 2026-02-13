@@ -5,16 +5,19 @@
 
 #include "lib/jxl/enc_ac_strategy.h"
 
-#include <jxl/memory_manager.h>
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
-#include "lib/jxl/base/common.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/common.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/quant_weights.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_ac_strategy.cc"
@@ -441,6 +444,12 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
     }
 
     {
+      float masku_lut[3] = {
+          12.0,
+          0.0,
+          4.0,
+      };
+      auto masku_off = Set(df8, masku_lut[c]);
       auto lossc = Zero(df8);
       TransformToPixels(acs.Strategy(), &mem[0], block,
                         acs.covered_blocks_x() * 8, scratch_space);
@@ -455,8 +464,9 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
                                       ix * kBlockDim + dx);
               if (x + ix * 8 + dx + Lanes(df8) <= config.mask1x1_xsize) {
                 auto masku =
-                    Abs(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
-                                                       y + iy * 8 + dy)));
+                    Add(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
+                                                       y + iy * 8 + dy)),
+                        masku_off);
                 in = Mul(masku, in);
                 in = Mul(in, in);
                 in = Mul(in, in);
@@ -468,7 +478,7 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
         }
       }
       static const double kChannelMul[3] = {
-          pow(10.2, 8.0),
+          pow(8.2, 8.0),
           pow(1.0, 8.0),
           pow(1.03, 8.0),
       };
@@ -483,10 +493,17 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
     // Also add #bit of #bit of num_nonzeros, to estimate the ANS cost, with a
     // bias.
     entropy += config.zeros_mul * (CeilLog2Nonzero(nbits + 17) + nbits);
+    if (c == 0 && num_blocks >= 2) {
+      // It is X channel (red-green) and we often see ringing
+      // in the large blocks. Let's punish that more here.
+      float w = 1.0 + std::min(3.0, num_blocks / 8.0);
+      entropy *= w;
+      loss = Mul(loss, Set(df8, w));
+    }
   }
   float loss_scalar =
       pow(GetLane(SumOfLanes(df8, loss)) / (num_blocks * kDCTBlockSize),
-          1.0 / 8.0) *
+          1.0f / 8.0f) *
       (num_blocks * kDCTBlockSize) / quant_norm16;
   entropy *= entropy_mul;
   entropy += config.info_loss_multiplier * loss_scalar;
@@ -569,7 +586,7 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
          tx.type == AcStrategyType::IDENTITY) &&
         butteraugli_target < 5.0) {
       static const float kFavor2X2AtHighQuality = 0.4;
-      float weight = pow((5.0f - butteraugli_target) / 5.0f, 2.0);
+      float weight = pow((5.0f - butteraugli_target) / 5.0f, 2.0f);
       entropy_mul -= kFavor2X2AtHighQuality * weight;
     }
     if ((tx.type != AcStrategyType::DCT && tx.type != AcStrategyType::DCT2X2 &&
@@ -872,12 +889,12 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // ringing next to sky etc. Optimization will find smaller numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
-  const float entropy_mul16X8 = 1.25;
-  const float entropy_mul16X16 = 1.35;
-  const float entropy_mul16X32 = 1.5;
-  const float entropy_mul32X32 = 1.5;
-  const float entropy_mul64X32 = 2.26;
-  const float entropy_mul64X64 = 2.26;
+  const float entropy_mul16X8 = 1.21;
+  const float entropy_mul16X16 = 1.34;
+  const float entropy_mul16X32 = 1.49;
+  const float entropy_mul32X32 = 1.48;
+  const float entropy_mul64X32 = 2.25;
+  const float entropy_mul64X64 = 2.25;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher
@@ -917,11 +934,11 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // don't overlap.
   uint8_t priority[64] = {};
   bool enable_32x32 = cparams.decoding_speed_tier < 4;
-  for (auto tx : kTransformsForMerge) {
-    if (tx.decoding_speed_tier_max_limit < cparams.decoding_speed_tier) {
+  for (auto mt : kTransformsForMerge) {
+    if (mt.decoding_speed_tier_max_limit < cparams.decoding_speed_tier) {
       continue;
     }
-    AcStrategy acs = AcStrategy::FromRawStrategy(tx.type);
+    AcStrategy acs = AcStrategy::FromRawStrategy(mt.type);
 
     for (size_t cy = 0; cy + acs.covered_blocks_y() - 1 < rect.ysize();
          cy += acs.covered_blocks_y()) {
@@ -929,16 +946,16 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
            cx += acs.covered_blocks_x()) {
         if (cy + 7 < rect.ysize() && cx + 7 < rect.xsize()) {
           if (cparams.decoding_speed_tier < 4 &&
-              tx.type == AcStrategyType::DCT32X64) {
+              mt.type == AcStrategyType::DCT32X64) {
             // We handle both DCT8X16 and DCT16X8 at the same time.
             if ((cy | cx) % 8 == 0) {
               JXL_RETURN_IF_ERROR(FindBestFirstLevelDivisionForSquare(
                   8, true, bx, by, cx, cy, config, cmap_factors, ac_strategy,
-                  tx.entropy_mul, entropy_mul64X64, entropy_estimate, block,
+                  mt.entropy_mul, entropy_mul64X64, entropy_estimate, block,
                   scratch_space, quantized));
             }
             continue;
-          } else if (tx.type == AcStrategyType::DCT32X16) {
+          } else if (mt.type == AcStrategyType::DCT32X16) {
             // We handled both DCT8X16 and DCT16X8 at the same time,
             // and that is above. The last column and last row,
             // when the last column or last row is odd numbered,
@@ -946,23 +963,23 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
             continue;
           }
         }
-        if ((tx.type == AcStrategyType::DCT16X32 && cy % 4 != 0) ||
-            (tx.type == AcStrategyType::DCT32X16 && cx % 4 != 0)) {
+        if ((mt.type == AcStrategyType::DCT16X32 && cy % 4 != 0) ||
+            (mt.type == AcStrategyType::DCT32X16 && cx % 4 != 0)) {
           // already covered by FindBest32X32
           continue;
         }
 
         if (cy + 3 < rect.ysize() && cx + 3 < rect.xsize()) {
-          if (tx.type == AcStrategyType::DCT16X32) {
+          if (mt.type == AcStrategyType::DCT16X32) {
             // We handle both DCT8X16 and DCT16X8 at the same time.
             if ((cy | cx) % 4 == 0) {
               JXL_RETURN_IF_ERROR(FindBestFirstLevelDivisionForSquare(
                   4, enable_32x32, bx, by, cx, cy, config, cmap_factors,
-                  ac_strategy, tx.entropy_mul, entropy_mul32X32,
+                  ac_strategy, mt.entropy_mul, entropy_mul32X32,
                   entropy_estimate, block, scratch_space, quantized));
             }
             continue;
-          } else if (tx.type == AcStrategyType::DCT32X16) {
+          } else if (mt.type == AcStrategyType::DCT32X16) {
             // We handled both DCT8X16 and DCT16X8 at the same time,
             // and that is above. The last column and last row,
             // when the last column or last row is odd numbered,
@@ -970,22 +987,22 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
             continue;
           }
         }
-        if ((tx.type == AcStrategyType::DCT16X32 && cy % 4 != 0) ||
-            (tx.type == AcStrategyType::DCT32X16 && cx % 4 != 0)) {
+        if ((mt.type == AcStrategyType::DCT16X32 && cy % 4 != 0) ||
+            (mt.type == AcStrategyType::DCT32X16 && cx % 4 != 0)) {
           // already covered by FindBest32X32
           continue;
         }
         if (cy + 1 < rect.ysize() && cx + 1 < rect.xsize()) {
-          if (tx.type == AcStrategyType::DCT8X16) {
+          if (mt.type == AcStrategyType::DCT8X16) {
             // We handle both DCT8X16 and DCT16X8 at the same time.
             if ((cy | cx) % 2 == 0) {
               JXL_RETURN_IF_ERROR(FindBestFirstLevelDivisionForSquare(
                   2, true, bx, by, cx, cy, config, cmap_factors, ac_strategy,
-                  tx.entropy_mul, entropy_mul16X16, entropy_estimate, block,
+                  mt.entropy_mul, entropy_mul16X16, entropy_estimate, block,
                   scratch_space, quantized));
             }
             continue;
-          } else if (tx.type == AcStrategyType::DCT16X8) {
+          } else if (mt.type == AcStrategyType::DCT16X8) {
             // We handled both DCT8X16 and DCT16X8 at the same time,
             // and that is above. The last column and last row,
             // when the last column or last row is odd numbered,
@@ -993,8 +1010,8 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
             continue;
           }
         }
-        if ((tx.type == AcStrategyType::DCT8X16 && cy % 2 == 1) ||
-            (tx.type == AcStrategyType::DCT16X8 && cx % 2 == 1)) {
+        if ((mt.type == AcStrategyType::DCT8X16 && cy % 2 == 1) ||
+            (mt.type == AcStrategyType::DCT16X8 && cx % 2 == 1)) {
           // already covered by FindBestFirstLevelDivisionForSquare
           continue;
         }
@@ -1004,8 +1021,8 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
         // and column will get their DCT16X8s and DCT8X16s through the
         // normal integral transform merging process.
         JXL_RETURN_IF_ERROR(
-            TryMergeAcs(tx.type, bx, by, cx, cy, config, cmap_factors,
-                        ac_strategy, tx.entropy_mul, tx.priority, &priority[0],
+            TryMergeAcs(mt.type, bx, by, cx, cy, config, cmap_factors,
+                        ac_strategy, mt.entropy_mul, mt.priority, &priority[0],
                         entropy_estimate, block, scratch_space, quantized));
       }
     }
@@ -1123,7 +1140,7 @@ Status AcStrategyHeuristics::ProcessRect(const Rect& rect,
                                          const ColorCorrelationMap& cmap,
                                          AcStrategyImage* ac_strategy,
                                          size_t thread) {
-  // In Falcon mode, use DCT8 everywhere and uniform quantization.
+  // In Cheetah mode, use DCT8 everywhere and uniform quantization.
   if (cparams.speed_tier >= SpeedTier::kCheetah) {
     ac_strategy->FillDCT8(rect);
     return true;

@@ -9,7 +9,6 @@
 // Chooses reference patches, and avoids encoding them once per occurrence.
 
 #include <jxl/cms_interface.h>
-#include <sys/types.h>
 
 #include <cstddef>
 #include <cstdint>

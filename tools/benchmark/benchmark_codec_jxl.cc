@@ -346,7 +346,7 @@ class JxlCodec : public ImageCodec {
  private:
   struct DebugTicket {
     std::string debug_prefix;
-    std::atomic<bool> has_error{false};
+    std::atomic<uint32_t> has_error{0};
   };
 
   static void DebugCallback(void* opaque, const char* label, size_t xsize,
@@ -355,7 +355,7 @@ class JxlCodec : public ImageCodec {
     DebugTicket* ticket = reinterpret_cast<DebugTicket*>(opaque);
     if (ticket->has_error) return;
     if (!DebugCallbackImpl(ticket, label, xsize, ysize, color, pixels)) {
-      ticket->has_error = true;
+      ticket->has_error = 1;
     }
   }
 
@@ -381,7 +381,7 @@ class JxlCodec : public ImageCodec {
     if (encoded.bitstreams.empty()) {
       return JXL_FAILURE("Internal logic error");
     }
-    std::string fn = ticket->debug_prefix + std::string(label) + ".png";
+    std::string fn = JoinPath(ticket->debug_prefix, std::string(label) + ".png");
     WriteFile(fn, encoded.bitstreams[0]);
     return true;
   }
@@ -391,7 +391,7 @@ class JxlCodec : public ImageCodec {
     if (jxlargs->debug_image_dir.empty()) return true;
     ticket->debug_prefix =
         JoinPath(jxlargs->debug_image_dir, FileBaseName(filename)) +
-        ".jxl:" + params_ + ".dbg/";
+        ".jxl-" + params_ + ".dbg";
     JXL_RETURN_IF_ERROR(MakeDir(ticket->debug_prefix));
     cparams->debug_image_opaque = ticket;
     cparams->debug_image = &DebugCallback;

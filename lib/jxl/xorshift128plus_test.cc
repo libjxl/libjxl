@@ -3,10 +3,17 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdint.h>
+#include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <vector>
+
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/test_memory_manager.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/xorshift128plus_test.cc"
@@ -294,36 +301,50 @@ void TestFloat() {
   const uint32_t kMaxSeed = 4096;
 #endif  // JXL_DISABLE_SLOW_TESTS
   const auto test_seed = [](const uint32_t seed, size_t /*thread*/) -> Status {
-    HWY_ALIGN Xorshift128Plus rng(seed);
+    JxlMemoryManager* memory_manager = ::jxl::test::MemoryManager();
+    // RNG output is 64-bit integers -> 2x as much 32-bit integers / floats.
+    constexpr size_t kVecCap = 2 * Xorshift128Plus::N;
+    const HWY_CAPPED(uint32_t, kVecCap) du;
+    const HWY_CAPPED(float, kVecCap) df;
+    JXL_ENSURE(kVecCap % Lanes(df) == 0);
 
-    const HWY_FULL(uint32_t) du;
-    const HWY_FULL(float) df;
-    HWY_ALIGN uint64_t batch[Xorshift128Plus::N];
-    HWY_ALIGN float lanes[MaxLanes(df)];
+    HWY_ALIGN Xorshift128Plus rng(seed);
+    JXL_TEST_ASSIGN_OR_DIE(
+        AlignedMemory mem,
+        AlignedMemory::Create(memory_manager, Lanes(df) * sizeof(float)));
+    float* lanes = mem.address<float>();
+
+    HWY_ALIGN uint64_t batch64[Xorshift128Plus::N];
+    HWY_ALIGN uint32_t batch32[2 * Xorshift128Plus::N];
+
     double sum = 0.0;
     size_t count = 0;
-    const size_t kReps = 2000;
-    for (size_t reps = 0; reps < kReps; ++reps) {
-      rng.Fill(batch);
-      for (size_t i = 0; i < Xorshift128Plus::N * 2; i += Lanes(df)) {
+    const size_t kReps = 32000;
+    // It is OK if count become bigger than kReps.
+    while (count < kReps) {
+      rng.Fill(batch64);
+      // Workaround for https://github.com/llvm/llvm-project/issues/121229
+      memcpy(batch32, batch64, sizeof(batch32));
+      for (size_t i = 0; i < kVecCap; i += Lanes(df)) {
         const auto bits =
-            Load(du, reinterpret_cast<const uint32_t*>(batch) + i);
+            Load(du, reinterpret_cast<const uint32_t*>(batch32) + i);
         // 1.0 + 23 random mantissa bits = [1, 2)
         const auto rand12 =
             BitCast(df, Or(ShiftRight<9>(bits), Set(du, 0x3F800000)));
-        const auto rand01 = Sub(rand12, Set(df, 1.0f));
-        Store(rand01, df, lanes);
-        for (float lane : lanes) {
+        Store(rand12, df, lanes);
+        for (size_t j = 0; j < Lanes(df); ++j) {
+          float lane = lanes[j];
           sum += lane;
-          count += 1;
-          EXPECT_LE(lane, 1.0f);
-          EXPECT_GE(lane, 0.0f);
+          count++;
+          // Generally, that is guaranteed.
+          JXL_DASSERT(lane < 2.0f);
+          JXL_DASSERT(lane >= 1.0f);
         }
       }
     }
 
     // Verify average (uniform distribution)
-    EXPECT_NEAR(0.5, sum / count, 0.00702);
+    EXPECT_NEAR(1.5, sum / count, 0.00702);
     return true;
   };
   EXPECT_TRUE(RunOnPool(pool.get(), 0, kMaxSeed, ThreadPool::NoInit, test_seed,

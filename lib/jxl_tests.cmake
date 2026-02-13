@@ -3,7 +3,7 @@
 
 include(jxl_lists.cmake)
 
-if(BUILD_TESTING OR JPEGXL_ENABLE_TOOLS)
+if (BUILD_TESTING OR JPEGXL_ENABLE_TOOLS)
 # Library with test-only code shared between all tests / fuzzers.
 add_library(jxl_testlib-internal STATIC ${JPEGXL_INTERNAL_TESTLIB_FILES})
 target_compile_options(jxl_testlib-internal PRIVATE
@@ -22,8 +22,12 @@ target_link_libraries(jxl_testlib-internal
 )
 endif()
 
-if(NOT BUILD_TESTING)
+if (NOT BUILD_TESTING)
   return()
+endif()
+
+if (NOT PNG_FOUND)
+  message(FATAL_ERROR "PNG library is required by some tests")
 endif()
 
 list(APPEND JPEGXL_INTERNAL_TESTS
@@ -31,8 +35,6 @@ list(APPEND JPEGXL_INTERNAL_TESTS
   ../tools/djxl_fuzzer_test.cc
   ../tools/gauss_blur_test.cc
 )
-
-find_package(GTest)
 
 set(JXL_WASM_TEST_LINK_FLAGS "")
 if (EMSCRIPTEN)
@@ -77,8 +79,8 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
     ${JPEGXL_COVERAGE_FLAGS}
   )
   target_link_libraries(${TESTNAME}
-    GTest::GTest
-    GTest::Main
+    gtest
+    gtest_main
     jxl_testlib-internal
     jxl_extras-internal
   )

@@ -58,7 +58,7 @@ class Xorshift128Plus {
 
   HWY_INLINE HWY_MAYBE_UNUSED void Fill(uint64_t* HWY_RESTRICT random_bits) {
 #if HWY_CAP_INTEGER64
-    const HWY_FULL(uint64_t) d;
+    const HWY_CAPPED(uint64_t, N) d;
     for (size_t i = 0; i < N; i += Lanes(d)) {
       auto s1 = Load(d, s0_ + i);
       const auto s0 = Load(d, s1_ + i);

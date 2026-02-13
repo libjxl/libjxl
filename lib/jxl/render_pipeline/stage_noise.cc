@@ -5,8 +5,19 @@
 
 #include "lib/jxl/render_pipeline/stage_noise.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <memory>
+
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/sanitizers.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/noise.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_noise.cc"
@@ -28,14 +39,16 @@ using hwy::HWY_NAMESPACE::Min;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
 using hwy::HWY_NAMESPACE::Or;
+using hwy::HWY_NAMESPACE::Rebind;
+using hwy::HWY_NAMESPACE::Repartition;
 using hwy::HWY_NAMESPACE::Sub;
 using hwy::HWY_NAMESPACE::TableLookupBytes;
 using hwy::HWY_NAMESPACE::Vec;
 using hwy::HWY_NAMESPACE::ZeroIfNegative;
 
 using D = HWY_CAPPED(float, kBlockDim);
-using DI = hwy::HWY_NAMESPACE::Rebind<int32_t, D>;
-using DI8 = hwy::HWY_NAMESPACE::Repartition<uint8_t, D>;
+using DI = Rebind<int32_t, D>;
+using DI8 = Repartition<uint8_t, D>;
 
 // [0, max_value]
 template <class D, class V>
@@ -65,6 +78,7 @@ class StrengthEvalLut {
     uint32_t lut[NoiseParams::kNumNoisePoints];
     memcpy(lut, noise_params.lut.data(),
            NoiseParams::kNumNoisePoints * sizeof(uint32_t));
+    // TODO(eustas): make sure it works on big-endian
     for (size_t i = 0; i < NoiseParams::kNumNoisePoints; i++) {
       low16_lut[2 * i] = (lut[i] >> 0) & 0xFF;
       low16_lut[2 * i + 1] = (lut[i] >> 8) & 0xFF;
@@ -255,12 +269,12 @@ class ConvolveNoiseStage : public RenderPipelineStage {
         rows[i] = GetInputRow(input_rows, c, i - 2);
       }
       float* JXL_RESTRICT row_out = GetOutputRow(output_rows, c, 0);
-      for (ssize_t x = -RoundUpTo(xextra, Lanes(d));
-           x < static_cast<ssize_t>(xsize + xextra); x += Lanes(d)) {
+      for (ptrdiff_t x = -RoundUpTo(xextra, Lanes(d));
+           x < static_cast<ptrdiff_t>(xsize + xextra); x += Lanes(d)) {
         const auto p00 = LoadU(d, rows[2] + x);
         auto others = Zero(d);
         // TODO(eustas): sum loaded values to reduce the calculation chain
-        for (ssize_t i = -2; i <= 2; i++) {
+        for (ptrdiff_t i = -2; i <= 2; i++) {
           others = Add(others, LoadU(d, rows[0] + x + i));
           others = Add(others, LoadU(d, rows[1] + x + i));
           others = Add(others, LoadU(d, rows[3] + x + i));

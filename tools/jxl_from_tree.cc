@@ -7,23 +7,37 @@
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <istream>
+#include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
+#include "lib/extras/codec_in_out.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/override.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
+#include "lib/jxl/enc_params.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
+#include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
+#include "lib/jxl/modular/options.h"
+#include "lib/jxl/noise.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
@@ -419,11 +433,12 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     for (size_t i = 0; i < 8; i++) {
       t = tok();
       size_t num = 0;
-      cparams.manual_noise[i] = std::stof(t, &num);
-      if (num != t.size()) {
+      float v = std::stof(t, &num);
+      if (num != t.size() || v < 0.0f || v > 1.0f) {
         fprintf(stderr, "Invalid noise entry: %s\n", t.c_str());
         return false;
       }
+      cparams.manual_noise[i] = jxl::Clamp1(v, 0.0f, jxl::kNoiseLutMax);
     }
   } else if (t == "XYBFactors") {
     cparams.manual_xyb_factors.resize(3);
@@ -447,6 +462,11 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Rec2100") {
     JXL_RETURN_IF_ERROR(
         io.metadata.m.color_encoding.SetPrimariesType(jxl::Primaries::k2100));
+  } else if (t == "P3") {
+    JXL_RETURN_IF_ERROR(
+        io.metadata.m.color_encoding.SetPrimariesType(jxl::Primaries::kP3));
+  } else if (t == "16BitBuffers") {
+    io.metadata.m.modular_16_bit_buffer_sufficient = true;
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;
@@ -472,8 +492,10 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   cparams.ec_resampling = 1;
   cparams.modular_group_size_shift = 3;
   cparams.colorspace = 0;
+  cparams.buffering = 0;
   JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
-  CodecInOut io{memory_manager};
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  io->metadata.m.modular_16_bit_buffer_sufficient = false;
   int have_next = JXL_FALSE;
 
   std::istream* f = &std::cin;
@@ -489,9 +511,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     *f >> out;
     return out;
   };
-  if (!ParseNode(tok, tree, spline_data, cparams, width, height, io, have_next,
+  if (!ParseNode(tok, tree, spline_data, cparams, width, height, *io, have_next,
                  x0, y0)) {
-    return 1;
+    return JXL_FAILURE("Failed to ParseNode");
   }
 
   if (tree_out) {
@@ -501,11 +523,11 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       Image3F image, Image3F::Create(memory_manager, width * cparams.resampling,
                                      height * cparams.resampling));
   JXL_RETURN_IF_ERROR(
-      io.SetFromImage(std::move(image), io.metadata.m.color_encoding));
-  JXL_RETURN_IF_ERROR(io.SetSize((width + x0) * cparams.resampling,
-                                 (height + y0) * cparams.resampling));
+      io->SetFromImage(std::move(image), io->metadata.m.color_encoding));
+  JXL_RETURN_IF_ERROR(io->SetSize((width + x0) * cparams.resampling,
+                                  (height + y0) * cparams.resampling));
 
-  io.metadata.m.color_encoding.DecideIfWantICC(*JxlGetDefaultCms());
+  io->metadata.m.color_encoding.DecideIfWantICC(*JxlGetDefaultCms());
   cparams.options.zero_tokens = true;
   cparams.palette_colors = 0;
   cparams.channel_colors_pre_transform_percent = 0;
@@ -517,15 +539,14 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
                        SplinesFromSplineData(spline_data));
   PaddedBytes compressed{memory_manager};
 
-  JXL_RETURN_IF_ERROR(io.CheckMetadata());
+  JXL_RETURN_IF_ERROR(io->CheckMetadata());
   BitWriter writer{memory_manager};
 
   std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();
-  *metadata = io.metadata;
-  JXL_RETURN_IF_ERROR(metadata->size.Set(io.xsize(), io.ysize()));
+  *metadata = io->metadata;
+  JXL_RETURN_IF_ERROR(metadata->size.Set(io->xsize(), io->ysize()));
 
   metadata->m.xyb_encoded = (cparams.color_transform == ColorTransform::kXYB);
-  metadata->m.modular_16_bit_buffer_sufficient = false;
 
   if (cparams.move_to_front_from_channel < -1) {
     size_t nch = -1 - cparams.move_to_front_from_channel;
@@ -536,8 +557,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       auto& eci = metadata->m.extra_channel_info.back();
       eci.type = jxl::ExtraChannel::kOptional;
       JXL_ASSIGN_OR_RETURN(
-          ImageF ch, ImageF::Create(memory_manager, io.xsize(), io.ysize()));
-      io.frames[0].extra_channels().emplace_back(std::move(ch));
+          ImageF ch, ImageF::Create(memory_manager, io->xsize(), io->ysize()));
+      io->frames[0].extra_channels().emplace_back(std::move(ch));
     }
   }
 
@@ -549,28 +570,28 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     info.is_last = !FROM_JXL_BOOL(have_next);
     if (!info.is_last) info.save_as_reference = 1;
 
-    io.frames[0].origin.x0 = x0;
-    io.frames[0].origin.y0 = y0;
+    io->frames[0].origin.x0 = x0;
+    io->frames[0].origin.y0 = y0;
     info.clamp = false;
 
     JXL_RETURN_IF_ERROR(jxl::EncodeFrame(
-        memory_manager, cparams, info, metadata.get(), io.frames[0],
+        memory_manager, cparams, info, metadata.get(), io->frames[0],
         *JxlGetDefaultCms(), nullptr, &writer, nullptr));
     if (!have_next) break;
     tree.clear();
     spline_data.splines.clear();
     have_next = JXL_FALSE;
     cparams.manual_noise.clear();
-    if (!ParseNode(tok, tree, spline_data, cparams, width, height, io,
+    if (!ParseNode(tok, tree, spline_data, cparams, width, height, *io,
                    have_next, x0, y0)) {
-      return 1;
+      return JXL_FAILURE("Failed to ParseNode");
     }
     cparams.custom_fixed_tree = tree;
     JXL_ASSIGN_OR_RETURN(Image3F image,
                          Image3F::Create(memory_manager, width, height));
     JXL_RETURN_IF_ERROR(
-        io.SetFromImage(std::move(image), ColorEncoding::SRGB()));
-    io.frames[0].blend = true;
+        io->SetFromImage(std::move(image), ColorEncoding::SRGB()));
+    io->frames[0].blend = true;
   }
 
   compressed = std::move(writer).TakeBytes();

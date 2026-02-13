@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jpegli/libjpeg_test_util.h"
@@ -55,7 +56,7 @@ class SourceManager {
   }
 
   ~SourceManager() {
-    EXPECT_EQ(0, pub_.bytes_in_buffer);
+    EXPECT_EQ(0u, pub_.bytes_in_buffer);
     EXPECT_EQ(len_, pos_);
   }
 
@@ -120,7 +121,7 @@ uint8_t get_next_byte(j_decompress_ptr cinfo) {
 boolean test_marker_processor(j_decompress_ptr cinfo) {
   markers_seen[num_markers_seen] = cinfo->unread_marker;
   size_t marker_len = (get_next_byte(cinfo) << 8) + get_next_byte(cinfo);
-  EXPECT_EQ(2 + ((num_markers_seen + 2) % sizeof(kMarkerData)), marker_len);
+  EXPECT_EQ(2u + ((num_markers_seen + 2u) % sizeof(kMarkerData)), marker_len);
   if (marker_len > 2) {
     (*cinfo->src->skip_input_data)(cinfo, marker_len - 2);
   }
@@ -424,9 +425,9 @@ TEST(DecodeAPITest, ReuseCinfo) {
                 JPEGLI_TEST_ENSURE_TRUE(output_progression.size() ==
                                         expected_output_progression.size());
                 for (size_t i = 0; i < output_progression.size(); ++i) {
-                  const TestImage& output = output_progression[i];
-                  const TestImage& expected = expected_output_progression[i];
-                  VerifyOutputImage(expected, output, max_rms);
+                  const TestImage& p_output = output_progression[i];
+                  const TestImage& p_expected = expected_output_progression[i];
+                  VerifyOutputImage(p_expected, p_output, max_rms);
                 }
               }
             }
@@ -566,7 +567,7 @@ TEST(DecodeAPITest, AbbreviatedStreams) {
       return true;
     };
     EXPECT_TRUE(try_catch_block());
-    EXPECT_LT(data_stream_size, 50);
+    EXPECT_LT(data_stream_size, 50u);
     jpegli_destroy_compress(&cinfo);
   }
   {
@@ -578,16 +579,16 @@ TEST(DecodeAPITest, AbbreviatedStreams) {
       jpegli_read_header(&cinfo, FALSE);
       jpegli_mem_src(&cinfo, data_stream, data_stream_size);
       jpegli_read_header(&cinfo, TRUE);
-      EXPECT_EQ(1, cinfo.image_width);
-      EXPECT_EQ(1, cinfo.image_height);
+      EXPECT_EQ(1u, cinfo.image_width);
+      EXPECT_EQ(1u, cinfo.image_height);
       EXPECT_EQ(3, cinfo.num_components);
       jpegli_start_decompress(&cinfo);
       JSAMPLE image[3] = {0};
       JSAMPROW row[] = {image};
       jpegli_read_scanlines(&cinfo, row, 1);
-      EXPECT_EQ(0, image[0]);
-      EXPECT_EQ(0, image[1]);
-      EXPECT_EQ(0, image[2]);
+      EXPECT_EQ(0u, image[0]);
+      EXPECT_EQ(0u, image[1]);
+      EXPECT_EQ(0u, image[2]);
       jpegli_finish_decompress(&cinfo);
       return true;
     };
@@ -1185,6 +1186,16 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
         }
       }
     }
+  }
+  {
+    TestConfig config;
+    config.input.xsize = 137;
+    config.input.ysize = 80;
+    config.jparams.progressive_mode = 0;
+    config.jparams.h_sampling = {1, 1, 1};
+    config.jparams.v_sampling = {4, 2, 1};
+    config.compare_to_orig = true;
+    all_tests.push_back(config);
   }
   for (int h0_samp : {1, 3}) {
     for (int v0_samp : {1, 3}) {

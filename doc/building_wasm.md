@@ -58,5 +58,18 @@ BUILD_TARGET=wasm32 ENABLE_WASM_SIMD=1 emconfigure ./ci.sh release
 
 ## Example site
 
-Once you have build the wasm binary, you can give it a try by building a site
+Once you have build the WASM binary, you can give it a try by building a site
 that decodes jxl images, see [wasm_demo](../tools/wasm_demo/README.md).
+
+## Building WASM with Docker
+
+There is a docker devcontainer which can be used to build the WASM libraries
+available in the .devcontainer package.  That can be run in an editor supporting
+devcontainers, or can be run manually with:
+
+```bash
+docker build . -f .devcontainer/Dockerfile -t libjxl
+docker run --mount type=bind,src=.,dst=/workspaces/libjxl -i libjxl
+source $OPT/emsdk/emsdk_env.sh
+BUILD_TARGET=wasm32 ENABLE_WASM_SIMD=1 emconfigure ./ci.sh release
+```

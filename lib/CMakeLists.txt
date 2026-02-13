@@ -23,7 +23,6 @@ else()
   set(JPEGXL_LIBRARY_SOVERSION "${JPEGXL_MAJOR_VERSION}")
 endif()
 
-
 # List of warning and feature flags for our library and tests.
 if (MSVC)
   set(JPEGXL_INTERNAL_FLAGS
@@ -51,6 +50,16 @@ else ()
     -Wvla
   )
 
+  if (NOT JPEGXL_ENABLE_COVERAGE AND NOT SANITIZER MATCHES ".san")
+    # NB: use `-Rpass-analysis=stack-frame-layout -g` for investigation.
+    # TODO(eustas): tighten
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      list(APPEND JPEGXL_INTERNAL_FLAGS -Wframe-larger-than=5632)
+    elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14.0)
+      list(APPEND JPEGXL_INTERNAL_FLAGS -Wframe-larger-than=5632)
+    endif()
+  endif()
+
   # Warning flags supported by clang.
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     list(APPEND JPEGXL_INTERNAL_FLAGS
@@ -67,6 +76,7 @@ else ()
       -Wno-unused-command-line-argument
       -Wprivate-header
       -Wself-assign
+      -Wshadow
       -Wstring-conversion
       -Wtautological-overlap-compare
       -Wthread-safety-analysis
@@ -74,6 +84,10 @@ else ()
       -Wunreachable-code
       -Wunused-comparison
     )
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 8.0)
+      # for SKCMS on PPC
+      list(APPEND HWY_FLAGS -Wno-deprecated-altivec-src-compat)
+    endif()
     if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
       list(APPEND HWY_FLAGS -Wc++2a-extensions)
     endif()
@@ -123,6 +137,11 @@ else ()
     endif()  # Clang
   endif()  # WIN32
 endif()  #!MSVC
+
+# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109740
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  list(APPEND JPEGXL_INTERNAL_FLAGS -Wno-overloaded-virtual)
+endif()
 
 if (JPEGXL_ENABLE_SKCMS)
   list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_ENABLE_SKCMS=1)
@@ -180,14 +199,10 @@ endif()
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/jxl
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
-if(BUILD_TESTING)
-  include(GoogleTest)
-endif()
-
 # Tests for the jxl library.
 include(jxl_tests.cmake)
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND JPEGXL_ENABLE_BENCHMARK)
   # Google benchmark for the jxl library
   include(jxl_benchmark.cmake)
 endif()

@@ -84,8 +84,8 @@ struct CompressParams {
 
   JxlCmsInterface cms;
   bool cms_set = false;
-  void SetCms(const JxlCmsInterface& cms) {
-    this->cms = cms;
+  void SetCms(const JxlCmsInterface& new_cms) {
+    cms = new_cms;
     cms_set = true;
   }
 
@@ -196,7 +196,9 @@ static constexpr float kMinButteraugliToSubtractOriginalPatches = 3.0f;
 static constexpr float kMinButteraugliForNoise = 99.0f;
 
 // Minimum butteraugli distance the encoder accepts.
-static constexpr float kMinButteraugliDistance = 0.001f;
+// Below d0.05 is not useful and risks going outside Level 5 limits
+// (in particular modular_16bit_buffers becomes an issue for DC)
+static constexpr float kMinButteraugliDistance = 0.05f;
 
 // Tile size for encoder-side processing. Must be equal to color tile dim in the
 // current implementation.

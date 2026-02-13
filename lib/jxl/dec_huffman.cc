@@ -6,12 +6,15 @@
 #include "lib/jxl/dec_huffman.h"
 
 #include <jxl/types.h>
-#include <string.h> /* for memset */
 
+#include <cstdint>
+#include <cstring> /* for memset */
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/huffman_table.h"
 
 namespace jxl {
@@ -237,22 +240,6 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
                         alphabet_size, &counts[0]);
   table_.resize(table_size);
   return (table_size > 0);
-}
-
-// Decodes the next Huffman coded symbol from the bit-stream.
-uint16_t HuffmanDecodingData::ReadSymbol(BitReader* br) const {
-  size_t n_bits;
-  const HuffmanCode* table = table_.data();
-  table += br->PeekBits(kHuffmanTableBits);
-  n_bits = table->bits;
-  if (n_bits > kHuffmanTableBits) {
-    br->Consume(kHuffmanTableBits);
-    n_bits -= kHuffmanTableBits;
-    table += table->value;
-    table += br->PeekBits(n_bits);
-  }
-  br->Consume(table->bits);
-  return table->value;
 }
 
 }  // namespace jxl

@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/libjpeg_test_util.h"
 #include "lib/jpegli/test_params.h"
@@ -46,7 +47,7 @@ struct SourceManager {
   }
 
   ~SourceManager() {
-    EXPECT_EQ(0, pub_.bytes_in_buffer);
+    EXPECT_EQ(0u, pub_.bytes_in_buffer);
     if (!is_partial_file_) {
       EXPECT_EQ(len_, pos_);
     }
@@ -120,7 +121,7 @@ boolean test_marker_processor(j_decompress_ptr cinfo) {
     return FALSE;
   }
   size_t marker_len = (get_next_byte(cinfo) << 8) + get_next_byte(cinfo);
-  EXPECT_EQ(2 + ((num_markers_seen + 2) % sizeof(kMarkerData)), marker_len);
+  EXPECT_EQ(2u + ((num_markers_seen + 2u) % sizeof(kMarkerData)), marker_len);
   if (marker_len > 2) {
     (*cinfo->src->skip_input_data)(cinfo, marker_len - 2);
   }
@@ -410,17 +411,18 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
       }
     }
 
+    size_t input_scan_number = cinfo.input_scan_number;
     EXPECT_TRUE(jpegli_input_complete(&cinfo));
-    EXPECT_EQ(output_progression1.size(), cinfo.input_scan_number);
+    EXPECT_EQ(output_progression1.size(), input_scan_number);
     EXPECT_EQ(0, cinfo.output_scan_number);
 
     EXPECT_TRUE(jpegli_start_output(&cinfo, cinfo.input_scan_number));
-    EXPECT_EQ(output_progression1.size(), cinfo.input_scan_number);
+    EXPECT_EQ(output_progression1.size(), input_scan_number);
     EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
 
     JPEGLI_TEST_ENSURE_TRUE(
         ReadOutputImage(dparams, &cinfo, nullptr, &output0));
-    EXPECT_EQ(output_progression1.size(), cinfo.input_scan_number);
+    EXPECT_EQ(output_progression1.size(), input_scan_number);
     EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
 
     EXPECT_TRUE(jpegli_finish_output(&cinfo));

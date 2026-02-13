@@ -36,15 +36,12 @@ class Channel {
   jxl::Plane<pixel_type> plane;
   size_t w, h;
   int hshift, vshift;  // w ~= image.w >> hshift;  h ~= image.h >> vshift
+  int component = -1;
   Channel(const Channel& other) = delete;
   Channel& operator=(const Channel& other) = delete;
 
   static StatusOr<Channel> Create(JxlMemoryManager* memory_manager, size_t iw,
-                                  size_t ih, int hsh = 0, int vsh = 0) {
-    JXL_ASSIGN_OR_RETURN(Plane<pixel_type> plane,
-                         Plane<pixel_type>::Create(memory_manager, iw, ih));
-    return Channel(std::move(plane), iw, ih, hsh, vsh);
-  }
+                                  size_t ih, int hsh = 0, int vsh = 0);
 
   // Move assignment
   Channel& operator=(Channel&& other) noexcept {
@@ -52,6 +49,7 @@ class Channel {
     h = other.h;
     hshift = other.hshift;
     vshift = other.vshift;
+    component = other.component;
     plane = std::move(other.plane);
     return *this;
   }

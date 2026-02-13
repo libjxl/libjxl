@@ -7,15 +7,13 @@
 
 #include <algorithm>
 #include <cmath>
-#include <vector>
+#include <cstddef>
+#include <cstdint>
 
-#include "lib/jpegli/adaptive_quantization.h"
 #include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/error.h"
-#include "lib/jpegli/memory_manager.h"
-#include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/status.h"
 
 namespace jpegli {
 
@@ -705,7 +703,7 @@ void SetQuantMatrices(j_compress_ptr cinfo, float distances[NUM_QUANT_TBLS],
 
 void InitQuantizer(j_compress_ptr cinfo, QuantPass pass) {
   jpeg_comp_master* m = cinfo->master;
-  // Compute quantization multupliers from the quant table values.
+  // Compute quantization multipliers from the quant table values.
   for (int c = 0; c < cinfo->num_components; ++c) {
     int quant_idx = cinfo->comp_info[c].quant_tbl_no;
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[quant_idx];

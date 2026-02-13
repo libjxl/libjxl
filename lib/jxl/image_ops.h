@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <limits>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
@@ -78,9 +79,8 @@ Status ConvertPlaneAndClamp(const Rect& rect_from, const Plane<T>& from,
     const T* JXL_RESTRICT row_from = rect_from.ConstRow(from, y);
     U* JXL_RESTRICT row_to = rect_to.Row(to, y);
     for (size_t x = 0; x < rect_to.xsize(); ++x) {
-      row_to[x] =
-          std::min<M>(std::max<M>(row_from[x], std::numeric_limits<U>::min()),
-                      std::numeric_limits<U>::max());
+      row_to[x] = jxl::Clamp1<M>(row_from[x], std::numeric_limits<U>::min(),
+                                 std::numeric_limits<U>::max());
     }
   }
   return true;
@@ -209,41 +209,6 @@ struct WrapMirror {
 struct WrapUnchanged {
   JXL_INLINE int64_t operator()(const int64_t coord, int64_t /*size*/) const {
     return coord;
-  }
-};
-
-// Similar to Wrap* but for row pointers (reduces Row() multiplications).
-
-class WrapRowMirror {
- public:
-  template <class ImageOrView>
-  WrapRowMirror(const ImageOrView& image, size_t ysize)
-      : first_row_(image.ConstRow(0)), last_row_(image.ConstRow(ysize - 1)) {}
-
-  const float* operator()(const float* const JXL_RESTRICT row,
-                          const int64_t stride) const {
-    if (row < first_row_) {
-      const int64_t num_before = first_row_ - row;
-      // Mirrored; one row before => row 0, two before = row 1, ...
-      return first_row_ + num_before - stride;
-    }
-    if (row > last_row_) {
-      const int64_t num_after = row - last_row_;
-      // Mirrored; one row after => last row, two after = last - 1, ...
-      return last_row_ - num_after + stride;
-    }
-    return row;
-  }
-
- private:
-  const float* const JXL_RESTRICT first_row_;
-  const float* const JXL_RESTRICT last_row_;
-};
-
-struct WrapRowUnchanged {
-  JXL_INLINE const float* operator()(const float* const JXL_RESTRICT row,
-                                     int64_t /*stride*/) const {
-    return row;
   }
 };
 

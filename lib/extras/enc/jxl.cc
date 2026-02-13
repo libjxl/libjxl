@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 #include "lib/extras/packed_image.h"
@@ -57,11 +58,22 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
   if (!SetFrameOptions(params.options, frame_index, &option_idx, settings)) {
     return false;
   }
+  if (frame_index < ppf.frames.size()) {
+    const auto& frame_name = ppf.frames[frame_index].name;
+    if (!frame_name.empty()) {
+      if (JXL_ENC_SUCCESS !=
+          JxlEncoderSetFrameName(settings, frame_name.c_str())) {
+        fprintf(stderr, "JxlEncoderSetFrameName() failed.\n");
+        return false;
+      }
+    }
+  }
   if (num_alpha_channels > 0) {
     JxlExtraChannelInfo extra_channel_info;
     JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &extra_channel_info);
     extra_channel_info.bits_per_sample = ppf.info.alpha_bits;
     extra_channel_info.exponent_bits_per_sample = ppf.info.alpha_exponent_bits;
+    extra_channel_info.alpha_premultiplied = ppf.info.alpha_premultiplied;
     if (params.premultiply != -1) {
       if (params.premultiply != 0 && params.premultiply != 1) {
         fprintf(stderr, "premultiply must be one of: -1, 0, 1.\n");
@@ -88,6 +100,15 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
                                  enc, num_interleaved_alpha + i, &ec_info)) {
         fprintf(stderr, "JxlEncoderSetExtraChannelInfo() failed.\n");
         return false;
+      }
+      const auto& ec_name = ppf.extra_channels_info[i].name;
+      if (!ec_name.empty()) {
+        if (JXL_ENC_SUCCESS !=
+            JxlEncoderSetExtraChannelName(enc, num_interleaved_alpha + i,
+                                          ec_name.c_str(), ec_name.size())) {
+          fprintf(stderr, "JxlEncoderSetExtraChannelName() failed.\n");
+          return false;
+        }
       }
     }
   }
@@ -137,11 +158,15 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
   if (params.HasOutputProcessor() &&
       JXL_ENC_SUCCESS !=
           JxlEncoderSetOutputProcessor(enc, params.output_processor)) {
-    fprintf(stderr, "JxlEncoderSetOutputProcessorfailed\n");
+    fprintf(stderr, "JxlEncoderSetOutputProcessor failed\n");
     return false;
   }
 
   auto* settings = JxlEncoderFrameSettingsCreate(enc, nullptr);
+  if (!settings) {
+    fprintf(stderr, "JxlEncoderFrameSettingsCreate failed\n");
+    return false;
+  }
   size_t option_idx = 0;
   if (!SetFrameOptions(params.options, 0, &option_idx, settings)) {
     return false;
@@ -343,12 +368,12 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       }
       // Only set extra channel buffer if it is provided non-interleaved.
       for (size_t i = 0; i < pframe.extra_channels.size(); ++i) {
-        if (JXL_ENC_SUCCESS !=
-            JxlEncoderSetExtraChannelBuffer(settings, &ppixelformat,
-                                            pframe.extra_channels[i].pixels(),
-                                            pframe.extra_channels[i].stride *
-                                                pframe.extra_channels[i].ysize,
-                                            num_interleaved_alpha + i)) {
+        if (JXL_ENC_SUCCESS != JxlEncoderSetExtraChannelBuffer(
+                                   settings, &pframe.extra_channels[i].format,
+                                   pframe.extra_channels[i].pixels(),
+                                   pframe.extra_channels[i].stride *
+                                       pframe.extra_channels[i].ysize,
+                                   num_interleaved_alpha + i)) {
           fprintf(stderr, "JxlEncoderSetExtraChannelBuffer() failed.\n");
           return false;
         }

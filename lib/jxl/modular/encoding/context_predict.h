@@ -41,11 +41,11 @@ struct Header : public Fields {
       visitor->SetDefault(this);
       return true;
     }
-    auto visit_p = [visitor](pixel_type val, pixel_type *p) {
+    auto visit_p = [visitor](pixel_type val, pixel_type *p) -> Status {
       uint32_t up = *p;
       JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(5, val, &up));
       *p = up;
-      return Status(true);
+      return true;
     };
     JXL_QUIET_RETURN_IF_ERROR(visit_p(16, &p1C));
     JXL_QUIET_RETURN_IF_ERROR(visit_p(10, &p2C));
@@ -288,6 +288,35 @@ inline void PredictorMode(int i, Header *header) {
 }
 }  // namespace weighted
 
+// Returns true if the (meta)predictor makes use of the weighted predictor.
+inline bool PredictorHasWeighted(Predictor predictor) {
+  // Use a non-defaulted switch to generate a warning if a case is missing.
+  switch (predictor) {
+    case Predictor::Zero:
+    case Predictor::Left:
+    case Predictor::Top:
+    case Predictor::Average0:
+    case Predictor::Select:
+    case Predictor::Gradient:
+      return false;
+    case Predictor::Weighted:
+      return true;
+    case Predictor::TopRight:
+    case Predictor::TopLeft:
+    case Predictor::LeftLeft:
+    case Predictor::Average1:
+    case Predictor::Average2:
+    case Predictor::Average3:
+    case Predictor::Average4:
+      return false;
+    case Predictor::Best:
+    case Predictor::Variable:
+      return true;
+  }
+
+  return false;
+}
+
 // Stores a node and its two children at the same time. This significantly
 // reduces the number of branches needed during decoding.
 struct FlatDecisionNode {
@@ -322,17 +351,18 @@ class MATreeLookup {
   JXL_INLINE LookupResult Lookup(const Properties &properties) const {
     uint32_t pos = 0;
     while (true) {
-#define TRAVERSE_THE_TREE                                                      \
-  {                                                                            \
-    const FlatDecisionNode &node = nodes_[pos];                                \
-    if (node.property0 < 0) {                                                  \
-      return {node.childID, node.predictor, node.predictor_offset,             \
-              node.multiplier};                                                \
-    }                                                                          \
-    bool p0 = properties[node.property0] <= node.splitval0;                    \
-    uint32_t off0 = properties[node.properties[0]] <= node.splitvals[0];       \
-    uint32_t off1 = 2 | (properties[node.properties[1]] <= node.splitvals[1]); \
-    pos = node.childID + (p0 ? off1 : off0);                                   \
+#define TRAVERSE_THE_TREE                                                \
+  {                                                                      \
+    const FlatDecisionNode &node = nodes_[pos];                          \
+    if (node.property0 < 0) {                                            \
+      return {node.childID, node.predictor, node.predictor_offset,       \
+              node.multiplier};                                          \
+    }                                                                    \
+    bool p0 = properties[node.property0] <= node.splitval0;              \
+    uint32_t off0 = properties[node.properties[0]] <= node.splitvals[0]; \
+    uint32_t off1 =                                                      \
+        2 | int{properties[node.properties[1]] <= node.splitvals[1]};    \
+    pos = node.childID + (p0 ? off1 : off0);                             \
   }
 
       TRAVERSE_THE_TREE;
@@ -384,7 +414,7 @@ inline void PrecomputeReferences(const Channel &ch, size_t y,
   ZeroFillImage(&references->plane);
   uint32_t offset = 0;
   size_t num_extra_props = references->w;
-  intptr_t onerow = references->plane.PixelsPerRow();
+  ptrdiff_t onerow = references->plane.PixelsPerRow();
   for (int32_t j = static_cast<int32_t>(i) - 1;
        j >= 0 && offset < num_extra_props; j--) {
     if (image.channel[j].w != image.channel[i].w ||
@@ -484,14 +514,14 @@ JXL_INLINE pixel_type_w PredictOne(Predictor p, pixel_type_w left,
 template <int mode>
 JXL_INLINE PredictionResult Predict(
     Properties *p, size_t w, const pixel_type *JXL_RESTRICT pp,
-    const intptr_t onerow, const size_t x, const size_t y, Predictor predictor,
+    const ptrdiff_t onerow, const size_t x, const size_t y, Predictor predictor,
     const MATreeLookup *lookup, const Channel *references,
     weighted::State *wp_state, pixel_type_w *predictions) {
   // We start in position 3 because of 2 static properties + y.
   size_t offset = 3;
   constexpr bool compute_properties =
-      mode & kUseTree || mode & kForceComputeProperties;
-  constexpr bool nec = mode & kNoEdgeCases;
+      !!(mode & kUseTree) || !!(mode & kForceComputeProperties);
+  constexpr bool nec = !!(mode & kNoEdgeCases);
   pixel_type_w left = (nec || x ? pp[-1] : (y ? pp[-onerow] : 0));
   pixel_type_w top = (nec || y ? pp[-onerow] : left);
   pixel_type_w topleft = (nec || (x && y) ? pp[-1 - onerow] : left);
@@ -562,7 +592,7 @@ JXL_INLINE PredictionResult Predict(
 
 inline PredictionResult PredictNoTreeNoWP(size_t w,
                                           const pixel_type *JXL_RESTRICT pp,
-                                          const intptr_t onerow, const int x,
+                                          const ptrdiff_t onerow, const int x,
                                           const int y, Predictor predictor) {
   return detail::Predict</*mode=*/0>(
       /*p=*/nullptr, w, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
@@ -571,7 +601,7 @@ inline PredictionResult PredictNoTreeNoWP(size_t w,
 
 inline PredictionResult PredictNoTreeWP(size_t w,
                                         const pixel_type *JXL_RESTRICT pp,
-                                        const intptr_t onerow, const int x,
+                                        const ptrdiff_t onerow, const int x,
                                         const int y, Predictor predictor,
                                         weighted::State *wp_state) {
   return detail::Predict<detail::kUseWP>(
@@ -581,7 +611,7 @@ inline PredictionResult PredictNoTreeWP(size_t w,
 
 inline PredictionResult PredictTreeNoWP(Properties *p, size_t w,
                                         const pixel_type *JXL_RESTRICT pp,
-                                        const intptr_t onerow, const int x,
+                                        const ptrdiff_t onerow, const int x,
                                         const int y,
                                         const MATreeLookup &tree_lookup,
                                         const Channel &references) {
@@ -592,7 +622,7 @@ inline PredictionResult PredictTreeNoWP(Properties *p, size_t w,
 // Only use for y > 1, x > 1, x < w-2, and empty references
 JXL_INLINE PredictionResult
 PredictTreeNoWPNEC(Properties *p, size_t w, const pixel_type *JXL_RESTRICT pp,
-                   const intptr_t onerow, const int x, const int y,
+                   const ptrdiff_t onerow, const int x, const int y,
                    const MATreeLookup &tree_lookup, const Channel &references) {
   return detail::Predict<detail::kUseTree | detail::kNoEdgeCases>(
       p, w, pp, onerow, x, y, Predictor::Zero, &tree_lookup, &references,
@@ -601,7 +631,7 @@ PredictTreeNoWPNEC(Properties *p, size_t w, const pixel_type *JXL_RESTRICT pp,
 
 inline PredictionResult PredictTreeWP(Properties *p, size_t w,
                                       const pixel_type *JXL_RESTRICT pp,
-                                      const intptr_t onerow, const int x,
+                                      const ptrdiff_t onerow, const int x,
                                       const int y,
                                       const MATreeLookup &tree_lookup,
                                       const Channel &references,
@@ -612,7 +642,7 @@ inline PredictionResult PredictTreeWP(Properties *p, size_t w,
 }
 JXL_INLINE PredictionResult PredictTreeWPNEC(Properties *p, size_t w,
                                              const pixel_type *JXL_RESTRICT pp,
-                                             const intptr_t onerow, const int x,
+                                             const ptrdiff_t onerow, const int x,
                                              const int y,
                                              const MATreeLookup &tree_lookup,
                                              const Channel &references,
@@ -625,7 +655,7 @@ JXL_INLINE PredictionResult PredictTreeWPNEC(Properties *p, size_t w,
 
 inline PredictionResult PredictLearn(Properties *p, size_t w,
                                      const pixel_type *JXL_RESTRICT pp,
-                                     const intptr_t onerow, const int x,
+                                     const ptrdiff_t onerow, const int x,
                                      const int y, Predictor predictor,
                                      const Channel &references,
                                      weighted::State *wp_state) {
@@ -636,7 +666,7 @@ inline PredictionResult PredictLearn(Properties *p, size_t w,
 
 inline void PredictLearnAll(Properties *p, size_t w,
                             const pixel_type *JXL_RESTRICT pp,
-                            const intptr_t onerow, const int x, const int y,
+                            const ptrdiff_t onerow, const int x, const int y,
                             const Channel &references,
                             weighted::State *wp_state,
                             pixel_type_w *predictions) {
@@ -647,7 +677,7 @@ inline void PredictLearnAll(Properties *p, size_t w,
 }
 inline PredictionResult PredictLearnNEC(Properties *p, size_t w,
                                         const pixel_type *JXL_RESTRICT pp,
-                                        const intptr_t onerow, const int x,
+                                        const ptrdiff_t onerow, const int x,
                                         const int y, Predictor predictor,
                                         const Channel &references,
                                         weighted::State *wp_state) {
@@ -659,7 +689,7 @@ inline PredictionResult PredictLearnNEC(Properties *p, size_t w,
 
 inline void PredictLearnAllNEC(Properties *p, size_t w,
                                const pixel_type *JXL_RESTRICT pp,
-                               const intptr_t onerow, const int x, const int y,
+                               const ptrdiff_t onerow, const int x, const int y,
                                const Channel &references,
                                weighted::State *wp_state,
                                pixel_type_w *predictions) {
@@ -670,7 +700,7 @@ inline void PredictLearnAllNEC(Properties *p, size_t w,
 }
 
 inline void PredictAllNoWP(size_t w, const pixel_type *JXL_RESTRICT pp,
-                           const intptr_t onerow, const int x, const int y,
+                           const ptrdiff_t onerow, const int x, const int y,
                            pixel_type_w *predictions) {
   detail::Predict<detail::kAllPredictions>(
       /*p=*/nullptr, w, pp, onerow, x, y, Predictor::Zero,

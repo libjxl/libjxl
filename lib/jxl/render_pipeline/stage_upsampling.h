@@ -5,13 +5,10 @@
 
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_UPSAMPLING_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_UPSAMPLING_H_
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
 
-#include <algorithm>
-#include <utility>
-#include <vector>
+#include <jxl/memory_manager.h>
+#include <cstddef>
+#include <memory>
 
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
@@ -20,7 +17,8 @@ namespace jxl {
 
 // Upsamples the given channel by the given factor.
 std::unique_ptr<RenderPipelineStage> GetUpsamplingStage(
-    const CustomTransformData& ups_factors, size_t c, size_t shift);
+    JxlMemoryManager* memory_manager, const CustomTransformData& ups_factors,
+    size_t c, size_t shift);
 }  // namespace jxl
 
 #endif  // LIB_JXL_RENDER_PIPELINE_STAGE_UPSAMPLING_H_

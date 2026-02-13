@@ -62,6 +62,7 @@ if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
 else()
   # Compile brotli from sources.
   set(BROTLI_DISABLE_TESTS ON CACHE STRING "Disable Brotli tests")
+  set(BROTLI_BUILD_TOOLS OFF CACHE STRING "")
   # Override default "no-install" policy.
   if((NOT SANITIZER STREQUAL "asan") AND (NOT SANITIZER STREQUAL "msan"))
     set(BROTLI_BUNDLED_MODE OFF CACHE INTERNAL "")
@@ -97,8 +98,8 @@ endif()
 # *cms
 if (JPEGXL_ENABLE_SKCMS)
   if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/skcms/skcms.h" )
-    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-            "build dependencies.")
+    message(FATAL_ERROR "Please provide skcms or "
+            "run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the build dependencies.")
   endif()
   include(skcms.cmake)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/skcms/LICENSE"
@@ -108,11 +109,11 @@ if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS OR JPEGXL_ENABLE_PLUGINS)
   if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lcms/.git" OR JPEGXL_FORCE_SYSTEM_LCMS2 )
     find_package(LCMS2 2.12)
     if ( NOT LCMS2_FOUND )
-      message(FATAL_ERROR "Please install lcms2 or run git submodule update --init")
+      message(FATAL_ERROR "Please provide lcms2 or run git submodule update --init")
     endif ()
   else()
     include(lcms2.cmake)
-    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lcms/COPYING"
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lcms/LICENSE"
                    ${PROJECT_BINARY_DIR}/LICENSE.lcms COPYONLY)
   endif()
 endif()
@@ -120,8 +121,8 @@ endif()
 # libpng
 if (JPEGXL_BUNDLE_LIBPNG AND EMSCRIPTEN)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
-  message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-          "build dependencies.")
+    message(FATAL_ERROR "Please provide libpng or "
+            "run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the build dependencies.")
   endif()
   file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/libpng/scripts/pnglibconf.h.prebuilt" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/libpng")
   file(RENAME "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h.prebuilt" "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h")
@@ -132,13 +133,17 @@ if (JPEGXL_BUNDLE_LIBPNG AND EMSCRIPTEN)
   set(PNG_LIBRARIES "" PARENT_SCOPE)
 elseif (JPEGXL_BUNDLE_LIBPNG)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
-    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-            "build dependencies.")
+    message(FATAL_ERROR "Please provide libpng or "
+            "run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the build dependencies.")
   endif()
+  file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/libpng/scripts/pnglibconf.h.prebuilt" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/libpng")
+  file(RENAME "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h.prebuilt" "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h")
   add_subdirectory(zlib)
   set(PNG_STATIC ON CACHE BOOL "")
-  set(PNG_EXECUTABLES OFF CACHE BOOL "")
-  set(PNG_BUILD_ZLIB ON CACHE BOOL "")
+  set(PNG_TOOLS OFF CACHE BOOL "")
+  set(ZLIB_INCLUDE_DIR bing_bong_dir)
+  set(ZLIB_LIBRARY bing_bong_lib)
+  add_library(ZLIB::ZLIB INTERFACE IMPORTED)
   set(PNG_TESTS OFF CACHE BOOL "")
   set(SKIP_INSTALL_ALL ON CACHE BOOL "")
   set(ZLIB_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/zlib/")
@@ -146,6 +151,7 @@ elseif (JPEGXL_BUNDLE_LIBPNG)
   add_subdirectory(libpng EXCLUDE_FROM_ALL)
   set(PNG_FOUND YES PARENT_SCOPE)
   set(PNG_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/" PARENT_SCOPE)
+  target_link_libraries(png_static PUBLIC zlibstatic)
   set(PNG_LIBRARIES png_static PARENT_SCOPE)
   set_property(TARGET png_static PROPERTY POSITION_INDEPENDENT_CODE ON)
   set_property(TARGET zlibstatic PROPERTY POSITION_INDEPENDENT_CODE ON)
@@ -166,8 +172,8 @@ endif()
 # sjpeg
 if (JPEGXL_ENABLE_SJPEG)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/CMakeLists.txt")
-    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-            "build dependencies.")
+    message(FATAL_ERROR "Please provide sjpeg or "
+            "run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the build dependencies.")
   endif()
   include(sjpeg.cmake)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/COPYING"

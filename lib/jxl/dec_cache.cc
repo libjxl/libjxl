@@ -8,13 +8,26 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
 
 #include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
 #include "lib/jxl/coeff_order.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/loop_filter.h"
 #include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
 #include "lib/jxl/render_pipeline/stage_blending.h"
 #include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_cms.h"
@@ -106,9 +119,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
                                            PipelineOptions options) {
   JxlMemoryManager* memory_manager = this->memory_manager();
   size_t num_c = 3 + frame_header.nonserialized_metadata->m.num_extra_channels;
-  bool render_noise =
-      (options.render_noise && (frame_header.flags & FrameHeader::kNoise) != 0);
-  size_t num_tmp_c = render_noise ? 3 : 0;
+  size_t num_tmp_c = options.render_noise ? 3 : 0;
 
   if (frame_header.CanBeReferenced()) {
     // Necessary so that SetInputSizes() can allocate output buffers as needed.
@@ -169,7 +180,8 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
          ec++) {
       if (frame_header.extra_channel_upsampling[ec] != 1) {
         JXL_RETURN_IF_ERROR(builder.AddStage(GetUpsamplingStage(
-            frame_header.nonserialized_metadata->transform_data, 3 + ec,
+            memory_manager, frame_header.nonserialized_metadata->transform_data,
+            3 + ec,
             CeilLog2Nonzero(frame_header.extra_channel_upsampling[ec]))));
       }
     }
@@ -191,11 +203,11 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         (late_ec_upsample ? frame_header.extra_channel_upsampling.size() : 0);
     for (size_t c = 0; c < nb_channels; c++) {
       JXL_RETURN_IF_ERROR(builder.AddStage(GetUpsamplingStage(
-          frame_header.nonserialized_metadata->transform_data, c,
-          CeilLog2Nonzero(frame_header.upsampling))));
+          memory_manager, frame_header.nonserialized_metadata->transform_data,
+          c, CeilLog2Nonzero(frame_header.upsampling))));
     }
   }
-  if (render_noise) {
+  if (options.render_noise) {
     JXL_RETURN_IF_ERROR(builder.AddStage(GetConvolveNoiseStage(num_c)));
     JXL_RETURN_IF_ERROR(builder.AddStage(GetAddNoiseStage(
         shared->image_features.noise_params, shared->cmap.base(), num_c)));
@@ -330,6 +342,11 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         }
       }
       linear = false;
+    } else {
+      auto cms_stage = GetCmsStage(output_encoding_info, false);
+      if (cms_stage) {
+        JXL_RETURN_IF_ERROR(builder.AddStage(std::move(cms_stage)));
+      }
     }
     (void)linear;
 

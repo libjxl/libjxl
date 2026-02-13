@@ -6,10 +6,11 @@
 #include "lib/jxl/render_pipeline/stage_spot.h"
 
 #include <cstddef>
+#include <cstdio>
 #include <memory>
 
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 namespace jxl {
@@ -28,7 +29,7 @@ class SpotColorStage : public RenderPipelineStage {
     for (size_t c = 0; c < 3; c++) {
       float* JXL_RESTRICT p = GetInputRow(input_rows, c, 0);
       const float* JXL_RESTRICT s = GetInputRow(input_rows, spot_c_, 0);
-      for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra); x++) {
+      for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra); x++) {
         float mix = scale * s[x];
         p[x] = mix * spot_color_[c] + (1.0f - mix) * p[x];
       }

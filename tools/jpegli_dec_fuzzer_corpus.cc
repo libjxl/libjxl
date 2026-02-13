@@ -4,18 +4,20 @@
 // license that can be found in the LICENSE file.
 
 #include <setjmp.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/stat.h>
-#include <sys/types.h>
+
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <thread>
+#include <utility>
 
 #include "lib/jxl/base/status.h"
 #if defined(_WIN32) || defined(_WIN64)
 #include "third_party/dirent.h"
 #else
-#include <dirent.h>
-#include <unistd.h>
 #endif
 
 #include <algorithm>
@@ -105,7 +107,7 @@ std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
 struct ImageSpec {
   bool Validate() const {
     if (width > kMaxWidth || height > kMaxHeight ||
-        width * height > kMaxPixels) {
+        static_cast<size_t>(width) * height > kMaxPixels) {
       return false;
     }
     return true;
@@ -177,7 +179,8 @@ bool EncodeWithJpegli(const ImageSpec& spec, const std::vector<uint8_t>& pixels,
     jpegli_set_progressive_level(&cinfo, spec.progressive_level);
     cinfo.restart_interval = spec.restart_interval;
     jpegli_start_compress(&cinfo, TRUE);
-    size_t stride = cinfo.image_width * cinfo.input_components;
+    size_t stride =
+        cinfo.image_width * static_cast<size_t>(cinfo.input_components);
     std::vector<uint8_t> row_bytes(stride);
     for (size_t y = 0; y < cinfo.image_height; ++y) {
       memcpy(row_bytes.data(), &pixels[y * stride], stride);

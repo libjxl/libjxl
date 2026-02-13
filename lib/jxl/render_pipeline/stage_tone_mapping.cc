@@ -5,7 +5,16 @@
 
 #include "lib/jxl/render_pipeline/stage_tone_mapping.h"
 
+#include <cstddef>
+#include <memory>
+#include <utility>
+
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/sanitizers.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/tone_mapping.h"
+#include "lib/jxl/dec_xyb.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_tone_mapping.cc"
@@ -13,7 +22,6 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/cms/tone_mapping-inl.h"
-#include "lib/jxl/dec_xyb-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -34,11 +42,10 @@ class ToneMappingStage : public RenderPipelineStage {
     if (orig_tf.IsPQ() && output_encoding_info_.desired_intensity_target <
                               output_encoding_info_.orig_intensity_target) {
       tone_mapper_ = jxl::make_unique<ToneMapper>(
-          /*source_range=*/std::pair<float, float>(
-              0.0f, output_encoding_info_.orig_intensity_target),
+          /*source_range=*/Range{0.0f,
+                                 output_encoding_info_.orig_intensity_target},
           /*target_range=*/
-          std::pair<float, float>(
-              0.0f, output_encoding_info_.desired_intensity_target),
+          Range{0.0f, output_encoding_info_.desired_intensity_target},
           output_encoding_info_.luminances);
     } else if (orig_tf.IsHLG() && !dest_tf.IsHLG()) {
       hlg_ootf_ = jxl::make_unique<HlgOOTF>(
@@ -75,7 +82,7 @@ class ToneMappingStage : public RenderPipelineStage {
     msan::UnpoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
          x += Lanes(d)) {
       auto r = LoadU(d, row0 + x);
       auto g = LoadU(d, row1 + x);

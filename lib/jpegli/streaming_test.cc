@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jpegli/test_params.h"
@@ -145,7 +146,7 @@ TEST_P(StreamingTestParam, TestStreaming) {
         jpegli_finish_compress(&cinfo);
       }
 
-      // Atfer the first iMCU row, we don't yet expect any output because the
+      // After the first iMCU row, we don't yet expect any output because the
       // compressor delays processing to have context rows after the iMCU row.
       if (y_in < std::min<size_t>(2 * iMCU_height, cinfo.image_height)) {
         continue;

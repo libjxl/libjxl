@@ -5,6 +5,10 @@
 
 #include "lib/extras/alpha_blend.h"
 
+#include <jxl/types.h>
+
+#include <cstddef>
+
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/status.h"
 
@@ -45,7 +49,7 @@ Status AlphaBlend(PackedFrame* frame, const float background[3]) {
       }
     }
   }
-  frame->color = blended.Copy();
+  JXL_ASSIGN_OR_RETURN(frame->color, blended.Copy());
   return true;
 }
 

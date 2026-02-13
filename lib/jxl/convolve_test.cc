@@ -9,7 +9,13 @@
 #include <jxl/types.h>
 
 #include <cinttypes>  // PRIx64
+#include <cstdint>
+#include <cstdio>
 #include <ctime>
+#include <hwy/timer.h>
+
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/convolve_test.cc"
@@ -61,35 +67,7 @@ void TestNeighbors() {
   Store(Neighbors::FirstL2(v), d, actual);
   EXPECT_EQ(std::vector<float>(first_l2, first_l2 + N),
             std::vector<float>(actual, actual + N));
-
-  HWY_ALIGN float first_l3[] = {2, 1, 0, 0, 1, 2,  3,  4,
-                                5, 6, 7, 8, 9, 10, 11, 12};
-  Store(Neighbors::FirstL3(v), d, actual);
-  EXPECT_EQ(std::vector<float>(first_l3, first_l3 + N),
-            std::vector<float>(actual, actual + N));
 #endif  // HWY_TARGET != HWY_SCALAR
-}
-
-void VerifySymmetric3(const size_t xsize, const size_t ysize, ThreadPool* pool,
-                      Rng* rng) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  const Rect rect(0, 0, xsize, ysize);
-
-  JXL_TEST_ASSIGN_OR_DIE(ImageF in,
-                         ImageF::Create(memory_manager, xsize, ysize));
-  GenerateImage(*rng, &in, 0.0f, 1.0f);
-
-  JXL_TEST_ASSIGN_OR_DIE(ImageF out_expected,
-                         ImageF::Create(memory_manager, xsize, ysize));
-  JXL_TEST_ASSIGN_OR_DIE(ImageF out_actual,
-                         ImageF::Create(memory_manager, xsize, ysize));
-
-  const WeightsSymmetric3& weights = WeightsSymmetric3Lowpass();
-  ASSERT_TRUE(Symmetric3(in, rect, weights, pool, &out_expected));
-  ASSERT_TRUE(SlowSymmetric3(in, rect, weights, pool, &out_actual));
-
-  JXL_TEST_ASSERT_OK(
-      VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f, _));
 }
 
 std::vector<Rect> GenerateTestRectangles(size_t xsize, size_t ysize) {
@@ -103,6 +81,24 @@ std::vector<Rect> GenerateTestRectangles(size_t xsize, size_t ysize) {
   }
   return out;
 }
+
+#define JXL_REP4(literal) literal, literal, literal, literal
+const WeightsSymmetric5& WeightsSymmetric5Lowpass() {
+  static constexpr WeightsSymmetric5 weights = {
+      {JXL_REP4(0.1740135f)}, {JXL_REP4(0.1065369f)}, {JXL_REP4(0.0150310f)},
+      {JXL_REP4(0.0652254f)}, {JXL_REP4(0.0012984f)}, {JXL_REP4(0.0092025f)}};
+  return weights;
+}
+const WeightsSeparable5& WeightsSeparable5Lowpass() {
+  constexpr float w0 = 0.41714928f;
+  constexpr float w1 = 0.25539268f;
+  constexpr float w2 = 0.03603267f;
+  static constexpr WeightsSeparable5 weights = {
+      {JXL_REP4(w0), JXL_REP4(w1), JXL_REP4(w2)},
+      {JXL_REP4(w0), JXL_REP4(w1), JXL_REP4(w2)}};
+  return weights;
+}
+#undef JXL_REP4
 
 // Ensures Symmetric and Separable give the same result.
 void VerifySymmetric5(const size_t xsize, const size_t ysize, ThreadPool* pool,
@@ -175,6 +171,12 @@ void VerifySeparable5(const size_t xsize, const size_t ysize, ThreadPool* pool,
       VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f, _));
 }
 
+// No valid values outside [0, xsize), but the strategy may still safely load
+// the preceding vector, and/or round xsize up to the vector lane count. This
+// avoids needing PadImage.
+// Requires xsize >= kConvolveLanes + kConvolveMaxRadius.
+static constexpr size_t kConvolveMaxRadius = 3;
+
 // For all xsize/ysize and kernels:
 void TestConvolve() {
   TestNeighbors();
@@ -191,10 +193,6 @@ void TestConvolve() {
                 "%" PRIuS " x %" PRIuS " (target %" PRIx64
                 ")===============================",
                 xsize, ysize, static_cast<int64_t>(HWY_TARGET));
-
-      JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym3------------------");
-      VerifySymmetric3(xsize, ysize, null_pool, &rng);
-      VerifySymmetric3(xsize, ysize, pool3.get(), &rng);
 
       JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym5------------------");
       VerifySymmetric5(xsize, ysize, null_pool, &rng);
@@ -249,14 +247,6 @@ void BenchmarkConv(const char* caption, const Conv& conv,
   }
 }
 
-struct ConvSymmetric3 {
-  void operator()(const ImageF& in, ImageF* JXL_RESTRICT out) const {
-    ThreadPool* null_pool = nullptr;
-    ASSERT_TRUE(
-        Symmetric3(in, Rect(in), WeightsSymmetric3Lowpass(), null_pool, out));
-  }
-};
-
 struct ConvSeparable5 {
   void operator()(const ImageF& in, ImageF* JXL_RESTRICT out) const {
     ThreadPool* null_pool = nullptr;
@@ -268,7 +258,6 @@ struct ConvSeparable5 {
 void BenchmarkAll() {
 #if JXL_FALSE  // disabled to avoid test timeouts, run manually on demand
   const hwy::FuncInput unpredictable1 = time(nullptr) != 1234;
-  BenchmarkConv("Symmetric3", ConvSymmetric3(), unpredictable1);
   BenchmarkConv("Separable5", ConvSeparable5(), unpredictable1);
 #endif
 }

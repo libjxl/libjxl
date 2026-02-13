@@ -24,5 +24,7 @@ target_link_libraries(file-jxl jxl jxl_threads PkgConfig::Gimp)
 target_include_directories(file-jxl PUBLIC
     ${PROJECT_SOURCE_DIR})  # for plugins/gimp absolute paths.
 
+set_target_properties(file-jxl PROPERTIES MACOSX_BUNDLE OFF)
+
 pkg_get_variable(GIMP_LIB_DIR gimp-2.0 gimplibdir)
 install(TARGETS file-jxl RUNTIME DESTINATION "${GIMP_LIB_DIR}/plug-ins/file-jxl/")

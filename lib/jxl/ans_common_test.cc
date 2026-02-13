@@ -5,24 +5,31 @@
 
 #include "lib/jxl/ans_common.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
 
-void VerifyAliasDistribution(const std::vector<int>& distribution,
+void VerifyAliasDistribution(const std::vector<int32_t>& distribution,
                              uint32_t log_range) {
   constexpr size_t log_alpha_size = 8;
-  AliasTable::Entry table[1 << log_alpha_size];
-  ASSERT_TRUE(InitAliasTable(distribution, log_range, log_alpha_size, table));
+  std::vector<AliasTable::Entry> table(1 << log_alpha_size);
+  Status ok =
+      InitAliasTable(distribution, log_range, log_alpha_size, table.data());
+  ASSERT_TRUE(ok);
   uint32_t range = 1 << log_range;
   std::vector<std::vector<uint32_t>> offsets(distribution.size());
   for (uint32_t i = 0; i < range; i++) {
-    AliasTable::Symbol s = AliasTable::Lookup(
-        table, i, ANS_LOG_TAB_SIZE - 8, (1 << (ANS_LOG_TAB_SIZE - 8)) - 1);
+    AliasTable::Symbol s =
+        AliasTable::Lookup(table.data(), i, ANS_LOG_TAB_SIZE - 8,
+                           (1 << (ANS_LOG_TAB_SIZE - 8)) - 1);
     offsets[s.value].push_back(s.offset);
   }
   for (uint32_t i = 0; i < distribution.size(); i++) {

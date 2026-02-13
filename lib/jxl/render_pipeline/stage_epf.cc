@@ -5,11 +5,20 @@
 
 #include "lib/jxl/render_pipeline/stage_epf.h"
 
+#include <array>
+#include <cstddef>
+#include <memory>
+#include <utility>
+
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/epf.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/loop_filter.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_epf.cc"
@@ -26,6 +35,7 @@ using DF = HWY_CAPPED(float, 8);
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::AbsDiff;
 using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::ApproximateReciprocal;
 using hwy::HWY_NAMESPACE::Div;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
@@ -49,7 +59,7 @@ class EPF0Stage : public RenderPipelineStage {
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][7], ssize_t x,
+  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][7], ptrdiff_t x,
                            Vec<DF> sad, Vec<DF> inv_sigma,
                            Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
                            Vec<DF>* JXL_RESTRICT B,
@@ -100,7 +110,7 @@ class EPF0Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
          x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
@@ -113,8 +123,8 @@ class EPF0Stage : public RenderPipelineStage {
         continue;
       }
 
-      const auto sm = Load(df, sad_mul + ix);
-      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), sm);
+      const auto vsm = Load(df, sad_mul + ix);
+      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), vsm);
 
       for (auto& sad : sads) *sad = Zero(df);
       constexpr std::array<int, 2> sads_off[12] = {
@@ -188,7 +198,7 @@ class EPF1Stage : public RenderPipelineStage {
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][5], ssize_t x,
+  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][5], ptrdiff_t x,
                            Vec<DF> sad, Vec<DF> inv_sigma,
                            Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
                            Vec<DF>* JXL_RESTRICT B,
@@ -235,7 +245,7 @@ class EPF1Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
          x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
@@ -248,8 +258,8 @@ class EPF1Stage : public RenderPipelineStage {
         continue;
       }
 
-      const auto sm = Load(df, sad_mul + ix);
-      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), sm);
+      const auto vsm = Load(df, sad_mul + ix);
+      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), vsm);
       auto sad0 = Zero(df);
       auto sad1 = Zero(df);
       auto sad2 = Zero(df);
@@ -280,7 +290,7 @@ class EPF1Stage : public RenderPipelineStage {
         sad1c = Add(sad1c, t);  // SAD 1, 2
         sad2c = Add(sad2c, t);  // SAD 3, 2
         t = AbsDiff(p22, p21);
-        auto sad3c = t;  // SAD 2, 3
+        auto sad3c = t;         // SAD 2, 3
         sad0c = Add(sad0c, t);  // SAD 2, 1
 
         const auto p32 = LoadU(df, rows[c][2 + 0] + x + 1);
@@ -369,7 +379,7 @@ class EPF2Stage : public RenderPipelineStage {
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][3], ssize_t x,
+  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][3], ptrdiff_t x,
                            Vec<DF> rx, Vec<DF> ry, Vec<DF> rb,
                            Vec<DF> inv_sigma, Vec<DF>* JXL_RESTRICT X,
                            Vec<DF>* JXL_RESTRICT Y, Vec<DF>* JXL_RESTRICT B,
@@ -421,7 +431,7 @@ class EPF2Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
          x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
@@ -434,8 +444,8 @@ class EPF2Stage : public RenderPipelineStage {
         continue;
       }
 
-      const auto sm = Load(df, sad_mul + ix);
-      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), sm);
+      const auto vsm = Load(df, sad_mul + ix);
+      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), vsm);
 
       const auto x_cc = Load(df, rows[0][1 + 0] + x);
       const auto y_cc = Load(df, rows[1][1 + 0] + x);

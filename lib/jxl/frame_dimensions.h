@@ -31,28 +31,28 @@ constexpr size_t kGroupDimInBlocks = kGroupDim / kBlockDim;
 // Computed from FrameHeader.
 // TODO(veluca): add extra channels.
 struct FrameDimensions {
-  void Set(size_t xsize, size_t ysize, size_t group_size_shift,
+  void Set(size_t xsize_px, size_t ysize_px, size_t group_size_shift,
            size_t max_hshift, size_t max_vshift, bool modular_mode,
            size_t upsampling) {
     group_dim = (kGroupDim >> 1) << group_size_shift;
     dc_group_dim = group_dim * kBlockDim;
-    xsize_upsampled = xsize;
-    ysize_upsampled = ysize;
-    this->xsize = DivCeil(xsize, upsampling);
-    this->ysize = DivCeil(ysize, upsampling);
-    xsize_blocks = DivCeil(this->xsize, kBlockDim << max_hshift) << max_hshift;
-    ysize_blocks = DivCeil(this->ysize, kBlockDim << max_vshift) << max_vshift;
+    xsize_upsampled = xsize_px;
+    ysize_upsampled = ysize_px;
+    xsize = DivCeil(xsize_px, upsampling);
+    ysize = DivCeil(ysize_px, upsampling);
+    xsize_blocks = DivCeil(xsize, kBlockDim << max_hshift) << max_hshift;
+    ysize_blocks = DivCeil(ysize, kBlockDim << max_vshift) << max_vshift;
     xsize_padded = xsize_blocks * kBlockDim;
     ysize_padded = ysize_blocks * kBlockDim;
     if (modular_mode) {
       // Modular mode doesn't have any padding.
-      xsize_padded = this->xsize;
-      ysize_padded = this->ysize;
+      xsize_padded = xsize;
+      ysize_padded = ysize;
     }
     xsize_upsampled_padded = xsize_padded * upsampling;
     ysize_upsampled_padded = ysize_padded * upsampling;
-    xsize_groups = DivCeil(this->xsize, group_dim);
-    ysize_groups = DivCeil(this->ysize, group_dim);
+    xsize_groups = DivCeil(xsize, group_dim);
+    ysize_groups = DivCeil(ysize, group_dim);
     xsize_dc_groups = DivCeil(xsize_blocks, group_dim);
     ysize_dc_groups = DivCeil(ysize_blocks, group_dim);
     num_groups = xsize_groups * ysize_groups;

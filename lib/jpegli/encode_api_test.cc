@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jpegli/libjpeg_test_util.h"
 #include "lib/jpegli/test_params.h"
@@ -280,18 +281,18 @@ TEST(EncodeAPITest, AbbreviatedStreams) {
       return true;
     };
     EXPECT_TRUE(try_catch_block());
-    EXPECT_LT(data_stream_size, 50);
+    EXPECT_LT(data_stream_size, 50u);
     jpegli_destroy_compress(&cinfo);
   }
   TestImage output;
   DecodeWithLibjpeg(CompressParams(), DecompressParams(), table_stream,
                     table_stream_size, data_stream, data_stream_size, &output);
-  EXPECT_EQ(1, output.xsize);
-  EXPECT_EQ(1, output.ysize);
-  EXPECT_EQ(3, output.components);
-  EXPECT_EQ(0, output.pixels[0]);
-  EXPECT_EQ(0, output.pixels[1]);
-  EXPECT_EQ(0, output.pixels[2]);
+  EXPECT_EQ(1u, output.xsize);
+  EXPECT_EQ(1u, output.ysize);
+  EXPECT_EQ(3u, output.components);
+  EXPECT_EQ(0u, output.pixels[0]);
+  EXPECT_EQ(0u, output.pixels[1]);
+  EXPECT_EQ(0u, output.pixels[2]);
   if (table_stream) free(table_stream);
   if (data_stream) free(data_stream);
 }

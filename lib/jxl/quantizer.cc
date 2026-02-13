@@ -6,10 +6,16 @@
 #include "lib/jxl/quantizer.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image.h"
@@ -95,7 +101,7 @@ Status Quantizer::SetQuantField(const float quant_dc, const ImageF& qf,
   const float quant_median = data[data.size() / 2];
   std::vector<float> deviations(data.size());
   for (size_t i = 0; i < data.size(); i++) {
-    deviations[i] = fabsf(data[i] - quant_median);
+    deviations[i] = std::abs(data[i] - quant_median);
   }
   std::nth_element(deviations.begin(),
                    deviations.begin() + deviations.size() / 2,

@@ -9,6 +9,11 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/enc_ans.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/frame_header.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_entropy_coder.cc"
 #include <hwy/foreach_target.h>
@@ -220,14 +225,14 @@ Status TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
         const size_t histo_offset =
             block_ctx_map.ZeroDensityContextsOffset(block_ctx);
         // Skip LLF.
-        size_t prev = (nzeros > static_cast<ssize_t>(size / 16) ? 0 : 1);
+        size_t prev = (nzeros > static_cast<ptrdiff_t>(size / 16) ? 0 : 1);
         for (size_t k = covered_blocks; k < size && nzeros != 0; ++k) {
           int32_t coeff = block[order[k]];
           size_t ctx =
               histo_offset + ZeroDensityContext(nzeros, k, covered_blocks,
                                                 log2_covered_blocks, prev);
           uint32_t u_coeff = PackSigned(coeff);
-          output->emplace_back(ctx, u_coeff);
+          output->emplace_back(static_cast<uint32_t>(ctx), u_coeff);
           prev = (coeff != 0) ? 1 : 0;
           nzeros -= prev;
         }

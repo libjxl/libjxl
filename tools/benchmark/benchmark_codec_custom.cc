@@ -8,12 +8,14 @@
 #include <jxl/types.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
@@ -83,7 +85,7 @@ Status ReportCodecRunningTime(F&& function, std::string output_filename,
     speed_stats->NotifyElapsed(end - start);
   }
   if (time_stream.is_open()) {
-    remove(time_filename.c_str());
+    std::remove(time_filename.c_str());
   }
   return true;
 }
@@ -160,12 +162,12 @@ class CustomCodec : public ImageCodec {
                     const Span<const uint8_t> compressed, ThreadPool* pool,
                     PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io{jpegxl::tools::NoMemoryManager()};
+    auto io = jxl::make_unique<CodecInOut>(jpegxl::tools::NoMemoryManager());
     JXL_RETURN_IF_ERROR(
-        Decompress(filename, compressed, pool, &io, speed_stats));
+        Decompress(filename, compressed, pool, io.get(), speed_stats));
     JxlPixelFormat format{0, JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};
     return jxl::extras::ConvertCodecInOutToPackedPixelFile(
-        io, format, io.Main().c_current(), pool, ppf);
+        *io, format, io->Main().c_current(), pool, ppf);
   };
 
   Status Decompress(const std::string& filename,

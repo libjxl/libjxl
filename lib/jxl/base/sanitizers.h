@@ -64,7 +64,7 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
           static_cast<uint64_t>(im.xsize()), static_cast<uint64_t>(im.ysize()));
 
   // A segment of uninitialized pixels in a row, in the format [first, second).
-  typedef std::pair<size_t, size_t> PixelSegment;
+  using PixelSegment = std::pair<size_t, size_t>;
 
   // Helper class to merge and print a list of rows of PixelSegment that may be
   // the same over big ranges of rows. This compacts the output to ranges of
@@ -121,7 +121,7 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
     std::vector<PixelSegment> segments_;
     // Row number of the first row in the range of rows that have |segments| as
     // the undefined segments.
-    ssize_t start_y_ = -1;
+    ptrdiff_t start_y_ = -1;
   } rows_merger;
 
   class SegmentsMerger {
@@ -142,7 +142,7 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
     SegmentsMerger seg_merger;
     size_t x = 0;
     while (x < im.xsize()) {
-      intptr_t ret =
+      ptrdiff_t ret =
           __msan_test_shadow(row + x, (im.xsize() - x) * sizeof(row[0]));
       if (ret < 0) break;
       size_t next_x = x + ret / sizeof(row[0]);
@@ -165,7 +165,7 @@ static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
   JXL_DASSERT(r.y0() + r.ysize() <= im.ysize());
   for (size_t y = r.y0(); y < r.y0() + r.ysize(); y++) {
     const auto* row = im.Row(y);
-    intptr_t ret = __msan_test_shadow(row + r.x0(), sizeof(*row) * r.xsize());
+    ptrdiff_t ret = __msan_test_shadow(row + r.x0(), sizeof(*row) * r.xsize());
     if (ret != -1) {
       JXL_DEBUG(
           1,

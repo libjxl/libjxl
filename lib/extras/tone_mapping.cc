@@ -5,6 +5,17 @@
 
 #include "lib/extras/tone_mapping.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
+#include "lib/extras/codec_in_out.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/matrix_ops.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/extras/tone_mapping.cc"
 #include <jxl/cms.h>
@@ -21,8 +32,8 @@ namespace HWY_NAMESPACE {
 
 static constexpr Vector3 rec2020_luminances{0.2627f, 0.6780f, 0.0593f};
 
-Status ToneMapFrame(const std::pair<float, float> display_nits,
-                    ImageBundle* const ib, ThreadPool* const pool) {
+Status ToneMapFrame(const Range& display_nits, ImageBundle* const ib,
+                    ThreadPool* const pool) {
   // Perform tone mapping as described in Report ITU-R BT.2390-8, section 5.4
   // (pp. 23-25).
   // https://www.itu.int/pub/R-REP-BT.2390-8-2020
@@ -114,13 +125,13 @@ HWY_EXPORT(ToneMapFrame);
 HWY_EXPORT(GamutMapFrame);
 }  // namespace
 
-Status ToneMapTo(const std::pair<float, float> display_nits,
-                 CodecInOut* const io, ThreadPool* const pool) {
+Status ToneMapTo(const Range& display_nits, CodecInOut* const io,
+                 ThreadPool* const pool) {
   const auto tone_map_frame = HWY_DYNAMIC_DISPATCH(ToneMapFrame);
   for (ImageBundle& ib : io->frames) {
     JXL_RETURN_IF_ERROR(tone_map_frame(display_nits, &ib, pool));
   }
-  io->metadata.m.SetIntensityTarget(display_nits.second);
+  io->metadata.m.SetIntensityTarget(display_nits[1]);
   return true;
 }
 

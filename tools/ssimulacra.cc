@@ -10,8 +10,13 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdio>
+#include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
@@ -54,9 +59,9 @@ inline void Rgb2Lab(float r, float g, float b, float* L, float* A, float* B) {
   float fz = (r * 0.01775381083562901744f + g * 0.10945087235996326905f +
               b * 0.87263921028466483011f);
   const float gamma = 1.0f / 3.0f;
-  float X = (fx > epsilon) ? powf(fx, gamma) - s : k * fx;
-  float Y = (fy > epsilon) ? powf(fy, gamma) - s : k * fy;
-  float Z = (fz > epsilon) ? powf(fz, gamma) - s : k * fz;
+  float X = (fx > epsilon) ? std::pow(fx, gamma) - s : k * fx;
+  float Y = (fy > epsilon) ? std::pow(fy, gamma) - s : k * fy;
+  float Z = (fz > epsilon) ? std::pow(fz, gamma) - s : k * fz;
   *L = Y * 1.16f;
   *A = (0.39181818181818181818f + 2.27272727272727272727f * (X - Y));
   *B = (0.49045454545454545454f + 0.90909090909090909090f * (Y - Z));
@@ -188,7 +193,8 @@ class Blur {
 
   Status BlurPlane(const ImageF& in, ImageF* JXL_RESTRICT out) {
     JXL_RETURN_IF_ERROR(FastGaussian(
-        rg_, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+        in.memory_manager(), rg_, in.xsize(), in.ysize(),
+        [&](size_t y) { return in.ConstRow(y); },
         [&](size_t y) { return temp_.Row(y); },
         [&](size_t y) { return out->Row(y); }));
     return true;

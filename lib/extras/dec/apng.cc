@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/extras/dec/apng.h"
-
 // Parts of this code are taken from apngdis, which has the following license:
 /* APNG Disassembler 2.8
  *
@@ -36,47 +34,56 @@
  *
  */
 
-#include <jxl/codestream_header.h>
-#include <jxl/encode.h>
+#include "lib/extras/dec/apng.h"
 
-#include <array>
-#include <atomic>
-#include <cstdint>
-#include <cstring>
-#include <limits>
-#include <memory>
-#include <string>
-#include <utility>
-#include <vector>
+// IWYU pragma: no_include <pngconf.h>
 
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
-#include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/rect.h"
-#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#if JPEGXL_ENABLE_APNG
-#include "png.h" /* original (unpatched) libpng is ok */
-#endif
-
-namespace jxl {
-namespace extras {
 
 #if !JPEGXL_ENABLE_APNG
 
+namespace jxl {
+namespace extras {
 bool CanDecodeAPNG() { return false; }
 Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                        const ColorHints& color_hints, PackedPixelFile* ppf,
                        const SizeConstraints* constraints) {
   return false;
 }
+}  // namespace extras
+}  // namespace jxl
 
 #else  // JPEGXL_ENABLE_APNG
 
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
+#include <jxl/types.h>
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <csetjmp>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/printf_macros.h"  // IWYU pragma: keep
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/sanitizers.h"
+#include "png.h" /* original (unpatched) libpng is ok */
+
+namespace jxl {
+namespace extras {
 namespace {
 
 constexpr std::array<uint8_t, 8> kPngSignature = {137,  'P',  'N', 'G',
@@ -240,7 +247,7 @@ Status DecodeGamaChunk(Bytes payload, JxlColorEncoding* color_encoding) {
   return true;
 }
 
-/** Extract information from 'cHTM' chunk. */
+/** Extract information from 'cHRM' chunk. */
 Status DecodeChrmChunk(Bytes payload, JxlColorEncoding* color_encoding) {
   if (payload.size() != 32) return JXL_FAILURE("Wrong cHRM size");
   const uint8_t* data = payload.data();
@@ -453,24 +460,21 @@ constexpr uint32_t MakeTag(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
 /** Reusable image data container. */
 struct Pixels {
   // Use array instead of vector to avoid memory initialization.
-  std::unique_ptr<uint8_t[]> pixels;
+  uninitialized_vector<uint8_t> pixels_storage =
+      jxl::make_uninitialized_vector<uint8_t>(0);
   size_t pixels_size = 0;
   std::vector<uint8_t*> rows;
-  std::atomic<bool> has_error{false};
+  std::atomic<uint32_t> has_error{0};
 
   Status Resize(size_t row_bytes, size_t num_rows) {
     size_t new_size = row_bytes * num_rows;  // it is assumed size is sane
     if (new_size > pixels_size) {
-      pixels.reset(new uint8_t[new_size]);
-      if (!pixels) {
-        // TODO(szabadka): use specialized OOM error code
-        return JXL_FAILURE("Failed to allocate memory for image buffer");
-      }
+      pixels_storage.resize(new_size);
       pixels_size = new_size;
     }
     rows.resize(num_rows);
     for (size_t y = 0; y < num_rows; y++) {
-      rows[y] = pixels.get() + y * row_bytes;
+      rows[y] = pixels_storage.data() + y * row_bytes;
     }
     return true;
   }
@@ -535,7 +539,7 @@ void ProgressiveRead_OnRow(png_structp png_ptr, png_bytep new_row,
     return;
   }
   if (row_num >= frame->rows.size()) {
-    frame->has_error = true;
+    frame->has_error = 1;
     return;
   }
   png_progressive_combine_row(png_ptr, frame->rows[row_num], new_row);
@@ -751,13 +755,15 @@ void SetColorData(PackedPixelFile* ppf, uint8_t color_type, uint8_t bit_depth,
 }
 
 // Color profile chunks: cICP has the highest priority, followed by
-// iCCP and sRGB (which shouldn't co-exist, but if they do, we use
-// iCCP), followed finally by gAMA and cHRM.
+// iCCP, followed by sRGB, followed finally by gAMA and cHRM.
 enum class ColorInfoType {
   NONE = 0,
-  GAMA_OR_CHRM = 1,
-  ICCP_OR_SRGB = 2,
-  CICP = 3
+  GAMA = 1,
+  CHRM = 2,
+  GAMA_AND_CHRM = 3,
+  SRGB = 4,
+  ICCP = 5,
+  CICP = 6
 };
 
 }  // namespace
@@ -1064,8 +1070,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
       case MakeTag('c', 'I', 'C', 'P'):
         if (color_info_type == ColorInfoType::CICP) {
-          JXL_DEBUG_V(2, "Excessive colorspace definition; cICP chunk ignored");
-          continue;
+          return JXL_FAILURE("Repeated cICP chunk");
         }
         JXL_RETURN_IF_ERROR(DecodeCicpChunk(payload, &ppf->color_encoding));
         ppf->icc.clear();
@@ -1075,10 +1080,10 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         continue;
 
       case MakeTag('i', 'C', 'C', 'P'): {
-        if (color_info_type == ColorInfoType::ICCP_OR_SRGB) {
-          return JXL_FAILURE("Repeated iCCP / sRGB chunk");
+        if (color_info_type == ColorInfoType::ICCP) {
+          return JXL_FAILURE("Repeated iCCP chunk");
         }
-        if (color_info_type > ColorInfoType::ICCP_OR_SRGB) {
+        if (color_info_type > ColorInfoType::ICCP) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; iCCP chunk ignored");
           continue;
         }
@@ -1101,38 +1106,50 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         }
         ppf->icc.assign(profile, profile + profile_len);
         ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
-        color_info_type = ColorInfoType::ICCP_OR_SRGB;
+        color_info_type = ColorInfoType::ICCP;
         continue;
       }
 
       case MakeTag('s', 'R', 'G', 'B'):
-        if (color_info_type == ColorInfoType::ICCP_OR_SRGB) {
-          return JXL_FAILURE("Repeated iCCP / sRGB chunk");
+        if (color_info_type == ColorInfoType::SRGB) {
+          return JXL_FAILURE("Repeated sRGB chunk");
         }
-        if (color_info_type > ColorInfoType::ICCP_OR_SRGB) {
+        if (color_info_type > ColorInfoType::SRGB) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; sRGB chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeSrgbChunk(payload, &ppf->color_encoding));
-        color_info_type = ColorInfoType::ICCP_OR_SRGB;
+        color_info_type = ColorInfoType::SRGB;
         continue;
 
       case MakeTag('g', 'A', 'M', 'A'):
-        if (color_info_type >= ColorInfoType::GAMA_OR_CHRM) {
+        if (color_info_type == ColorInfoType::GAMA ||
+            color_info_type == ColorInfoType::GAMA_AND_CHRM) {
+          return JXL_FAILURE("Repeated gAMA chunk");
+        }
+        if (color_info_type > ColorInfoType::GAMA_AND_CHRM) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; gAMA chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeGamaChunk(payload, &ppf->color_encoding));
-        color_info_type = ColorInfoType::GAMA_OR_CHRM;
+        color_info_type = color_info_type == ColorInfoType::CHRM
+                              ? ColorInfoType::GAMA_AND_CHRM
+                              : ColorInfoType::GAMA;
         continue;
 
       case MakeTag('c', 'H', 'R', 'M'):
-        if (color_info_type >= ColorInfoType::GAMA_OR_CHRM) {
+        if (color_info_type == ColorInfoType::CHRM ||
+            color_info_type == ColorInfoType::GAMA_AND_CHRM) {
+          return JXL_FAILURE("Repeated cHRM chunk");
+        }
+        if (color_info_type > ColorInfoType::GAMA_AND_CHRM) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; cHRM chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeChrmChunk(payload, &ppf->color_encoding));
-        color_info_type = ColorInfoType::GAMA_OR_CHRM;
+        color_info_type = color_info_type == ColorInfoType::GAMA
+                              ? ColorInfoType::GAMA_AND_CHRM
+                              : ColorInfoType::CHRM;
         continue;
 
       case MakeTag('c', 'L', 'L', 'i'):
@@ -1220,15 +1237,14 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         for (size_t y = 0; y < ysize; y++) {
           JXL_RETURN_IF_ERROR(
               PackedImage::ValidateDataType(new_data.format.data_type));
-          size_t bytes_per_pixel =
+          size_t pixel_stride =
               PackedImage::BitsPerChannel(new_data.format.data_type) *
               new_data.format.num_channels / 8;
           memcpy(
               static_cast<uint8_t*>(new_data.pixels()) +
-                  new_data.stride * (y + y0 - py0) +
-                  bytes_per_pixel * (x0 - px0),
+                  new_data.stride * (y + y0 - py0) + pixel_stride * (x0 - px0),
               static_cast<const uint8_t*>(pixels.pixels()) + pixels.stride * y,
-              xsize * bytes_per_pixel);
+              xsize * pixel_stride);
         }
 
         x0 = px0;
@@ -1287,7 +1303,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   return true;
 }
 
-#endif  // JPEGXL_ENABLE_APNG
-
 }  // namespace extras
 }  // namespace jxl
+
+#endif  // JPEGXL_ENABLE_APNG

@@ -9,6 +9,14 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 project(LIBJXL LANGUAGES C CXX)
 
+message(STATUS "CMake version: ${CMAKE_VERSION}")
+message(STATUS "Compiler IDs\
+ C:${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION},\
+ C++:${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+message(STATUS "Linker IDs\
+ C:${CMAKE_C_COMPILER_LINKER_ID} ${CMAKE_C_COMPILER_LINKER_VERSION},\
+ C++:${CMAKE_CXX_COMPILER_LINKER_ID} ${CMAKE_CXX_COMPILER_LINKER_VERSION}")
+
 # TODO(sboukortt): remove once oss-fuzz passes -DBUILD_SHARED_LIBS=OFF
 if(JPEGXL_ENABLE_FUZZERS)
   message(STATUS "Fuzzer build detected, building static libs")
@@ -20,6 +28,28 @@ include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag("-fsanitize=fuzzer-no-link" CXX_FUZZERS_SUPPORTED)
 check_cxx_compiler_flag("-fmacro-prefix-map=OLD=NEW" CXX_MACRO_PREFIX_MAP)
 check_cxx_compiler_flag("-fno-rtti" CXX_NO_RTTI_SUPPORTED)
+check_cxx_compiler_flag("-mavx2" CXX_MAVX2_SUPPORTED)
+check_cxx_compiler_flag("-mf16c" CXX_MF16C_SUPPORTED)
+check_cxx_compiler_flag("-mavx512f" CXX_MAVX512F_SUPPORTED)
+check_cxx_compiler_flag("-mavx512dq" CXX_MAVX512DQ_SUPPORTED)
+check_cxx_compiler_flag("-mavx512cd" CXX_MAVX512CD_SUPPORTED)
+check_cxx_compiler_flag("-mavx512bw" CXX_MAVX512BW_SUPPORTED)
+check_cxx_compiler_flag("-mavx512vl" CXX_MAVX512VL_SUPPORTED)
+
+check_cxx_source_compiles("
+#include <arm_sve.h>
+__attribute__((target(\"+sve\")))
+svuint32_t add(svuint32_t a, svuint32_t b) {
+  svuint32_t c = svadd_u32_z(svptrue_b32(), a, b);
+  return c;
+}
+
+int main() {
+  return 0;
+}
+"
+  CXX_SVE_SUPPORTED
+)
 
 # Add "DebugOpt" CMake build type. Unlike builtin DEBUG it is optimized.
 string(REGEX REPLACE "-DNDEBUG " "" CMAKE_CXX_FLAGS_DEBUGOPT "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -DDEBUG" )
@@ -102,6 +132,12 @@ else()
   set(ENABLE_SKCMS_DEFAULT YES)
 endif()
 
+set(JPEGXL_HWY_TARGETS AVX2 AVX3 AVX3_DL AVX3_SPR AVX3_ZEN4 EMU128 NEON NEON_BF16 NEON_WITHOUT_AES PPC10 PPC8 PPC9 RVV SCALAR SSE2 SSE4 SSSE3 SVE SVE_256 SVE2 SVE2_128 WASM WASM_EMU256 Z14 Z15)
+set(JPEGXL_HWY_TARGETS_OFF_BY_DEFAULT AVX3 AVX3_SPR AVX3_ZEN4 RVV SSSE3 SVE_256)
+if (NOT CXX_SVE_SUPPORTED)
+  list(APPEND JPEGXL_HWY_TARGETS_OFF_BY_DEFAULT SVE SVE2 SVE_256 SVE2_128)
+endif()
+
 # Standard cmake naming for building shared libraries.
 get_property(SHARED_LIBS_SUPPORTED GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS)
 option(BUILD_SHARED_LIBS "Build shared libraries instead of static ones" ${SHARED_LIBS_SUPPORTED})
@@ -148,16 +184,14 @@ set(JPEGXL_ENABLE_PLUGINS false CACHE BOOL
     "Build third-party plugins to support JPEG XL in other applications.")
 set(JPEGXL_ENABLE_COVERAGE false CACHE BOOL
     "Enable code coverage tracking for libjxl. This also enables debug and disables optimizations.")
-set(JPEGXL_ENABLE_SIZELESS_VECTORS false CACHE BOOL
-    "Builds in support for SVE/RVV vectorization")
 set(JPEGXL_ENABLE_TRANSCODE_JPEG true CACHE BOOL
     "Builds in support for decoding transcoded JXL files back to JPEG,\
  disabling it makes the decoder reject JXL_DEC_JPEG_RECONSTRUCTION events,\
- (default enabled)")
+ (default enabled).")
 set(JPEGXL_ENABLE_BOXES true CACHE BOOL
     "Builds in support for decoding boxes in JXL files,\
  disabling it makes the decoder reject JXL_DEC_BOX events,\
- (default enabled)")
+ (default enabled).")
 set(JPEGXL_STATIC false CACHE BOOL
     "Build tools as static binaries.")
 set(JPEGXL_WARNINGS_AS_ERRORS false CACHE BOOL
@@ -168,14 +202,20 @@ set(JPEGXL_FORCE_NEON false CACHE BOOL
     "Set flags to enable NEON in arm if not enabled by your toolchain.")
 set(JPEGXL_TEST_TOOLS false CACHE BOOL
     "Run scripts that test the encoding / decoding tools.")
-set(JPEGXL_ENABLE_AVX512 false CACHE BOOL
-    "Build with AVX512 support (faster on CPUs that support it, but larger binary size).")
-set(JPEGXL_ENABLE_AVX512_SPR false CACHE BOOL
-    "Build with AVX-512FP16 support (faster on CPUs that support it, but larger binary size).")
-set(JPEGXL_ENABLE_AVX512_ZEN4 false CACHE BOOL
-"Build with Zen4-optimized AVX512 support (faster on CPUs that support it, but larger binary size).")
 set(JPEGXL_ENABLE_WASM_THREADS true CACHE BOOL
-    "Builds WASM modules with threads support")
+    "Builds WASM modules with threads support.")
+set(JPEGXL_ENABLE_LTO false CACHE BOOL
+    "Set flags to enable LTO.")
+
+# HWY codegen levers
+foreach(tgt IN LISTS JPEGXL_HWY_TARGETS)
+  set(JPEGXL_ENABLE_HWY_${tgt}_DEFAULT true)
+  if (${tgt} IN_LIST JPEGXL_HWY_TARGETS_OFF_BY_DEFAULT)
+    set(JPEGXL_ENABLE_HWY_${tgt}_DEFAULT false)
+  endif()
+  set(JPEGXL_ENABLE_HWY_${tgt} ${JPEGXL_ENABLE_HWY_${tgt}_DEFAULT} CACHE BOOL
+    "Build with ${tgt} support (faster on CPUs that support it, but larger binary size).")
+endforeach()
 
 # Force system dependencies.
 set(JPEGXL_FORCE_SYSTEM_BROTLI false CACHE BOOL
@@ -194,27 +234,26 @@ if (NOT CMAKE_C_COMPILER_ID STREQUAL CMAKE_CXX_COMPILER_ID)
           "${CMAKE_C_COMPILER_ID} vs ${CMAKE_CXX_COMPILER_ID}")
 endif()
 
-message(STATUS
-    "Compiled IDs C:${CMAKE_C_COMPILER_ID}, C++:${CMAKE_CXX_COMPILER_ID}")
-
 set(JXL_HWY_INCLUDE_DIRS "$<BUILD_INTERFACE:$<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>>")
-# Always disable SSSE3 since it is rare to have SSSE3 but not SSE4
-set(HWY_DISABLED_TARGETS "HWY_SSSE3")
-if (NOT JPEGXL_ENABLE_AVX512)
-  message(STATUS "Disabled AVX512 (set JPEGXL_ENABLE_AVX512 to enable it)")
-  set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_AVX3")
-  add_definitions(-DFJXL_ENABLE_AVX512=0)
-endif()
-if (NOT JPEGXL_ENABLE_AVX512_SPR)
-  message(STATUS "Disabled AVX512_SPR (set JPEGXL_ENABLE_AVX512_SPR to enable it)")
-  set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_AVX3_SPR")
-endif()
-if (NOT JPEGXL_ENABLE_AVX512_ZEN4)
-  message(STATUS "Disabled AVX512_ZEN4 (set JPEGXL_ENABLE_AVX512_ZEN4 to enable it)")
-  set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_AVX3_ZEN4")
-endif()
 
-
+if (JXL_HWY_DISABLED_TARGETS_FORCED)
+  message(WARNING "HWY_DISABLED_TARGETS is overridden; JPEGXL_ENABLE_hwy_target will be ignored")
+else()
+  set(HWY_DISABLED_TARGETS_LIST "")
+  foreach(tgt IN LISTS JPEGXL_HWY_TARGETS)
+    message(STATUS "HWY ${tgt} enabled: ${JPEGXL_ENABLE_HWY_${tgt}}")
+    if (NOT JPEGXL_ENABLE_HWY_${tgt})
+      list(APPEND HWY_DISABLED_TARGETS_LIST HWY_${tgt})
+    endif()
+  endforeach()
+  if (NOT JPEGXL_ENABLE_HWY_AVX3)
+    add_definitions(-DFJXL_ENABLE_AVX512=0)
+  endif()
+  if (HWY_DISABLED_TARGETS_LIST)
+    list(JOIN HWY_DISABLED_TARGETS_LIST "|" HWY_DISABLED_TARGETS)
+    add_compile_options($<$<NOT:$<COMPILE_LANGUAGE:RC>>:-DHWY_DISABLED_TARGETS=\(${HWY_DISABLED_TARGETS}\)>)
+  endif()
+endif()
 
 # CMAKE_EXPORT_COMPILE_COMMANDS is used to generate the compilation database
 # used by clang-tidy.
@@ -225,12 +264,14 @@ if(JPEGXL_STATIC)
 
   # https://learn.microsoft.com/en-us/cpp/build/reference/md-mt-ld-use-run-time-library?view=msvc-170
   # https://cmake.org/cmake/help/latest/variable/CMAKE_MSVC_RUNTIME_LIBRARY.html
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "$<$<NOT:$<CONFIG:Debug>>:MultiThreaded>" CACHE STRING "")
+  # For debug builds we intentionally link with shared library to ensure that we don’t accidentally
+  # redistribute such binaries anywhere.
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:DebugDLL>" CACHE STRING "")
 
   # Clang developers say that in case to use "static" we have to build stdlib
   # ourselves; for real use case we don't care about stdlib, as it is "granted",
   # so just linking all other libraries is fine.
-  if (NOT MSVC)
+  if (NOT MSVC AND NOT APPLE)
     string(APPEND CMAKE_EXE_LINKER_FLAGS " -static")
   endif()
   if ((NOT WIN32 AND NOT APPLE) OR CYGWIN OR MINGW)
@@ -257,6 +298,7 @@ else()
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
+message(STATUS "CXX_STANDARD is ${CMAKE_CXX_STANDARD}")
 
 # Atomics
 find_package(Atomics REQUIRED)
@@ -283,7 +325,8 @@ if(JPEGXL_STATIC)
     link_libraries(-Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic)
   elseif(CMAKE_USE_PTHREADS_INIT)
     # "whole-archive" is not supported on OSX.
-    if (NOT APPLE)
+    # On Android, libc (bionic) has pthreads built-in.
+    if (NOT APPLE AND NOT ANDROID)
       # Set pthreads as a whole-archive, otherwise weak symbols in the static
       # libraries will discard pthreads symbols leading to segmentation fault at
       # runtime.
@@ -299,6 +342,12 @@ if (EMSCRIPTEN AND JPEGXL_ENABLE_WASM_THREADS)
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
+endif()
+
+if (JPEGXL_ENABLE_LTO)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -flto")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto")
 endif()
 
 if (CXX_MACRO_PREFIX_MAP)
@@ -325,17 +374,9 @@ else ()
     -D__TIME__="redacted"
   )
 
-  # TODO(eustas): JXL currently compiles, but does not pass tests...
-  if (NOT JXL_HWY_DISABLED_TARGETS_FORCED)
-    if (NOT JPEGXL_ENABLE_SIZELESS_VECTORS)
-      set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_SVE|HWY_SVE2|HWY_SVE_256|HWY_SVE2_128|HWY_RVV")
-    endif()
-    add_compile_options($<$<NOT:$<COMPILE_LANGUAGE:RC>>:-DHWY_DISABLED_TARGETS=\(${HWY_DISABLED_TARGETS}\)>)
-  endif()
-
   # Machine flags.
   add_compile_options(-funwind-tables)
-  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "riscv")
     add_compile_options("SHELL:-Xclang -mrelax-all")
   endif()
   if (CXX_CONSTRUCTOR_ALIASES_SUPPORTED)
@@ -372,7 +413,7 @@ else ()
 
   if(JPEGXL_ENABLE_COVERAGE)
     set(JPEGXL_COVERAGE_FLAGS
-        -g -O0 -fprofile-arcs -ftest-coverage
+        -g -O0 -fprofile-arcs -ftest-coverage -fprofile-update=atomic
     )
     set(JPEGXL_COVERAGE_LINK_FLAGS
         --coverage
@@ -402,6 +443,9 @@ endif()
 add_subdirectory(lib)
 
 if(BUILD_TESTING)
+  if (NOT EXISTS "${JPEGXL_TEST_DATA_PATH}/README.md")
+    message(FATAL_ERROR "testdata directory '${JPEGXL_TEST_DATA_PATH}' is not populated")
+  endif()
   # Script to run tests over the source code in bash.
   find_program (BASH_PROGRAM bash)
   if(BASH_PROGRAM)
@@ -413,54 +457,14 @@ endif() # BUILD_TESTING
 
 # Documentation generated by Doxygen
 if(JPEGXL_ENABLE_DOXYGEN)
-  find_package(Doxygen)
-  if(DOXYGEN_FOUND)
-    set(DOXYGEN_GENERATE_HTML "YES")
-    set(DOXYGEN_GENERATE_XML "YES")
-    set(DOXYGEN_STRIP_FROM_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lib/include")
-    if(JPEGXL_WARNINGS_AS_ERRORS)
-      set(DOXYGEN_WARN_AS_ERROR "YES")
-    endif()
-    set(DOXYGEN_QUIET "YES")
-    doxygen_add_docs(doc
-      "${CMAKE_CURRENT_SOURCE_DIR}/lib/include"
-      "${CMAKE_CURRENT_SOURCE_DIR}/doc/api.txt"
-      WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-      COMMENT "Generating C API documentation")
-
-    # Add sphinx doc build step for readthedocs.io (requires doxygen too).
-    find_program(SPHINX_BUILD_PROGRAM sphinx-build)
-    if(SPHINX_BUILD_PROGRAM)
-      add_custom_command(
-        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rtd/nonexistent"
-        COMMENT "Generating readthedocs.io output on ${CMAKE_CURRENT_BINARY_DIR}/rtd"
-        COMMAND ${SPHINX_BUILD_PROGRAM} -q -W -b html -j auto
-          ${CMAKE_SOURCE_DIR}/doc/sphinx
-          ${CMAKE_CURRENT_BINARY_DIR}/rtd
-        DEPENDS doc
-      )
-      # This command runs the documentation generation every time since the output
-      # target file doesn't exist.
-      add_custom_target(rtd-html
-        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/rtd/nonexistent
-      )
-    else() # SPHINX_BUILD_PROGRAM\
-      message(WARNING "sphinx-build not found, skipping rtd documentation")
-    endif() # SPHINX_BUILD_PROGRAM
-
-  else()
-    # Create a "doc" target for compatibility since "doc" is not otherwise added to
-    # the build when doxygen is not installed.
-    add_custom_target(doc false
-      COMMENT "Error: Can't generate doc since Doxygen not installed.")
-  endif() # DOXYGEN_FOUND
+  add_subdirectory(doc)
 endif() # JPEGXL_ENABLE_DOXYGEN
 
 if(JPEGXL_ENABLE_MANPAGES)
   find_program(ASCIIDOC a2x)
   if(ASCIIDOC)
     file(STRINGS "${ASCIIDOC}" ASCIIDOC_SHEBANG LIMIT_COUNT 1)
-    if(ASCIIDOC_SHEBANG MATCHES "sh$" OR ASCIIDOC_SHEBANG MATCHES "libexec/bin/python$" OR MINGW)
+    if(ASCIIDOC_SHEBANG MATCHES "sh( -e)?$" OR ASCIIDOC_SHEBANG MATCHES "libexec/bin/python$" OR MINGW)
       set(ASCIIDOC_PY_FOUND ON)
       # Run the program directly and set ASCIIDOC as empty.
       set(ASCIIDOC_PY "${ASCIIDOC}")
@@ -544,4 +548,15 @@ list_test_targets(all_tests_list ${CMAKE_CURRENT_SOURCE_DIR})
 if(all_tests_list)
   add_custom_target(all_tests)
   add_dependencies(all_tests ${all_tests_list})
+endif()
+
+# uninstall target
+if(NOT TARGET uninstall)
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake_uninstall.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+    IMMEDIATE @ONLY)
+
+  add_custom_target(uninstall
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
 endif()

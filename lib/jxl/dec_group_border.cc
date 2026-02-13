@@ -5,10 +5,12 @@
 
 #include "lib/jxl/dec_group_border.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
@@ -18,43 +20,42 @@ namespace jxl {
 
 void GroupBorderAssigner::Init(const FrameDimensions& frame_dim) {
   frame_dim_ = frame_dim;
-  size_t num_corners =
-      (frame_dim_.xsize_groups + 1) * (frame_dim_.ysize_groups + 1);
-  { std::vector<std::atomic<uint8_t>>(num_corners).swap(counters_); }
+  size_t x_size = frame_dim_.xsize_groups;
+  size_t y_size = frame_dim_.ysize_groups;
+  counters_.resize(y_size + 1);
   // Initialize counters.
-  for (size_t y = 0; y < frame_dim_.ysize_groups + 1; y++) {
-    for (size_t x = 0; x < frame_dim_.xsize_groups + 1; x++) {
-      // Counters at image borders don't have anything on the other side, we
-      // pre-fill their value to have more uniform handling afterwards.
-      uint8_t init_value = 0;
-      if (x == 0) {
-        init_value |= kTopLeft | kBottomLeft;
-      }
-      if (x == frame_dim_.xsize_groups) {
-        init_value |= kTopRight | kBottomRight;
-      }
-      if (y == 0) {
-        init_value |= kTopLeft | kTopRight;
-      }
-      if (y == frame_dim_.ysize_groups) {
-        init_value |= kBottomLeft | kBottomRight;
-      }
-      counters_[y * (frame_dim_.xsize_groups + 1) + x] = init_value;
+  for (auto& current_row : counters_) {
+    std::vector<std::atomic<uint32_t>> row((x_size + 1 + 7) / 8);
+    for (auto& v : row) {
+      v = 0;
     }
+    row.swap(current_row);
+  }
+  // Counters at image borders don't have anything on the other side, we
+  // pre-fill their value to have more uniform handling afterwards.
+  auto set = [this](size_t x, size_t y, uint32_t corners) {
+    counters_[y][x / 8] |= corners << (4 * (x & 7u));
+  };
+  for (size_t x = 0; x < x_size + 1; x++) {
+    set(x, 0, kTopLeft | kTopRight);
+    set(x, y_size, kBottomLeft | kBottomRight);
+  }
+  for (size_t y = 0; y < y_size + 1; y++) {
+    set(0, y, kTopLeft | kBottomLeft);
+    set(x_size, y, kTopRight | kBottomRight);
   }
 }
 
 void GroupBorderAssigner::ClearDone(size_t group_id) {
+  auto clear = [this](size_t x, size_t y, uint32_t corners) {
+    counters_[y][x / 8].fetch_and(~(corners << (4 * (x & 7u))));
+  };
   size_t x = group_id % frame_dim_.xsize_groups;
   size_t y = group_id / frame_dim_.xsize_groups;
-  size_t top_left_idx = y * (frame_dim_.xsize_groups + 1) + x;
-  size_t top_right_idx = y * (frame_dim_.xsize_groups + 1) + x + 1;
-  size_t bottom_right_idx = (y + 1) * (frame_dim_.xsize_groups + 1) + x + 1;
-  size_t bottom_left_idx = (y + 1) * (frame_dim_.xsize_groups + 1) + x;
-  counters_[top_left_idx].fetch_and(~kBottomRight);
-  counters_[top_right_idx].fetch_and(~kBottomLeft);
-  counters_[bottom_left_idx].fetch_and(~kTopRight);
-  counters_[bottom_right_idx].fetch_and(~kTopLeft);
+  clear(x, y, kBottomRight);
+  clear(x + 1, y, kBottomLeft);
+  clear(x, y + 1, kTopRight);
+  clear(x + 1, y + 1, kTopLeft);
 }
 
 // Looking at each corner between groups, we can guarantee that the four
@@ -76,23 +77,20 @@ void GroupBorderAssigner::GroupDone(size_t group_id, size_t padx, size_t pady,
                   frame_dim_.group_dim / kBlockDim, frame_dim_.xsize_blocks,
                   frame_dim_.ysize_blocks);
 
-  size_t top_left_idx = y * (frame_dim_.xsize_groups + 1) + x;
-  size_t top_right_idx = y * (frame_dim_.xsize_groups + 1) + x + 1;
-  size_t bottom_right_idx = (y + 1) * (frame_dim_.xsize_groups + 1) + x + 1;
-  size_t bottom_left_idx = (y + 1) * (frame_dim_.xsize_groups + 1) + x;
-
-  auto fetch_status = [this](size_t idx, uint8_t bit) {
+  auto fetch_status = [this](size_t x, size_t y, uint32_t bit) {
     // Note that the acq-rel semantics of this fetch are actually needed to
     // ensure that the pixel data of the group is already written to memory.
-    size_t status = counters_[idx].fetch_or(bit);
+    size_t shift = 4 * (x & 7u);
+    size_t status = counters_[y][x / 8].fetch_or(bit << shift);
+    status >>= shift;
     JXL_DASSERT((bit & status) == 0);
-    return bit | status;
+    return (bit | status) & 0xF;
   };
 
-  size_t top_left_status = fetch_status(top_left_idx, kBottomRight);
-  size_t top_right_status = fetch_status(top_right_idx, kBottomLeft);
-  size_t bottom_right_status = fetch_status(bottom_right_idx, kTopLeft);
-  size_t bottom_left_status = fetch_status(bottom_left_idx, kTopRight);
+  size_t top_left_status = fetch_status(x, y, kBottomRight);
+  size_t top_right_status = fetch_status(x + 1, y, kBottomLeft);
+  size_t bottom_right_status = fetch_status(x + 1, y + 1, kTopLeft);
+  size_t bottom_left_status = fetch_status(x, y + 1, kTopRight);
 
   size_t x1 = block_rect.x0() + block_rect.xsize();
   size_t y1 = block_rect.y0() + block_rect.ysize();
@@ -151,17 +149,17 @@ void GroupBorderAssigner::GroupDone(size_t group_id, size_t padx, size_t pady,
   std::pair<size_t, size_t> horizontal_segments[3] = {{kNoSegment, kNoSegment},
                                                       {kNoSegment, kNoSegment},
                                                       {kNoSegment, kNoSegment}};
-  for (size_t y = 0; y < 3; y++) {
-    for (size_t x = 0; x < 3; x++) {
-      if (!available_parts_mask[x][y]) continue;
-      JXL_DASSERT(horizontal_segments[y].second == kNoSegment ||
-                  horizontal_segments[y].second == x);
-      JXL_DASSERT((horizontal_segments[y].first == kNoSegment) ==
-                  (horizontal_segments[y].second == kNoSegment));
-      if (horizontal_segments[y].first == kNoSegment) {
-        horizontal_segments[y].first = x;
+  for (size_t py = 0; py < 3; py++) {
+    for (size_t px = 0; px < 3; px++) {
+      if (!available_parts_mask[px][py]) continue;
+      JXL_DASSERT(horizontal_segments[py].second == kNoSegment ||
+                  horizontal_segments[py].second == px);
+      JXL_DASSERT((horizontal_segments[py].first == kNoSegment) ==
+                  (horizontal_segments[py].second == kNoSegment));
+      if (horizontal_segments[py].first == kNoSegment) {
+        horizontal_segments[py].first = px;
       }
-      horizontal_segments[y].second = x + 1;
+      horizontal_segments[py].second = px + 1;
     }
   }
   if (horizontal_segments[0] == horizontal_segments[1] &&

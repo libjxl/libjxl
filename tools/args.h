@@ -8,12 +8,11 @@
 
 // Helpers for parsing command line arguments. No include guard needed.
 
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <string>
-#include <utility>
+#include <vector>
 
 #include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/override.h"
@@ -35,20 +34,6 @@ static inline bool ParseOverride(const char* arg, jxl::Override* out) {
   }
   fprintf(stderr, "Invalid flag, %s must be 0 or 1\n", arg);
   return JXL_FAILURE("Args");
-}
-
-static inline bool ParseFloatPair(const char* arg,
-                                  std::pair<float, float>* out) {
-  int parsed = sscanf(arg, "%f,%f", &out->first, &out->second);
-  if (parsed == 1) {
-    out->second = out->first;
-  } else if (parsed != 2) {
-    fprintf(stderr,
-            "Unable to interpret as float pair separated by a comma: %s.\n",
-            arg);
-    return JXL_FAILURE("Args");
-  }
-  return true;
 }
 
 template <typename Callback>

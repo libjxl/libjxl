@@ -5,16 +5,27 @@
 
 #include "lib/jxl/enc_debug_image.h"
 
+#include <jxl/color_encoding.h>
 #include <jxl/memory_manager.h>
+#include <jxl/types.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <type_traits>
+#include <vector>
 
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
 
 namespace jxl {

@@ -9,17 +9,17 @@
 #include <jxl/encode.h>
 #include <jxl/memory_manager.h>
 #include <jxl/parallel_runner.h>
+#include <jxl/stats.h>
 #include <jxl/thread_parallel_runner.h>
-#include <jxl/types.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
-#include "lib/extras/packed_image.h"
-
 namespace jxl {
 namespace extras {
+
+class PackedPixelFile;
 
 struct JXLOption {
   JXLOption(JxlEncoderFrameSettingId id, int64_t val, size_t frame_index)

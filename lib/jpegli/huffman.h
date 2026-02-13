@@ -9,7 +9,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "lib/jpegli/common_internal.h"
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 

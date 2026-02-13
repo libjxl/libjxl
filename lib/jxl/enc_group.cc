@@ -7,7 +7,19 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/memory_manager_internal.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -293,14 +305,11 @@ void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
   {
     // Reduce quant in highly active areas.
     int32_t div = (xsize * ysize);
-    int32_t activity = (static_cast<int32_t>(hfNonZeros[0]) + div / 2) / div;
-    int32_t orig_qp_limit = std::max(4, *quant / 2);
-    for (int i = 1; i < 4; ++i) {
-      activity = std::min(
-          activity, (static_cast<int32_t>(hfNonZeros[i]) + div / 2) / div);
-    }
-    if (activity >= 15) {
-      activity = 15;
+    float min_hf_non_zeros =
+        std::min({hfNonZeros[0], hfNonZeros[1], hfNonZeros[2], hfNonZeros[3]});
+    int32_t activity = 15;
+    if (min_hf_non_zeros < 15.0f * div) {
+      activity = (static_cast<int32_t>(min_hf_non_zeros) + div / 2) / div;
     }
     int32_t qp = *quant - activity;
     if (c == 1) {
@@ -308,6 +317,7 @@ void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
         thresholds[i] += 0.01 * activity;
       }
     }
+    int32_t orig_qp_limit = std::max(4, *quant / 2);
     if (qp < orig_qp_limit) {
       qp = orig_qp_limit;
     }
@@ -360,8 +370,8 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
   HWY_CAPPED(int32_t, kDCTBlockSize) di;
   const auto inv_qac = Set(df, quantizer.inv_quant_ac(*quant));
   for (size_t k = 0; k < kDCTBlockSize * xsize * ysize; k += Lanes(df)) {
-    const auto quant = Load(di, quantized + size + k);
-    const auto adj_quant = AdjustQuantBias(di, 1, quant, biases);
+    const auto oquant = Load(di, quantized + size + k);
+    const auto adj_quant = AdjustQuantBias(di, 1, oquant, biases);
     const auto dequantm = Load(df, dequant_matrix + k);
     Store(Mul(Mul(adj_quant, dequantm), inv_qac), df, inout + size + k);
   }
@@ -470,7 +480,7 @@ Status ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                                 scratch_space);
           }
           DCFromLowestFrequencies(acs.Strategy(), coeffs_in + size,
-                                  dc_rows[1] + bx, dc_stride);
+                                  dc_rows[1] + bx, dc_stride, scratch_space);
 
           QuantizeRoundtripYBlockAC(
               enc_state, size, enc_state->shared.quantizer, error_diffusion,
@@ -498,7 +508,7 @@ Status ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                             coeffs_in + c * size, &quant_ac,
                             quantized + c * size);
             DCFromLowestFrequencies(acs.Strategy(), coeffs_in + c * size,
-                                    dc_rows[c] + bx, dc_stride);
+                                    dc_rows[c] + bx, dc_stride, scratch_space);
           }
           row_quant_ac[bx] = quant_ac;
           for (size_t c = 0; c < 3; c++) {
@@ -549,10 +559,10 @@ Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
   }
   size_t context_offset =
       histogram_idx * enc_state.shared.block_ctx_map.NumACContexts();
-  JXL_RETURN_IF_ERROR(WriteTokens(
-      enc_state.passes[pass_idx].ac_tokens[group_idx],
-      enc_state.passes[pass_idx].codes, enc_state.passes[pass_idx].context_map,
-      context_offset, writer, LayerType::AcTokens, aux_out));
+  JXL_RETURN_IF_ERROR(
+      WriteTokens(enc_state.passes[pass_idx].ac_tokens[group_idx],
+                  enc_state.passes[pass_idx].codes, context_offset, writer,
+                  LayerType::AcTokens, aux_out));
 
   return true;
 }

@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/libjpeg_test_util.h"
 #include "lib/jpegli/test_params.h"

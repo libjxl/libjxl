@@ -511,7 +511,7 @@ struct ColorEncoding {
   // Checks if the color space and transfer function are the same, ignoring
   // rendering intent and ICC bytes
   bool SameColorEncoding(const ColorEncoding& other) const {
-    return SameColorSpace(other) && tf.IsSame(other.tf);
+    return SameColorSpace(other) && tf.IsSame(other.tf) && !cmyk && !other.cmyk;
   }
 
   // Returns true if all fields have been initialized (possibly to kUnknown).
@@ -604,28 +604,28 @@ struct ColorEncoding {
       JXL_RETURN_IF_ERROR(
           PrimariesFromExternal(external.primaries, &primaries));
       if (external.primaries == JXL_PRIMARIES_CUSTOM) {
-        PrimariesCIExy primaries;
-        primaries.r.x = external.primaries_red_xy[0];
-        primaries.r.y = external.primaries_red_xy[1];
-        primaries.g.x = external.primaries_green_xy[0];
-        primaries.g.y = external.primaries_green_xy[1];
-        primaries.b.x = external.primaries_blue_xy[0];
-        primaries.b.y = external.primaries_blue_xy[1];
-        JXL_RETURN_IF_ERROR(SetPrimaries(primaries));
+        PrimariesCIExy new_primaries;
+        new_primaries.r.x = external.primaries_red_xy[0];
+        new_primaries.r.y = external.primaries_red_xy[1];
+        new_primaries.g.x = external.primaries_green_xy[0];
+        new_primaries.g.y = external.primaries_green_xy[1];
+        new_primaries.b.x = external.primaries_blue_xy[0];
+        new_primaries.b.y = external.primaries_blue_xy[1];
+        JXL_RETURN_IF_ERROR(SetPrimaries(new_primaries));
       }
     }
-    CustomTransferFunction tf;
+    CustomTransferFunction new_tf;
     if (external.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
-      JXL_RETURN_IF_ERROR(tf.SetGamma(external.gamma));
+      JXL_RETURN_IF_ERROR(new_tf.SetGamma(external.gamma));
     } else {
       TransferFunction tf_enum;
       // JXL_TRANSFER_FUNCTION_GAMMA is not handled by this function since
       // there's no internal enum value for it.
       JXL_RETURN_IF_ERROR(ConvertExternalToInternalTransferFunction(
           external.transfer_function, &tf_enum));
-      tf.SetTransferFunction(tf_enum);
+      new_tf.SetTransferFunction(tf_enum);
     }
-    this->tf = tf;
+    tf = new_tf;
 
     JXL_RETURN_IF_ERROR(RenderingIntentFromExternal(external.rendering_intent,
                                                     &rendering_intent));

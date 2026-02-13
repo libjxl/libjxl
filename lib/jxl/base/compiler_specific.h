@@ -8,7 +8,10 @@
 
 // Macros for compiler version + nonstandard keywords, e.g. __builtin_expect.
 
-#include <sys/types.h>
+#include <sys/types.h>  // IWYU pragma: export
+#ifdef __clang_analyzer__
+#include <stdio.h>  // IWYU pragma: export
+#endif
 
 #include "lib/jxl/base/sanitizer_definitions.h"
 
@@ -90,11 +93,6 @@
 #else
 #define JXL_LIKELY(expr) __builtin_expect(!!(expr), 1)
 #define JXL_UNLIKELY(expr) __builtin_expect(!!(expr), 0)
-#endif
-
-#if JXL_COMPILER_MSVC
-#include <stdint.h>
-using ssize_t = intptr_t;
 #endif
 
 // Returns a void* pointer which the compiler then assumes is N-byte aligned.

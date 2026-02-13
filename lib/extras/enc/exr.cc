@@ -5,23 +5,51 @@
 
 #include "lib/extras/enc/exr.h"
 
-#if JPEGXL_ENABLE_EXR
-#include <ImfChromaticitiesAttribute.h>
+#include <memory>
+
+// IWYU pragma: no_include "ImathConfig.h"
+// IWYU pragma: no_include "ImfChromaticities.h"
+// IWYU pragma: no_include "ImfHeader.h"
+// IWYU pragma: no_include "OpenEXRConfig.h"
+#include "lib/extras/enc/encode.h"
+
+#if !JPEGXL_ENABLE_EXR
+
+namespace jxl {
+namespace extras {
+std::unique_ptr<Encoder> GetEXREncoder() { return nullptr; }
+}  // namespace extras
+}  // namespace jxl
+
+#else  // JPEGXL_ENABLE_EXR
+
+#include <ImathVec.h>
 #include <ImfIO.h>
+#include <ImfNamespace.h>  // IWYU pragma: keep
+#include <ImfRgba.h>
 #include <ImfRgbaFile.h>
 #include <ImfStandardAttributes.h>
-#endif
+#include <ImfThreading.h>
 #include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
+#include <jxl/types.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <utility>
 #include <vector>
 
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {
-
-#if JPEGXL_ENABLE_EXR
 namespace {
 
 namespace OpenEXR = OPENEXR_IMF_NAMESPACE;
@@ -86,10 +114,24 @@ Status EncodeImageEXR(const PackedImage& image, const JxlBasicInfo& info,
   const bool has_alpha = info.alpha_bits > 0;
   const bool alpha_is_premultiplied = FROM_JXL_BOOL(info.alpha_premultiplied);
 
-  if (info.num_color_channels != 3 ||
-      c_enc.color_space != JXL_COLOR_SPACE_RGB ||
-      c_enc.transfer_function != JXL_TRANSFER_FUNCTION_LINEAR) {
-    return JXL_FAILURE("Unsupported color encoding for OpenEXR output.");
+  if (info.num_color_channels != 3) {
+    return JXL_FAILURE("OpenEXR encoding: expected 3 color channels, got %u",
+                       static_cast<unsigned>(info.num_color_channels));
+  }
+  if (c_enc.color_space != JXL_COLOR_SPACE_RGB &&
+      c_enc.color_space != JXL_COLOR_SPACE_GRAY) {
+    return JXL_FAILURE(
+        "OpenEXR encoding: expected RGB (%d) or grayscale (%d) colorspace, got "
+        "%d",
+        static_cast<int>(JXL_COLOR_SPACE_RGB),
+        static_cast<int>(JXL_COLOR_SPACE_GRAY),
+        static_cast<int>(c_enc.color_space));
+  }
+  if (c_enc.transfer_function != JXL_TRANSFER_FUNCTION_LINEAR) {
+    return JXL_FAILURE(
+        "OpenEXR encoding: expected linear transfer function (%d), got %d",
+        static_cast<int>(JXL_TRANSFER_FUNCTION_LINEAR),
+        static_cast<int>(c_enc.transfer_function));
   }
 
   const size_t num_channels = 3 + (has_alpha ? 1 : 0);
@@ -99,20 +141,22 @@ Status EncodeImageEXR(const PackedImage& image, const JxlBasicInfo& info,
     return JXL_FAILURE("Unsupported pixel format for OpenEXR output");
   }
 
-  const uint8_t* in = reinterpret_cast<const uint8_t*>(image.pixels());
+  const uint8_t* in = static_cast<const uint8_t*>(image.pixels());
   size_t in_stride = num_channels * 4 * xsize;
 
   OpenEXR::Header header(xsize, ysize);
-  OpenEXR::Chromaticities chromaticities;
-  chromaticities.red =
-      Imath::V2f(c_enc.primaries_red_xy[0], c_enc.primaries_red_xy[1]);
-  chromaticities.green =
-      Imath::V2f(c_enc.primaries_green_xy[0], c_enc.primaries_green_xy[1]);
-  chromaticities.blue =
-      Imath::V2f(c_enc.primaries_blue_xy[0], c_enc.primaries_blue_xy[1]);
-  chromaticities.white =
-      Imath::V2f(c_enc.white_point_xy[0], c_enc.white_point_xy[1]);
-  OpenEXR::addChromaticities(header, chromaticities);
+  if (c_enc.color_space == JXL_COLOR_SPACE_RGB) {
+    OpenEXR::Chromaticities chromaticities;
+    chromaticities.red =
+        Imath::V2f(c_enc.primaries_red_xy[0], c_enc.primaries_red_xy[1]);
+    chromaticities.green =
+        Imath::V2f(c_enc.primaries_green_xy[0], c_enc.primaries_green_xy[1]);
+    chromaticities.blue =
+        Imath::V2f(c_enc.primaries_blue_xy[0], c_enc.primaries_blue_xy[1]);
+    chromaticities.white =
+        Imath::V2f(c_enc.white_point_xy[0], c_enc.white_point_xy[1]);
+    OpenEXR::addChromaticities(header, chromaticities);
+  }
   OpenEXR::addWhiteLuminance(header, info.intensity_target);
 
   auto loadFloat =
@@ -125,7 +169,10 @@ Status EncodeImageEXR(const PackedImage& image, const JxlBasicInfo& info,
   {
     InMemoryOStream os(bytes);
     OpenEXR::RgbaOutputFile output(
-        os, header, has_alpha ? OpenEXR::WRITE_RGBA : OpenEXR::WRITE_RGB);
+        os, header,
+        c_enc.color_space == JXL_COLOR_SPACE_GRAY
+            ? (has_alpha ? OpenEXR::WRITE_YA : OpenEXR::WRITE_Y)
+            : (has_alpha ? OpenEXR::WRITE_RGBA : OpenEXR::WRITE_RGB));
     // How many rows to write at once. Again, the OpenEXR documentation
     // recommends writing the whole image in one call.
     const int y_chunk_size = ysize;
@@ -164,7 +211,7 @@ Status EncodeImageEXR(const PackedImage& image, const JxlBasicInfo& info,
 class EXREncoder : public Encoder {
   std::vector<JxlPixelFormat> AcceptedFormats() const override {
     std::vector<JxlPixelFormat> formats;
-    for (const uint32_t num_channels : {1, 2, 3, 4}) {
+    for (const uint32_t num_channels : {3, 4}) {
       for (const JxlDataType data_type : {JXL_TYPE_FLOAT}) {
         for (JxlEndianness endianness : {JXL_BIG_ENDIAN, JXL_LITTLE_ENDIAN}) {
           formats.push_back(JxlPixelFormat{/*num_channels=*/num_channels,
@@ -194,15 +241,12 @@ class EXREncoder : public Encoder {
 };
 
 }  // namespace
-#endif
 
 std::unique_ptr<Encoder> GetEXREncoder() {
-#if JPEGXL_ENABLE_EXR
   return jxl::make_unique<EXREncoder>();
-#else
-  return nullptr;
-#endif
 }
 
 }  // namespace extras
 }  // namespace jxl
+
+#endif  // JPEGXL_ENABLE_EXR

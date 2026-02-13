@@ -8,13 +8,18 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <hwy/base.h>
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
@@ -131,7 +136,7 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
         float* row = get_row(c, y);
         for (size_t ix = 0; ix < stage->settings_.border_x; ix++) {
           *(row - ix - 1) =
-              row[Mirror(-static_cast<ssize_t>(ix) - 1, input_sizes[c].first)];
+              row[Mirror(-static_cast<ptrdiff_t>(ix) - 1, input_sizes[c].first)];
         }
         for (size_t ix = 0; ix < stage->settings_.border_x; ix++) {
           *(row + ix + input_sizes[c].first) =
@@ -141,7 +146,7 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       // Vertical mirroring.
       for (int y = 0; y < static_cast<int>(stage->settings_.border_y); y++) {
         memcpy(get_row(c, -y - 1) - stage->settings_.border_x,
-               get_row(c, Mirror(-static_cast<ssize_t>(y) - 1,
+               get_row(c, Mirror(-static_cast<ptrdiff_t>(y) - 1,
                                  input_sizes[c].second)) -
                    stage->settings_.border_x,
                sizeof(float) *
@@ -214,16 +219,17 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
     }
     for (size_t c = 0; c < channel_data_.size(); c++) {
       size_t next_stage = std::min(stage_id + 1, channel_shifts_.size() - 1);
-      size_t xsize = DivCeil(frame_dimensions_.xsize_upsampled,
-                             1 << channel_shifts_[next_stage][c].first);
-      size_t ysize = DivCeil(frame_dimensions_.ysize_upsampled,
-                             1 << channel_shifts_[next_stage][c].second);
+      size_t c_xsize = DivCeil(frame_dimensions_.xsize_upsampled,
+                               1 << channel_shifts_[next_stage][c].first);
+      size_t c_ysize = DivCeil(frame_dimensions_.ysize_upsampled,
+                               1 << channel_shifts_[next_stage][c].second);
       JXL_RETURN_IF_ERROR(
-          channel_data_[c].ShrinkTo(xsize + 2 * kRenderPipelineXOffset,
-                                    ysize + 2 * kRenderPipelineXOffset));
+          channel_data_[c].ShrinkTo(c_xsize + 2 * kRenderPipelineXOffset,
+                                    c_ysize + 2 * kRenderPipelineXOffset));
       JXL_CHECK_PLANE_INITIALIZED(
           channel_data_[c],
-          Rect(kRenderPipelineXOffset, kRenderPipelineXOffset, xsize, ysize),
+          Rect(kRenderPipelineXOffset, kRenderPipelineXOffset, c_xsize,
+               c_ysize),
           c);
     }
 
@@ -253,8 +259,8 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
         // background that won't be occluded.
         stage->ProcessPaddingRow(output_rows, image_xsize, 0, y);
       }
-      ssize_t x0 = frame_origin.x0;
-      ssize_t y0 = frame_origin.y0;
+      ptrdiff_t x0 = frame_origin.x0;
+      ptrdiff_t y0 = frame_origin.y0;
       size_t x0_fg = 0;
       size_t y0_fg = 0;
       if (x0 < 0) {
@@ -267,7 +273,7 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       }
       if (y0 < 0) {
         ysize += y0;
-        y0_fg -= x0;
+        y0_fg -= y0;
         y0 = 0;
       }
       if (y0 + ysize > image_ysize) {

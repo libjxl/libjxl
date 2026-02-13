@@ -20,7 +20,7 @@ const size_t kMaxTestIter = 100000;
 
 // F(w) = (w - w_min)^2.
 struct SimpleQuadraticFunction {
-  typedef Array<double, 2> ArrayType;
+  using ArrayType = Array<double, 2>;
   explicit SimpleQuadraticFunction(const ArrayType& w0) : w_min(w0) {}
 
   double Compute(const ArrayType& w, ArrayType* df) const {
@@ -38,7 +38,7 @@ struct PowerFunction {
                          const std::vector<double>& y0)
       : x(x0), y(y0) {}
 
-  typedef Array<double, 3> ArrayType;
+  using ArrayType = Array<double, 3>;
   double Compute(const ArrayType& w, ArrayType* df) const {
     double loss_function = 0;
     (*df)[0] = 0;

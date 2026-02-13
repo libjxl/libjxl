@@ -5,6 +5,14 @@
 
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
 
+#include <cstddef>
+#include <memory>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/loop_filter.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_gaborish.cc"
 #include <hwy/foreach_target.h>
@@ -65,8 +73,8 @@ class GaborishStage : public RenderPipelineStage {
 #endif
       // Since GetInputRow(input_rows, c, {-1, 0, 1}) is aligned, rounding
       // xextra up to Lanes(d) doesn't access anything problematic.
-      for (ssize_t x = -RoundUpTo(xextra, Lanes(d));
-           x < static_cast<ssize_t>(xsize + xextra); x += Lanes(d)) {
+      for (ptrdiff_t x = -RoundUpTo(xextra, Lanes(d));
+           x < static_cast<ptrdiff_t>(xsize + xextra); x += Lanes(d)) {
         const auto t = LoadMaybeU(d, row_t + x);
         const auto tl = LoadU(d, row_t + x - 1);
         const auto tr = LoadU(d, row_t + x + 1);

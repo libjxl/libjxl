@@ -7,6 +7,22 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
+#include <memory>
+#include <vector>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_cache.h"
+#include "lib/jxl/dec_patch_dictionary.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_blending.cc"
 #include <hwy/foreach_target.h>
@@ -65,8 +81,8 @@ class BlendingStage : public RenderPipelineStage {
 
     Status ok = verify_bg_size(bg);
     for (const auto& info : ec_info) {
-      const ImageBundle& bg = *state_.reference_frames[info.source].frame;
-      if (!!ok) ok = verify_bg_size(bg);
+      const ImageBundle& ec_bg = *state_.reference_frames[info.source].frame;
+      if (!!ok) ok = verify_bg_size(ec_bg);
     }
     if (!ok) {
       initialized_ = ok;
@@ -121,12 +137,12 @@ class BlendingStage : public RenderPipelineStage {
     JXL_ENSURE(initialized_);
     JxlMemoryManager* memory_manager = state_.memory_manager;
     const FrameOrigin& frame_origin = frame_header_.frame_origin;
-    ssize_t bg_xpos = frame_origin.x0 + static_cast<ssize_t>(xpos);
-    ssize_t bg_ypos = frame_origin.y0 + static_cast<ssize_t>(ypos);
+    ptrdiff_t bg_xpos = frame_origin.x0 + static_cast<ptrdiff_t>(xpos);
+    ptrdiff_t bg_ypos = frame_origin.y0 + static_cast<ptrdiff_t>(ypos);
     int offset = 0;
-    if (bg_xpos + static_cast<ssize_t>(xsize) <= 0 ||
-        frame_origin.x0 >= static_cast<ssize_t>(image_xsize_) || bg_ypos < 0 ||
-        bg_ypos >= static_cast<ssize_t>(image_ysize_)) {
+    if (bg_xpos + static_cast<ptrdiff_t>(xsize) <= 0 ||
+        frame_origin.x0 >= static_cast<ptrdiff_t>(image_xsize_) ||
+        bg_ypos < 0 || bg_ypos >= static_cast<ptrdiff_t>(image_ysize_)) {
       // TODO(eustas): or fail?
       return true;
     }
@@ -136,8 +152,8 @@ class BlendingStage : public RenderPipelineStage {
       bg_xpos = 0;
     }
     if (bg_xpos + xsize > image_xsize_) {
-      xsize =
-          std::max<ssize_t>(0, static_cast<ssize_t>(image_xsize_) - bg_xpos);
+      xsize = std::max<ptrdiff_t>(
+          0, static_cast<ptrdiff_t>(image_xsize_) - bg_xpos);
     }
     std::vector<const float*> bg_row_ptrs_(input_rows.size());
     std::vector<float*> fg_row_ptrs_(input_rows.size());

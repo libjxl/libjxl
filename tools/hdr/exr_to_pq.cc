@@ -3,15 +3,25 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <vector>
 
+#include "lib/extras/codec_in_out.h"
 #include "lib/extras/dec/decode.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/tone_mapping.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/matrix_ops.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/cms/jxl_cms_internal.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_ops.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/hdr/image_utils.h"
@@ -85,21 +95,22 @@ int main(int argc, const char** argv) {
   JPEGXL_TOOLS_CHECK(jxl::extras::DecodeBytes(jxl::Bytes(input_bytes),
                                               jxl::extras::ColorHints(), &ppf));
 
-  jxl::CodecInOut image{jpegxl::tools::NoMemoryManager()};
-  JPEGXL_TOOLS_CHECK(
-      jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool.get(), &image));
-  image.metadata.m.bit_depth.exponent_bits_per_sample = 0;
-  jxl::ColorEncoding linear_rec_2020 = image.Main().c_current();
+  auto image =
+      jxl::make_unique<jxl::CodecInOut>(jpegxl::tools::NoMemoryManager());
+  JPEGXL_TOOLS_CHECK(jxl::extras::ConvertPackedPixelFileToCodecInOut(
+      ppf, pool.get(), image.get()));
+  image->metadata.m.bit_depth.exponent_bits_per_sample = 0;
+  jxl::ColorEncoding linear_rec_2020 = image->Main().c_current();
   JPEGXL_TOOLS_CHECK(linear_rec_2020.SetPrimariesType(jxl::Primaries::k2100));
   linear_rec_2020.Tf().SetTransferFunction(jxl::TransferFunction::kLinear);
   JPEGXL_TOOLS_CHECK(linear_rec_2020.CreateICC());
-  JPEGXL_TOOLS_CHECK(
-      jpegxl::tools::TransformCodecInOutTo(image, linear_rec_2020, pool.get()));
+  JPEGXL_TOOLS_CHECK(jpegxl::tools::TransformCodecInOutTo(
+      *image, linear_rec_2020, pool.get()));
 
   jxl::Matrix3x3 primaries_xyz;
   jxl::PrimariesCIExy p;
-  JPEGXL_TOOLS_CHECK(image.Main().c_current().GetPrimaries(p));
-  const jxl::CIExy wp = image.Main().c_current().GetWhitePoint();
+  JPEGXL_TOOLS_CHECK(image->Main().c_current().GetPrimaries(p));
+  const jxl::CIExy wp = image->Main().c_current().GetWhitePoint();
   JPEGXL_TOOLS_CHECK(jxl::PrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x,
                                          p.b.y, wp.x, wp.y, primaries_xyz));
 
@@ -112,11 +123,11 @@ int main(int argc, const char** argv) {
                               ? luminance_info.luminance
                               : 0.f;
   bool out_of_gamut = false;
-  for (size_t y = 0; y < image.ysize(); ++y) {
-    const float* const rows[3] = {image.Main().color()->ConstPlaneRow(0, y),
-                                  image.Main().color()->ConstPlaneRow(1, y),
-                                  image.Main().color()->ConstPlaneRow(2, y)};
-    for (size_t x = 0; x < image.xsize(); ++x) {
+  for (size_t y = 0; y < image->ysize(); ++y) {
+    const float* const rows[3] = {image->Main().color()->ConstPlaneRow(0, y),
+                                  image->Main().color()->ConstPlaneRow(1, y),
+                                  image->Main().color()->ConstPlaneRow(2, y)};
+    for (size_t x = 0; x < image->xsize(); ++x) {
       if (!out_of_gamut &&
           (rows[0][x] < 0 || rows[1][x] < 0 || rows[2][x] < 0)) {
         out_of_gamut = true;
@@ -154,23 +165,23 @@ int main(int argc, const char** argv) {
             "--intensity_target=%g.\n",
             white_luminance);
   }
-  image.metadata.m.SetIntensityTarget(white_luminance);
+  image->metadata.m.SetIntensityTarget(white_luminance);
 
-  jxl::ScaleImage(1.f / max_value, image.Main().color());
+  jxl::ScaleImage(1.f / max_value, image->Main().color());
 
   if (needs_gamut_mapping) {
-    JPEGXL_TOOLS_CHECK(jxl::GamutMap(&image, 0.f, pool.get()));
+    JPEGXL_TOOLS_CHECK(jxl::GamutMap(image.get(), 0.f, pool.get()));
   }
 
-  jxl::ColorEncoding pq = image.Main().c_current();
+  jxl::ColorEncoding pq = image->Main().c_current();
   pq.Tf().SetTransferFunction(jxl::TransferFunction::kPQ);
   JPEGXL_TOOLS_CHECK(pq.CreateICC());
   JPEGXL_TOOLS_CHECK(
-      jpegxl::tools::TransformCodecInOutTo(image, pq, pool.get()));
-  image.metadata.m.color_encoding = pq;
+      jpegxl::tools::TransformCodecInOutTo(*image, pq, pool.get()));
+  image->metadata.m.color_encoding = pq;
   std::vector<uint8_t> encoded;
   JPEGXL_TOOLS_CHECK(
-      jpegxl::tools::Encode(image, output_filename, &encoded, pool.get()));
+      jpegxl::tools::Encode(*image, output_filename, &encoded, pool.get()));
   JPEGXL_TOOLS_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
   return EXIT_SUCCESS;
 }

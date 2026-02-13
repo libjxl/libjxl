@@ -5,15 +5,25 @@
 
 #include "lib/extras/enc/npy.h"
 
+#include <jxl/codestream_header.h>
 #include <jxl/types.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <ostream>
 #include <sstream>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
+#include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {
@@ -314,6 +324,7 @@ class NumPyEncoder : public Encoder {
     }
     return formats;
   }
+  bool AcceptsCmyk() const override { return true; }
 };
 
 }  // namespace

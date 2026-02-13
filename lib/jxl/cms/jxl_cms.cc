@@ -308,7 +308,7 @@ int DoColorSpaceTransform(void* t, size_t thread, const float* buf_src,
 #if JPEGXL_ENABLE_SKCMS
 
 JXL_MUST_USE_RESULT CIExy CIExyFromXYZ(const Color& XYZ) {
-  const float factor = 1.f / (XYZ[0] + XYZ[1] + XYZ[2]);
+  const double factor = 1.0 / static_cast<double>(XYZ[0] + XYZ[1] + XYZ[2]);
   CIExy xy;
   xy.x = XYZ[0] * factor;
   xy.y = XYZ[1] * factor;

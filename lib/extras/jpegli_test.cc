@@ -108,7 +108,7 @@ TEST(JpegliTest, JpegliSRGBDecodeTest) {
   PackedPixelFile ppf0;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf0));
   EXPECT_EQ("RGB_D65_SRG_Rel_SRG", Description(ppf0.color_encoding));
-  EXPECT_EQ(8, ppf0.info.bits_per_sample);
+  EXPECT_EQ(8u, ppf0.info.bits_per_sample);
 
   std::vector<uint8_t> compressed;
   ASSERT_TRUE(EncodeWithLibjpeg(ppf0, 90, &compressed));
@@ -127,7 +127,7 @@ TEST(JpegliTest, JpegliGrayscaleDecodeTest) {
   PackedPixelFile ppf0;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf0));
   EXPECT_EQ("Gra_D65_Rel_SRG", Description(ppf0.color_encoding));
-  EXPECT_EQ(8, ppf0.info.bits_per_sample);
+  EXPECT_EQ(8u, ppf0.info.bits_per_sample);
 
   std::vector<uint8_t> compressed;
   ASSERT_TRUE(EncodeWithLibjpeg(ppf0, 90, &compressed));
@@ -146,7 +146,7 @@ TEST(JpegliTest, JpegliXYBEncodeTest) {
   PackedPixelFile ppf_in;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
   EXPECT_EQ("RGB_D65_SRG_Rel_SRG", Description(ppf_in.color_encoding));
-  EXPECT_EQ(8, ppf_in.info.bits_per_sample);
+  EXPECT_EQ(8u, ppf_in.info.bits_per_sample);
 
   std::vector<uint8_t> compressed;
   JpegSettings settings;
@@ -196,7 +196,7 @@ TEST(JpegliTest, JpegliYUVEncodeTest) {
   PackedPixelFile ppf_in;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
   EXPECT_EQ("RGB_D65_SRG_Rel_SRG", Description(ppf_in.color_encoding));
-  EXPECT_EQ(8, ppf_in.info.bits_per_sample);
+  EXPECT_EQ(8u, ppf_in.info.bits_per_sample);
 
   std::vector<uint8_t> compressed;
   JpegSettings settings;
@@ -215,7 +215,7 @@ TEST(JpegliTest, JpegliYUVChromaSubsamplingEncodeTest) {
   PackedPixelFile ppf_in;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
   EXPECT_EQ("RGB_D65_SRG_Rel_SRG", Description(ppf_in.color_encoding));
-  EXPECT_EQ(8, ppf_in.info.bits_per_sample);
+  EXPECT_EQ(8u, ppf_in.info.bits_per_sample);
 
   std::vector<uint8_t> compressed;
   JpegSettings settings;
@@ -237,7 +237,7 @@ TEST(JpegliTest, JpegliYUVEncodeTestNoAq) {
   PackedPixelFile ppf_in;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
   EXPECT_EQ("RGB_D65_SRG_Rel_SRG", Description(ppf_in.color_encoding));
-  EXPECT_EQ(8, ppf_in.info.bits_per_sample);
+  EXPECT_EQ(8u, ppf_in.info.bits_per_sample);
 
   std::vector<uint8_t> compressed;
   JpegSettings settings;
@@ -256,7 +256,7 @@ TEST(JpegliTest, JpegliHDRRoundtripTest) {
   PackedPixelFile ppf_in;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
   EXPECT_EQ("Rec2100HLG", Description(ppf_in.color_encoding));
-  EXPECT_EQ(16, ppf_in.info.bits_per_sample);
+  EXPECT_EQ(16u, ppf_in.info.bits_per_sample);
 
   std::vector<uint8_t> compressed;
   JpegSettings settings;
@@ -276,7 +276,7 @@ TEST(JpegliTest, JpegliSetAppData) {
   PackedPixelFile ppf_in;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
   EXPECT_EQ("RGB_D65_SRG_Rel_SRG", Description(ppf_in.color_encoding));
-  EXPECT_EQ(8, ppf_in.info.bits_per_sample);
+  EXPECT_EQ(8u, ppf_in.info.bits_per_sample);
 
   std::vector<uint8_t> compressed;
   JpegSettings settings;
@@ -342,7 +342,7 @@ TEST_P(JpegliColorQuantTestParam, JpegliColorQuantizeTest) {
   PackedPixelFile ppf0;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf0));
   EXPECT_EQ("RGB_D65_SRG_Rel_SRG", Description(ppf0.color_encoding));
-  EXPECT_EQ(8, ppf0.info.bits_per_sample);
+  EXPECT_EQ(8u, ppf0.info.bits_per_sample);
 
   std::vector<uint8_t> compressed;
   ASSERT_TRUE(EncodeWithLibjpeg(ppf0, 90, &compressed));
