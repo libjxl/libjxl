@@ -344,7 +344,7 @@ typedef enum {
    * -1 = default (let the encoder decide)
    * 0 = buffers everything, basically the same as non-streamed code path
    (mainly for testing)
-   * 1 = buffers everything for images that are smaller than 2048 x 2048, and
+   * 1 = buffers everything for images that are 2048 x 2048 or smaller, and
    *     uses streaming input and output for larger images
    * 2 = uses streaming input and output for all images that are larger than
    *     one group, i.e. 256 x 256 pixels by default

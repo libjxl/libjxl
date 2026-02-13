@@ -1769,9 +1769,6 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
                             const FrameInfo& frame_info,
                             const CodecMetadata& metadata,
                             const JxlEncoderChunkedFrameAdapter& frame_data) {
-  if (cparams.buffering == 0) {
-    return false;
-  }
   if (cparams.buffering == -1) {
     if (cparams.speed_tier < SpeedTier::kTortoise) return false;
     if (cparams.speed_tier < SpeedTier::kSquirrel &&
@@ -1783,9 +1780,19 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
       return false;
     }
   }
-
-  // TODO(veluca): handle different values of `buffering`.
-  if (frame_data.xsize <= 2048 && frame_data.ysize <= 2048) {
+  if (cparams.buffering == 0) {
+    return false;
+  }
+  if (cparams.buffering == 1 &&
+      frame_data.xsize <= 2048 && frame_data.ysize <= 2048) {
+    return false;
+  }
+  // Buffering level 3 is currently the same as 2.
+  if (cparams.buffering >= 2 && 
+  // TODO(Jonnyawsom3): Pipe in the current group size and use that instead.
+  // Tried a few different ways but it refused to compile, so using 400
+  // to match the basic heuristcs in MakeFrameHeader.
+      frame_data.xsize <= 400 && frame_data.ysize <= 400) {
     return false;
   }
   if (frame_data.IsJPEG()) {
