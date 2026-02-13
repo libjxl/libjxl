@@ -143,8 +143,14 @@ Status ParseWhitePoint(Tokenizer* tokenizer, JxlColorEncoding* c) {
   JXL_RETURN_IF_ERROR(tokenizer->Next(&str));
   if (ParseEnum(str, kJxlWhitePointNames, &c->white_point)) return true;
 
-  Tokenizer xy_tokenizer(&str, ';');
   c->white_point = JXL_WHITE_POINT_CUSTOM;
+  if (str == "D50") {
+    c->white_point_xy[0] = 0.345669;
+    c->white_point_xy[1] = 0.358496;
+    return true;
+  }
+
+  Tokenizer xy_tokenizer(&str, ';');
   JXL_RETURN_IF_ERROR(ParseDouble(&xy_tokenizer, c->white_point_xy + 0));
   JXL_RETURN_IF_ERROR(ParseDouble(&xy_tokenizer, c->white_point_xy + 1));
   return true;
@@ -160,6 +166,7 @@ Status ParsePrimaries(Tokenizer* tokenizer, JxlColorEncoding* c) {
   std::string str;
   JXL_RETURN_IF_ERROR(tokenizer->Next(&str));
   if (ParseEnum(str, kJxlPrimariesNames, &c->primaries)) return true;
+  // Adobe98 primaries
   if (str == "Ado") {
     c->primaries_red_xy[0] = 0.6400;
     c->primaries_red_xy[1] = 0.3300;
@@ -167,6 +174,17 @@ Status ParsePrimaries(Tokenizer* tokenizer, JxlColorEncoding* c) {
     c->primaries_green_xy[1] = 0.7100;
     c->primaries_blue_xy[0] = 0.1500;
     c->primaries_blue_xy[1] = 0.0600;
+    c->primaries = JXL_PRIMARIES_CUSTOM;
+    return true;
+  }
+  // ProPhoto primaries
+  if (str == "Pro") {
+    c->primaries_red_xy[0] = 0.734699;
+    c->primaries_red_xy[1] = 0.265301;
+    c->primaries_green_xy[0] = 0.159597;
+    c->primaries_green_xy[1] = 0.840403;
+    c->primaries_blue_xy[0] = 0.036598;
+    c->primaries_blue_xy[1] = 0.000105;
     c->primaries = JXL_PRIMARIES_CUSTOM;
     return true;
   }
@@ -207,7 +225,15 @@ Status ParseTransferFunction(Tokenizer* tokenizer, JxlColorEncoding* c) {
   }
   if (str == "Ado") {
     c->transfer_function = JXL_TRANSFER_FUNCTION_GAMMA;
-    c->gamma = 256.0/563.0;
+    c->gamma = 256.0 / 563.0;
+    return true;
+  }
+  // This is how it is done in the Adobe ProPhoto space;
+  // others use a transfer function with a short linear segment
+  // (but that cannot be represented as a jxl color encoding)
+  if (str == "Pro") {
+    c->transfer_function = JXL_TRANSFER_FUNCTION_GAMMA;
+    c->gamma = 1.0 / 1.8;
     return true;
   }
   if (str[0] == 'g') {
@@ -229,6 +255,8 @@ Status ParseDescription(const std::string& description, JxlColorEncoding* c) {
     return ParseDescription("RGB_D65_DCI_Rel_SRG", c);
   } else if (description == "Adobe98") {
     return ParseDescription("RGB_D65_Ado_Rel_Ado", c);
+  } else if (description == "ProPhoto") {
+    return ParseDescription("RGB_D50_Pro_Rel_Pro", c);
   } else if (description == "Rec2100PQ") {
     return ParseDescription("RGB_D65_202_Rel_PeQ", c);
   } else if (description == "Rec2100HLG") {
