@@ -760,26 +760,22 @@ void TreeSamples::Swap(size_t a, size_t b) {
 namespace {
 std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
                                        size_t num_chunks) {
-  // 1) Safety guards
+  // Todo: Refactor later for better density
   if (histogram.empty() || num_chunks == 0) return {};
   uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
   if (sum == 0) return {};
   std::vector<int32_t> thresholds;
   thresholds.reserve(num_chunks - 1);
   uint64_t cumsum = 0;
-  uint64_t next_quantile = 1;  // we’re looking to hit 1/num_chunks, 2/num_chunks, …
-  // 2) Single‐pass, multiply‐only check, early out
+  uint64_t next_quantile = 1;
   for (size_t i = 0; i < histogram.size() && next_quantile < num_chunks; ++i) {
     cumsum += histogram[i];
-    // multiply‐only equivalent of:
-    //    cumsum >= (next_quantile/num_chunks) * sum
     if (cumsum * num_chunks >= next_quantile * sum) {
       thresholds.push_back(static_cast<int32_t>(i));
-      ++next_quantile;  // move on to the *next* quantile
+      ++next_quantile; 
     }
   }
   JXL_DASSERT(thresholds.size() <= num_chunks);
-  // We will have pushed exactly (num_chunks−1) thresholds
   return thresholds;
 }
 
