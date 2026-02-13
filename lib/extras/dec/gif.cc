@@ -297,7 +297,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
            total_rect.xsize() != canvas.color.xsize ||
            total_rect.ysize() != canvas.color.ysize || !replace)) {
         if (!JXL_IS_DEBUG_BUILD) {
-          printf(
+          fprintf(stderr,
               "GIF with dispose-to-0 is not supported for non-full or blended "
               "frames\n");
         }
