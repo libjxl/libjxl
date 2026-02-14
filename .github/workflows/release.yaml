@@ -325,6 +325,7 @@ jobs:
           -DJPEGXL_ENABLE_VIEWERS=OFF \
           -DJPEGXL_ENABLE_DEVTOOLS='ON' \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+          -DX_VCPKG_APPLOCAL_DEPS_INSTALL=${{ matrix.static == 'OFF' && 'ON' || 'OFF' }} \
         #
     - name: Build
       shell: 'bash'
@@ -336,15 +337,16 @@ jobs:
       run: |
         set -x
         cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+        mkdir ${PREFIX}/licenses
         for pkg in giflib libjpeg-turbo libpng libwebp zlib; do
           cp vcpkg/installed/${{matrix.triplet}}/share/${pkg}/copyright \
-            ${PREFIX}/bin/LICENSE.${pkg}
+            ${PREFIX}/licenses/LICENSE.${pkg}
         done
-        cp third_party/sjpeg/COPYING ${PREFIX}/bin/LICENSE.sjpeg
-        cp third_party/skcms/LICENSE ${PREFIX}/bin/LICENSE.skcms
-        cp third_party/highway/LICENSE ${PREFIX}/bin/LICENSE.highway
-        cp third_party/brotli/LICENSE ${PREFIX}/bin/LICENSE.brotli
-        cp LICENSE ${PREFIX}/bin/LICENSE.libjxl
+        cp third_party/sjpeg/COPYING ${PREFIX}/licenses/LICENSE.sjpeg
+        cp third_party/skcms/LICENSE ${PREFIX}/licenses/LICENSE.skcms
+        cp third_party/highway/LICENSE ${PREFIX}/licenses/LICENSE.highway
+        cp third_party/brotli/LICENSE ${PREFIX}/licenses/LICENSE.brotli
+        cp LICENSE ${PREFIX}/licenses/LICENSE.libjxl
 
     - name: Fast benchmark ${{ matrix.triplet }}
       shell: 'bash'
@@ -361,8 +363,8 @@ jobs:
       shell: 'bash'
       if: matrix.upload != 'OFF'
       run: |
-        7z -mx a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin/* ${PREFIX}/lib/*
-        7z -mx a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin/* ${PREFIX}/lib/*
+        7z -mx a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
+        7z -mx a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
 
     - name: Upload release
       if: matrix.upload != 'OFF'
