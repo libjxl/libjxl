@@ -2403,7 +2403,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
                    AuxOut* aux_out) {
   CompressParams cparams = cparams_orig;
   if (cparams.speed_tier == SpeedTier::kTectonicPlate &&
-      !cparams.IsLossless()) {
+      (!cparams.IsLossless() || frame_data.IsJPEG())) {
     cparams.speed_tier = SpeedTier::kGlacier;
   }
   // Lightning mode is handled externally, so switch to Thunder mode to handle
