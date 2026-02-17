@@ -97,7 +97,7 @@ One dependency that `build_site.py` requires is [uglifyjs](https://github.com/mi
 ```
 npm install uglify-js -g
 ```
-If you followed the [wasm build instructions](../../docs/building_wasm.md),
+If you followed the [WASM build instructions](../../docs/building_wasm.md),
 assuming you are in the root level of the cloned libjxl repo a typical call to
 build the site would be
 ```bash
@@ -106,7 +106,7 @@ python3 ./tools/wasm_demo/build_site.py ./tools/wasm_demo/ ./build-wasm32/tools/
 Then you need to put your image files in the correct same place and are should be good to go.
 
 
-To summarize, using the wasm decoder together with a service workder amounts to adding
+To summarize, using the WASM decoder together with a service worker amounts to adding
 ```html
 <script src="service_worker.js"></script>
 ```

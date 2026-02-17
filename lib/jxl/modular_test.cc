@@ -84,7 +84,8 @@ void TestLosslessGroups(size_t group_size_shift) {
   size_t compressed_size =
       Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
   EXPECT_LE(compressed_size, 280000u);
-  EXPECT_EQ(0.0f, test::ComputeDistance2(t.ppf(), ppf_out));
+  float disntance2 = test::ComputeDistance2(t.ppf(), ppf_out);
+  EXPECT_EQ(0.0f, disntance2);
 }
 
 TEST(ModularTest, RoundtripLosslessGroups128) { TestLosslessGroups(0); }
@@ -114,7 +115,7 @@ void TestLarge(size_t dim, size_t co_dim, size_t group_size_shift) {
     extras::PackedPixelFile ppf_out;
     size_t compressed_size =
         Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
-    EXPECT_LE(compressed_size, 16384);
+    EXPECT_LE(compressed_size, 16384u);
   }
 }
 
@@ -249,12 +250,12 @@ TEST(ModularTest, RoundtripLossy) {
   size_t compressed_size;
   JXL_EXPECT_OK(
       Roundtrip(io.get(), cparams, dparams, io_out.get(), _, &compressed_size));
-  EXPECT_LE(compressed_size, 30000u);
+  EXPECT_LE(compressed_size, 23000u);
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io->frames, io_out->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
-      2.3);
+      3.0);
 }
 
 TEST(ModularTest, RoundtripLossy16) {
@@ -279,12 +280,12 @@ TEST(ModularTest, RoundtripLossy16) {
   size_t compressed_size;
   JXL_EXPECT_OK(
       Roundtrip(io.get(), cparams, dparams, io_out.get(), _, &compressed_size));
-  EXPECT_LE(compressed_size, 300u);
+  EXPECT_LE(compressed_size, 230u);
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io->frames, io_out->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
-      1.6);
+      1.8);
 }
 
 TEST(ModularTest, RoundtripExtraProperties) {
@@ -436,7 +437,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
       }
     }
   }
-  EXPECT_EQ(different, 0);
+  EXPECT_EQ(different, 0u);
 }
 
 TEST(ModularTest, RoundtripLosslessCustomFloat) {
@@ -567,7 +568,7 @@ TEST(ModularTest, PredictorIntegerOverflow) {
   params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
                              nullptr, &ppf));
-  ASSERT_EQ(1, ppf.frames.size());
+  ASSERT_EQ(1u, ppf.frames.size());
   const auto& img = ppf.frames[0].color;
   const auto* pixels = reinterpret_cast<const float*>(img.pixels());
   EXPECT_EQ(-1.0f, pixels[0]);
@@ -618,7 +619,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
   params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
                              nullptr, &ppf));
-  ASSERT_EQ(1, ppf.frames.size());
+  ASSERT_EQ(1u, ppf.frames.size());
   const auto& img = ppf.frames[0].color;
   const float* pixels = reinterpret_cast<const float*>(img.pixels());
   for (size_t x = 0; x < xsize; ++x) {

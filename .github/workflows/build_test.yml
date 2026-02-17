@@ -144,6 +144,24 @@ jobs:
             mode: release
             cc: clang
             cxx: clang++
+          # LTO builds
+          - name: release_lto
+            os: ubuntu-latest
+            mode: release
+            cc: clang-17
+            cxx: clang++-17
+            apt_pkgs: lld
+            cmake_args: >-
+              -DJPEGXL_ENABLE_LTO=ON
+              -DCMAKE_LINKER_TYPE=LLD
+          - name: release_lto:gcc
+            os: ubuntu-latest
+            mode: release
+            cc: gcc
+            cxx: g++
+            cmake_args: >-
+              -DJPEGXL_ENABLE_LTO=ON
+          # OSX builds
           - name: release:osx
             os: macos-latest
             mode: release
@@ -155,22 +173,69 @@ jobs:
             test_stack_limit: 128
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
+          - name: debug:osx-15
+            # The last available x86_64 OSX runner
+            os: macos-15-intel
+            mode: debug
+            cmake_args: >-
+              -DCMAKE_FIND_FRAMEWORK=NEVER
+          # Android builds
+          - name: release_android
+            os: ubuntu-latest
+            mode: release
+            skip_install: true
+            skip_stats: true
+            skip_test: true # can't finish "linking" tests without emulator
+            force_system_brotli: OFF
+            cmake_args: >-
+              -DANDROID_ABI=arm64-v8a
+              -DANDROID_PLATFORM=28
+              -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_LATEST_HOME}/build/cmake/android.toolchain.cmake
+              -DJPEGXL_ENABLE_BENCHMARK=OFF
+              -DJPEGXL_ENABLE_OPENEXR=OFF
+              -DJPEGXL_ENABLE_PLUGINS=OFF
+              -DJPEGXL_ENABLE_VIEWERS=OFF
+              -DSJPEG_ANDROID_NDK_PATH=${ANDROID_NDK_LATEST_HOME}
+              -DJPEGXL_BUNDLE_LIBPNG=ON
+          - name: release_ios
+            os: macos-latest
+            mode: release
+            skip_install: true
+            skip_stats: true
+            skip_test: true # can't finish "linking" tests without emulator
+            force_system_brotli: OFF
+            cmake_args: >-
+              -DCMAKE_SYSTEM_NAME=iOS
+              -DCMAKE_OSX_ARCHITECTURES=arm64
+              -DJPEGXL_ENABLE_BENCHMARK=OFF
+              -DJPEGXL_ENABLE_OPENEXR=OFF
+              -DJPEGXL_ENABLE_PLUGINS=OFF
+              -DJPEGXL_ENABLE_VIEWERS=OFF
+              -DJPEGXL_BUNDLE_LIBPNG=ON
+
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
       EMIT_STACK_SIZES: ${{ matrix.emit_stack_sizes }}
       TEST_STACK_LIMIT: ${{ matrix.test_stack_limit }}
-      WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
+      WILL_TEST: ${{ !matrix.skip_test && (github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
-      WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
+      WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench || false }}
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
       FASTER_MSAN_BUILD: 1
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit
+
+    - name: Check workflow configuration
+      run: |
+        if [[ "${{ matrix.run_bench && !matrix.test_in_pr }}" == "true" ]]; then
+          echo "::error title::Configuration Error::'run_bench' requires 'test_in_pr'"
+          exit 1
+        fi
 
     - name: Install build deps MacOS
       if: startsWith(matrix.os, 'macos-')
@@ -185,7 +250,7 @@ jobs:
         fi
 
     - name: Checkout the source
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         submodules: true
         fetch-depth: 2
@@ -220,14 +285,14 @@ jobs:
 
     - name: Cache LLVM sources
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
 
     - name: Checkout the LLVM source
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         submodules: false
         repository: llvm/llvm-project
@@ -241,7 +306,7 @@ jobs:
       shell: bash
 
     - name: ccache
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -262,10 +327,11 @@ jobs:
         [[ -n "${MODE}" ]] || MODE="${{ matrix.name }}"
         SKIP_TEST=1 TARGETS=all CMAKE_CXX_FLAGS='${{ matrix.cxxflags }}' CMAKE_FLAGS='-DHWY_BROKEN_TARGETS=0' \
         ./ci.sh ${MODE} \
-          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+          -DJPEGXL_FORCE_SYSTEM_BROTLI=${{ matrix.force_system_brotli || 'ON'}} \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
           -DBUILD_TESTING=${BUILD_TESTS} \
+          -DJPEGXL_ENABLE_HWY_AVX3_DL=false \
           ${{ matrix.cmake_args }}
 
     - name: Build stats
@@ -277,7 +343,7 @@ jobs:
       run: ccache --show-stats
 
     - name: Build stats ${{ matrix.name }}
-      if: env.WILL_BUILD == 'true' && matrix.mode == 'release'
+      if: env.WILL_BUILD == 'true' && matrix.mode == 'release' && !matrix.skip_stats
       run: |
         SHARED_LIB_EXT="${{ startsWith(matrix.os, 'macos-') && 'dylib' || 'so' }}"
         SELECT_BINUTILS="${{ startsWith(matrix.os, 'macos-') && '--binutils `brew --prefix binutils`/bin/' || '' }}"
@@ -330,7 +396,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
+      uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
       with:
         flags: unittests
         files: build/coverage.xml

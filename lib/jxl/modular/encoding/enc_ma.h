@@ -7,6 +7,7 @@
 #define LIB_JXL_MODULAR_ENCODING_ENC_MA_H_
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -19,6 +20,11 @@
 #include "lib/jxl/modular/options.h"
 
 namespace jxl {
+
+struct ResidualToken {
+  uint8_t tok;
+  uint8_t nbits;
+};
 
 // Struct to collect all the data needed to build a tree.
 struct TreeSamples {
@@ -34,8 +40,13 @@ struct TreeSamples {
   Status SetProperties(const std::vector<uint32_t> &properties,
                        ModularOptions::TreeMode wp_tree_mode);
 
+  const std::vector<ResidualToken>& RTokens(size_t pred) const {
+    return residuals[pred];
+  }
+  const ResidualToken &RToken(size_t pred, size_t i) const {
+    return residuals[pred][i];
+  }
   size_t Token(size_t pred, size_t i) const { return residuals[pred][i].tok; }
-  size_t NBits(size_t pred, size_t i) const { return residuals[pred][i].nbits; }
   size_t Count(size_t i) const { return sample_counts[i]; }
   size_t PredictorIndex(Predictor predictor) const {
     const auto predictor_elem =
@@ -52,11 +63,15 @@ struct TreeSamples {
   size_t NumPropertyValues(size_t property_index) const {
     return compact_properties[property_index].size() + 1;
   }
+  size_t NumStaticProps() const { return num_static_props; }
   // Returns the *quantized* property value.
+  template<bool S>
   size_t Property(size_t property_index, size_t i) const {
-    return property_index < num_static_props
-               ? static_props[property_index][i]
-               : props[property_index - num_static_props][i];
+    if (S) {
+      return static_props[property_index][i];
+    } else {
+      return props[property_index][i];
+    }
   }
   int UnquantizeProperty(size_t property_index, uint32_t quant) const {
     JXL_DASSERT(quant < compact_properties[property_index].size());
@@ -112,10 +127,6 @@ struct TreeSamples {
   // properties and counts in a single vector to improve locality.
   // A first attempt at doing this actually results in much slower encoding,
   // possibly because of the more complex addressing.
-  struct ResidualToken {
-    uint8_t tok;
-    uint8_t nbits;
-  };
   // Residual information: token and number of extra bits, per predictor.
   std::vector<std::vector<ResidualToken>> residuals;
   // Number of occurrences of each sample.

@@ -116,15 +116,17 @@ IntersectionType BoxIntersects(StaticPropRange needle, StaticPropRange haystack,
   return partial ? IntersectionType::kPartial : IntersectionType::kInside;
 }
 
+template<bool S>
 void SplitTreeSamples(TreeSamples &tree_samples, size_t begin, size_t pos,
                       size_t end, size_t prop, uint32_t val) {
   size_t begin_pos = begin;
   size_t end_pos = pos;
   do {
-    while (begin_pos < pos && tree_samples.Property(prop, begin_pos) <= val) {
+    while (begin_pos < pos &&
+           tree_samples.Property<S>(prop, begin_pos) <= val) {
       ++begin_pos;
     }
-    while (end_pos < end && tree_samples.Property(prop, end_pos) > val) {
+    while (end_pos < end && tree_samples.Property<S>(prop, end_pos) > val) {
       ++end_pos;
     }
     if (begin_pos < pos && end_pos < end) {
@@ -135,6 +137,24 @@ void SplitTreeSamples(TreeSamples &tree_samples, size_t begin, size_t pos,
   } while (begin_pos < pos && end_pos < end);
 }
 
+template <bool S>
+void CollectExtraBitsIncrease(TreeSamples &tree_samples,
+                              const std::vector<ResidualToken> &rtokens,
+                              std::vector<int> &count_increase,
+                              std::vector<size_t> &extra_bits_increase,
+                              size_t begin, size_t end, size_t prop_idx,
+                              size_t max_symbols) {
+  for (size_t i2 = begin; i2 < end; i2++) {
+    const ResidualToken &rt = rtokens[i2];
+    size_t cnt = tree_samples.Count(i2);
+    size_t p = tree_samples.Property<S>(prop_idx, i2);
+    size_t sym = rt.tok;
+    size_t ebi = rt.nbits * cnt;
+    count_increase[p * max_symbols + sym] += cnt;
+    extra_bits_increase[p] += ebi;
+  }
+}
+
 void FindBestSplit(TreeSamples &tree_samples, float threshold,
                    const std::vector<ModularMultiplierInfo> &mul_info,
                    StaticPropRange initial_static_prop_range,
@@ -143,11 +163,10 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     size_t pos;
     size_t begin;
     size_t end;
-    uint64_t used_properties;
     StaticPropRange static_prop_range;
   };
   std::vector<NodeInfo> nodes;
-  nodes.push_back(NodeInfo{0, 0, tree_samples.NumDistinctSamples(), 0,
+  nodes.push_back(NodeInfo{0, 0, tree_samples.NumDistinctSamples(),
                            initial_static_prop_range});
 
   size_t num_predictors = tree_samples.NumPredictors();
@@ -159,7 +178,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     size_t pos = nodes.back().pos;
     size_t begin = nodes.back().begin;
     size_t end = nodes.back().end;
-    uint64_t used_properties = nodes.back().used_properties;
+
     StaticPropRange static_prop_range = nodes.back().static_prop_range;
     nodes.pop_back();
     if (begin == end) continue;
@@ -195,12 +214,16 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     std::vector<int32_t> counts(max_symbols * num_predictors);
     std::vector<uint32_t> tot_extra_bits(num_predictors);
     for (size_t pred = 0; pred < num_predictors; pred++) {
+      size_t extra_bits = 0;
+      const std::vector<ResidualToken>& rtokens = tree_samples.RTokens(pred);
       for (size_t i = begin; i < end; i++) {
-        counts[pred * max_symbols + tree_samples.Token(pred, i)] +=
-            tree_samples.Count(i);
-        tot_extra_bits[pred] +=
-            tree_samples.NBits(pred, i) * tree_samples.Count(i);
+        const ResidualToken& rt = rtokens[i];
+        size_t count = tree_samples.Count(i);
+        size_t eb = rt.nbits * count;
+        counts[pred * max_symbols + rt.tok] += count;
+        extra_bits += eb;
       }
+      tot_extra_bits[pred] = extra_bits;
     }
 
     float base_bits;
@@ -236,11 +259,20 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
         best = &forced_split;
         best->pos = begin;
         JXL_DASSERT(best->prop == tree_samples.PropertyFromIndex(best->prop));
+        if (best->prop < tree_samples.NumStaticProps()) {
         for (size_t x = begin; x < end; x++) {
-          if (tree_samples.Property(best->prop, x) <= best->val) {
+          if (tree_samples.Property<true>(best->prop, x) <= best->val) {
             best->pos++;
           }
         }
+      } else {
+        size_t prop = best->prop - tree_samples.NumStaticProps();
+        for (size_t x = begin; x < end; x++) {
+          if (tree_samples.Property<false>(prop, x) <= best->val) {
+            best->pos++;
+          }
+        }
+      }
         break;
       }
     }
@@ -286,23 +318,37 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
 
         // TODO(veluca): consider finding multiple splits along a single
         // property at the same time, possibly with a bottom-up approach.
-        for (size_t i = begin; i < end; i++) {
-          size_t p = tree_samples.Property(prop, i);
-          prop_value_used_count[p]++;
-          last_used = std::max(last_used, p);
-          first_used = std::min(first_used, p);
+        if (prop < tree_samples.NumStaticProps()) {
+          for (size_t i = begin; i < end; i++) {
+            size_t p = tree_samples.Property<true>(prop, i);
+            prop_value_used_count[p]++;
+            last_used = std::max(last_used, p);
+            first_used = std::min(first_used, p);
+          }
+        } else {
+          size_t prop_idx = prop - tree_samples.NumStaticProps();
+          for (size_t i = begin; i < end; i++) {
+            size_t p = tree_samples.Property<false>(prop_idx, i);
+            prop_value_used_count[p]++;
+            last_used = std::max(last_used, p);
+            first_used = std::min(first_used, p);
+          }
         }
         costs_l.resize(last_used - first_used);
         costs_r.resize(last_used - first_used);
         // For all predictors, compute the right and left costs of each split.
         for (size_t pred = 0; pred < num_predictors; pred++) {
           // Compute cost and histogram increments for each property value.
-          for (size_t i = begin; i < end; i++) {
-            size_t p = tree_samples.Property(prop, i);
-            size_t cnt = tree_samples.Count(i);
-            size_t sym = tree_samples.Token(pred, i);
-            count_increase[p * max_symbols + sym] += cnt;
-            extra_bits_increase[p] += tree_samples.NBits(pred, i) * cnt;
+          const std::vector<ResidualToken> &rtokens =
+              tree_samples.RTokens(pred);
+          if (prop < tree_samples.NumStaticProps()) {
+            CollectExtraBitsIncrease<true>(tree_samples, rtokens,
+                                           count_increase, extra_bits_increase,
+                                           begin, end, prop, max_symbols);
+          } else {
+            CollectExtraBitsIncrease<false>(
+                tree_samples, rtokens, count_increase, extra_bits_increase,
+                begin, end, prop - tree_samples.NumStaticProps(), max_symbols);
           }
           memcpy(counts_above.data(), counts.data() + pred * max_symbols,
                  max_symbols * sizeof counts_above[0]);
@@ -364,20 +410,17 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
           split += prop_value_used_count[i];
           float rcost = costs_r[i - first_used].cost;
           float lcost = costs_l[i - first_used].cost;
-          // WP was not used + we would use the WP property or predictor
-          bool adds_wp =
-              (tree_samples.PropertyFromIndex(prop) == kWPProp &&
-               (used_properties & (1LU << prop)) == 0) ||
-              ((costs_l[i - first_used].pred == Predictor::Weighted ||
-                costs_r[i - first_used].pred == Predictor::Weighted) &&
-               (*tree)[pos].predictor != Predictor::Weighted);
+
+          bool uses_wp = tree_samples.PropertyFromIndex(prop) == kWPProp ||
+                         costs_l[i - first_used].pred == Predictor::Weighted ||
+                         costs_r[i - first_used].pred == Predictor::Weighted;
           bool zero_entropy_side = rcost == 0 || lcost == 0;
 
           SplitInfo &best_ref =
               tree_samples.PropertyFromIndex(prop) < kNumStaticProperties
                   ? (zero_entropy_side ? best_split_static_constant
                                        : best_split_static)
-                  : (adds_wp ? best_split_nonstatic : best_split_nowp);
+                  : (uses_wp ? best_split_nonstatic : best_split_nowp);
           if (lcost + rcost < best_ref.Cost()) {
             best_ref.prop = prop;
             best_ref.val = i;
@@ -419,10 +462,13 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       // Split node and try to split children.
       MakeSplitNode(pos, p, dequant, best->lpred, 0, best->rpred, 0, tree);
       // "Sort" according to winning property
-      SplitTreeSamples(tree_samples, begin, best->pos, end, best->prop,
-                       best->val);
-      if (p >= kNumStaticProperties) {
-        used_properties |= 1 << best->prop;
+      if (best->prop < tree_samples.NumStaticProps()) {
+        SplitTreeSamples<true>(tree_samples, begin, best->pos, end, best->prop,
+                               best->val);
+      } else {
+        SplitTreeSamples<false>(tree_samples, begin, best->pos, end,
+                                best->prop - tree_samples.NumStaticProps(),
+                                best->val);
       }
       auto new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
@@ -430,16 +476,16 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
         new_sp_range[p][1] = dequant + 1;
         JXL_DASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
       }
-      nodes.push_back(NodeInfo{(*tree)[pos].rchild, begin, best->pos,
-                               used_properties, new_sp_range});
+      nodes.push_back(
+          NodeInfo{(*tree)[pos].rchild, begin, best->pos, new_sp_range});
       new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
         JXL_DASSERT(new_sp_range[p][0] <= static_cast<uint32_t>(dequant + 1));
         new_sp_range[p][0] = dequant + 1;
         JXL_DASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
       }
-      nodes.push_back(NodeInfo{(*tree)[pos].lchild, best->pos, end,
-                               used_properties, new_sp_range});
+      nodes.push_back(
+          NodeInfo{(*tree)[pos].lchild, best->pos, end, new_sp_range});
     }
   }
 }
@@ -505,11 +551,9 @@ Status TreeSamples::SetPredictor(Predictor predictor,
     predictors = {predictor};
   }
   if (wp_tree_mode == ModularOptions::TreeMode::kNoWP) {
-    auto wp_it =
-        std::find(predictors.begin(), predictors.end(), Predictor::Weighted);
-    if (wp_it != predictors.end()) {
-      predictors.erase(wp_it);
-    }
+    predictors.erase(
+        std::remove(predictors.begin(), predictors.end(), Predictor::Weighted),
+        predictors.end());
   }
   residuals.resize(predictors.size());
   return true;
@@ -672,8 +716,9 @@ void TreeSamples::AddSample(pixel_type_w pixel, const Properties &properties,
     HybridUintConfig(4, 1, 2).Encode(PackSigned(v), &tok, &nbits, &bits);
     JXL_DASSERT(tok < 256);
     JXL_DASSERT(nbits < 256);
-    residuals[i].emplace_back(
-        ResidualToken{static_cast<uint8_t>(tok), static_cast<uint8_t>(nbits)});
+    ResidualToken token = {static_cast<uint8_t>(tok),
+                           static_cast<uint8_t>(nbits)};
+    residuals[i].push_back(token);
   }
   for (size_t i = 0; i < num_static_props; ++i) {
     static_props[i].push_back(QuantizeStaticProperty(i, properties[i]));
@@ -997,15 +1042,17 @@ Status TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
       tokens->emplace_back(kMultiplierLogContext, mul_log);
       tokens->emplace_back(kMultiplierBitsContext, mul_bits);
       JXL_ENSURE(tree[cur].predictor < Predictor::Best);
-      decoder_tree->emplace_back(-1, 0, leaf_id++, 0, tree[cur].predictor,
-                                 tree[cur].predictor_offset,
-                                 tree[cur].multiplier);
+      decoder_tree->emplace_back(
+          -1, 0, static_cast<int>(leaf_id), 0, tree[cur].predictor,
+          tree[cur].predictor_offset, tree[cur].multiplier);
+      leaf_id++;
       continue;
     }
-    decoder_tree->emplace_back(tree[cur].property, tree[cur].splitval,
-                               decoder_tree->size() + q.size() + 1,
-                               decoder_tree->size() + q.size() + 2,
-                               Predictor::Zero, 0, 1);
+    decoder_tree->emplace_back(
+        tree[cur].property, tree[cur].splitval,
+        static_cast<int>(decoder_tree->size() + q.size() + 1),
+        static_cast<int>(decoder_tree->size() + q.size() + 2), Predictor::Zero,
+        0, 1);
     q.push(tree[cur].lchild);
     q.push(tree[cur].rchild);
     tokens->emplace_back(kSplitValContext, PackSigned(tree[cur].splitval));

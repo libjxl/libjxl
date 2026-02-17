@@ -53,7 +53,8 @@ size_t MaxNumTokensPerMCURow(j_compress_ptr cinfo) {
   size_t blocks_per_mcu = 0;
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
-    blocks_per_mcu += comp->h_samp_factor * comp->v_samp_factor;
+    blocks_per_mcu +=
+        static_cast<size_t>(comp->h_samp_factor) * comp->v_samp_factor;
   }
   return kDCTBlockSize * blocks_per_mcu * MCUs_per_row;
 }
@@ -102,7 +103,8 @@ void TokenizeACProgressiveScan(j_compress_ptr cinfo, int scan_index,
   const int Se = scan_info->Se;
   const size_t restart_interval = sti->restart_interval;
   int restarts_to_go = restart_interval;
-  size_t num_blocks = comp->height_in_blocks * comp->width_in_blocks;
+  size_t num_blocks =
+      static_cast<size_t>(comp->height_in_blocks) * comp->width_in_blocks;
   size_t num_restarts =
       restart_interval > 0 ? DivCeil(num_blocks, restart_interval) : 1;
   size_t restart_idx = 0;
@@ -211,7 +213,8 @@ void TokenizeACRefinementScan(j_compress_ptr cinfo, int scan_index,
   RefToken token;
   int eob_run = 0;
   int eob_refbits = 0;
-  size_t num_blocks = comp->height_in_blocks * comp->width_in_blocks;
+  size_t num_blocks =
+      static_cast<size_t>(comp->height_in_blocks) * comp->width_in_blocks;
   size_t num_restarts =
       restart_interval > 0 ? DivCeil(num_blocks, restart_interval) : 1;
   sti->tokens = m->next_refinement_token;
@@ -472,7 +475,8 @@ void TokenizeJpeg(j_compress_ptr cinfo) {
     if (si->Ss > 0 && si->Ah > 0) {
       int comp_idx = si->component_index[0];
       const jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
-      size_t num_blocks = comp->width_in_blocks * comp->height_in_blocks;
+      size_t num_blocks =
+          static_cast<size_t>(comp->width_in_blocks) * comp->height_in_blocks;
       max_refinement_tokens += (1 + (si->Se - si->Ss) / 16) * num_blocks;
     }
   }
@@ -562,7 +566,7 @@ float HistogramCost(const Histogram& histo) {
   for (size_t i = 0; i < kJpegHuffmanAlphabetSize; ++i) {
     if (depths[i] > 0) {
       header_bits += 8;
-      data_bits += counts[i] * depths[i];
+      data_bits += static_cast<size_t>(counts[i]) * depths[i];
     }
   }
   return header_bits + data_bits;

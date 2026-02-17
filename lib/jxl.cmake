@@ -13,7 +13,15 @@ if (JPEGXL_ENABLE_TRANSCODE_JPEG OR JPEGXL_ENABLE_TOOLS OR JPEGXL_ENABLE_DEVTOOL
 list(APPEND JPEGXL_INTERNAL_DEC_SOURCES ${JPEGXL_INTERNAL_DEC_JPEG_SOURCES})
 endif()
 
-set(FJXL_COMPILE_FLAGS "-O3")
+if (MSVC)
+  if (CMAKE_BUILD_TYPE IN_LIST "Release;RelWithDebInfo")
+    set(FJXL_COMPILE_FLAGS "/O2")
+  else()
+    set(FJXL_COMPILE_FLAGS "")
+  endif()
+else()
+  set(FJXL_COMPILE_FLAGS "-O3")
+endif()
 
 set_source_files_properties(jxl/enc_fast_lossless.cc PROPERTIES COMPILE_FLAGS "${FJXL_COMPILE_FLAGS}")
 
@@ -82,13 +90,15 @@ foreach(path ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
 endforeach()
 
 add_library(jxl_base INTERFACE)
-target_include_directories(jxl_base SYSTEM BEFORE INTERFACE
+target_include_directories(jxl_base BEFORE INTERFACE
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
 )
 target_include_directories(jxl_base BEFORE INTERFACE
   ${PROJECT_SOURCE_DIR}
   ${JXL_HWY_INCLUDE_DIRS}
 )
+target_compile_definitions(jxl_base INTERFACE
+  "$<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:JXL_STATIC_DEFINE>")
 
 # On android, link with log to use android-related log functions.
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
@@ -222,15 +232,16 @@ set_target_properties(jxl_dec PROPERTIES
   SOVERSION ${JPEGXL_LIBRARY_SOVERSION})
 
 # Check whether the linker support excluding libs
-set(LINKER_EXCLUDE_LIBS_FLAG "-Wl,--exclude-libs=ALL")
-include(CheckCSourceCompiles)
-list(APPEND CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
-check_c_source_compiles("int main(){return 0;}" LINKER_SUPPORT_EXCLUDE_LIBS)
-list(REMOVE_ITEM CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
-
-if(NOT BUILD_SHARED_LIBS)
-  target_compile_definitions(jxl PUBLIC -DJXL_STATIC_DEFINE)
-  target_compile_definitions(jxl_dec PUBLIC -DJXL_STATIC_DEFINE)
+if (MSVC)
+  # MSVC ignores this flag (with a warning), so CMake thinks it supports that.
+  set(LINKER_EXCLUDE_LIBS_FLAG "")
+  set(LINKER_SUPPORT_EXCLUDE_LIBS FALSE)
+else()
+  set(LINKER_EXCLUDE_LIBS_FLAG "-Wl,--exclude-libs=ALL")
+  include(CheckCSourceCompiles)
+  list(APPEND CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
+  check_c_source_compiles("int main(){return 0;}" LINKER_SUPPORT_EXCLUDE_LIBS)
+  list(REMOVE_ITEM CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
 endif()
 
 # Add a jxl.version file as a version script to tag symbols with the
@@ -269,12 +280,24 @@ install(TARGETS jxl
 set(JPEGXL_LIBRARY_REQUIRES
     "libhwy libbrotlienc libbrotlidec libjxl_cms")
 
+# MSVCRT bundles math functions so no explicit libm dependency is required
 if (BUILD_SHARED_LIBS)
   set(JPEGXL_REQUIRES_TYPE "Requires.private")
-  set(JPEGXL_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+  if(NOT MSVC AND NOT APPLE)
+    set(JPEGXL_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+  endif()
 else()
   set(JPEGXL_REQUIRES_TYPE "Requires")
-  set(JPEGXL_PUBLIC_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+  if(NOT MSVC AND NOT APPLE)
+    set(JPEGXL_PUBLIC_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
+  endif()
+endif()
+
+set(JPEGXL_LIBRARY_MAIN jxl)
+
+# Fix pkg-config file on MSVC when building static libraries.
+if (MSVC AND NOT BUILD_SHARED_LIBS)
+  set(JPEGXL_LIBRARY_MAIN jxl-static)
 endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"

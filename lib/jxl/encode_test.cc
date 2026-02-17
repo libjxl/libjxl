@@ -516,7 +516,7 @@ TEST(EncodeTest, FrameSettingsTest) {
             frame_settings, JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X, 5));
     VerifyFrameEncoding(enc.get(), frame_settings);
     EXPECT_EQ(true, enc->last_used_cparams.centerfirst);
-    EXPECT_EQ(5, enc->last_used_cparams.center_x);
+    EXPECT_EQ(5u, enc->last_used_cparams.center_x);
   }
 
   {
@@ -1469,7 +1469,7 @@ JXL_BOXES_TEST_P(EncodeBoxTest, BoxTest) {
     if (status == JXL_DEC_ERROR) {
       FAIL();
     } else if (status == JXL_DEC_SUCCESS) {
-      EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
+      EXPECT_EQ(0u, JxlDecoderReleaseBoxBuffer(dec.get()));
       break;
     } else if (status == JXL_DEC_FRAME) {
       post_frame = true;
@@ -1477,7 +1477,7 @@ JXL_BOXES_TEST_P(EncodeBoxTest, BoxTest) {
       // Since we gave the exif/xml box output buffer of the exact known
       // correct size, 0 bytes should be released. Same when no buffer was
       // set.
-      EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
+      EXPECT_EQ(0u, JxlDecoderReleaseBoxBuffer(dec.get()));
       JxlBoxType type;
       EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec.get(), type, true));
       if (memcmp(type, "Exif", 4) == 0) {
@@ -1889,8 +1889,11 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
     for (size_t i = 0; i < frame_count; i++) {
       // Create local copy of pixels and adapter because they are only
       // guaranteed to be available during the JxlEncoderAddChunkedFrame() call.
-      JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(frame.Copy(),
-                                                              ec_frame.Copy());
+      JXL_TEST_ASSIGN_OR_DIE(jxl::extras::PackedImage frame_copy, frame.Copy());
+      JXL_TEST_ASSIGN_OR_DIE(jxl::extras::PackedImage ec_frame_copy,
+                             ec_frame.Copy());
+      JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(
+          std::move(frame_copy), std::move(ec_frame_copy));
       EXPECT_EQ(JXL_ENC_SUCCESS,
                 JxlEncoderAddChunkedFrame(
                     // should only set `JXL_TRUE` in the lass pass of the loop

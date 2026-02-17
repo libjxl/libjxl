@@ -23,6 +23,7 @@
 
 #include "lib/extras/common.h"
 #include "lib/extras/dec/color_description.h"
+#include "lib/extras/exif.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/byte_order.h"
@@ -158,12 +159,14 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
 
   JxlColorEncoding color_encoding;
   size_t num_color_channels = 0;
+  bool set_colorspace = false;
   if (!dparams.color_space.empty()) {
     if (!jxl::ParseDescription(dparams.color_space, &color_encoding)) {
       fprintf(stderr, "Failed to parse color space %s.\n",
               dparams.color_space.c_str());
       return false;
     }
+    set_colorspace = true;
     num_color_channels =
         color_encoding.color_space == JXL_COLOR_SPACE_GRAY ? 1 : 3;
   }
@@ -372,6 +375,16 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           alpha_found = true;
           continue;
         }
+        if (eci.type == JXL_CHANNEL_BLACK && !set_colorspace &&
+            !dparams.color_space_for_cmyk.empty()) {
+          if (!jxl::ParseDescription(dparams.color_space_for_cmyk,
+                                     &color_encoding)) {
+            fprintf(stderr, "Failed to parse color space %s.\n",
+                    dparams.color_space_for_cmyk.c_str());
+            return false;
+          }
+          set_colorspace = true;
+        }
         std::string name(eci.name_length + 1, 0);
         if (JXL_DEC_SUCCESS !=
             JxlDecoderGetExtraChannelName(
@@ -383,19 +396,14 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         ppf->extra_channels_info.push_back({eci, i, name});
       }
     } else if (status == JXL_DEC_COLOR_ENCODING) {
-      if (!dparams.color_space.empty()) {
-        if (ppf->info.uses_original_profile) {
-          fprintf(stderr,
-                  "Warning: --color_space ignored because the image is "
-                  "not XYB encoded.\n");
-        } else {
-          JxlDecoderSetCms(dec, *JxlGetDefaultCms());
-          if (JXL_DEC_SUCCESS !=
-              JxlDecoderSetPreferredColorProfile(dec, &color_encoding)) {
-            fprintf(stderr, "Failed to set color space.\n");
-            return false;
-          }
+      if (set_colorspace) {
+        JxlDecoderSetCms(dec, *JxlGetDefaultCms());
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetOutputColorProfile(dec, &color_encoding, nullptr, 0)) {
+          fprintf(stderr, "Failed to set color space.\n");
+          return false;
         }
+        ppf->color_encoding = color_encoding;
       }
       size_t icc_size = 0;
       JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
@@ -411,12 +419,14 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           return false;
         }
       }
+      ppf->primary_color_representation =
+          PackedPixelFile::kColorEncodingIsPrimary;
       if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsEncodedProfile(
                                  dec, target, &ppf->color_encoding)) {
         ppf->color_encoding.color_space = JXL_COLOR_SPACE_UNKNOWN;
+        ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
       }
-      ppf->primary_color_representation =
-          PackedPixelFile::kColorEncodingIsPrimary;
+
       icc_size = 0;
       target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
       if (JXL_DEC_SUCCESS !=
@@ -431,8 +441,8 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
           return false;
         }
-        ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
       }
+
     } else if (status == JXL_DEC_FRAME) {
       if (!VerifyDimensions(constraints, ppf->xsize(), ppf->ysize())) {
         fprintf(stderr, "Image too big\n");
@@ -620,6 +630,11 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         bool bigendian;
         if (IsExif(exif, &bigendian)) {
           ppf->metadata.exif = std::move(exif);
+          if (jpeg_bytes == nullptr && !dparams.keep_orientation) {
+            // when decoding to pixels and orientation is undone during decode,
+            // reset exif orientation to avoid double orientation
+            ResetExifOrientation(ppf->metadata.exif);
+          }
         } else {
           fprintf(stderr, "Warning: invalid TIFF header in Exif\n");
         }

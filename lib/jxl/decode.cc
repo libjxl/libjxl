@@ -1616,6 +1616,13 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       dec->AdvanceInput(dec->header_size);
       dec->header_size = 0;
 #if JPEGXL_ENABLE_BOXES
+      if ((dec->events_wanted & JXL_DEC_BOX) && dec->box_event &&
+          !dec->box_out_buffer_set_current_box) {
+        // The user did not set an output buffer for this box before
+        // continuing decoding past the box header; treat this as opting out
+        // of box output for this box and disallow late buffer setup.
+        dec->box_event = false;
+      }
       if ((dec->events_wanted & JXL_DEC_BOX) &&
           dec->box_out_buffer_set_current_box) {
         uint8_t* next_out = dec->box_out_buffer + dec->box_out_buffer_pos;
@@ -2673,12 +2680,27 @@ JxlDecoderStatus JxlDecoderSetOutputColorProfile(
   if (dec->post_headers) {
     return JXL_API_ERROR("too late to set the color encoding");
   }
+  auto& output_encoding = dec->passes_state->output_encoding_info;
+  auto& orig_encoding = dec->image_metadata.color_encoding;
+  jxl::ColorEncoding c_out;
+  bool same_encoding = false;
+  if (color_encoding) {
+    JXL_API_RETURN_IF_ERROR(c_out.FromExternal(*color_encoding));
+    same_encoding = c_out.SameColorEncoding(output_encoding.color_encoding);
+  }
   if ((!dec->passes_state->output_encoding_info.cms_set) &&
-      (icc_data != nullptr)) {
+      (icc_data != nullptr ||
+      (!dec->image_metadata.xyb_encoded && !same_encoding))) {
     return JXL_API_ERROR(
         "must set color management system via JxlDecoderSetCms");
   }
-  auto& output_encoding = dec->passes_state->output_encoding_info;
+  if (!orig_encoding.HaveFields() &&
+      dec->passes_state->output_encoding_info.cms_set) {
+    std::vector<uint8_t> tmp_icc = orig_encoding.ICC();
+    JXL_API_RETURN_IF_ERROR(orig_encoding.SetICC(
+        std::move(tmp_icc), &output_encoding.color_management_system));
+    output_encoding.orig_color_encoding = orig_encoding;
+  }
   if (color_encoding) {
     if (dec->image_metadata.color_encoding.IsGray() &&
         color_encoding->color_space != JXL_COLOR_SPACE_GRAY &&
@@ -2688,13 +2710,9 @@ JxlDecoderStatus JxlDecoderSetOutputColorProfile(
     if (color_encoding->color_space == JXL_COLOR_SPACE_UNKNOWN) {
       return JXL_API_ERROR("Unknown output colorspace");
     }
-    jxl::ColorEncoding c_out;
-    JXL_API_RETURN_IF_ERROR(c_out.FromExternal(*color_encoding));
     JXL_API_RETURN_IF_ERROR(!c_out.ICC().empty());
-    if (!c_out.SameColorEncoding(output_encoding.color_encoding)) {
-      JXL_API_RETURN_IF_ERROR(output_encoding.MaybeSetColorEncoding(c_out));
-      dec->image_metadata.color_encoding = output_encoding.color_encoding;
-    }
+    JXL_API_RETURN_IF_ERROR(output_encoding.MaybeSetColorEncoding(c_out));
+    dec->image_metadata.color_encoding = output_encoding.color_encoding;
     return JXL_DEC_SUCCESS;
   }
   // icc_data != nullptr

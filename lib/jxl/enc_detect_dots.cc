@@ -598,7 +598,8 @@ StatusOr<std::vector<PatchInfo>> DetectGaussianEllipses(
       size_t x0 = cc.bounds.x0();
       size_t y0 = cc.bounds.y0();
       dots.emplace_back();
-      dots.back().second.emplace_back(x0, y0);
+      dots.back().second.emplace_back(static_cast<uint32_t>(x0),
+                                      static_cast<uint32_t>(y0));
       QuantizedPatch& patch = dots.back().first;
       patch.xsize = cc.bounds.xsize();
       patch.ysize = cc.bounds.ysize();

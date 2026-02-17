@@ -185,9 +185,9 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
     size_t x = 0;
 
 #if HWY_TARGET != HWY_SCALAR
-    intptr_t onerow_in = chin.plane.PixelsPerRow();
-    intptr_t onerow_inr = chin_residual.plane.PixelsPerRow();
-    intptr_t onerow_out = chout.plane.PixelsPerRow();
+    ptrdiff_t onerow_in = chin.plane.PixelsPerRow();
+    ptrdiff_t onerow_inr = chin_residual.plane.PixelsPerRow();
+    ptrdiff_t onerow_out = chout.plane.PixelsPerRow();
     const pixel_type *JXL_RESTRICT p_residual = chin_residual.Row(y0);
     const pixel_type *JXL_RESTRICT p_avg = chin.Row(y0);
     pixel_type *JXL_RESTRICT p_out = chout.Row(y0);
@@ -503,10 +503,10 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
                            Channel::Create(memory_manager, w, h));
       placeholder.hshift = image.channel[c].hshift;
       placeholder.vshift = image.channel[c].vshift;
-
+      placeholder.component = image.channel[c].component;
       image.channel.insert(image.channel.begin() + offset + (c - beginc),
                            std::move(placeholder));
-      JXL_DEBUG_V(8, "MetaSqueeze applied, current image: %s",
+      JXL_DEBUG_V(0, "MetaSqueeze applied, current image: %s",
                   image.DebugString().c_str());
     }
   }

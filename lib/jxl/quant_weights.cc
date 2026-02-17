@@ -1192,7 +1192,9 @@ DequantMatrices::DequantMatrices() {
   size_t pos = 0;
   size_t offsets[kNumQuantTables * 3];
   for (size_t i = 0; i < static_cast<size_t>(kNumQuantTables); i++) {
-    size_t num = required_size_x[i] * required_size_y[i] * kDCTBlockSize;
+    size_t num_blocks =
+        static_cast<size_t>(required_size_x[i]) * required_size_y[i];
+    size_t num = num_blocks * kDCTBlockSize;
     for (size_t c = 0; c < 3; c++) {
       offsets[3 * i + c] = pos + c * num;
     }
@@ -1222,7 +1224,9 @@ Status DequantMatrices::EnsureComputed(JxlMemoryManager* memory_manager,
   size_t offsets[kNumQuantTables * 3 + 1];
   size_t pos = 0;
   for (size_t i = 0; i < kNumQuantTables; i++) {
-    size_t num = required_size_x[i] * required_size_y[i] * kDCTBlockSize;
+    size_t num_blocks =
+        static_cast<size_t>(required_size_x[i]) * required_size_y[i];
+    size_t num = num_blocks * kDCTBlockSize;
     for (size_t c = 0; c < 3; c++) {
       offsets[3 * i + c] = pos + c * num;
     }
