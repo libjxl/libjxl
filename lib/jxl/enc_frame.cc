@@ -797,7 +797,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
   auto jpeg_c_map =
       JpegOrder(frame_header.color_transform, jpeg_data.components.size() == 1);
 
-  std::vector<int> qt(192);
+  std::vector<int> qt(kDCTBlockSize * 3);
   std::array<int32_t, 3> qt_dc;
   for (size_t c = 0; c < 3; c++) {
     size_t jpeg_c = jpeg_c_map[c];
@@ -808,10 +808,10 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
     for (size_t y = 0; y < 8; y++) {
       for (size_t x = 0; x < 8; x++) {
         // JPEG XL transposes the DCT, JPEG doesn't.
-        qt[c * 64 + 8 * x + y] = quant[8 * y + x];
+        qt[kDCTBlockSize * c + 8 * x + y] = quant[8 * y + x];
       }
     }
-    qt_dc[c] = qt[c * 64];
+    qt_dc[c] = qt[kDCTBlockSize * c];
   }
   JXL_RETURN_IF_ERROR(DequantMatricesSetCustomDC(
       memory_manager, &shared.matrices, dcquantization));
@@ -819,11 +819,16 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
                                1.0f / dcquantization[1],
                                1.0f / dcquantization[2]};
 
-  std::vector<int32_t> scaled_qtable(192);
+  // not transposed
+  std::vector<int32_t> scaled_qtable(kDCTBlockSize * 3);
   for (size_t c = 0; c < 3; c++) {
-    for (size_t i = 0; i < 64; i++) {
-      scaled_qtable[64 * c + i] =
-          (1 << kCFLFixedPointPrecision) * qt[64 + i] / qt[64 * c + i];
+    for (size_t y = 0; y < 8; y++) {
+      for (size_t x = 0; x < 8; x++) {
+        int coeffpos = y * 8 + x;
+        scaled_qtable[kDCTBlockSize * c + 8 * x + y] =
+            (1 << kCFLFixedPointPrecision) * qt[kDCTBlockSize + coeffpos] /
+            qt[kDCTBlockSize * c + coeffpos];
+      }
     }
   }
 
@@ -996,7 +1001,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
               !frame_header.chroma_subsampling.Is444()) {
             for (size_t y = 0; y < 8; y++) {
               for (size_t x = 0; x < 8; x++) {
-                block[y * 8 + x] = inputjpeg[base + x * 8 + y];
+                block[x * 8 + y] = inputjpeg[base + y * 8 + x];
               }
             }
           } else {
@@ -1005,18 +1010,20 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
 
             for (size_t y = 0; y < 8; y++) {
               for (size_t x = 0; x < 8; x++) {
-                int Y = inputjpegY[kDCTBlockSize * bx + x * 8 + y];
-                int QChroma = inputjpeg[kDCTBlockSize * bx + x * 8 + y];
+                int coeffpos = y * 8 + x;
+                int Y = inputjpegY[kDCTBlockSize * bx + coeffpos];
+                int QChroma = inputjpeg[kDCTBlockSize * bx + coeffpos];
                 // Fixed-point multiply of CfL scale with quant table ratio
                 // first, and Y value second.
-                int coeff_scale = (scale * scaled_qtable[64 * c + y * 8 + x] +
-                                   (1 << (kCFLFixedPointPrecision - 1))) >>
-                                  kCFLFixedPointPrecision;
+                int coeff_scale =
+                    (scale * scaled_qtable[kDCTBlockSize * c + coeffpos] +
+                     (1 << (kCFLFixedPointPrecision - 1))) >>
+                    kCFLFixedPointPrecision;
                 int cfl_factor =
                     (Y * coeff_scale + (1 << (kCFLFixedPointPrecision - 1))) >>
                     kCFLFixedPointPrecision;
                 int QCR = QChroma - cfl_factor;
-                block[y * 8 + x] = QCR;
+                block[x * 8 + y] = QCR;
               }
             }
           }

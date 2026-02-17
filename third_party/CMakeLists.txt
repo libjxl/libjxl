@@ -62,6 +62,7 @@ if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
 else()
   # Compile brotli from sources.
   set(BROTLI_DISABLE_TESTS ON CACHE STRING "Disable Brotli tests")
+  set(BROTLI_BUILD_TOOLS OFF CACHE STRING "")
   # Override default "no-install" policy.
   if((NOT SANITIZER STREQUAL "asan") AND (NOT SANITIZER STREQUAL "msan"))
     set(BROTLI_BUNDLED_MODE OFF CACHE INTERNAL "")

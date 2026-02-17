@@ -577,8 +577,8 @@ BUTTERAUGLI_INLINE V Sum(V a, V b, V c, V d, V e, V f, V g, V h, V i) {
 
 template <class D>
 Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
-                 const float* BUTTERAUGLI_RESTRICT d, const intptr_t xs) {
-  const intptr_t xs3 = 3 * xs;
+                 const float* BUTTERAUGLI_RESTRICT d, const ptrdiff_t xs) {
+  const ptrdiff_t xs3 = 3 * xs;
 
   const auto center = LoadU(df, d);
 
@@ -751,8 +751,8 @@ Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
 
 template <class D>
 Vec<D> MaltaUnit(MaltaTag /*tag*/, const D df,
-                 const float* BUTTERAUGLI_RESTRICT d, const intptr_t xs) {
-  const intptr_t xs3 = 3 * xs;
+                 const float* BUTTERAUGLI_RESTRICT d, const ptrdiff_t xs) {
+  const ptrdiff_t xs3 = 3 * xs;
 
   const auto center = LoadU(df, d);
 
@@ -1052,7 +1052,7 @@ static Status MaltaDiffMapT(const Tag tag, const ImageF& lum0,
 
   const HWY_FULL(float) df;
   const size_t aligned_x = std::max(static_cast<size_t>(4), Lanes(df));
-  const intptr_t stride = diffs->PixelsPerRow();
+  const ptrdiff_t stride = diffs->PixelsPerRow();
 
   // Middle
   for (; y0 < ysize_ - 4; ++y0) {

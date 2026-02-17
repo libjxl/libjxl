@@ -41,7 +41,7 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit
 
@@ -72,7 +72,7 @@ jobs:
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         submodules: true
         fetch-depth: 1
@@ -98,7 +98,7 @@ jobs:
           LICENSE* tools/{cjxl,djxl,benchmark_xl,cjpegli,djpegli,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: jxl-linux-x86_64-static
         path: jxl-linux-x86_64-static.tar.gz
@@ -133,7 +133,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit
 
@@ -161,7 +161,7 @@ jobs:
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         submodules: true
         fetch-depth: 1
@@ -220,7 +220,7 @@ jobs:
         tar -zcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz *jxl*.*
 
     - name: Upload release tarball
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}
         path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz
@@ -247,31 +247,30 @@ jobs:
           - triplet: x86-windows
             arch: '-A Win32'
             static: 'OFF'
-            tools: 'OFF'
           - triplet: x64-windows
             arch: '-A x64'
             static: 'OFF'
-            tools: 'OFF'
 
     env:
-      VCPKG_VERSION: '2025.07.25'
+      VCPKG_VERSION: '2025.10.17'
       VCPKG_ROOT: vcpkg
       VCPKG_DISABLE_METRICS: 1
       BUILD_TYPE: ${{ matrix.build_type || 'Release' }}
+      PREFIX: ${{matrix.triplet}}
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+    - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -312,19 +311,19 @@ jobs:
       run: |
         set -x
         mkdir build
-        cmake -Bbuild -H. ${{ matrix.arch }} \
+        cmake -Bbuild -H. ${{ matrix.arch }} -T ClangCL \
           -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
-          -DJPEGXL_ENABLE_TOOLS=${{ matrix.tools || 'ON'}} \
+          -DJPEGXL_ENABLE_TOOLS='ON' \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-          -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
+          -DCMAKE_INSTALL_PREFIX=`pwd`/${PREFIX} \
           -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
           -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
-          -DJPEGXL_ENABLE_DEVTOOLS=${{ matrix.tools || 'ON'}} \
+          -DJPEGXL_ENABLE_DEVTOOLS='ON' \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
         #
     - name: Build
@@ -339,13 +338,13 @@ jobs:
         cmake --build build --config ${{ env.BUILD_TYPE }} --target install
         for pkg in giflib libjpeg-turbo libpng libwebp zlib; do
           cp vcpkg/installed/${{matrix.triplet}}/share/${pkg}/copyright \
-            prefix/bin/LICENSE.${pkg}
+            ${PREFIX}/bin/LICENSE.${pkg}
         done
-        cp third_party/sjpeg/COPYING prefix/bin/LICENSE.sjpeg
-        cp third_party/skcms/LICENSE prefix/bin/LICENSE.skcms
-        cp third_party/highway/LICENSE prefix/bin/LICENSE.highway
-        cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
-        cp LICENSE prefix/bin/LICENSE.libjxl
+        cp third_party/sjpeg/COPYING ${PREFIX}/bin/LICENSE.sjpeg
+        cp third_party/skcms/LICENSE ${PREFIX}/bin/LICENSE.skcms
+        cp third_party/highway/LICENSE ${PREFIX}/bin/LICENSE.highway
+        cp third_party/brotli/LICENSE ${PREFIX}/bin/LICENSE.brotli
+        cp LICENSE ${PREFIX}/bin/LICENSE.libjxl
 
     - name: Fast benchmark ${{ matrix.triplet }}
       shell: 'bash'
@@ -358,19 +357,21 @@ jobs:
         export PATH=$PATH:`pwd`/build/lib
         BUILD_CONFIG=Release/ BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
 
-    - name: Package release zip
+    - name: Package release
+      shell: 'bash'
       if: matrix.upload != 'OFF'
-      shell: 'powershell'
       run: |
-        Compress-Archive -Path prefix\bin\*, prefix\lib\* `
-          -DestinationPath jxl-${{matrix.triplet}}.zip
+        7z -mx a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin/* ${PREFIX}/lib/*
+        7z -mx a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin/* ${PREFIX}/lib/*
 
-    - name: Upload release zip
+    - name: Upload release
       if: matrix.upload != 'OFF'
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: jxl-${{matrix.triplet}}
-        path: jxl-${{matrix.triplet}}.zip
+        path: |
+          jxl-${{matrix.triplet}}.7z
+          jxl-${{matrix.triplet}}.zip
         compression-level: 0
 
 
@@ -383,8 +384,14 @@ jobs:
       contents: write
 
     steps:
+    - name: Checkout the source
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        submodules: true
+        fetch-depth: 1
+
     - name: Download all artifacts
-      uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         path: release_assets
         merge-multiple: true

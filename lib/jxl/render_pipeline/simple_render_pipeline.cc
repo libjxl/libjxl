@@ -15,7 +15,6 @@
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
@@ -137,7 +136,7 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
         float* row = get_row(c, y);
         for (size_t ix = 0; ix < stage->settings_.border_x; ix++) {
           *(row - ix - 1) =
-              row[Mirror(-static_cast<ssize_t>(ix) - 1, input_sizes[c].first)];
+              row[Mirror(-static_cast<ptrdiff_t>(ix) - 1, input_sizes[c].first)];
         }
         for (size_t ix = 0; ix < stage->settings_.border_x; ix++) {
           *(row + ix + input_sizes[c].first) =
@@ -147,7 +146,7 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       // Vertical mirroring.
       for (int y = 0; y < static_cast<int>(stage->settings_.border_y); y++) {
         memcpy(get_row(c, -y - 1) - stage->settings_.border_x,
-               get_row(c, Mirror(-static_cast<ssize_t>(y) - 1,
+               get_row(c, Mirror(-static_cast<ptrdiff_t>(y) - 1,
                                  input_sizes[c].second)) -
                    stage->settings_.border_x,
                sizeof(float) *
@@ -260,8 +259,8 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
         // background that won't be occluded.
         stage->ProcessPaddingRow(output_rows, image_xsize, 0, y);
       }
-      ssize_t x0 = frame_origin.x0;
-      ssize_t y0 = frame_origin.y0;
+      ptrdiff_t x0 = frame_origin.x0;
+      ptrdiff_t y0 = frame_origin.y0;
       size_t x0_fg = 0;
       size_t y0_fg = 0;
       if (x0 < 0) {

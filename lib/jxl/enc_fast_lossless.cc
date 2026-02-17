@@ -19,11 +19,7 @@
 
 #include "lib/jxl/enc_fast_lossless.h"
 
-#if FJXL_STANDALONE
-#if defined(_MSC_VER)
-using ssize_t = intptr_t;
-#endif
-#else  // FJXL_STANDALONE
+#if !FJXL_STANDALONE
 #include "lib/jxl/encode_internal.h"
 #endif  // FJXL_STANDALONE
 
@@ -3416,7 +3412,7 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
   constexpr size_t kAlignPixels = kAlign / sizeof(pixel_t);
 
   auto align = [=](pixel_t* ptr) {
-    size_t offset = reinterpret_cast<uintptr_t>(ptr) % kAlign;
+    size_t offset = reinterpret_cast<size_t>(ptr) % kAlign;
     if (offset) {
       ptr += offset / sizeof(pixel_t);
     }
@@ -3875,8 +3871,8 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
         input.get_color_channel_data_at(input.opaque, x0, y0, xs, ys, &stride);
     auto rgba = reinterpret_cast<const unsigned char*>(buffer);
     int y_begin_group =
-        std::max<ssize_t>(
-            0, static_cast<ssize_t>(ys) - static_cast<ssize_t>(num_rows)) /
+        std::max<ptrdiff_t>(
+            0, static_cast<ptrdiff_t>(ys) - static_cast<ptrdiff_t>(num_rows)) /
         2;
     int y_count = std::min<int>(num_rows, ys - y_begin_group);
     int x_max = xs / kChunkSize * kChunkSize;

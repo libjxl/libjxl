@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/dec_cache.h"
@@ -60,7 +59,7 @@ class EPF0Stage : public RenderPipelineStage {
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][7], ssize_t x,
+  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][7], ptrdiff_t x,
                            Vec<DF> sad, Vec<DF> inv_sigma,
                            Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
                            Vec<DF>* JXL_RESTRICT B,
@@ -111,7 +110,7 @@ class EPF0Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
          x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
@@ -199,7 +198,7 @@ class EPF1Stage : public RenderPipelineStage {
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][5], ssize_t x,
+  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][5], ptrdiff_t x,
                            Vec<DF> sad, Vec<DF> inv_sigma,
                            Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
                            Vec<DF>* JXL_RESTRICT B,
@@ -246,7 +245,7 @@ class EPF1Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
          x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
@@ -380,7 +379,7 @@ class EPF2Stage : public RenderPipelineStage {
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][3], ssize_t x,
+  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][3], ptrdiff_t x,
                            Vec<DF> rx, Vec<DF> ry, Vec<DF> rb,
                            Vec<DF> inv_sigma, Vec<DF>* JXL_RESTRICT X,
                            Vec<DF>* JXL_RESTRICT Y, Vec<DF>* JXL_RESTRICT B,
@@ -432,7 +431,7 @@ class EPF2Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
          x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;

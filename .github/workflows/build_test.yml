@@ -173,9 +173,9 @@ jobs:
             test_stack_limit: 128
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
-          - name: debug:osx-13
-            # The last "free" X86 OSX runnde
-            os: macos-13
+          - name: debug:osx-15
+            # The last available x86_64 OSX runner
+            os: macos-15-intel
             mode: debug
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
@@ -197,21 +197,36 @@ jobs:
               -DJPEGXL_ENABLE_VIEWERS=OFF
               -DSJPEG_ANDROID_NDK_PATH=${ANDROID_NDK_LATEST_HOME}
               -DJPEGXL_BUNDLE_LIBPNG=ON
+          - name: release_ios
+            os: macos-latest
+            mode: release
+            skip_install: true
+            skip_stats: true
+            skip_test: true # can't finish "linking" tests without emulator
+            force_system_brotli: OFF
+            cmake_args: >-
+              -DCMAKE_SYSTEM_NAME=iOS
+              -DCMAKE_OSX_ARCHITECTURES=arm64
+              -DJPEGXL_ENABLE_BENCHMARK=OFF
+              -DJPEGXL_ENABLE_OPENEXR=OFF
+              -DJPEGXL_ENABLE_PLUGINS=OFF
+              -DJPEGXL_ENABLE_VIEWERS=OFF
+              -DJPEGXL_BUNDLE_LIBPNG=ON
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
       EMIT_STACK_SIZES: ${{ matrix.emit_stack_sizes }}
       TEST_STACK_LIMIT: ${{ matrix.test_stack_limit }}
-      WILL_TEST: ${{ !matrix.skip_test && (github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }} 
+      WILL_TEST: ${{ !matrix.skip_test && (github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
-      WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
+      WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench || false }}
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
       FASTER_MSAN_BUILD: 1
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit
 
@@ -235,7 +250,7 @@ jobs:
         fi
 
     - name: Checkout the source
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         submodules: true
         fetch-depth: 2
@@ -270,14 +285,14 @@ jobs:
 
     - name: Cache LLVM sources
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
 
     - name: Checkout the LLVM source
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         submodules: false
         repository: llvm/llvm-project
@@ -291,7 +306,7 @@ jobs:
       shell: bash
 
     - name: ccache
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -316,6 +331,7 @@ jobs:
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
           -DBUILD_TESTING=${BUILD_TESTS} \
+          -DJPEGXL_ENABLE_HWY_AVX3_DL=false \
           ${{ matrix.cmake_args }}
 
     - name: Build stats
@@ -380,7 +396,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
+      uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
       with:
         flags: unittests
         files: build/coverage.xml
