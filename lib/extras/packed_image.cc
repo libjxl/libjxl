@@ -35,7 +35,12 @@ namespace extras {
 // Class representing an interleaved image with a bunch of channels.
 StatusOr<PackedImage> PackedImage::Create(size_t xsize, size_t ysize,
                                           const JxlPixelFormat& format) {
-  PackedImage image(xsize, ysize, format, CalcStride(format, xsize));
+  JXL_ASSIGN_OR_RETURN(size_t stride, CalcStride(format, xsize));
+  size_t pixels_size = ysize * stride;
+  if ((pixels_size / stride) != ysize) {
+    return JXL_FAILURE("Image too big");
+  }
+  PackedImage image(xsize, ysize, format, stride);
   if (!image.pixels()) {
     // TODO(szabadka): use specialized OOM error code
     return JXL_FAILURE("Failed to allocate memory for image");
@@ -43,8 +48,9 @@ StatusOr<PackedImage> PackedImage::Create(size_t xsize, size_t ysize,
   return image;
 }
 
-PackedImage PackedImage::Copy() const {
-  size_t copy_stride = CalcStride(format, xsize);
+StatusOr<PackedImage> PackedImage::Copy() const {
+  // Resulting copy_stride have to be less or equal to original -> always ok.
+  JXL_ASSIGN_OR_RETURN(size_t copy_stride, CalcStride(format, xsize));
   PackedImage copy(xsize, ysize, format, copy_stride);
   const uint8_t* orig_pixels = reinterpret_cast<const uint8_t*>(pixels());
   uint8_t* copy_pixels = reinterpret_cast<uint8_t*>(copy.pixels());
@@ -109,11 +115,20 @@ PackedImage::PackedImage(size_t xsize, size_t ysize,
   swap_endianness_ = SwapEndianness(format.endianness);
 }
 
-size_t PackedImage::CalcStride(const JxlPixelFormat& format, size_t xsize) {
-  size_t stride = xsize * (BitsPerChannel(format.data_type) *
-                           format.num_channels / jxl::kBitsPerByte);
+StatusOr<size_t> PackedImage::CalcStride(const JxlPixelFormat& format,
+                                         size_t xsize) {
+  size_t multiplier = (BitsPerChannel(format.data_type) * format.num_channels /
+                       jxl::kBitsPerByte);
+  size_t stride = xsize * multiplier;
+  if ((stride / multiplier) != xsize) {
+    return JXL_FAILURE("Image too big");
+  }
   if (format.align > 1) {
-    stride = jxl::DivCeil(stride, format.align) * format.align;
+    size_t aligned_stride = jxl::DivCeil(stride, format.align) * format.align;
+    if (stride > aligned_stride) {
+      return JXL_FAILURE("Image too big");
+    }
+    stride = aligned_stride;
   }
   return stride;
 }
@@ -140,9 +155,10 @@ StatusOr<PackedFrame> PackedFrame::Copy() const {
       PackedFrame::Create(color.xsize, color.ysize, color.format));
   copy.frame_info = frame_info;
   copy.name = name;
-  copy.color = color.Copy();
+  JXL_ASSIGN_OR_RETURN(copy.color, color.Copy());
   for (const auto& ec : extra_channels) {
-    copy.extra_channels.emplace_back(ec.Copy());
+    JXL_ASSIGN_OR_RETURN(PackedImage ec_copy, ec.Copy());
+    copy.extra_channels.emplace_back(std::move(ec_copy));
   }
   return copy;
 }
