@@ -1889,8 +1889,11 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
     for (size_t i = 0; i < frame_count; i++) {
       // Create local copy of pixels and adapter because they are only
       // guaranteed to be available during the JxlEncoderAddChunkedFrame() call.
-      JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(frame.Copy(),
-                                                              ec_frame.Copy());
+      JXL_TEST_ASSIGN_OR_DIE(jxl::extras::PackedImage frame_copy, frame.Copy());
+      JXL_TEST_ASSIGN_OR_DIE(jxl::extras::PackedImage ec_frame_copy,
+                             ec_frame.Copy());
+      JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(
+          std::move(frame_copy), std::move(ec_frame_copy));
       EXPECT_EQ(JXL_ENC_SUCCESS,
                 JxlEncoderAddChunkedFrame(
                     // should only set `JXL_TRUE` in the lass pass of the loop

@@ -49,7 +49,7 @@ Status AlphaBlend(PackedFrame* frame, const float background[3]) {
       }
     }
   }
-  frame->color = blended.Copy();
+  JXL_ASSIGN_OR_RETURN(frame->color, blended.Copy());
   return true;
 }
 
