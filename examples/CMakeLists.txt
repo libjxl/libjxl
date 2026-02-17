@@ -5,7 +5,7 @@
 
 # Example project using libjxl.
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 
 project(SAMPLE_LIBJXL LANGUAGES C CXX)
 

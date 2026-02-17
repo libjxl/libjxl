@@ -1616,6 +1616,13 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       dec->AdvanceInput(dec->header_size);
       dec->header_size = 0;
 #if JPEGXL_ENABLE_BOXES
+      if ((dec->events_wanted & JXL_DEC_BOX) && dec->box_event &&
+          !dec->box_out_buffer_set_current_box) {
+        // The user did not set an output buffer for this box before
+        // continuing decoding past the box header; treat this as opting out
+        // of box output for this box and disallow late buffer setup.
+        dec->box_event = false;
+      }
       if ((dec->events_wanted & JXL_DEC_BOX) &&
           dec->box_out_buffer_set_current_box) {
         uint8_t* next_out = dec->box_out_buffer + dec->box_out_buffer_pos;
