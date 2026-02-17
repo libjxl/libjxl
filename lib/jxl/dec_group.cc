@@ -520,8 +520,8 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
     // signed integer to avoid undefined behavior of shifting negative numbers.
     const size_t magnitude = u_coeff >> 1;
     const size_t neg_sign = (~u_coeff) & 1;
-    const intptr_t coeff =
-        static_cast<intptr_t>((magnitude ^ (neg_sign - 1)) << shift);
+    const ptrdiff_t coeff =
+        static_cast<ptrdiff_t>((magnitude ^ (neg_sign - 1)) << shift);
     if (ac_type == ACType::k16) {
       block.ptr16[order[k]] += coeff;
     } else {
@@ -770,9 +770,9 @@ Status DecodeGroup(const FrameHeader& frame_header,
       RenderPipelineStage::RowInfo output_rows(1, std::vector<float*>(8));
       for (size_t y = src_rect.y0(); y < src_rect.y0() + src_rect.ysize();
            y++) {
-        for (ssize_t iy = 0; iy < 5; iy++) {
+        for (ptrdiff_t iy = 0; iy < 5; iy++) {
           input_rows[0][iy] = group_dec_cache->dc_buffer.Row(
-              Mirror(static_cast<ssize_t>(y) + iy - 2,
+              Mirror(static_cast<ptrdiff_t>(y) + iy - 2,
                      dec_state->shared->dc->Plane(c).ysize() >> vs) +
               2 - src_rect.y0());
         }
