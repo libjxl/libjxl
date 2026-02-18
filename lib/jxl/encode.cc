@@ -2374,6 +2374,17 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
 
   bool has_alpha = frame_settings->enc->metadata.m.HasAlpha();
 
+  if (!frame_settings->enc->color_encoding_set) {
+    jxl::ColorEncoding c_current;
+    if ((pixel_format.data_type == JXL_TYPE_FLOAT) ||
+        (pixel_format.data_type == JXL_TYPE_FLOAT16)) {
+      c_current = jxl::ColorEncoding::LinearSRGB(num_channels < 3);
+    } else {
+      c_current = jxl::ColorEncoding::SRGB(num_channels < 3);
+    }
+    frame_settings->enc->metadata.m.color_encoding = c_current;
+  }
+
   // All required conditions to do fast-lossless.
   if (CanDoFastLossless(frame_settings, &pixel_format, has_alpha)) {
     const bool big_endian =
@@ -2409,16 +2420,6 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
     }
   }
 
-  if (!frame_settings->enc->color_encoding_set) {
-    jxl::ColorEncoding c_current;
-    if ((pixel_format.data_type == JXL_TYPE_FLOAT) ||
-        (pixel_format.data_type == JXL_TYPE_FLOAT16)) {
-      c_current = jxl::ColorEncoding::LinearSRGB(num_channels < 3);
-    } else {
-      c_current = jxl::ColorEncoding::SRGB(num_channels < 3);
-    }
-    frame_settings->enc->metadata.m.color_encoding = c_current;
-  }
   // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
   // default move constructor there.
   JXL_MEMORY_MANAGER_MAKE_UNIQUE_OR_RETURN(
