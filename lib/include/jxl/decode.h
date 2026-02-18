@@ -897,11 +897,21 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetOutputColorProfile(
  * @param dec decoder object.
  * @param cms structure representing a CMS implementation. See @ref
  * JxlCmsInterface for more details.
+ * @return @ref JXL_DEC_SUCCESS if the CMS was set successfully, @ref
+ * JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec,
                                              JxlCmsInterface cms);
-// TODO(firsching): add a function JxlDecoderSetDefaultCms() for setting a
-// default in case libjxl is build with a CMS.
+
+/**
+ * Sets the color management system (CMS) to use the default CMS provided when
+ * libjxl is build with a CMS like skcms or lcms2.
+ *
+ * @param dec decoder object.
+ * @return @ref JXL_DEC_SUCCESS if the default CMS was set successfully, @ref
+ * JXL_DEC_ERROR otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetDefaultCms(JxlDecoder* dec);
 
 /**
  * Returns the minimum size in bytes of the preview image output pixel buffer
