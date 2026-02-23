@@ -238,14 +238,16 @@ struct CompressArgs {
                             "The codestream level.", &codestream_level,
                             &ParseInt64, 2);
 
-    cmdline->AddOptionValue('\0', "buffering", "-1..3",
-                            "How frames are buffered for encoding, "
-                            "default = -1. -1 = encoder chooses.\n    "
-                            "0 = buffer everything. "
-                            "1 = stream for images >2048 pixels width or height.\n    "
-                            "2 = stream larger than one group (256*256 by default), "
-                            "3 = currently the same as 2.",
-                            &buffering, &ParseInt64, 2);
+    cmdline->AddOptionValue(
+        '\0', "buffering", "-1..3",
+        "How frames are buffered when encoding, which affects memory usage and "
+        "compression.\n    "
+        "-1 = encoder chooses (default). "
+        "0 = buffer everything (most memory, best compression).\n    "
+        "1 = stream input for large images, buffer output. "
+        "2 = stream input, buffer output.\n    "
+        "3 = stream both input and output (least memory, worst compression)",
+        &buffering, &ParseInt64, -1);
 
     cmdline->AddOptionValue('\0', "faster_decoding", "0..4",
                             "Higher values improve decode speed "

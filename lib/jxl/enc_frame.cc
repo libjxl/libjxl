@@ -2600,10 +2600,9 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
   }
 
   if (CanDoStreamingEncoding(cparams, frame_info, *metadata, frame_data)) {
-    // TODO(veluca): wire this flag through, and update documentation.
     return EncodeFrameStreaming(memory_manager, cparams, frame_info, metadata,
-                                frame_data, false, cms, pool, output_processor,
-                                aux_out);
+                                frame_data, cparams.buffering > 2, cms, pool,
+                                output_processor, aux_out);
   } else {
     return EncodeFrameOneShot(memory_manager, cparams, frame_info, metadata,
                               frame_data, cms, pool, output_processor, aux_out);

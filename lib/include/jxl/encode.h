@@ -345,14 +345,13 @@ typedef enum {
    * 0 = buffers everything, basically the same as non-streamed code path
    (mainly for testing)
    * 1 = buffers everything for images that are 2048 x 2048 or smaller, and
-   *     uses streaming input and output for larger images
-   * 2 = uses streaming input and output for all images that are larger than
-   *     one group, i.e. 256 x 256 pixels by default
-   * 3 = currently same as 2
+   *     uses streaming input and buffered output for larger images
+   * 2 = same as 1, but the threshold to use streaming input is lower
+   * 3 = same as 2, but the output is also streaming
    *
    * When using streaming input and output the encoder minimizes memory usage at
    * the cost of compression density. Also note that images produced with
-   * streaming mode might not be progressively decodable.
+   * streaming output (mode 3) might not be progressively decodable.
    */
   JXL_ENC_FRAME_SETTING_BUFFERING = 34,
 
