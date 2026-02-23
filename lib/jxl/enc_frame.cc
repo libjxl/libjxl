@@ -1791,7 +1791,7 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.buffering == 0) {
     return false;
   }
-  if (cparams.buffering <= 1 && frame_data.xsize <= 2048 &&
+  if (cparams.buffering == 1 && frame_data.xsize <= 2048 &&
       frame_data.ysize <= 2048) {
     return false;
   }
