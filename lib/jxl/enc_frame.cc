@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include "lib/jxl/enc_frame.h"
+
 #include <jxl/cms_interface.h>
 #include <jxl/encode.h>
 #include <jxl/memory_manager.h>
@@ -50,7 +52,6 @@
 #include "lib/jxl/enc_entropy_coder.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_fields.h"
-#include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_group.h"
 #include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/enc_modular.h"
@@ -120,6 +121,36 @@ Status ParamsPostInit(CompressParams* p) {
 }
 
 namespace {
+
+uint32_t GetGroupSizeShift(size_t xsize, size_t ysize,
+                           const CompressParams& cparams) {
+  if (!cparams.modular_mode) return 1;
+  if (cparams.modular_group_size_shift >= 0) {
+    return static_cast<uint32_t>(cparams.modular_group_size_shift);
+  }
+  // By default, use the smallest group size for faster decoding 2
+  // and higher. Greatly speeds up decoding via multithreading at
+  // the cost of density.
+  if (cparams.decoding_speed_tier >= 2 ||
+      (cparams.decoding_speed_tier >= 1 && cparams.responsive == 1 &&
+       cparams.IsLossless())) {
+    return 0;
+  }
+  // No point using groups when only one group is full and the others are
+  // less than half full: multithreading will not really help much, while
+  // compression does suffer; but no reason to have group larger than image.
+  if (xsize <= 128 && ysize <= 128) return 0;
+  if (xsize <= 256 && ysize <= 256) return 1;
+  if (xsize <= 400 && ysize <= 400) return 2;
+  return 1;
+}
+
+static size_t NumGroupsForFrame(size_t xsize, size_t ysize,
+                                const CompressParams& cparams) {
+  const size_t group_size_shift = GetGroupSizeShift(xsize, ysize, cparams);
+  const size_t group_dim = (kGroupDim >> 1) << group_size_shift;
+  return DivCeil(xsize, group_dim) * DivCeil(ysize, group_dim);
+}
 
 template <typename T>
 uint32_t GetBitDepth(JxlBitDepth bit_depth, const T& metadata,
@@ -332,31 +363,7 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
 
   if (cparams.modular_mode) {
     frame_header->encoding = FrameEncoding::kModular;
-    if (cparams.modular_group_size_shift == -1) {
-      // By default, use the smallest group size for faster decoding 2
-      // and higher. Greatly speeds up decoding via multithreading at
-      // the cost of density.
-      if (cparams.decoding_speed_tier >= 2 ||
-          // Force decoding speed to tier 2 for progressive lossless.
-          (cparams.decoding_speed_tier >= 1 && cparams.responsive == 1 &&
-           cparams.IsLossless())) {
-        frame_header->group_size_shift = 0;
-        // no point using groups when only one group is full and the others are
-        // less than half full: multithreading will not really help much, while
-        // compression does suffer; but no reason to have group larger than
-        // image.
-      } else if (xsize <= 128 && ysize <= 128) {
-        frame_header->group_size_shift = 0;
-      } else if (xsize <= 256 && ysize <= 256) {
-        frame_header->group_size_shift = 1;
-      } else if (xsize <= 400 && ysize <= 400) {
-        frame_header->group_size_shift = 2;
-      } else {
-        frame_header->group_size_shift = 1;
-      }
-    } else {
-      frame_header->group_size_shift = cparams.modular_group_size_shift;
-    }
+    frame_header->group_size_shift = GetGroupSizeShift(xsize, ysize, cparams);
   }
 
   if (jpeg_data) {
@@ -378,6 +385,7 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
           "recompressing JPEGs");
     }
   }
+
   if (frame_header->color_transform != ColorTransform::kYCbCr &&
       (frame_header->chroma_subsampling.MaxHShift() != 0 ||
        frame_header->chroma_subsampling.MaxVShift() != 0)) {
@@ -1783,16 +1791,16 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.buffering == 0) {
     return false;
   }
-  if (cparams.buffering == 1 &&
-      frame_data.xsize <= 2048 && frame_data.ysize <= 2048) {
+  if (cparams.buffering <= 1 && frame_data.xsize <= 2048 &&
+      frame_data.ysize <= 2048) {
     return false;
   }
-  // Buffering level 3 is currently the same as 2.
-  if (cparams.buffering >= 2 && 
-  // TODO(Jonnyawsom3): Pipe in the current group size and use that instead.
-  // Tried a few different ways but it refused to compile, so using 400
-  // to match the basic heuristcs in MakeFrameHeader.
-      frame_data.xsize <= 400 && frame_data.ysize <= 400) {
+
+  // Random heuristic: disable streaming for frames with less than 8 groups.
+  // (too little speed benefit, too much compression penalty)
+  // Can change this but have to make sure numgroups > 1, because the streaming
+  // path assumes that.
+  if (NumGroupsForFrame(frame_data.xsize, frame_data.ysize, cparams) <= 8) {
     return false;
   }
   if (frame_data.IsJPEG()) {
