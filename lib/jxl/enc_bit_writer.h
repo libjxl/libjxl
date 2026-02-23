@@ -68,6 +68,8 @@ struct BitWriter {
     return std::move(storage_);
   }
 
+  Status Shrink() { return storage_.shrink_to_fit(); }
+
   // Must be byte-aligned before calling.
   Status AppendByteAligned(const Span<const uint8_t>& span);
 
