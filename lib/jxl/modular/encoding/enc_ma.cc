@@ -753,7 +753,7 @@ void TreeSamples::Swap(size_t a, size_t b) {
 namespace {
 std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
                                        size_t num_chunks) {
-  // Todo: Refactor later for better density
+  // Todo(Galaxy): Refactor later for better density
   if (histogram.empty() || num_chunks == 0) return {};
   uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
   if (sum == 0) return {};
