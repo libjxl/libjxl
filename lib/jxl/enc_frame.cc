@@ -1670,7 +1670,6 @@ Status ComputeEncodingData(
         !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
         (cparams.responsive == 1 && !cparams.IsLossless()) ||
         // Allow Local trees for progressive lossless but not lossy.
-        (cparams.buffering && cparams.responsive < 0) ||
         !cparams.custom_fixed_tree.empty()) {
       // Use local trees if doing lossless modular, unless at very slow speeds.
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
