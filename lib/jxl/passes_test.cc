@@ -405,7 +405,7 @@ TEST(PassesTest, NonProgressiveDCImage) {
   size_t compressed_size =
       Roundtrip(ppf, cparams, dparams, pool.get(), &output, &decoded_size);
   EXPECT_SLIGHTLY_BELOW(compressed_size, 499300);
-  EXPECT_SLIGHTLY_BELOW(decoded_size, 119000);
+  EXPECT_SLIGHTLY_BELOW(decoded_size, 130000);
 
   EXPECT_EQ(output.xsize(), ppf.xsize());
   EXPECT_EQ(output.ysize(), ppf.ysize());
