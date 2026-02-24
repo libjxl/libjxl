@@ -718,7 +718,8 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
             for (int yix = 0; yix < m->v_factor[c]; ++yix) {
               int row_ix = m->v_factor[c] * dy + yix;
               float* JXL_RESTRICT row = render_out->Row(row_ix);
-              float* JXL_RESTRICT tmp = m->upsample_scratch_;
+              float* JXL_RESTRICT tmp =
+                  m->upsample_scratch_ + HWY_ALIGNMENT / sizeof(float);
               if (cinfo->do_fancy_upsampling && m->h_factor[c] == 2) {
                 Upsample2Horizontal(row, tmp, output_width);
               } else {
