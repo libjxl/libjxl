@@ -534,10 +534,9 @@ void AllocateOutputBuffers(j_decompress_ptr cinfo) {
   }
   m->idct_scratch_ = Allocate<float>(cinfo, 5 * DCTSIZE2, JPOOL_IMAGE_ALIGNED);
   // Padding for horizontal chroma upsampling.
-  constexpr size_t kPaddingLeft = 64;
-  constexpr size_t kPaddingRight = 64;
+  constexpr size_t kUpsamplePadding = 2 * HWY_ALIGNMENT / sizeof(float);
   m->upsample_scratch_ = Allocate<float>(
-      cinfo, output_stride + kPaddingLeft + kPaddingRight, JPOOL_IMAGE_ALIGNED);
+      cinfo, output_stride + kUpsamplePadding, JPOOL_IMAGE_ALIGNED);
   size_t bytes_per_sample = jpegli_bytes_per_sample(m->output_data_type_);
   size_t bytes_per_pixel = cinfo->out_color_components * bytes_per_sample;
   size_t scratch_stride = RoundUpTo(output_stride, HWY_ALIGNMENT);
