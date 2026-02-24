@@ -492,6 +492,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   cparams.ec_resampling = 1;
   cparams.modular_group_size_shift = 3;
   cparams.colorspace = 0;
+  cparams.speed_tier = jxl::SpeedTier::kGlacier;
   cparams.buffering = 0;
   JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
   auto io = jxl::make_unique<CodecInOut>(memory_manager);
@@ -519,13 +520,11 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   if (tree_out) {
     PrintTree(tree, tree_out);
   }
-  JXL_ASSIGN_OR_RETURN(
-      Image3F image, Image3F::Create(memory_manager, width * cparams.resampling,
-                                     height * cparams.resampling));
+  JXL_ASSIGN_OR_RETURN(Image3F image,
+                       Image3F::Create(memory_manager, width, height));
   JXL_RETURN_IF_ERROR(
       io->SetFromImage(std::move(image), io->metadata.m.color_encoding));
-  JXL_RETURN_IF_ERROR(io->SetSize((width + x0) * cparams.resampling,
-                                  (height + y0) * cparams.resampling));
+  JXL_RETURN_IF_ERROR(io->SetSize((width + x0), (height + y0)));
 
   io->metadata.m.color_encoding.DecideIfWantICC(*JxlGetDefaultCms());
   cparams.options.zero_tokens = true;
@@ -544,7 +543,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
 
   std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();
   *metadata = io->metadata;
-  JXL_RETURN_IF_ERROR(metadata->size.Set(io->xsize(), io->ysize()));
+  JXL_RETURN_IF_ERROR(metadata->size.Set(io->xsize() * cparams.resampling,
+                                         io->ysize() * cparams.resampling));
 
   metadata->m.xyb_encoded = (cparams.color_transform == ColorTransform::kXYB);
 
