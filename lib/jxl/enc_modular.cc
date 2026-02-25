@@ -344,8 +344,7 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
       cost_before = nb_pixels * arbitrary_bpp_estimate;
     }
     // all-channel palette (e.g. RGBA)
-    if (nb_chans > 1 &&
-       (!(cparams_.responsive && cparams_.IsLossless()))) {
+    if (nb_chans > 1) {
       Transform maybe_palette(TransformId::kPalette);
       maybe_palette.begin_c = gi.nb_meta_channels;
       maybe_palette.num_c = nb_chans;
@@ -374,8 +373,7 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
-    if (!did_palette && nb_chans > 3 &&
-       (!(cparams_.responsive && cparams_.IsLossless()))) {
+    if (!did_palette && nb_chans > 3) {
       Transform maybe_palette_3(TransformId::kPalette);
       maybe_palette_3.begin_c = gi.nb_meta_channels;
       maybe_palette_3.num_c = nb_chans - 1;
@@ -890,7 +888,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
     channel_colors_percent = cparams_.channel_colors_pre_transform_percent;
   }
-  if (!groupwise) {
+  if (!groupwise &&
+     (!(cparams_.responsive && cparams_.IsLossless()))) {
     JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams_,
                                      channel_colors_percent, pool));
   }
@@ -1420,14 +1419,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // Local palette transforms
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
-    if (cparams.butteraugli_distance == 0.f && !cparams.lossy_palette &&
-        cparams.speed_tier < SpeedTier::kCheetah) {
+    if (cparams.IsLossless() && !cparams.responsive &&
+        !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
-      if (!(cparams.responsive &&
-            (cparams.decoding_speed_tier >= 1 || cparams.IsLossless()))) {
         channel_color_percent = cparams.channel_colors_percent;
-      }
       JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams,
                                        channel_color_percent));
     }
