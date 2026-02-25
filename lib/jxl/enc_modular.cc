@@ -336,8 +336,7 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
   // arbitrary estimate: 4.8 bpp for 8-bit RGB
   float arbitrary_bpp_estimate = 0.2f * gi.bitdepth * nb_chans;
 
-  if ((cparams_.palette_colors != 0 || cparams_.lossy_palette) &&
-      (!(cparams_.responsive && cparams_.IsLossless()))) {
+  if (cparams_.palette_colors != 0 || cparams_.lossy_palette) {
     // when not estimating, assume some arbitrary bpp
     if (cparams_.speed_tier <= SpeedTier::kSquirrel) {
       JXL_ASSIGN_OR_RETURN(cost_before, EstimateCost(gi));
@@ -345,7 +344,8 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
       cost_before = nb_pixels * arbitrary_bpp_estimate;
     }
     // all-channel palette (e.g. RGBA)
-    if (nb_chans > 1) {
+    if (nb_chans > 1 &&
+       (!(cparams_.responsive && cparams_.IsLossless()))) {
       Transform maybe_palette(TransformId::kPalette);
       maybe_palette.begin_c = gi.nb_meta_channels;
       maybe_palette.num_c = nb_chans;
@@ -374,7 +374,8 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
-    if (!did_palette && nb_chans > 3) {
+    if (!did_palette && nb_chans > 3 &&
+       (!(cparams_.responsive && cparams_.IsLossless()))) {
       Transform maybe_palette_3(TransformId::kPalette);
       maybe_palette_3.begin_c = gi.nb_meta_channels;
       maybe_palette_3.num_c = nb_chans - 1;
