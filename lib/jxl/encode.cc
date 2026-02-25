@@ -965,11 +965,23 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
 
       size_t save_as_reference =
           input_frame->option_values.header.layer_info.save_as_reference;
-      if (save_as_reference >= 3) {
+      if (save_as_reference > 3) {
         return JXL_API_ERROR(
             this, JXL_ENC_ERR_API_USAGE,
-            "Cannot use save_as_reference values >=3 (found: %d)",
+            "Cannot use save_as_reference values >3 (found: %d)",
             static_cast<int>(save_as_reference));
+      }
+
+      if (input_frame->option_values.cparams.patches != jxl::Override::kOff) {
+        patches_possible = true;
+      }
+      if (save_as_reference == 3) {
+        used_reference_3 = true;
+      }
+      if (patches_possible && used_reference_3) {
+        return JXL_API_ERROR(this, JXL_ENC_ERR_API_USAGE,
+                             "Cannot use save_as_reference value 3 unless "
+                             "patches are disabled for all frames");
       }
 
       jxl::FrameInfo frame_info;
@@ -2002,6 +2014,8 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->basic_info_set = false;
   enc->color_encoding_set = false;
   enc->intensity_target_set = false;
+  enc->patches_possible = false;
+  enc->used_reference_3 = false;
   enc->use_container = false;
   enc->use_boxes = false;
   enc->store_jpeg_metadata = false;
