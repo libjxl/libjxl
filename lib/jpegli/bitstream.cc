@@ -192,10 +192,13 @@ void EncodeDHT(j_compress_ptr cinfo, size_t offset, size_t num) {
   for (size_t i = 0; i < num; ++i) {
     const JHUFF_TBL& table = m->huffman_tables[offset + i];
     if (table.sent_table) continue;
-    marker_len += kJpegHuffmanMaxBitLength + 1;
     for (size_t j = 0; j <= kJpegHuffmanMaxBitLength; ++j) {
       marker_len += table.bits[j];
     }
+    // Special case: empty DHT marker
+    if (marker_len == 2) break;
+    marker_len += kJpegHuffmanMaxBitLength + 1;
+
   }
   std::vector<uint8_t> data(marker_len + 2);
   size_t pos = 0;
@@ -210,6 +213,8 @@ void EncodeDHT(j_compress_ptr cinfo, size_t offset, size_t num) {
     for (size_t i = 0; i <= kJpegHuffmanMaxBitLength; ++i) {
       total_count += table.bits[i];
     }
+    // Special case: empty DHT marker
+    if (total_count == 0) break;
     data[pos++] = m->slot_id_map[offset + t];
     for (size_t i = 1; i <= kJpegHuffmanMaxBitLength; ++i) {
       data[pos++] = table.bits[i];

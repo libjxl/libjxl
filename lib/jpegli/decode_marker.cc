@@ -284,9 +284,8 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 // and solt_id of Huffman code being read.
 void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   size_t pos = 2;
-  if (pos == len) {
-    JPEGLI_ERROR("DHT marker: no Huffman table found");
-  }
+  // Empty DHT marker.
+  if (pos == len) return;
   while (pos < len) {
     JPEG_VERIFY_LEN(1 + kJpegHuffmanMaxBitLength);
     // The index of the Huffman code in the current set of Huffman codes. For AC
