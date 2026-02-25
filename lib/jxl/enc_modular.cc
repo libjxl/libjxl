@@ -336,7 +336,8 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
   // arbitrary estimate: 4.8 bpp for 8-bit RGB
   float arbitrary_bpp_estimate = 0.2f * gi.bitdepth * nb_chans;
 
-  if (cparams_.palette_colors != 0 || cparams_.lossy_palette) {
+  if ((cparams_.palette_colors != 0 || cparams_.lossy_palette) &&
+      (!(cparams_.responsive && cparams_.IsLossless()))) {
     // when not estimating, assume some arbitrary bpp
     if (cparams_.speed_tier <= SpeedTier::kSquirrel) {
       JXL_ASSIGN_OR_RETURN(cost_before, EstimateCost(gi));
@@ -884,7 +885,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
   // Global palette transforms
   float channel_colors_percent = 0;
   if (!cparams_.lossy_palette &&
-      !(cparams_.responsive && cparams_.IsLossless()) &&
       (cparams_.speed_tier <= SpeedTier::kThunder ||
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
     channel_colors_percent = cparams_.channel_colors_pre_transform_percent;
