@@ -254,14 +254,17 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
       memset(qdc_row, 0, sizeof(*qdc_row) * r.xsize());
     }
   } else {
+    const size_t max_y_x = in.channel[1].plane.ysize() - 1;
+    const size_t max_y_y = in.channel[0].plane.ysize() - 1;
+    const size_t max_y_b = in.channel[2].plane.ysize() - 1;
     for (size_t y = 0; y < r.ysize(); y++) {
       uint8_t* qdc_row_val = r.Row(quant_dc, y);
-      const int32_t* quant_row_x =
-          in.channel[1].plane.Row(y >> chroma_subsampling.VShift(0));
-      const int32_t* quant_row_y =
-          in.channel[0].plane.Row(y >> chroma_subsampling.VShift(1));
-      const int32_t* quant_row_b =
-          in.channel[2].plane.Row(y >> chroma_subsampling.VShift(2));
+      const int32_t* quant_row_x = in.channel[1].plane.Row(
+          std::min(y >> chroma_subsampling.VShift(0), max_y_x));
+      const int32_t* quant_row_y = in.channel[0].plane.Row(
+          std::min(y >> chroma_subsampling.VShift(1), max_y_y));
+      const int32_t* quant_row_b = in.channel[2].plane.Row(
+          std::min(y >> chroma_subsampling.VShift(2), max_y_b));
       for (size_t x = 0; x < r.xsize(); x++) {
         int bucket_x = 0;
         int bucket_y = 0;
