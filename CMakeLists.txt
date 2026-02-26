@@ -123,6 +123,17 @@ else()
   message(STATUS "libjpeg-turbo submodule is absent; not enabling jpegli")
 endif()
 
+set(JPEGXL_PLATFORM_IOS OFF)
+if(APPLE)
+  if(DEFINED IOS AND IOS)
+    set(JPEGXL_PLATFORM_IOS ON)
+  elseif(CMAKE_SYSTEM_NAME MATCHES "iOS|tvOS|watchOS")
+    set(JPEGXL_PLATFORM_IOS ON)
+  elseif(DEFINED CMAKE_OSX_SYSROOT AND CMAKE_OSX_SYSROOT MATCHES "(iphone|appletv|watch).*os")
+    set(JPEGXL_PLATFORM_IOS ON)
+  endif()
+endif()
+
 include(TestBigEndian)
 test_big_endian(ARCH_IS_BIG_ENDIAN)
 if(ARCH_IS_BIG_ENDIAN)
@@ -152,6 +163,16 @@ set(JPEGXL_ENABLE_JPEGLI ${ENABLE_JPEGLI_DEFAULT} CACHE BOOL
     "Build jpegli library.")
 set(JPEGXL_ENABLE_JPEGLI_LIBJPEG true CACHE BOOL
     "Build libjpeg.so shared library based on jpegli.")
+set(_jpegli_libjpeg_only_obj_default OFF)
+if(EMSCRIPTEN OR JPEGXL_PLATFORM_IOS)
+  set(_jpegli_libjpeg_only_obj_default ON)
+endif()
+if(NOT DEFINED JPEGXL_ENABLE_JPEGLI_LIBJPEG_ONLY_OBJ)
+  set(JPEGXL_ENABLE_JPEGLI_LIBJPEG_ONLY_OBJ ${_jpegli_libjpeg_only_obj_default})
+endif()
+set(JPEGXL_ENABLE_JPEGLI_LIBJPEG_ONLY_OBJ "${JPEGXL_ENABLE_JPEGLI_LIBJPEG_ONLY_OBJ}" CACHE BOOL
+    "Build libjpeg compatible library based on jpegli, but only as an object." FORCE)
+unset(_jpegli_libjpeg_only_obj_default)
 set(JPEGXL_INSTALL_JPEGLI_LIBJPEG false CACHE BOOL
     "Install jpegli version of libjpeg.so system-wide.")
 set(JPEGLI_LIBJPEG_LIBRARY_VERSION "62.3.0" CACHE STRING

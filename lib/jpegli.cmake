@@ -30,20 +30,19 @@ configure_file(
 configure_file(
   ../third_party/libjpeg-turbo/jmorecfg.h include/jpegli/jmorecfg.h COPYONLY)
 
-add_library(jpegli-static STATIC EXCLUDE_FROM_ALL "${JPEGXL_INTERNAL_JPEGLI_SOURCES}")
-target_compile_options(jpegli-static PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
-target_compile_options(jpegli-static PUBLIC ${JPEGXL_COVERAGE_FLAGS})
-set_property(TARGET jpegli-static PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_include_directories(jpegli-static PRIVATE
-  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
-  "${JXL_HWY_INCLUDE_DIRS}"
-)
-target_include_directories(jpegli-static PUBLIC
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/jpegli>"
-)
-target_link_libraries(jpegli-static PUBLIC ${JPEGLI_INTERNAL_LIBS})
+add_library(jpegli-static-obj OBJECT "${JPEGXL_INTERNAL_JPEGLI_SOURCES}")
+set_property(TARGET jpegli-static-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_compile_options(jpegli-static-obj PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
+target_compile_options(jpegli-static-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
+target_include_directories(jpegli-static-obj
+  PRIVATE "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>" "${JXL_HWY_INCLUDE_DIRS}"
+  PUBLIC
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/jpegli>")
+target_link_libraries(jpegli-static-obj PUBLIC ${JPEGLI_INTERNAL_LIBS})
+
+add_library(jpegli-static STATIC EXCLUDE_FROM_ALL $<TARGET_OBJECTS:jpegli-static-obj>)
+target_link_libraries(jpegli-static PUBLIC jpegli-static-obj)
 
 #
 # Tests for jpegli-static
@@ -107,13 +106,14 @@ endif()
 # Build libjpeg.so that links to libjpeg-static
 #
 
-if (JPEGXL_ENABLE_JPEGLI_LIBJPEG AND NOT APPLE AND NOT WIN32 AND NOT EMSCRIPTEN)
+if (JPEGXL_ENABLE_JPEGLI_LIBJPEG AND NOT WIN32)
 add_library(jpegli-libjpeg-obj OBJECT "${JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES}")
 target_compile_options(jpegli-libjpeg-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jpegli-libjpeg-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jpegli-libjpeg-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jpegli-libjpeg-obj PRIVATE
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/jpegli>"
 )
 target_compile_definitions(jpegli-libjpeg-obj PUBLIC
@@ -121,6 +121,7 @@ target_compile_definitions(jpegli-libjpeg-obj PUBLIC
 )
 set(JPEGLI_LIBJPEG_INTERNAL_OBJECTS $<TARGET_OBJECTS:jpegli-libjpeg-obj>)
 
+if(NOT JPEGXL_ENABLE_JPEGLI_LIBJPEG_ONLY_OBJ)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/jpegli)
 add_library(jpeg SHARED ${JPEGLI_LIBJPEG_INTERNAL_OBJECTS})
 target_link_libraries(jpeg PUBLIC ${JPEGXL_COVERAGE_FLAGS})
@@ -131,12 +132,19 @@ set_target_properties(jpeg PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/jpegli"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/jpegli")
 
-# Add a jpeg.version file as a version script to tag symbols with the
+# Add a jpeg.version or jpeg.list file as a version script to tag symbols with the
 # appropriate version number.
-set_target_properties(jpeg PROPERTIES
-  LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/jpegli/jpeg.version.${JPEGLI_LIBJPEG_LIBRARY_SOVERSION})
-set_property(TARGET jpeg APPEND_STRING PROPERTY
-  LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jpegli/jpeg.version.${JPEGLI_LIBJPEG_LIBRARY_SOVERSION}")
+if (LINUX)
+  set_target_properties(jpeg PROPERTIES
+    LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/jpegli/jpeg.version.${JPEGLI_LIBJPEG_LIBRARY_SOVERSION})
+  set_property(TARGET jpeg APPEND_STRING PROPERTY
+    LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jpegli/jpeg.version.${JPEGLI_LIBJPEG_LIBRARY_SOVERSION}")
+elseif(APPLE)
+  set_target_properties(jpeg PROPERTIES
+    LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/jpegli/jpeg.list.${JPEGLI_LIBJPEG_LIBRARY_SOVERSION})
+  set_property(TARGET jpeg APPEND_STRING PROPERTY
+    LINK_FLAGS " -Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/jpegli/jpeg.list.${JPEGLI_LIBJPEG_LIBRARY_SOVERSION}")
+endif()
 
 if (JPEGXL_INSTALL_JPEGLI_LIBJPEG)
   install(TARGETS jpeg
@@ -154,5 +162,7 @@ endif()
 if(LINKER_SUPPORT_EXCLUDE_LIBS)
   set_property(TARGET jpeg APPEND_STRING PROPERTY
     LINK_FLAGS " ${LINKER_EXCLUDE_LIBS_FLAG}")
+endif()
+
 endif()
 endif()
