@@ -122,6 +122,36 @@ Status ParamsPostInit(CompressParams* p) {
 
 namespace {
 
+uint32_t GetGroupSizeShift(size_t xsize, size_t ysize,
+                           const CompressParams& cparams) {
+  if (!cparams.modular_mode) return 1;
+  if (cparams.modular_group_size_shift >= 0) {
+    return static_cast<uint32_t>(cparams.modular_group_size_shift);
+  }
+  // By default, use the smallest group size for faster decoding 2
+  // and higher. Greatly speeds up decoding via multithreading at
+  // the cost of density.
+  if (cparams.decoding_speed_tier >= 2 ||
+      (cparams.decoding_speed_tier >= 1 && cparams.responsive == 1 &&
+       cparams.IsLossless())) {
+    return 0;
+  }
+  // No point using groups when only one group is full and the others are
+  // less than half full: multithreading will not really help much, while
+  // compression does suffer; but no reason to have group larger than image.
+  if (xsize <= 128 && ysize <= 128) return 0;
+  if (xsize <= 256 && ysize <= 256) return 1;
+  if (xsize <= 400 && ysize <= 400) return 2;
+  return 1;
+}
+
+static size_t NumGroupsForFrame(size_t xsize, size_t ysize,
+                                const CompressParams& cparams) {
+  const size_t group_size_shift = GetGroupSizeShift(xsize, ysize, cparams);
+  const size_t group_dim = (kGroupDim >> 1) << group_size_shift;
+  return DivCeil(xsize, group_dim) * DivCeil(ysize, group_dim);
+}
+
 template <typename T>
 uint32_t GetBitDepth(JxlBitDepth bit_depth, const T& metadata,
                      JxlPixelFormat format) {
@@ -333,30 +363,7 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
 
   if (cparams.modular_mode) {
     frame_header->encoding = FrameEncoding::kModular;
-    if (cparams.modular_group_size_shift == -1) {
-      // By default, use the smallest group size for faster decoding 2
-      // and higher. Greatly speeds up decoding via multithreading at
-      // the cost of density.
-      if (cparams.decoding_speed_tier >= 2 ||
-        // Force decoding speed to tier 2 for progressive lossless.
-        (cparams.decoding_speed_tier >= 1 && cparams.responsive == 1
-        && cparams.IsLossless())) {
-        frame_header->group_size_shift = 0;
-      // no point using groups when only one group is full and the others are
-      // less than half full: multithreading will not really help much, while
-      // compression does suffer; but no reason to have group larger than image.
-      } else if (xsize <= 128 && ysize <= 128) {
-        frame_header->group_size_shift = 0;
-      } else if (xsize <= 256 && ysize <= 256) {
-        frame_header->group_size_shift = 1;
-      } else if (xsize <= 400 && ysize <= 400) {
-        frame_header->group_size_shift = 2;
-      } else {
-        frame_header->group_size_shift = 1;
-      }
-    } else {
-      frame_header->group_size_shift = cparams.modular_group_size_shift;
-    }
+    frame_header->group_size_shift = GetGroupSizeShift(xsize, ysize, cparams);
   }
 
   if (jpeg_data) {
@@ -378,6 +385,7 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
           "recompressing JPEGs");
     }
   }
+
   if (frame_header->color_transform != ColorTransform::kYCbCr &&
       (frame_header->chroma_subsampling.MaxHShift() != 0 ||
        frame_header->chroma_subsampling.MaxVShift() != 0)) {
@@ -1660,10 +1668,9 @@ Status ComputeEncodingData(
     // If checks pass here, a Global MA tree is used.
     if (cparams.speed_tier < SpeedTier::kTortoise ||
         !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
-        (cparams.responsive == 1 && !cparams.IsLossless()) ||
         // Allow Local trees for progressive lossless but not lossy.
-        (cparams.buffering && cparams.responsive < 0) ||
-        !cparams.custom_fixed_tree.empty()) {
+        (cparams.responsive == 1 && !cparams.IsLossless()) ||
+        cparams.buffering < 3 || !cparams.custom_fixed_tree.empty()) {
       // Use local trees if doing lossless modular, unless at very slow speeds.
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
@@ -1769,9 +1776,6 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
                             const FrameInfo& frame_info,
                             const CodecMetadata& metadata,
                             const JxlEncoderChunkedFrameAdapter& frame_data) {
-  if (cparams.buffering == 0) {
-    return false;
-  }
   if (cparams.buffering == -1) {
     if (cparams.speed_tier < SpeedTier::kTortoise) return false;
     if (cparams.speed_tier < SpeedTier::kSquirrel &&
@@ -1783,9 +1787,19 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
       return false;
     }
   }
+  if (cparams.buffering == 0) {
+    return false;
+  }
+  if (cparams.buffering == 1 && frame_data.xsize <= 2048 &&
+      frame_data.ysize <= 2048) {
+    return false;
+  }
 
-  // TODO(veluca): handle different values of `buffering`.
-  if (frame_data.xsize <= 2048 && frame_data.ysize <= 2048) {
+  // Random heuristic: disable streaming for frames with less than 8 groups.
+  // (too little speed benefit, too much compression penalty)
+  // Can change this but have to make sure numgroups > 1, because the streaming
+  // path assumes that.
+  if (NumGroupsForFrame(frame_data.xsize, frame_data.ysize, cparams) <= 8) {
     return false;
   }
   if (frame_data.IsJPEG()) {
@@ -1981,20 +1995,19 @@ void RemoveUnusedHistograms(EntropyEncodingData& codes) {
   codes = std::move(new_codes);
 }
 
-Status OutputAcGlobal(PassesEncoderState& enc_state,
-                      const FrameDimensions& frame_dim,
-                      std::vector<size_t>* group_sizes,
-                      JxlEncoderOutputProcessorWrapper* output_processor,
-                      AuxOut* aux_out) {
+StatusOr<std::unique_ptr<BitWriter>> OutputAcGlobal(
+    PassesEncoderState& enc_state, const FrameDimensions& frame_dim,
+    AuxOut* aux_out) {
   JXL_ENSURE(frame_dim.num_groups > 1);
   JxlMemoryManager* memory_manager = enc_state.memory_manager();
-  BitWriter writer{memory_manager};
+  std::unique_ptr<BitWriter> writer =
+      jxl::make_unique<BitWriter>(memory_manager);
   {
     size_t num_histo_bits = CeilLog2Nonzero(frame_dim.num_groups);
     JXL_RETURN_IF_ERROR(
-        writer.WithMaxBits(num_histo_bits + 1, LayerType::Ac, aux_out, [&] {
-          writer.Write(1, 1);  // default dequant matrices
-          writer.Write(num_histo_bits, frame_dim.num_dc_groups - 1);
+        writer->WithMaxBits(num_histo_bits + 1, LayerType::Ac, aux_out, [&] {
+          writer->Write(1, 1);  // default dequant matrices
+          writer->Write(num_histo_bits, frame_dim.num_dc_groups - 1);
           return true;
         }));
   }
@@ -2005,35 +2018,33 @@ Status OutputAcGlobal(PassesEncoderState& enc_state,
     JXL_RETURN_IF_ERROR(
         U32Coder::CanEncode(kOrderEnc, enc_state.used_orders[i], &order_bits));
     JXL_RETURN_IF_ERROR(
-        writer.WithMaxBits(order_bits, LayerType::Order, aux_out, [&] {
-          return U32Coder::Write(kOrderEnc, enc_state.used_orders[i], &writer);
+        writer->WithMaxBits(order_bits, LayerType::Order, aux_out, [&] {
+          return U32Coder::Write(kOrderEnc, enc_state.used_orders[i],
+                                 writer.get());
         }));
     JXL_RETURN_IF_ERROR(
         EncodeCoeffOrders(enc_state.used_orders[i],
                           &shared.coeff_orders[i * shared.coeff_order_size],
-                          &writer, LayerType::Order, aux_out));
+                          writer.get(), LayerType::Order, aux_out));
     // Fix up context map and entropy codes to remove any fix histograms that
     // were not selected by clustering.
     RemoveUnusedHistograms(enc_state.passes[i].codes);
-    JXL_RETURN_IF_ERROR(EncodeHistograms(enc_state.passes[i].codes, &writer,
-                                         LayerType::Ac, aux_out));
+    JXL_RETURN_IF_ERROR(EncodeHistograms(enc_state.passes[i].codes,
+                                         writer.get(), LayerType::Ac, aux_out));
   }
-  JXL_RETURN_IF_ERROR(writer.WithMaxBits(8, LayerType::Ac, aux_out, [&] {
-    writer.ZeroPadToByte();  // end of group.
+  JXL_RETURN_IF_ERROR(writer->WithMaxBits(8, LayerType::Ac, aux_out, [&] {
+    writer->ZeroPadToByte();  // end of group.
     return true;
   }));
-  PaddedBytes ac_global = std::move(writer).TakeBytes();
-  group_sizes->push_back(ac_global.size());
-  JXL_RETURN_IF_ERROR(AppendData(*output_processor, ac_global));
-  return true;
+  return writer;
 }
 
 JXL_NOINLINE Status EncodeFrameStreaming(
     JxlMemoryManager* memory_manager, const CompressParams& cparams,
     const FrameInfo& frame_info, const CodecMetadata* metadata,
-    JxlEncoderChunkedFrameAdapter& frame_data, const JxlCmsInterface& cms,
-    ThreadPool* pool, JxlEncoderOutputProcessorWrapper* output_processor,
-    AuxOut* aux_out) {
+    JxlEncoderChunkedFrameAdapter& frame_data, bool streaming_output,
+    const JxlCmsInterface& cms, ThreadPool* pool,
+    JxlEncoderOutputProcessorWrapper* output_processor, AuxOut* aux_out) {
   auto enc_state = jxl::make_unique<PassesEncoderState>(memory_manager);
   SetProgressiveMode(cparams, &enc_state->progressive_splitter);
   FrameHeader frame_header(metadata);
@@ -2065,6 +2076,9 @@ JXL_NOINLINE Status EncodeFrameStreaming(
   PaddedBytes dc_global_bytes{memory_manager};
   std::vector<size_t> group_sizes;
   size_t start_pos = output_processor->CurrentPosition();
+  std::vector<std::unique_ptr<BitWriter>> global_group_codes(
+      NumTocEntries(frame_header.ToFrameDimensions().num_groups,
+                    dc_group_order.size(), num_passes));
   for (size_t i = 0; i < dc_group_order.size(); ++i) {
     size_t dc_ix = dc_group_order[i];
     size_t dc_y = dc_ix / dc_group_xsize;
@@ -2096,56 +2110,111 @@ JXL_NOINLINE Status EncodeFrameStreaming(
       JXL_RETURN_IF_ERROR(WriteFrameHeader(frame_header, &writer, aux_out));
       JXL_RETURN_IF_ERROR(
           writer.WithMaxBits(8, LayerType::Header, aux_out, [&]() -> Status {
-            writer.Write(1, 1);  // write permutation
-            JXL_RETURN_IF_ERROR(EncodePermutation(
-                permutation.data(), /*skip=*/0, permutation.size(), &writer,
-                LayerType::Header, aux_out));
+            if (streaming_output) {
+              writer.Write(1, 1);  // write permutation
+              JXL_RETURN_IF_ERROR(EncodePermutation(
+                  permutation.data(), /*skip=*/0, permutation.size(), &writer,
+                  LayerType::Header, aux_out));
+            }
             writer.ZeroPadToByte();
             return true;
           }));
       frame_header_bytes = std::move(writer).TakeBytes();
-      dc_global_bytes = std::move(*group_codes[0]).TakeBytes();
-      JXL_RETURN_IF_ERROR(ComputeGroupDataOffset(
-          frame_header_bytes.size(), dc_global_bytes.size(), permutation.size(),
-          min_dc_global_size, group_data_offset));
-      JXL_DEBUG_V(2, "Frame header size: %" PRIuS, frame_header_bytes.size());
-      JXL_DEBUG_V(2, "DC global size: %" PRIuS ", min size for TOC: %" PRIuS,
-                  dc_global_bytes.size(), min_dc_global_size);
-      JXL_DEBUG_V(2, "Num groups: %" PRIuS " group data offset: %" PRIuS,
-                  permutation.size(), group_data_offset);
-      group_sizes.push_back(dc_global_bytes.size());
-      JXL_RETURN_IF_ERROR(
-          output_processor->Seek(start_pos + group_data_offset));
+      if (streaming_output) {
+        dc_global_bytes = std::move(*group_codes[0]).TakeBytes();
+        JXL_RETURN_IF_ERROR(ComputeGroupDataOffset(
+            frame_header_bytes.size(), dc_global_bytes.size(),
+            permutation.size(), min_dc_global_size, group_data_offset));
+        JXL_DEBUG_V(2, "Frame header size: %" PRIuS, frame_header_bytes.size());
+        JXL_DEBUG_V(2, "DC global size: %" PRIuS ", min size for TOC: %" PRIuS,
+                    dc_global_bytes.size(), min_dc_global_size);
+        JXL_DEBUG_V(2, "Num groups: %" PRIuS " group data offset: %" PRIuS,
+                    permutation.size(), group_data_offset);
+        group_sizes.push_back(dc_global_bytes.size());
+        JXL_RETURN_IF_ERROR(
+            output_processor->Seek(start_pos + group_data_offset));
+      }
     }
-    JXL_RETURN_IF_ERROR(
-        OutputGroups(std::move(group_codes), &group_sizes, output_processor));
+    if (streaming_output) {
+      JXL_RETURN_IF_ERROR(
+          OutputGroups(std::move(group_codes), &group_sizes, output_processor));
+    } else {
+      JXL_ENSURE(group_codes.size() >= 4);
+      if (i == 0) {
+        JXL_RETURN_IF_ERROR(group_codes[0]->Shrink());
+        global_group_codes[0] = std::move(group_codes[0]);
+      }
+      JXL_RETURN_IF_ERROR(group_codes[1]->Shrink());
+      global_group_codes[1 + i] = std::move(group_codes[1]);
+      for (size_t j = 3; j < group_codes.size(); j++) {
+        FrameDimensions patch_dim;
+        patch_dim.Set(xsize, ysize, frame_header.group_size_shift,
+                      /*max_hshift=*/0, /*max_vshift=*/0,
+                      frame_header.encoding == FrameEncoding::kModular,
+                      /*upsampling=*/1);
+        size_t global_ac_idx =
+            enc_modular->ComputeStreamingAbsoluteAcGroupId(i, j - 3, patch_dim);
+        JXL_RETURN_IF_ERROR(group_codes[j]->Shrink());
+        global_group_codes[2 + dc_group_order.size() + global_ac_idx] =
+            std::move(group_codes[j]);
+      }
+    }
   }
   if (frame_header.encoding == FrameEncoding::kVarDCT) {
-    JXL_RETURN_IF_ERROR(
-        OutputAcGlobal(*enc_state, frame_header.ToFrameDimensions(),
-                       &group_sizes, output_processor, aux_out));
+    JXL_ASSIGN_OR_RETURN(
+        std::unique_ptr<BitWriter> writer,
+        OutputAcGlobal(*enc_state, frame_header.ToFrameDimensions(), aux_out));
+    JXL_RETURN_IF_ERROR(writer->Shrink());
+    if (streaming_output) {
+      PaddedBytes ac_global = std::move(*writer).TakeBytes();
+      group_sizes.push_back(ac_global.size());
+      JXL_RETURN_IF_ERROR(AppendData(*output_processor, ac_global));
+    } else {
+      global_group_codes[1 + dc_group_order.size()] = std::move(writer);
+    }
   } else {
-    group_sizes.push_back(0);
+    if (streaming_output) {
+      group_sizes.push_back(0);
+    } else {
+      global_group_codes[1 + dc_group_order.size()] =
+          jxl::make_unique<BitWriter>(memory_manager);
+    }
   }
-  JXL_ENSURE(group_sizes.size() == permutation.size());
-  size_t end_pos = output_processor->CurrentPosition();
-  JXL_RETURN_IF_ERROR(output_processor->Seek(start_pos));
-  size_t padding_size =
-      ComputeDcGlobalPadding(group_sizes, frame_header_bytes.size(),
-                             group_data_offset, min_dc_global_size);
-  group_sizes[0] += padding_size;
-  JXL_ASSIGN_OR_RETURN(PaddedBytes toc_bytes,
-                       EncodeTOC(memory_manager, group_sizes, aux_out));
-  std::vector<uint8_t> padding_bytes(padding_size);
-  JXL_RETURN_IF_ERROR(AppendData(*output_processor, frame_header_bytes));
-  JXL_RETURN_IF_ERROR(AppendData(*output_processor, toc_bytes));
-  JXL_RETURN_IF_ERROR(AppendData(*output_processor, dc_global_bytes));
-  JXL_RETURN_IF_ERROR(AppendData(*output_processor, padding_bytes));
-  JXL_DEBUG_V(2, "TOC size: %" PRIuS " padding bytes after DC global: %" PRIuS,
-              toc_bytes.size(), padding_size);
-  JXL_ENSURE(output_processor->CurrentPosition() ==
-             start_pos + group_data_offset);
-  JXL_RETURN_IF_ERROR(output_processor->Seek(end_pos));
+  if (streaming_output) {
+    JXL_ENSURE(group_sizes.size() == permutation.size());
+    size_t end_pos = output_processor->CurrentPosition();
+    JXL_RETURN_IF_ERROR(output_processor->Seek(start_pos));
+    size_t padding_size =
+        ComputeDcGlobalPadding(group_sizes, frame_header_bytes.size(),
+                               group_data_offset, min_dc_global_size);
+    group_sizes[0] += padding_size;
+    JXL_ASSIGN_OR_RETURN(PaddedBytes toc_bytes,
+                         EncodeTOC(memory_manager, group_sizes, aux_out));
+    std::vector<uint8_t> padding_bytes(padding_size);
+    JXL_RETURN_IF_ERROR(AppendData(*output_processor, frame_header_bytes));
+    JXL_RETURN_IF_ERROR(AppendData(*output_processor, toc_bytes));
+    JXL_RETURN_IF_ERROR(AppendData(*output_processor, dc_global_bytes));
+    JXL_RETURN_IF_ERROR(AppendData(*output_processor, padding_bytes));
+    JXL_DEBUG_V(2,
+                "TOC size: %" PRIuS " padding bytes after DC global: %" PRIuS,
+                toc_bytes.size(), padding_size);
+    JXL_ENSURE(output_processor->CurrentPosition() ==
+               start_pos + group_data_offset);
+    JXL_RETURN_IF_ERROR(output_processor->Seek(end_pos));
+  } else {
+    for (auto& g : global_group_codes) {
+      group_sizes.push_back(g->BitsWritten() / 8);
+    }
+    JXL_ENSURE(group_sizes.size() == permutation.size());
+    JXL_ASSIGN_OR_RETURN(PaddedBytes toc_bytes,
+                         EncodeTOC(memory_manager, group_sizes, aux_out));
+    JXL_RETURN_IF_ERROR(AppendData(*output_processor, frame_header_bytes));
+    JXL_RETURN_IF_ERROR(AppendData(*output_processor, toc_bytes));
+    for (auto& g : global_group_codes) {
+      PaddedBytes bytes = std::move(*g).TakeBytes();
+      JXL_RETURN_IF_ERROR(AppendData(*output_processor, bytes));
+    }
+  }
   return true;
 }
 
@@ -2531,8 +2600,8 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
 
   if (CanDoStreamingEncoding(cparams, frame_info, *metadata, frame_data)) {
     return EncodeFrameStreaming(memory_manager, cparams, frame_info, metadata,
-                                frame_data, cms, pool, output_processor,
-                                aux_out);
+                                frame_data, cparams.buffering > 2, cms, pool,
+                                output_processor, aux_out);
   } else {
     return EncodeFrameOneShot(memory_manager, cparams, frame_info, metadata,
                               frame_data, cms, pool, output_processor, aux_out);
