@@ -419,8 +419,16 @@ bool IsInputReady(j_decompress_ptr cinfo) {
 bool ReadOutputPass(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   if (!m->pixels_) {
+    if (cinfo->output_width != 0 &&
+        static_cast<size_t>(cinfo->out_color_components) >
+            SIZE_MAX / cinfo->output_width) {
+      JPEGLI_ERROR("Image dimensions too large");
+    }
     size_t stride =
         static_cast<size_t>(cinfo->out_color_components) * cinfo->output_width;
+    if (cinfo->output_height != 0 && stride > SIZE_MAX / cinfo->output_height) {
+      JPEGLI_ERROR("Image dimensions too large");
+    }
     size_t num_samples = cinfo->output_height * stride;
     m->pixels_ = Allocate<uint8_t>(cinfo, num_samples, JPOOL_IMAGE);
     m->scanlines_ =
