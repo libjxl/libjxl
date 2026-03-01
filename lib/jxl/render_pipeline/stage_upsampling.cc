@@ -127,7 +127,9 @@ class UpsamplingStage : public RenderPipelineStage {
   }
 
   Status PrepareForThreads(size_t num_threads) override {
-    size_t alloc_size = sizeof(float) * (kChunkSize + 4);
+    constexpr HWY_FULL(float) df;
+    const size_t lanes = Lanes(df);
+    size_t alloc_size = sizeof(float) * (kChunkSize + lanes);
     for (size_t i = 0; i < 3; ++i) {
       temp_[i].resize(num_threads);
       for (size_t t = 0; t < num_threads; ++t) {
