@@ -1,0 +1,155 @@
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Workflow for building and running tests.
+
+name: Build/Test in emulator
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '14 3 * * *' # Daily on 03:14 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  compile:
+    name: Build under ${{ matrix.platform }} emulator
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
+    runs-on: 'ubuntu-latest'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - identifier: s390x
+            platform: linux/s390x
+
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      with:
+        egress-policy: audit
+
+    - name: Checkout the source
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        submodules: true
+        fetch-depth: 2
+
+    - name: Git environment
+      id: git-env
+      run: |
+        echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: ccache
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        # When the cache hits the key it is not updated, so if this is a rebuild
+        # of the same Pull Request it will reuse the cache if still around. For
+        # either Pull Requests or new pushes to main, this will use the parent
+        # hash as the starting point from the restore-keys entry.
+        key: build-${{ runner.os }}-${{ github.sha }}-${{ matrix.name }}
+        restore-keys: |
+          build-${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
+
+    - name: ccache config
+      run: |
+        mkdir -p ${CCACHE_DIR}
+        echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
+
+    - name: Setup qemu
+      run: |
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+    - name: Build
+      run: |
+        docker run --rm --platform ${{ matrix.platform }} \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            debian:bookworm \
+            bash -c "./tools/scripts/install_deps.sh base build -- zlib1g-dev && \
+              echo 'Number of cores:' `nproc` && \
+              export CC=clang && \
+              export CCACHE_DIR=/workspace && \
+              export CMAKE_FLAGS='-DHWY_BROKEN_TARGETS=0' && \
+              export CXX=clang++ && \
+              export SKIP_TEST=1 && \
+              export TARGETS='all_tests cjxl djxl hwy_list_targets libjxl.so libjxl_dec.so' && \
+              ./ci.sh release \
+                -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+                -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+                -DJPEGXL_BUNDLE_LIBPNG=ON \
+                -DJPEGXL_ENABLE_BENCHMARK=OFF \
+                -DJPEGXL_ENABLE_OPENEXR=OFF \
+                -DJPEGXL_ENABLE_PLUGINS=OFF \
+                -DJPEGXL_ENABLE_VIEWERS=OFF && \
+              find ./build -regextype egrep -type f -regex '.*\.(a|h|jar|json|log|o)' -delete && \
+              find ./build -type f -executable > executable.lst && \
+              echo 'Finished' \
+            "
+
+    - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: emu_binary-${{ matrix.identifier }}
+        path: |
+          build/
+          executable.lst
+        retention-days: 1
+
+  test:
+    name: Testing ${{ matrix.identifier }} shard ${{ matrix.shard_number }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
+    needs: compile
+    runs-on: 'ubuntu-latest'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_number: [1, 2, 3, 5, 6, 7, 8, 9, 10]
+        include:
+          - identifier: s390x
+            platform: linux/s390x
+
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      with:
+        egress-policy: audit
+
+    - name: Checkout the source
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        submodules: true
+        fetch-depth: 1
+    
+    - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        name: emu_binary-${{ matrix.identifier }}
+
+    - name: Setup qemu
+      run: |
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+    - name: Test
+      run: |
+        chmod +x `cat executable.lst`
+        docker run --rm --platform ${{ matrix.platform }} \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            debian:bookworm \
+            bash -c "./tools/scripts/install_deps.sh base runtime && \
+              export BUILD_DIR=build && \
+              ./ci.sh test \
+                -I ${{ matrix.shard_number }},,10 \
+                -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper|test_jpegli_jni_wrapper)' \
+            "
