@@ -1134,8 +1134,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   if (frame_header.loop_filter.gab) {
     float weight[3] = {
         0.99f,
-        0.98f,
-        0.975f,
+        0.99f,
+        0.99f,
     };
     JXL_RETURN_IF_ERROR(GaborishInverse(opsin, rect, weight, pool));
   }
