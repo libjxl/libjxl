@@ -28,8 +28,8 @@ Status GaborishInverse(Image3F* in_out, const Rect& rect, const float mul[3],
   // more favorable for good rate-distortion compromises rather than
   // just using mathematical optimization to find the inverse.
   static const float kGaborish[5] = {
-      -0.09495815671340026, -0.041031725066768575,  0.013710004822696948,
-      0.006510206083837737, -0.0014789063378272242,
+      -0.092369145662814029f,  -0.039253623634014627f, 0.016176494530216929f,
+      0.00083458437774987476f, 0.004512465323949319f,
   };
   for (int i = 0; i < 3; ++i) {
     double sum = 1.0 + mul[i] * 4 *
