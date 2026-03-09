@@ -33,7 +33,7 @@ let onLoadJxlModule = (module) => {
 };
 
 // Check if multi-threading is supported (i.e. SharedArrayBuffer is allowed).
-let probeMutlithreading = () => {
+let probeMultithreading = () => {
   try {
     new SharedArrayBuffer();
     return true;
@@ -65,7 +65,7 @@ let probeHdr = () => {
 // "main" method executed after page is loaded; all scripts are "synchronous" elements,
 // so it is guaranteed that script elements are loaded and executed.
 let onDomContentLoaded = () => {
-  if (!probeMutlithreading()) return;
+  if (!probeMultithreading()) return;
   hdrCanvas = probeHdr();
   JxlDecoderModule().then(onLoadJxlModule);
 };

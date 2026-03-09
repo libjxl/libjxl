@@ -10,7 +10,7 @@
 // library since those may unconditionally define these, depending on the
 // platform.
 
-// PRIuS and PRIdS macros to print size_t and ssize_t respectively.
+// PRIuS and PRIdS macros to print size_t and ptrdiff_t respectively.
 #if !defined(PRIdS)
 #if defined(_WIN64)
 #define PRIdS "lld"

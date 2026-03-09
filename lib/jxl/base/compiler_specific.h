@@ -95,11 +95,6 @@
 #define JXL_UNLIKELY(expr) __builtin_expect(!!(expr), 0)
 #endif
 
-#if JXL_COMPILER_MSVC
-#include <stdint.h>
-using ssize_t = intptr_t;
-#endif
-
 // Returns a void* pointer which the compiler then assumes is N-byte aligned.
 // Example: float* JXL_RESTRICT aligned = (float*)JXL_ASSUME_ALIGNED(in, 32);
 //

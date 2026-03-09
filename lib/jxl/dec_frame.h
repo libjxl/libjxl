@@ -181,7 +181,7 @@ class FrameDecoder {
 
   size_t NextNumPassesToPause() const {
     auto it = std::upper_bound(passes_to_pause_.begin(), passes_to_pause_.end(),
-                               NumCompletePasses());
+                               static_cast<int>(NumCompletePasses()));
     return (it != passes_to_pause_.end() ? *it
                                          : std::numeric_limits<size_t>::max());
   }
@@ -275,6 +275,8 @@ class FrameDecoder {
       JXL_RETURN_IF_ERROR(dec_state_->render_pipeline->PrepareForThreads(
           storage_size, use_group_ids));
     }
+    JXL_RETURN_IF_ERROR(
+        dec_state_->upsampler8x->PrepareForThreads(num_threads));
     return true;
   }
 

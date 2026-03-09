@@ -26,8 +26,8 @@ class QuantizedSplineEncoder {
   // Only call if HasAny().
   static void Tokenize(const QuantizedSpline& spline,
                        std::vector<Token>* const tokens) {
-    tokens->emplace_back(kNumControlPointsContext,
-                         spline.control_points_.size());
+    tokens->emplace_back(static_cast<uint32_t>(kNumControlPointsContext),
+                         static_cast<uint32_t>(spline.control_points_.size()));
     for (const auto& point : spline.control_points_) {
       tokens->emplace_back(kControlPointsContext, PackSigned(point.first));
       tokens->emplace_back(kControlPointsContext, PackSigned(point.second));
@@ -54,11 +54,15 @@ void EncodeAllStartingPoints(const std::vector<Spline::Point>& points,
     const int64_t x = std::lround(points[i].x);
     const int64_t y = std::lround(points[i].y);
     if (i == 0) {
-      tokens->emplace_back(kStartingPositionContext, x);
-      tokens->emplace_back(kStartingPositionContext, y);
+      tokens->emplace_back(static_cast<uint32_t>(kStartingPositionContext),
+                           static_cast<uint32_t>(x));
+      tokens->emplace_back(static_cast<uint32_t>(kStartingPositionContext),
+                           static_cast<uint32_t>(y));
     } else {
-      tokens->emplace_back(kStartingPositionContext, PackSigned(x - last_x));
-      tokens->emplace_back(kStartingPositionContext, PackSigned(y - last_y));
+      tokens->emplace_back(static_cast<uint32_t>(kStartingPositionContext),
+                           PackSigned(x - last_x));
+      tokens->emplace_back(static_cast<uint32_t>(kStartingPositionContext),
+                           PackSigned(y - last_y));
     }
     last_x = x;
     last_y = y;
@@ -75,7 +79,8 @@ Status EncodeSplines(const Splines& splines, BitWriter* writer,
   const std::vector<QuantizedSpline>& quantized_splines =
       splines.QuantizedSplines();
   std::vector<std::vector<Token>> tokens(1);
-  tokens[0].emplace_back(kNumSplinesContext, quantized_splines.size() - 1);
+  tokens[0].emplace_back(static_cast<uint32_t>(kNumSplinesContext),
+                         static_cast<uint32_t>(quantized_splines.size() - 1));
   EncodeAllStartingPoints(splines.StartingPoints(), tokens.data());
 
   tokens[0].emplace_back(kQuantizationAdjustmentContext,

@@ -23,6 +23,7 @@
 
 #include "lib/extras/common.h"
 #include "lib/extras/dec/color_description.h"
+#include "lib/extras/exif.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/byte_order.h"
@@ -418,12 +419,13 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           return false;
         }
       }
+      ppf->primary_color_representation =
+          PackedPixelFile::kColorEncodingIsPrimary;
       if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsEncodedProfile(
                                  dec, target, &ppf->color_encoding)) {
         ppf->color_encoding.color_space = JXL_COLOR_SPACE_UNKNOWN;
+        ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
       }
-      ppf->primary_color_representation =
-          PackedPixelFile::kColorEncodingIsPrimary;
 
       icc_size = 0;
       target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
@@ -439,7 +441,6 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
           return false;
         }
-        ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
       }
 
     } else if (status == JXL_DEC_FRAME) {
@@ -629,6 +630,11 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         bool bigendian;
         if (IsExif(exif, &bigendian)) {
           ppf->metadata.exif = std::move(exif);
+          if (jpeg_bytes == nullptr && !dparams.keep_orientation) {
+            // when decoding to pixels and orientation is undone during decode,
+            // reset exif orientation to avoid double orientation
+            ResetExifOrientation(ppf->metadata.exif);
+          }
         } else {
           fprintf(stderr, "Warning: invalid TIFF header in Exif\n");
         }

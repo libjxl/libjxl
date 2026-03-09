@@ -114,7 +114,7 @@ void ProcessiMCURow(j_compress_ptr cinfo) {
   JpegBitWriter* bw = &m->bw;
   int xsize_mcus = DivCeil(cinfo->image_width, 8 * cinfo->max_h_samp_factor);
   int ysize_mcus = DivCeil(cinfo->image_height, 8 * cinfo->max_v_samp_factor);
-  int mcu_y = m->next_iMCU_row;
+  size_t mcu_y = m->next_iMCU_row;
   int32_t* block = m->block_tmp;
   int32_t* symbols = m->block_tmp + DCTSIZE2;
   int32_t* nonzero_idx = m->block_tmp + 3 * DCTSIZE2;

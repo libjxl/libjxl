@@ -58,11 +58,22 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
   if (!SetFrameOptions(params.options, frame_index, &option_idx, settings)) {
     return false;
   }
+  if (frame_index < ppf.frames.size()) {
+    const auto& frame_name = ppf.frames[frame_index].name;
+    if (!frame_name.empty()) {
+      if (JXL_ENC_SUCCESS !=
+          JxlEncoderSetFrameName(settings, frame_name.c_str())) {
+        fprintf(stderr, "JxlEncoderSetFrameName() failed.\n");
+        return false;
+      }
+    }
+  }
   if (num_alpha_channels > 0) {
     JxlExtraChannelInfo extra_channel_info;
     JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &extra_channel_info);
     extra_channel_info.bits_per_sample = ppf.info.alpha_bits;
     extra_channel_info.exponent_bits_per_sample = ppf.info.alpha_exponent_bits;
+    extra_channel_info.alpha_premultiplied = ppf.info.alpha_premultiplied;
     if (params.premultiply != -1) {
       if (params.premultiply != 0 && params.premultiply != 1) {
         fprintf(stderr, "premultiply must be one of: -1, 0, 1.\n");

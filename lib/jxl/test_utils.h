@@ -42,6 +42,8 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
+#define Check(OK) ::jxl::test::CheckImpl((OK), #OK, __FILE__, __LINE__)
+
 // TODO(eustas): rewrite
 #define TEST_LIBJPEG_SUPPORT()                                              \
   do {                                                                      \
@@ -61,7 +63,8 @@ class ThreadPool;
 
 namespace test {
 
-void Check(bool ok);
+// Don't use this directly!
+void CheckImpl(bool ok, const char* conndition, const char* file, int line);
 
 #define JXL_TEST_ASSIGN_OR_DIE(lhs, statusor) \
   PRIVATE_JXL_TEST_ASSIGN_OR_DIE_IMPL(        \
@@ -70,7 +73,7 @@ void Check(bool ok);
 // NOLINTBEGIN(bugprone-macro-parentheses)
 #define PRIVATE_JXL_TEST_ASSIGN_OR_DIE_IMPL(name, lhs, statusor) \
   auto name = statusor;                                          \
-  ::jxl::test::Check(name.ok());                                 \
+  Check(name.ok());                                              \
   lhs = std::move(name).value_();
 // NOLINTEND(bugprone-macro-parentheses)
 
@@ -112,7 +115,8 @@ bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
 size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
                  const extras::JXLCompressParams& cparams,
                  const extras::JXLDecompressParams& dparams, ThreadPool* pool,
-                 extras::PackedPixelFile* ppf_out);
+                 extras::PackedPixelFile* ppf_out,
+                 size_t* decoded_size = nullptr);
 
 // A POD descriptor of a ColorEncoding. Only used in tests as the return value
 // of AllEncodings().

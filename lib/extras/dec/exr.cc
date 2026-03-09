@@ -319,12 +319,13 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
     }
 
     // Setup framebuffer: alpha
-    if (has_alpha)
+    if (has_alpha) {
       fb.insert(
           chNameA.c_str(),
           OpenEXR::Slice(chA->type,
                          input_rows_ptr + colorChannelBytes * (has_rgb ? 3 : 1),
                          colorPixelBytes, colorPixelBytes * row_size));
+    }
 
     // Setup framebuffer: extra channels
     char* extra_rows_ptr =

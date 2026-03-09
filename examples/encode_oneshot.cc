@@ -112,14 +112,14 @@ bool ReadPFM(const char* filename, std::vector<float>* pixels, uint32_t* xsize,
 
   size_t offset = pf_token.size() + 1 + xsize_token.size() + 1 +
                   ysize_token.size() + 1 + endianness_token.size() + 1;
-
-  if (data.size() != *ysize * *xsize * 3 * 4 + offset) {
+  size_t num_pixels = static_cast<size_t>(*ysize) * *xsize;
+  if (data.size() != num_pixels * 3 * 4 + offset) {
     fprintf(stderr,
             "%s doesn't seem to be a Portable FloatMap file (pixel data bytes "
             "are %d, but expected %d * %d * 3 * 4 + %d (%d).\n",
             filename, static_cast<int>(data.size()), static_cast<int>(*ysize),
             static_cast<int>(*xsize), static_cast<int>(offset),
-            static_cast<int>(*ysize * *xsize * 3 * 4 + offset));
+            static_cast<int>(num_pixels * 3 * 4 + offset));
     return false;
   }
 
@@ -131,7 +131,7 @@ bool ReadPFM(const char* filename, std::vector<float>* pixels, uint32_t* xsize,
     return false;
   }
 
-  pixels->resize(*ysize * *xsize * 3);
+  pixels->resize(num_pixels * 3);
 
   for (int y = *ysize - 1; y >= 0; y--) {
     for (int x = 0; x < static_cast<int>(*xsize); x++) {

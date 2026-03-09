@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -68,7 +67,7 @@ TEST(BitWriterTest, RandomSequence) {
   }
   EXPECT_TRUE(reader.JumpToByteBoundary());
   EXPECT_TRUE(reader.Close());
-  EXPECT_EQ(num_mismatches, 0);
+  EXPECT_EQ(num_mismatches, 0u);
 }
 
 }  // namespace

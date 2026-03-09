@@ -11,6 +11,8 @@
 # - modernize-use-using: typedefs are ok.
 #
 # - readability-else-after-return: It doesn't always improve readability.
+# - readability-math-missing-parentheses: Yes, we know that a / b + c means
+#   (a / b) + c.
 # - readability-static-accessed-through-instance
 #   It is often more useful and readable to access a constant of a passed
 #   variable (like d.N) instead of using the type of the variable that could be
@@ -46,6 +48,7 @@ Checks: >-
   -readability-function-cognitive-complexity,
   -readability-identifier-length,
   -readability-magic-numbers,
+  -readability-math-missing-parentheses,
   -readability-redundant-access-specifiers,
   -readability-simplify-boolean-expr,
   -readability-static-accessed-through-instance,

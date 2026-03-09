@@ -9,7 +9,6 @@
 #include <memory>
 
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
@@ -44,7 +43,7 @@ class HorizontalChromaUpsamplingStage : public RenderPipelineStage {
     auto onefour = Set(df, 0.25f);
     const float* row_in = GetInputRow(input_rows, c_, 0);
     float* row_out = GetOutputRow(output_rows, c_, 0);
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
          x += Lanes(df)) {
       auto current = Mul(LoadU(df, row_in + x), threefour);
       auto prev = LoadU(df, row_in + x - 1);
@@ -86,7 +85,7 @@ class VerticalChromaUpsamplingStage : public RenderPipelineStage {
     const float* row_bot = GetInputRow(input_rows, c_, 1);
     float* row_out0 = GetOutputRow(output_rows, c_, 0);
     float* row_out1 = GetOutputRow(output_rows, c_, 1);
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
          x += Lanes(df)) {
       auto it = LoadU(df, row_top + x);
       auto im = LoadU(df, row_mid + x);

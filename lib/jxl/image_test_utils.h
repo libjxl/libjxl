@@ -69,24 +69,24 @@ template <typename T>
 bool VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
                          const double threshold_l1,
                          const double threshold_relative,
-                         std::stringstream& failures, const intptr_t border = 0,
+                         std::stringstream& failures, const ptrdiff_t border = 0,
                          const int c = 0) {
   if (!SameSize(expected, actual)) {
     failures << "size mismatch\n";
     return false;
   }
-  const intptr_t xsize = expected.xsize();
-  const intptr_t ysize = expected.ysize();
+  const ptrdiff_t xsize = expected.xsize();
+  const ptrdiff_t ysize = expected.ysize();
 
   // Max over current scanline to give a better idea whether there are
   // systematic errors or just one outlier. Invalid if negative.
   double max_l1 = -1;
   double max_relative = -1;
   bool any_bad = false;
-  for (intptr_t y = border; y < ysize - border; ++y) {
+  for (ptrdiff_t y = border; y < ysize - border; ++y) {
     const T* const JXL_RESTRICT row_expected = expected.Row(y);
     const T* const JXL_RESTRICT row_actual = actual.Row(y);
-    for (intptr_t x = border; x < xsize - border; ++x) {
+    for (ptrdiff_t x = border; x < xsize - border; ++x) {
       const double l1 = std::abs(row_expected[x] - row_actual[x]);
 
       // Cannot compute relative, only check/update L1.
@@ -119,23 +119,23 @@ bool VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
             max_l1, max_relative, threshold_l1, threshold_relative);
   }
   // Dump the expected image and actual image if the region is small enough.
-  const intptr_t kMaxTestDumpSize = 16;
+  const ptrdiff_t kMaxTestDumpSize = 16;
   if (xsize <= kMaxTestDumpSize + 2 * border &&
       ysize <= kMaxTestDumpSize + 2 * border) {
     fprintf(stderr, "Expected image:\n");
-    for (intptr_t y = border; y < ysize - border; ++y) {
+    for (ptrdiff_t y = border; y < ysize - border; ++y) {
       const T* const JXL_RESTRICT row_expected = expected.Row(y);
-      for (intptr_t x = border; x < xsize - border; ++x) {
+      for (ptrdiff_t x = border; x < xsize - border; ++x) {
         fprintf(stderr, "%10lf ", static_cast<double>(row_expected[x]));
       }
       fprintf(stderr, "\n");
     }
 
     fprintf(stderr, "Actual image:\n");
-    for (intptr_t y = border; y < ysize - border; ++y) {
+    for (ptrdiff_t y = border; y < ysize - border; ++y) {
       const T* const JXL_RESTRICT row_expected = expected.Row(y);
       const T* const JXL_RESTRICT row_actual = actual.Row(y);
-      for (intptr_t x = border; x < xsize - border; ++x) {
+      for (ptrdiff_t x = border; x < xsize - border; ++x) {
         const double l1 = std::abs(row_expected[x] - row_actual[x]);
 
         bool bad = l1 > threshold_l1;
@@ -155,11 +155,11 @@ bool VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
   }
 
   // Find first failing x for further debugging.
-  for (intptr_t y = border; y < ysize - border; ++y) {
+  for (ptrdiff_t y = border; y < ysize - border; ++y) {
     const T* const JXL_RESTRICT row_expected = expected.Row(y);
     const T* const JXL_RESTRICT row_actual = actual.Row(y);
 
-    for (intptr_t x = border; x < xsize - border; ++x) {
+    for (ptrdiff_t x = border; x < xsize - border; ++x) {
       const double l1 = std::abs(row_expected[x] - row_actual[x]);
 
       bool bad = l1 > threshold_l1;
@@ -185,7 +185,7 @@ bool VerifyRelativeError(const Image3<T>& expected, const Image3<T>& actual,
                          const float threshold_l1,
                          const float threshold_relative,
                          std::stringstream& failures,
-                         const intptr_t border = 0) {
+                         const ptrdiff_t border = 0) {
   for (size_t c = 0; c < 3; ++c) {
     bool ok = VerifyRelativeError(expected.Plane(c), actual.Plane(c),
                                   threshold_l1, threshold_relative, failures,

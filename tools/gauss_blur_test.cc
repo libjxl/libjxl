@@ -571,9 +571,9 @@ TEST(GaussBlurTest, TestSign) {
   const size_t xtest = xsize / 2;
   const size_t ytest = ysize / 2;
 
-  for (intptr_t dy = -16; dy <= 16; ++dy) {
+  for (ptrdiff_t dy = -16; dy <= 16; ++dy) {
     float* row = in.Row(ytest + dy);
-    for (intptr_t dx = -16; dx <= 16; ++dx)
+    for (ptrdiff_t dx = -16; dx <= 16; ++dx)
       row[xtest + dx] = center[(dy + 16) * 33 + (dx + 16)];
   }
 

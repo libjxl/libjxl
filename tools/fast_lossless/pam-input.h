@@ -287,11 +287,26 @@ bool DecodePAM(const char* filename, uint8_t** buffer, size_t* w, size_t* h,
   *nb_chans = (header.is_gray ? 1 : 3) + (header.has_alpha ? 1 : 0);
 
   size_t pnm_remaining_size = in_file + in_size - pos;
-  size_t buffer_size = *w * *h * *nb_chans * (*bitdepth > 8 ? 2 : 1);
+  // Guard against integer overflow in buffer size calculation.
+  // nb_chans is 1..4 and bytes_per_sample is 1..2, so sample_size (at most 8)
+  // cannot overflow on its own.
+  size_t bytes_per_sample = (*bitdepth > 8 ? 2 : 1);
+  size_t sample_size = *nb_chans * bytes_per_sample;
+  if (*h != 0 && *w > SIZE_MAX / *h) {
+    return error_msg("PNM: image dimensions too large");
+  }
+  size_t num_pixels = *w * *h;
+  if (num_pixels > SIZE_MAX / sample_size) {
+    return error_msg("PNM: image dimensions too large");
+  }
+  size_t buffer_size = num_pixels * sample_size;
   if (pnm_remaining_size < buffer_size) {
     return error_msg("PNM file too small");
   }
   *buffer = static_cast<uint8_t*>(malloc(buffer_size));
+  if (!*buffer) {
+    return error_msg("PNM: memory allocation failed");
+  }
   memcpy(*buffer, pos, buffer_size);
   return true;
 }

@@ -8,6 +8,7 @@
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
 
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -15,10 +16,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <memory>
 #include <sstream>
 #include <string>
-#include <vector>
 
 #include "lib/extras/alpha_blend.h"
 #include "lib/extras/dec/decode.h"
@@ -128,6 +127,11 @@ struct DecompressArgs {
           "    This flag causes the decoder to instead decode to pixels and "
           "encode a new (lossy) JPEG.",
           &pixels_to_jpeg, &SetBooleanTrue, 1);
+
+      cmdline->AddOptionFlag(
+          'J', "reconstruct_jpeg",
+          "Losslessly reconstruct a JPEG if possible, and fail otherwise.",
+          &reconstruct_jpeg, &SetBooleanTrue, 1);
 
       opt_jpeg_quality_id = cmdline->AddOptionValue(
           'q', "jpeg_quality", "N",
@@ -251,6 +255,7 @@ struct DecompressArgs {
   uint32_t downsampling = 0;
   bool allow_partial_files = false;
   bool pixels_to_jpeg = false;
+  bool reconstruct_jpeg = false;
   size_t jpeg_quality = 95;
   bool use_sjpeg = false;
   bool render_spotcolors = true;
@@ -283,22 +288,31 @@ bool WriteOptionalOutput(const std::string& filename,
   return jpegxl::tools::WriteFile(filename, bytes);
 }
 
+// For positive `m` and non-negative `n` < `m` create representation of decimal
+// value `n` padded from left with zeroes to match the length of decimal
+// representation of `m` - 1. Performance is not an issue.
+std::string NofM(int n, int m) {
+  assert(m > 0);
+  assert(n >= 0);
+  assert(n < m);
+  std::string m1_str = std::to_string(m - 1);
+  std::string n_str = std::to_string(n);
+  while (n_str.size() < m1_str.size()) {
+    n_str = "0" + n_str;
+  }
+  return n_str;
+}
+
 std::string Filename(const std::string& filename, const std::string& extension,
                      int layer_index, int frame_index, int num_layers,
                      int num_frames) {
   if (filename == "-") return "-";
-  auto digits = [](int n) { return 1 + static_cast<int>(std::log10(n)); };
   std::string out = filename;
   if (num_frames > 1) {
-    std::vector<char> buf(2 + digits(num_frames));
-    snprintf(buf.data(), buf.size(), "-%0*d", digits(num_frames), frame_index);
-    out.append(buf.data());
+    out.append("-" + NofM(frame_index, num_frames));
   }
   if (num_layers > 1 && layer_index > 0) {
-    std::vector<char> buf(4 + digits(num_layers));
-    snprintf(buf.data(), buf.size(), "-ec%0*d", digits(num_layers),
-             layer_index);
-    out.append(buf.data());
+    out.append("-ec" + NofM(layer_index, num_layers));
   }
   if (extension == ".ppm" && layer_index > 0) {
     out.append(".pgm");
@@ -487,6 +501,24 @@ int main(int argc, const char* argv[]) {
        !cmdline.GetOption(args.opt_jpeg_quality_id)->matched())) {
     args.bits_per_sample = 0;
   }
+  if (args.reconstruct_jpeg) {
+    // If output is disabled, still try to reconstruct JPEG
+    if (filename_out.empty()) {
+      codec = jxl::extras::Codec::kJPG;
+    }
+    if (codec != jxl::extras::Codec::kJPG) {
+      fprintf(stderr,
+              "Error: --reconstruct_jpeg requires output format to be JPEG.\n");
+      return EXIT_FAILURE;
+    }
+    if (args.pixels_to_jpeg ||
+        cmdline.GetOption(args.opt_jpeg_quality_id)->matched()) {
+      fprintf(stderr,
+              "Error: --pixels_to_jpeg and --jpeg_quality cannot be"
+              " used with --reconstruct_jpeg.\n");
+      return EXIT_FAILURE;
+    }
+  }
 
   jpegxl::tools::SpeedStats stats;
   size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
@@ -513,6 +545,10 @@ int main(int argc, const char* argv[]) {
       if (!DecompressJxlReconstructJPEG(args, compressed, runner.get(), &bytes,
                                         &stats)) {
         if (bytes.empty()) {
+          if (args.reconstruct_jpeg) {
+            fprintf(stderr, "Error: could not decode losslessly to JPEG.\n");
+            return EXIT_FAILURE;
+          }
           if (!args.quiet) {
             fprintf(stderr,
                     "Warning: could not decode losslessly to JPEG. Retrying "

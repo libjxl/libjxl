@@ -336,7 +336,8 @@ TEST_P(AnsSimdTest, EstimateTokenCost) {
   constexpr size_t kNumItems = 8 * 1024 * 1024;
   std::vector<uint32_t> in;
   std::vector<uint32_t> expected_out;
-  in.reserve(kNumItems + 311306 + 1024);
+  constexpr size_t kTail = 1024;
+  in.reserve(kNumItems + 311306 + kTail);
   uint32_t expected_eb = 0;
   for (size_t i = 0; i < kNumItems; ++i) {
     in.push_back(i);
@@ -358,15 +359,17 @@ TEST_P(AnsSimdTest, EstimateTokenCost) {
     expected_out.push_back(tok);
     expected_eb += nbits;
   }
+  size_t data_size = in.size();
+  in.resize(data_size + kTail);
 
   JXL_ASSIGN_OR_QUIT(
       AlignedMemory out,
-      AlignedMemory::Create(memory_manager, in.size() * sizeof(uint32_t)),
+      AlignedMemory::Create(memory_manager, data_size * sizeof(uint32_t)),
       "Failed to rallocate memory.");
-  uint32_t eb = EstimateTokenCost(in.data(), in.size(), cfg, out);
+  uint32_t eb = EstimateTokenCost(in.data(), data_size, cfg, out);
   ASSERT_EQ(eb, expected_eb);
   uint32_t* actual_out = out.address<uint32_t>();
-  for (size_t i = 0; i < in.size(); ++i) {
+  for (size_t i = 0; i < data_size; ++i) {
     ASSERT_EQ(actual_out[i], expected_out[i]) << i;
   }
 }

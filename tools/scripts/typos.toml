@@ -24,6 +24,7 @@ cmsCreateTransformTHR = "cmsCreateTransformTHR"
 cmsCreateXYZProfileTHR = "cmsCreateXYZProfileTHR"
 cmsOpenProfileFromMemTHR = "cmsOpenProfileFromMemTHR"
 cmsSetLogErrorHandlerTHR = "cmsSetLogErrorHandlerTHR"
+gl_pathc = "gl_pathc"  # glob_t
 hIST = "hIST"  # histogram PNG chunk
 JMSG_STR_PARM_MAX = "JMSG_STR_PARM_MAX"  # jpeglib
 msg_parm = "msg_parm"  # jpeglib

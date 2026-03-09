@@ -174,8 +174,8 @@ class Plane : public detail::PlaneBase {
   // Returns number of pixels (some of which are padding) per row. Useful for
   // computing other rows via pointer arithmetic. WARNING: this must
   // NOT be used to determine xsize.
-  JXL_INLINE intptr_t PixelsPerRow() const {
-    return static_cast<intptr_t>(bytes_per_row_ / sizeof(T));
+  JXL_INLINE ptrdiff_t PixelsPerRow() const {
+    return static_cast<ptrdiff_t>(bytes_per_row_ / sizeof(T));
   }
 
  private:
@@ -304,7 +304,7 @@ class Image3 {
   // Returns number of pixels (some of which are padding) per row. Useful for
   // computing other rows via pointer arithmetic. WARNING: this must NOT be used
   // to determine xsize.
-  JXL_INLINE intptr_t PixelsPerRow() const { return planes_[0].PixelsPerRow(); }
+  JXL_INLINE ptrdiff_t PixelsPerRow() const { return planes_[0].PixelsPerRow(); }
 
  private:
   Image3(PlaneT&& plane0, PlaneT&& plane1, PlaneT&& plane2) {

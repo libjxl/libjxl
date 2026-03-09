@@ -108,14 +108,17 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
         return JXL_FAILURE("Invalid multiplier");
       }
       uint32_t multiplier = (mul_bits + 1U) << mul_log;
-      tree->emplace_back(-1, 0, leaf_id++, 0, static_cast<Predictor>(predictor),
+      Predictor p = static_cast<Predictor>(static_cast<uint32_t>(predictor));
+      tree->emplace_back(-1, 0, static_cast<int>(leaf_id), 0, p,
                          predictor_offset, multiplier);
+      leaf_id++;
       continue;
     }
     int splitval =
         UnpackSigned(reader->ReadHybridUint(kSplitValContext, br, context_map));
-    tree->emplace_back(property, splitval, tree->size() + to_decode + 1,
-                       tree->size() + to_decode + 2, Predictor::Zero, 0, 1);
+    tree->emplace_back(
+        property, splitval, static_cast<int>(tree->size() + to_decode + 1),
+        static_cast<int>(tree->size() + to_decode + 2), Predictor::Zero, 0, 1);
     to_decode += 2;
   }
   return ValidateTree(*tree);

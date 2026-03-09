@@ -15,6 +15,10 @@ OS=`uname -s`
 SELF=$(realpath "$0")
 MYDIR=$(dirname "${SELF}")
 
+### Colors
+TEXT_BOLD_PURPLE="\033[1;35m"
+TEXT_RESET="\033[0m"
+
 ### Environment parameters:
 # TODO(eustas): tighten; only several items need more than 48KiB
 TEST_STACK_LIMIT="${TEST_STACK_LIMIT:-128}"
@@ -42,6 +46,7 @@ fi
 POST_MESSAGE_ON_ERROR="${POST_MESSAGE_ON_ERROR:-1}"
 # By default, do a lightweight debian HWY package build.
 HWY_PKG_OPTIONS="${HWY_PKG_OPTIONS:---set-envvar=HWY_EXTRA_CONFIG=-DBUILD_TESTING=OFF -DHWY_ENABLE_EXAMPLES=OFF -DHWY_ENABLE_CONTRIB=OFF}"
+EXCLUDE_DEBIAN_PACKAGES="${EXCLUDE_DEBIAN_PACKAGES:-}"
 
 # Set default compilers to clang if not already set
 export CC=${CC:-clang}
@@ -713,7 +718,8 @@ cmd_msan_install() {
       ["17"]="17.0.6"
       ["18"]="18.1.8"
       ["19"]="19.1.7"
-      ["20"]="20.1.2"
+      ["20"]="20.1.8"
+      ["21"]="21.1.5"
     ) 
     local llvm_tag="${CLANG_VERSION}.0.0"
     if [[ -n "${llvm_tag_by_version["${CLANG_VERSION}"]}" ]]; then
@@ -1238,6 +1244,8 @@ cmd_lint() {
       echo 'To fix them run (from the base directory):' >&2
       echo '  buildifier `git ls-files | grep -E "/BUILD$|WORKSPACE|.bzl$"`' >&2
     fi
+  else
+    echo -e "${TEXT_BOLD_PURPLE}SKIPPED:${TEXT_RESET} buildifier (not installed)"
   fi
 
   # It is ok, if spell-checker is not installed.
@@ -1246,7 +1254,7 @@ cmd_lint() {
     local sources=`git -C "${MYDIR}" ls-files | grep -E "\.(${src_ext})$"`
     typos -c "${MYDIR}/tools/scripts/typos.toml" ${sources}
   else
-    echo "Consider installing https://github.com/crate-ci/typos for spell-checking"
+    echo -e "${TEXT_BOLD_PURPLE}SKIPPED:${TEXT_RESET} typos not installed; try: cargo install typos-cli"
   fi
 
   local installed=()
@@ -1387,6 +1395,11 @@ build_debian_pkg() {
       ln -s "${srcdir}/$f" "${builddir}/$f"
     fi
   done
+  if [[ -n "${EXCLUDE_DEBIAN_PACKAGES}" ]]; then
+    # TODO(eustas): support comma-separated list
+    rm -f "${builddir}"/debian/${EXCLUDE_DEBIAN_PACKAGES}.install
+    sed -i "/Package: ${EXCLUDE_DEBIAN_PACKAGES}/,/\n/d" "${builddir}"/debian/control
+  fi
   (
     cd "${builddir}"
     debuild "${options}" -b -uc -us

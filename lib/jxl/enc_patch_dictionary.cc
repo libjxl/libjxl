@@ -60,7 +60,7 @@ Status PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
   std::vector<std::vector<Token>> tokens(1);
 
   auto add_num = [&](int context, size_t num) {
-    tokens[0].emplace_back(context, num);
+    tokens[0].emplace_back(context, static_cast<uint32_t>(num));
   };
   size_t num_ref_patch = 0;
   for (size_t i = 0; i < pdic.positions_.size();) {
@@ -209,7 +209,11 @@ struct PatchColorspaceInfo {
   }
 
   int Quantize(float val, size_t c) {
-    return std::trunc(ScaleForQuantization(val, c));
+    float scaled = ScaleForQuantization(val, c);
+    // Clamping allows values outside of target range (int8_t); caller should
+    // deal with out-of-range values.
+    scaled = jxl::Clamp1(scaled, -32768.0f, 32767.0f);
+    return std::trunc(scaled);
   }
 
   bool is_similar_v(const Color& v1, const Color& v2, float threshold) {
@@ -284,7 +288,9 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
   const auto flat_patch = [&](const XY& o, const Color& base) -> bool {
     for (size_t iy = 0; iy < kPatchSide; iy++) {
       for (size_t ix = 0; ix < kPatchSide; ix++) {
-        if (!is_same_color({o.first + ix, o.second + iy}, base)) {
+        XY p = {static_cast<int32_t>(o.first + ix),
+                static_cast<int32_t>(o.second + iy)};
+        if (!is_same_color(p, base)) {
           return false;
         }
       }
@@ -300,7 +306,8 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
                                size_t /* thread */) -> Status {
     uint32_t found = 0;
     for (size_t px = 1; px <= pw - 2; px++) {
-      XY o = {px * kPatchSide, py * kPatchSide};
+      XY o = {static_cast<uint32_t>(px * kPatchSide),
+              static_cast<uint32_t>(py * kPatchSide)};
       Color base = pick(o);
       if (!flat_patch(o, base)) continue;
       size_t num_same = 0;
@@ -308,7 +315,8 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
            y += kPatchSide) {
         for (size_t x = (px - 1) * kPatchSide; x <= (px + 1) * kPatchSide;
              x += kPatchSide) {
-          num_same += is_same_color({x, y}, base);
+          XY p = {static_cast<uint32_t>(x), static_cast<uint32_t>(y)};
+          num_same += is_same_color(p, base);
         }
       }
       // Too few equal pixels nearby.
@@ -370,7 +378,7 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
         if (!screenshot_row[px]) continue;
         for (size_t y = py * kPatchSide; y < (py + 1) * kPatchSide; ++y) {
           for (size_t x = px * kPatchSide; x < (px + 1) * kPatchSide; ++x) {
-            XY p = {x, y};
+            XY p = {static_cast<uint32_t>(x), static_cast<uint32_t>(y)};
             queue.emplace_back(p, p);
             is_bg(p) = 1;
           }
@@ -458,7 +466,7 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
       if (is_background_row[y * is_background_stride + x]) continue;
       cc.clear();
       stack.clear();
-      stack.emplace_back(x, y);
+      stack.emplace_back(static_cast<uint32_t>(x), static_cast<uint32_t>(y));
       size_t min_x = x;
       size_t max_x = x;
       size_t min_y = y;
@@ -529,24 +537,28 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
       }
       if (!has_similar) continue;
       info.emplace_back();
-      info.back().second.emplace_back(min_x, min_y);
+      info.back().second.emplace_back(static_cast<uint32_t>(min_x),
+                                      static_cast<uint32_t>(min_y));
       QuantizedPatch& patch = info.back().first;
       patch.xsize = max_x - min_x + 1;
       patch.ysize = max_y - min_y + 1;
-      int max_value = 0;
+      bool too_big = false;
+      bool too_small = true;
       for (size_t c : {1, 0, 2}) {
         for (size_t iy = min_y; iy <= max_y; iy++) {
           for (size_t ix = min_x; ix <= max_x; ix++) {
             size_t offset = (iy - min_y) * patch.xsize + ix - min_x;
-            patch.fpixels[c][offset] =
-                opsin_rows[c][iy * opsin_stride + ix] - ref[c];
+            float fval = opsin_rows[c][iy * opsin_stride + ix] - ref[c];
+            patch.fpixels[c][offset] = fval;
             int val = pci.Quantize(patch.fpixels[c][offset], c);
-            patch.pixels[c][offset] = val;
-            if (std::abs(val) > max_value) max_value = std::abs(val);
+            int8_t qval = static_cast<int8_t>(val);
+            patch.pixels[c][offset] = qval;
+            too_big |= (val != static_cast<int>(qval));
+            too_small &= (val < kMinPeak) && (val > -kMinPeak);
           }
         }
       }
-      if (max_value < kMinPeak) {
+      if (too_small || too_big) {
         info.pop_back();
         continue;
       }

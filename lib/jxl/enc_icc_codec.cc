@@ -464,9 +464,9 @@ Status WriteICC(const Span<const uint8_t> icc, BitWriter* JXL_RESTRICT writer,
   }));
 
   for (size_t i = 0; i < enc.size(); i++) {
-    tokens[0].emplace_back(
-        ICCANSContext(i, i > 0 ? enc[i - 1] : 0, i > 1 ? enc[i - 2] : 0),
-        enc[i]);
+    uint32_t ctx = static_cast<uint32_t>(
+        ICCANSContext(i, i > 0 ? enc[i - 1] : 0, i > 1 ? enc[i - 2] : 0));
+    tokens[0].emplace_back(ctx, enc[i]);
   }
   HistogramParams params;
   params.lz77_method = enc.size() < 16384 ? HistogramParams::LZ77Method::kOptimal

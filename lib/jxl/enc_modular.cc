@@ -86,7 +86,9 @@ const float squeeze_luma_factor =
     1.1;  // for easy tweaking of the balance between luma (or anything
           // non-chroma) and chroma (decrease this number for higher quality
           // luma)
-const float squeeze_quality_factor_xyb = 4.8f;
+const float squeeze_quality_factor_xyb = 4.0f;
+const float squeeze_quality_factor_y = 1.5f;
+
 const float squeeze_xyb_qtable[3][16] = {
     {163.84, 81.92, 40.96, 20.48, 10.24, 5.12, 2.56, 1.28, 0.64, 0.32, 0.16,
      0.08, 0.04, 0.02, 0.01, 0.005},  // Y
@@ -127,7 +129,8 @@ Status MergeTrees(const std::vector<Tree>& trees,
   size_t mid = (begin + end) / 2;
   size_t splitval = tree_splits[mid] - 1;
   size_t cur = tree->size();
-  tree->emplace_back(1 /*stream_id*/, splitval, 0, 0, Predictor::Zero, 0, 1);
+  tree->emplace_back(1 /*stream_id*/, static_cast<int>(splitval), 0, 0,
+                     Predictor::Zero, 0, 1);
   (*tree)[cur].lchild = tree->size();
   JXL_RETURN_IF_ERROR(MergeTrees(trees, tree_splits, mid, end, tree));
   (*tree)[cur].rchild = tree->size();
@@ -192,12 +195,19 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
       continue;
     }
     int exp = (f >> 23) - 127;
-    if (exp == 128) return JXL_FAILURE("Inf/NaN not allowed");
     int mantissa = (f & 0x007fffff);
     // broke up the binary32 into its parts, now reassemble into
     // arbitrary float
+    if (exp == 128) {
+      // NaN or infinity
+      f = (signbit ? sign : 0);
+      f |= ((1 << exp_bits) - 1) << mant_bits;
+      f |= mantissa >> mant_shift;
+      row_out[x] = static_cast<pixel_type>(f);
+      continue;
+    }
     exp += exp_bias;
-    if (exp < 0) {  // will become a subnormal number
+    if (exp <= 0) {  // will become a subnormal number
       // add implicit leading 1 to mantissa
       mantissa |= 0x00800000;
       if (exp < -mant_bits) {
@@ -210,8 +220,8 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
       exp = 0;
     }
     // exp should be representable in exp_bits, otherwise input was
-    // invalid
-    if (exp > max_exp) return JXL_FAILURE("Invalid float exponent");
+    // invalid; max_exp is NaN or infinity
+    if (exp >= max_exp) return JXL_FAILURE("Invalid float exponent");
     if (mantissa & ((1 << mant_shift) - 1)) {
       return JXL_FAILURE("%g is losing precision (mant: %x)", row_in[x],
                          mantissa);
@@ -238,7 +248,7 @@ float EstimateWPCost(const Image& img, size_t i) {
   weighted::Header wp_header;
   PredictorMode(i, &wp_header);
   for (const Channel& ch : img.channel) {
-    const intptr_t onerow = ch.plane.PixelsPerRow();
+    const ptrdiff_t onerow = ch.plane.PixelsPerRow();
     weighted::State wp_state(wp_header, ch.w, ch.h);
     Properties properties(1);
     for (size_t y = 0; y < ch.h; y++) {
@@ -547,32 +557,37 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       case SpeedTier::kHare:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 4);
-        cparams_.options.max_property_values = 24;
+        cparams_.options.max_property_values = 48;
+        cparams_.options.nb_repeats *= 0.5f;
         break;
       case SpeedTier::kWombat:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 5);
-        cparams_.options.max_property_values = 32;
+        cparams_.options.max_property_values = 64;
+        cparams_.options.nb_repeats *= 0.7f;
         break;
       case SpeedTier::kSquirrel:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 7);
-        cparams_.options.max_property_values = 48;
+        cparams_.options.max_property_values = 96;
         break;
       case SpeedTier::kKitten:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 10);
-        cparams_.options.max_property_values = 96;
+        cparams_.options.max_property_values = 128;
+        cparams_.options.nb_repeats *= 1.1f;
         break;
       case SpeedTier::kGlacier:
       case SpeedTier::kTortoise:
         cparams_.options.splitting_heuristics_properties = prop_order;
         cparams_.options.max_property_values = 256;
+        cparams_.options.nb_repeats *= 1.3f;
         break;
       default:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 3);
-        cparams_.options.max_property_values = 16;
+        cparams_.options.max_property_values = 32;
+        cparams_.options.nb_repeats *= 0.3f;
         break;
     }
     if (cparams_.speed_tier > SpeedTier::kTortoise) {
@@ -589,6 +604,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       }
     }
   }
+  cparams_.options.nb_repeats = std::min(1.0f, cparams_.options.nb_repeats);
 
   if ((cparams_.options.predictor == Predictor::Average0 ||
        cparams_.options.predictor == Predictor::Average1 ||
@@ -872,7 +888,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
     channel_colors_percent = cparams_.channel_colors_pre_transform_percent;
   }
-  if (!groupwise) {
+  if (!groupwise &&
+     (!(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
     JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams_,
                                      channel_colors_percent, pool));
   }
@@ -970,7 +987,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     std::vector<float> quantizers;
     for (size_t i = 0; i < 3; i++) {
       float dist = cparams_.butteraugli_distance;
-      quantizers.push_back(quantizer * dist * bitdepth_correction);
+      quantizers.push_back(quantizer * powf(dist, 1.2) * bitdepth_correction);
     }
     for (size_t i = 0; i < extra_channels.size(); i++) {
       int ec_bitdepth =
@@ -990,17 +1007,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
       int shift = ch.hshift + ch.vshift;  // number of pixel halvings
       if (shift > 16) shift = 16;
       if (shift > 0) shift--;
+      int component = (do_color ? 0 : 3) + ch.component;
       int q;
-      // assuming default Squeeze here
-      int component =
-          (do_color ? 0 : 3) + ((i - gi.nb_meta_channels) % nb_chans);
-      // last 4 channels are final chroma residuals
-      if (nb_chans > 2 && i >= gi.channel.size() - 4 && cparams_.responsive) {
-        component = 1;
-      }
       if (cparams_.color_transform == ColorTransform::kXYB && component < 3) {
         q = quantizers[component] * squeeze_quality_factor_xyb *
             squeeze_xyb_qtable[component][shift];
+        if (component == 0) q *= squeeze_quality_factor_y;
       } else {
         if (cparams_.colorspace != 0 && component > 0 && component < 3) {
           q = quantizers[component] * squeeze_quality_factor *
@@ -1407,14 +1419,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // Local palette transforms
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
-    if (cparams.butteraugli_distance == 0.f && !cparams.lossy_palette &&
-        cparams.speed_tier < SpeedTier::kCheetah) {
+    if (cparams_.ModularPartIsLossless() && !cparams.responsive &&
+        !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
-      if (!(cparams.responsive &&
-            (cparams.decoding_speed_tier >= 1 || cparams.IsLossless()))) {
         channel_color_percent = cparams.channel_colors_percent;
-      }
       JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams,
                                        channel_color_percent));
     }
@@ -1515,9 +1524,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     nb_wp_modes = 2;
   }
   if (nb_wp_modes > 1 &&
-      (stream_options_[stream_id].predictor == Predictor::Weighted ||
-       stream_options_[stream_id].predictor == Predictor::Best ||
-       stream_options_[stream_id].predictor == Predictor::Variable)) {
+      PredictorHasWeighted(stream_options_[stream_id].predictor)) {
     float best_cost = std::numeric_limits<float>::max();
     stream_options_[stream_id].wp_mode = 0;
     for (size_t i = 0; i < nb_wp_modes; i++) {
@@ -1534,13 +1541,19 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
 constexpr float q_deadzone = 0.62f;
 int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
                size_t w, weighted::State* wp_state, float value,
-               float inv_factor) {
+               float inv_factor, bool* has_outliers) {
   float svalue = value * inv_factor;
   PredictionResult pred =
       PredictNoTreeWP(w, qrow + x, onerow, x, y, Predictor::Weighted, wp_state);
   svalue -= pred.guess;
   if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
-  int residual = std::round(svalue);
+  int residual = 0;
+  if (svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
+      svalue < static_cast<float>(std::numeric_limits<int>::min())) {
+    *has_outliers = true;
+  } else {
+    residual = std::round(svalue);
+  }
   if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5f) * 2;
   return residual + pred.guess;
 }
@@ -1565,6 +1578,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
   JxlMemoryManager* memory_manager = dc.memory_manager();
   extra_dc_precision[group_index] = nl_dc ? 1 : 0;
   float mul = 1 << extra_dc_precision[group_index];
+  bool has_outliers = false;
 
   size_t stream_id = ModularStreamId::VarDCTDC(group_index).ID(frame_dim_);
   stream_options_[stream_id].max_chan_size = 0xFFFFFF;
@@ -1639,17 +1653,19 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = QuantizeWP(quant_row, stride, c, x, y, r.xsize(),
-                                      &wp_state, row[x], inv_factor);
+            quant_row[x] =
+                QuantizeWP(quant_row, stride, c, x, y, r.xsize(), &wp_state,
+                           row[x], inv_factor, &has_outliers);
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());
           }
         } else {
           int32_t* quant_row_y =
               stream_images_[stream_id].channel[0].plane.Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = QuantizeWP(
-                quant_row, stride, c, x, y, r.xsize(), &wp_state,
-                row[x] - quant_row_y[x] * (y_factor * cfl_factor), inv_factor);
+            quant_row[x] =
+                QuantizeWP(quant_row, stride, c, x, y, r.xsize(), &wp_state,
+                           row[x] - quant_row_y[x] * (y_factor * cfl_factor),
+                           inv_factor, &has_outliers);
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());
           }
         }
@@ -1700,6 +1716,10 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         }
       }
     }
+  }
+
+  if (has_outliers) {
+    return JXL_FAILURE("Unsupported range of DC values");
   }
 
   DequantDC(r, &enc_state->shared.dc_storage, &enc_state->shared.quant_dc,

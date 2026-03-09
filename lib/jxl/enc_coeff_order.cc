@@ -248,7 +248,8 @@ Status TokenizePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
   while (end > skip && lehmer[end - 1] == 0) {
     --end;
   }
-  tokens->emplace_back(CoeffOrderContext(size), end - skip);
+  tokens->emplace_back(CoeffOrderContext(size),
+                       static_cast<uint32_t>(end - skip));
   uint32_t last = 0;
   for (size_t i = skip; i < end; ++i) {
     tokens->emplace_back(CoeffOrderContext(last), lehmer[i]);

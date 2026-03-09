@@ -72,7 +72,7 @@ EOF
   for i in $(seq 0.2 0.2 2) $(seq 2.5 0.5 5) $(seq 6 1 10) $(seq 12 2 40); do
     $b --input=$tmp/orig --codec=jxl:d$i --save_decompressed --save_compressed \
       --debug_image_dir=$tmp --output_dir=$tmp
-    convert $tmp/orig \( $tmp/orig.jxl:d$i.dbg/ac_strategy.png \
+    convert $tmp/orig \( $tmp/orig.jxl-d$i.dbg/ac_strategy.png \
       -alpha set -channel A -evaluate set 66% \) \
       -composite $tmp/t.ppm
     bytes=$(stat -c "%s" $tmp/orig.jxl_d$i)

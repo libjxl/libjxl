@@ -19,7 +19,6 @@
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"  // ssize_t
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
@@ -108,13 +107,13 @@ void DrawSegment(DF df, const SplineSegment& segment, const bool add,
 void DrawSegment(const SplineSegment& segment, const bool add, const size_t y,
                  const size_t x0, const size_t x1,
                  float* JXL_RESTRICT rows[3]) {
-  ssize_t start = std::llround(segment.center_x - segment.maximum_distance);
-  ssize_t end = std::llround(segment.center_x + segment.maximum_distance);
-  if (end < static_cast<ssize_t>(x0) || start >= static_cast<ssize_t>(x1)) {
+  ptrdiff_t start = std::llround(segment.center_x - segment.maximum_distance);
+  ptrdiff_t end = std::llround(segment.center_x + segment.maximum_distance);
+  if (end < static_cast<ptrdiff_t>(x0) || start >= static_cast<ptrdiff_t>(x1)) {
     return;  // span does not intersect scan
   }
-  size_t span_x0 = std::max<ssize_t>(x0, start) - x0;
-  size_t span_x1 = std::min<ssize_t>(x1, end + 1) - x0;  // exclusive
+  size_t span_x0 = std::max<ptrdiff_t>(x0, start) - x0;
+  size_t span_x1 = std::min<ptrdiff_t>(x1, end + 1) - x0;  // exclusive
   HWY_FULL(float) df;
   size_t x = span_x0;
   for (; x + Lanes(df) <= span_x1; x += Lanes(df)) {
@@ -148,8 +147,8 @@ void ComputeSegments(const Spline::Point& center, const float intensity,
   // Distance beyond which max_color*intensity*exp(-d^2 / (2 * sigma^2)) drops
   // below 10^-kDistanceExp.
   const float maximum_distance =
-      std::sqrt(-2 * sigma * sigma *
-                (std::log(0.1) * kDistanceExp - std::log(max_color)));
+      std::sqrt(-2.0f * sigma * sigma *
+                (std::log(0.1f) * kDistanceExp - std::log(max_color)));
   SplineSegment segment;
   segment.center_y = center.y;
   segment.center_x = center.x;
@@ -157,10 +156,10 @@ void ComputeSegments(const Spline::Point& center, const float intensity,
   segment.inv_sigma = 1.0f / sigma;
   segment.sigma_over_4_times_intensity = .25f * sigma * intensity;
   segment.maximum_distance = maximum_distance;
-  ssize_t y0 = std::llround(center.y - maximum_distance);
-  ssize_t y1 =
+  ptrdiff_t y0 = std::llround(center.y - maximum_distance);
+  ptrdiff_t y1 =
       std::llround(center.y + maximum_distance) + 1;  // one-past-the-end
-  for (ssize_t y = std::max<ssize_t>(y0, 0); y < y1; y++) {
+  for (ptrdiff_t y = std::max<ptrdiff_t>(y0, 0); y < y1; y++) {
     segments_by_y.emplace_back(y, segments.size());
   }
   segments.push_back(segment);
