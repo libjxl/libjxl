@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
+  - Noise is no longer rendered on LF frames. (#4514)
+  -  Float16 values roundtrip more accurately. (#4461)
+  - JXL input to cjxl no longer gets double orientation applied and keeps
+    frame names. (#4374 and #4561)
   - `JxlBasicInfo.alpha_premultiplied` was not correctly forwarded. (#4357)
   - CMYK JXL files would not decode to PNG correctly. (#4301)
   - Encoder would hang with specific parameters on images containing
@@ -25,8 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Empty DHT markers no longer cause JPEG transcoding to fail. (#2704)
 
 ### Changed / clarified
-  - Numerous speed/memory usage improvements. (#4322, #4330, #4332 and #4341)
-  - Significant improvements to EXR input handling. Now supports float32,
+  - Numerous speed/memory usage improvements. (#4322, #4330, #4332, #4341, #4384,
+    #4448, #4449, #4529)
+  - Output is now buffered by default, allowing for much better progressive loading
+    by default. (#4634, #4635, #4637 and #4642)
+  - Better Desnity/Speed tradeoff for lossless effort levels. (#4236)
+  - Improved visual quality of gradients by using channel-offset blue noise dithering
+    instead of bayer. (#4305 and #4559)
+  - Lossy modular quality/density improvements. (#3575)
+  -  Significant improvements to EXR input handling. Now supports float32,
     multilayer and per-channel bitdepth. (#4312)
   - Layered JXL files are no longer coalesced when re-encoding with cjxl, and can now
     be decoded to separate PNG/PAM files with djxl by using `--no_coalescing`. (#4299)
@@ -34,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     of encode speed. `--patches 0` can be used to significantly improve encode speed
     or `--progressive_dc 0` can be used to return to old behaviour. (#4258)
   - Progressive lossless is now 30-40% smaller on average and
-    can utilize multithreaded encoding. (#4201)
+    can utilize multithreaded encoding. (#4201 and #4641)
   - Resampling 2 is now enabled at distance 10, and is up to 10x faster below
     effort 10 by using a faster downsampling method. (#4147)
 
