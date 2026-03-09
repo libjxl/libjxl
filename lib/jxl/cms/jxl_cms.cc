@@ -805,8 +805,7 @@ cmsContext GetContext() {
     context_.reset(cmsCreateContext(nullptr, nullptr));
     JXL_DASSERT(context_ != nullptr);
 
-    cmsSetLogErrorHandlerTHR(static_cast<cmsContext>(context_.get()),
-                             &ErrorHandler);
+    cmsSetLogErrorHandlerTHR(static_cast<cmsContext>(context_.get()),&ErrorHandler);
   }
   return static_cast<cmsContext>(context_.get());
 }
