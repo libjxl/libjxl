@@ -38,32 +38,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Resampling 2 is now enabled at distance 10, and is up to 10x faster below
     effort 10 by using a faster downsampling method. (#4147)
 
+## [0.11.2] - 2026-02-10
+
+### Fixed
+  - Fix tile dimension in low memory rendering pipeline. (#4495 -
+    [CVE-2025-12474](https://www.cve.org/cverecord?id=CVE-2025-12474))
+  - Fix number of channels for gray-to-gray color transform. (#4579 -
+    [CVE-2026-1837](https://www.cve.org/cverecord?id=CVE-2026-1837))
+  - `djxl`: Reject decoding JXL files if "packed" representation size overflows
+    `size_t`. (#4589 - Thanks to Mateusz Jurczyk of Google Project Zero for
+    identifying this issue.)
+
 ## [0.11.1] - 2024-11-26
 
 ### Fixed
-  - Huffman lookup table size fix (#3871 -
+  - Huffman lookup table size fix. (#3871 -
     [CVE-2024-11403](https://www.cve.org/cverecord?id=CVE-2024-11403))
   - Check height limit in modular trees. (#3943 -
     [CVE-2024-11498](https://www.cve.org/cverecord?id=CVE-2024-11498))
 
 ### Changed / clarified
-  - encoder API: document that `JxlEncoderFrameSettingsCreate` could return
-    `NULL`
+  - Encoder API: Document that `JxlEncoderFrameSettingsCreate` could return
+    `NULL`. (#4121)
 
 ## [0.11.0] - 2024-09-13
 
 ### Added
-  - Gain Map API (#3552 and #3628):  `JxlGainMapBundle` struct and API functions
+  - Gain Map API: `JxlGainMapBundle` struct and API functions
     to read and write gain map bundles`JxlGainMapWriteBundle` and
-    `JxlGainMapReadBundle` as well as handling compressed ICC profiles:
-    `JxlICCProfileEncode` and `JxlICCProfileDecode`.
-  - decoder API: added `JXL_DEC_BOX_COMPLETE` event to signal that the output
+    `JxlGainMapReadBundle`. (#3552)
+  - Handling of compressed ICC profiles: `JxlICCProfileEncode` and
+    `JxlICCProfileDecode`. (#3628)
+  - Decoder API: added `JXL_DEC_BOX_COMPLETE` event to signal that the output
     buffer for the current box has received all contents. Previously, this was
     to be determined from the fact that the decoder had moved on either to
     `JXL_DEC_SUCCESS` or to another subsequent `JXL_DEC_BOX`. This change is
     made backward-compatible by the fact that the new event must be explicitly
     subscribed to, and that `JXL_DEC_SUCCESS` / `JXL_DEC_BOX` still occur
-    afterwards and still imply that the previous box must be complete.
+    afterwards and still imply that the previous box must be complete. (#3657)
 
 ### Changed / clarified
   - avoiding abort in release build (#3631 and #3639)
