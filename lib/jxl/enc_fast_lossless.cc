@@ -251,8 +251,20 @@ FJXL_INLINE size_t AddBits(uint32_t count, uint64_t bits, uint8_t* data_buf,
 struct BitWriter {
   void Allocate(size_t maximum_bit_size) {
     assert(data == nullptr);
-    // Leave some padding.
-    data.reset(static_cast<uint8_t*>(malloc(maximum_bit_size / 8 + 64)));
+    
+    //prevents integer overflow in allocation size calculation
+    if (maximum_bit_size > (SIZE_MAX - 64) * 8) {
+      throw std::bad_alloc();
+    }
+
+    size_t alloc_size = maximum_bit_size / 8 + 64;
+
+    uint8_t* ptr = static_cast<uint8_t*>(malloc(alloc_size));
+    if (ptr == nullptr) {
+      throw std::bad_alloc();
+    }
+
+    data.reset(ptr);
   }
 
   void Write(uint32_t count, uint64_t bits) {
