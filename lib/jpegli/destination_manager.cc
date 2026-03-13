@@ -67,8 +67,10 @@ struct MemoryDestinationManager {
 
   static boolean empty_output_buffer(j_compress_ptr cinfo) {
     auto* dest = reinterpret_cast<MemoryDestinationManager*>(cinfo->dest);
+    if (dest->buffer_size > (size_t)-1 / 2) return FALSE;
     uint8_t* next_buffer =
         reinterpret_cast<uint8_t*>(malloc(dest->buffer_size * 2));
+    if (next_buffer == nullptr) return FALSE;
     memcpy(next_buffer, dest->current_buffer, dest->buffer_size);
     if (dest->temp_buffer != nullptr) {
       free(dest->temp_buffer);
