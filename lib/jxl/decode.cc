@@ -2381,7 +2381,16 @@ static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
   if (format->align > 1) {
     row_size = jxl::DivCeil(row_size, format->align) * format->align;
   }
-  *min_size = row_size * (ysize - 1) + last_row_size;
+
+  const size_t max_size = std::numeric_limits<size_t>::max();
+  if (ysize > 1 && row_size > max_size / (ysize - 1)) {
+    return JXL_API_ERROR("Image too large for output buffer size calculation");
+  }
+  size_t total = row_size * (ysize - 1);
+  if (last_row_size > max_size - total) {
+    return JXL_API_ERROR("Image too large for output buffer size calculation");
+  }
+  *min_size = total + last_row_size;
   return JXL_DEC_SUCCESS;
 }
 
