@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed / clarified
+ - decoder API: timeframes to successfully invoke `JxlDecoderSetImageOutBuffer`
+   and `JxlDecoderSetPreviewOutBuffer` are non-intersecting; it is not possible
+   to accidentally set one buffer when the other is expected
+
+## [0.11.2] - 2026-02-10
+
 ### Fixed
   - Corrupted images when using effort 1 lossless. (#4027)
   - Extremely tall/wide images failed to encode using modular. (#3937)
