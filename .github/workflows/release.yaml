@@ -84,7 +84,6 @@ jobs:
           -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc \
           -DJPEGXL_STATIC=ON \
           -DBUILD_TESTING=OFF \
-          -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
@@ -95,7 +94,7 @@ jobs:
         ROOT=`pwd`
         cd build
         tar -zcvf ${ROOT}/jxl-linux-x86_64-static.tar.gz \
-          LICENSE* tools/{cjxl,djxl,benchmark_xl,cjpegli,djpegli,jxlinfo,butteraugli_main,ssimulacra2}
+          LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -318,7 +317,6 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
           -DCMAKE_INSTALL_PREFIX=`pwd`/${PREFIX} \
           -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
-          -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
