@@ -2298,6 +2298,18 @@ JxlDecoderStatus JxlDecoderGetColorAsICCProfile(const JxlDecoder* dec,
 
 namespace {
 
+bool CheckedMul(size_t a, size_t b, size_t* out) {
+  if (a != 0 && b > static_cast<size_t>(-1) / a) return false;
+  *out = a * b;
+  return true;
+}
+
+bool CheckedAdd(size_t a, size_t b, size_t* out) {
+  if (b > static_cast<size_t>(-1) - a) return false;
+  *out = a + b;
+  return true;
+}
+
 // Returns the amount of bits needed for getting memory buffer size, and does
 // all error checking required for size checking and format validity.
 JxlDecoderStatus PrepareSizeCheck(const JxlDecoder* dec,
@@ -2374,14 +2386,29 @@ static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
   } else {
     GetCurrentDimensions(dec, xsize, ysize);
   }
+  if (xsize == 0 || ysize == 0) {
+    return JXL_API_ERROR("Invalid image dimensions");
+  }
   if (num_channels == 0) num_channels = format->num_channels;
-  size_t row_size =
-      jxl::DivCeil(xsize * num_channels * bits, jxl::kBitsPerByte);
+  size_t row_bits;
+  size_t xsize_channels;
+  if (!CheckedMul(xsize, num_channels, &xsize_channels) ||
+      !CheckedMul(xsize_channels, bits, &row_bits)) {
+    return JXL_API_ERROR("image output size overflow");
+  }
+  size_t row_size = jxl::DivCeil(row_bits, jxl::kBitsPerByte);
   size_t last_row_size = row_size;
   if (format->align > 1) {
-    row_size = jxl::DivCeil(row_size, format->align) * format->align;
+    size_t row_size_rounded = jxl::DivCeil(row_size, format->align);
+    if (!CheckedMul(row_size_rounded, format->align, &row_size)) {
+      return JXL_API_ERROR("image output size overflow");
+    }
   }
-  *min_size = row_size * (ysize - 1) + last_row_size;
+  size_t full_rows_size;
+  if (!CheckedMul(row_size, ysize - 1, &full_rows_size) ||
+      !CheckedAdd(full_rows_size, last_row_size, min_size)) {
+    return JXL_API_ERROR("image output size overflow");
+  }
   return JXL_DEC_SUCCESS;
 }
 
