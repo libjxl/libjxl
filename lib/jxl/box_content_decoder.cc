@@ -20,7 +20,6 @@ namespace jxl {
 JxlBoxContentDecoder::JxlBoxContentDecoder() = default;
 
 JxlBoxContentDecoder::~JxlBoxContentDecoder() {
-  
   if (brotli_dec) {
     BrotliDecoderDestroyInstance(brotli_dec);
   }
@@ -117,5 +116,4 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
     return JXL_DEC_BOX_COMPLETE;
   }
 }
-
 }  // namespace jxl
