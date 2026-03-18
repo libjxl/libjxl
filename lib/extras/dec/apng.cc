@@ -1024,13 +1024,13 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           };
           bytes_per_pixel =
               num_channels * (format.data_type == JXL_TYPE_UINT16 ? 2 : 1);
-          // TODO(eustas): ensure multiplication is safe
-          uint64_t row_bytes =
-              static_cast<uint64_t>(image_rect.xsize()) * bytes_per_pixel;
-          uint64_t max_rows = std::numeric_limits<size_t>::max() / row_bytes;
-          if (image_rect.ysize() > max_rows) {
+          size_t row_bytes;
+          size_t total_bytes;
+          if (!SafeMul(image_rect.xsize(), bytes_per_pixel, row_bytes) ||
+              !SafeMul(row_bytes, image_rect.ysize(), total_bytes)) {
             return JXL_FAILURE("Image too big.");
           }
+          (void)total_bytes;  // Calculated only for check.
           // TODO(eustas): drop frameRaw
           JXL_RETURN_IF_ERROR(
               ctx.frameRaw.Resize(row_bytes, image_rect.ysize()));
