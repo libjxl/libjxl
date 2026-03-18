@@ -154,14 +154,6 @@ if(JPEGXL_ENABLE_TOOLS)
   )
   list(APPEND TOOL_BINARIES djxl)
 
-  if(JPEGXL_ENABLE_JPEGLI)
-    # Depends on parts of jxl_extras that are only built if libjpeg is found and
-    # jpegli is enabled.
-    add_executable(cjpegli cjpegli.cc)
-    add_executable(djpegli djpegli.cc)
-    list(APPEND INTERNAL_TOOL_BINARIES cjpegli djpegli)
-  endif()
-
   add_executable(jxlinfo jxlinfo.cc)
   target_link_libraries(jxlinfo jxl jxl_extras_nocodec-internal)
   list(APPEND TOOL_BINARIES jxlinfo)
@@ -226,15 +218,6 @@ if(JPEGXL_ENABLE_DEVTOOLS)
     jxl_extras-internal
     jxl_tool
   )
-  if(JPEGXL_ENABLE_JPEGLI)
-    list(APPEND FUZZER_CORPUS_BINARIES jpegli_dec_fuzzer_corpus)
-    add_executable(jpegli_dec_fuzzer_corpus jpegli_dec_fuzzer_corpus.cc)
-    target_link_libraries(jpegli_dec_fuzzer_corpus
-      jpegli-static
-      jxl_tool
-      jxl_threads
-    )
-  endif()
 endif()  # JPEGXL_ENABLE_DEVTOOLS
 
 # Benchmark tools.
@@ -376,9 +359,6 @@ if(JPEGXL_ENABLE_TOOLS)
     set_from_bytes_fuzzer
     transforms_fuzzer
   )
-if(JPEGXL_ENABLE_JPEGLI)
-  list(APPEND FUZZER_BINARIES jpegli_dec_fuzzer)
-endif()
 endif()
 
 # Fuzzers.
@@ -401,8 +381,6 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
       jxl_threads
       jxl_tool
     )
-  elseif(FUZZER STREQUAL jpegli_dec_fuzzer)
-    target_link_libraries("${BINARY}" jpegli-static)
   else()
     target_link_libraries("${BINARY}"
       jxl_testlib-internal
@@ -499,30 +477,6 @@ if (JNI_FOUND AND Java_FOUND)
   )
   get_target_property(JXL_JNI_WRAPPER_TEST_JAR jxl_jni_wrapper_test JAR_FILE)
 
-  # jpegli wrapper
-
-  if(JPEGXL_ENABLE_JPEGLI)
-    add_library(jpegli_jni SHARED jni/org/jpeg/jpegli/wrapper/encoder_jni.cc)
-    target_include_directories(jpegli_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
-    target_include_directories(jpegli_jni PRIVATE
-      "${CMAKE_CURRENT_BINARY_DIR}/include/jpegli"
-    )
-    target_link_libraries(jpegli_jni PUBLIC jpegli-static)
-
-    add_jar(jpegli_jni_wrapper SOURCES
-      jni/org/jpeg/jpegli/wrapper/Encoder.java
-      jni/org/jpeg/jpegli/wrapper/JniHelper.java
-      OUTPUT_NAME org.jpeg.jpegli
-    )
-    get_target_property(JPEGLI_JNI_WRAPPER_JAR jpegli_jni_wrapper JAR_FILE)
-
-    add_jar(jpegli_jni_wrapper_test
-      SOURCES jni/org/jpeg/jpegli/wrapper/EncoderTest.java
-      INCLUDE_JARS jpegli_jni_wrapper
-    )
-    get_target_property(JPEGLI_JNI_WRAPPER_TEST_JAR jpegli_jni_wrapper_test JAR_FILE)
-  endif()
-
   if(NOT SANITIZER MATCHES ".san")
     # NB: Vanilla OpenJDK 8 / 11 are known to work well (i.e. either
     #     "which java" or JAVA_HOME environment variable point to the path like
@@ -534,15 +488,6 @@ if (JNI_FOUND AND Java_FOUND)
               -Dorg.jpeg.jpegxl.wrapper.lib=$<TARGET_FILE:jxl_jni>
               org.jpeg.jpegxl.wrapper.DecoderTest
     )
-    if(JPEGXL_ENABLE_JPEGLI)
-      add_test(
-        NAME test_jpegli_jni_wrapper
-        COMMAND ${Java_JAVA_EXECUTABLE}
-                -cp "${JPEGLI_JNI_WRAPPER_JAR}:${JPEGLI_JNI_WRAPPER_TEST_JAR}"
-                -Dorg.jpeg.jpegli.wrapper.lib=$<TARGET_FILE:jpegli_jni>
-                org.jpeg.jpegli.wrapper.EncoderTest
-      )
-    endif()
   endif()  # JPEGXL_ENABLE_FUZZERS
 endif()  # JNI_FOUND & Java_FOUND
 endif()  # JPEGXL_ENABLE_JNI
@@ -555,9 +500,6 @@ if (BASH_PROGRAM)
   find_package(JPEG)
   if (JPEG_FOUND AND JPEGXL_ENABLE_TRANSCODE_JPEG)
     list(APPEND TEST_SCRIPTS roundtrip_test)
-  endif()
-  if (JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
-    list(APPEND TEST_SCRIPTS jpegli_tools_test)
   endif()
   foreach(SCRIPT IN LISTS TEST_SCRIPTS)
     add_test(NAME ${SCRIPT}
