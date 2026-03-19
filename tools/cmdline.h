@@ -6,10 +6,13 @@
 #ifndef TOOLS_CMDLINE_H_
 #define TOOLS_CMDLINE_H_
 
+#include <cctype>
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -375,12 +378,32 @@ static inline bool ParseSigned(const char* arg, int* out) {
 }
 
 static inline bool ParseUnsigned(const char* arg, size_t* out) {
-  char* end;
-  *out = static_cast<size_t>(strtoull(arg, &end, 0));
-  if (end[0] != '\0') {
-    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n", arg);
+  const char* printable_arg = (arg != nullptr) ? arg : "(null)";
+  if (arg == nullptr) {
+    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n",
+            printable_arg);
     return false;
   }
+  const char* p = arg;
+  while (*p != '\0' &&
+         std::isspace(static_cast<unsigned char>(*p)) != 0) {
+    ++p;
+  }
+  if (*p == '\0' || *p == '-') {
+    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n",
+            printable_arg);
+    return false;
+  }
+  char* end;
+  errno = 0;
+  const unsigned long long value = strtoull(arg, &end, 0);
+  if (errno == ERANGE || end == arg || end[0] != '\0' ||
+      value > std::numeric_limits<size_t>::max()) {
+    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n",
+            printable_arg);
+    return false;
+  }
+  *out = static_cast<size_t>(value);
   return true;
 }
 
