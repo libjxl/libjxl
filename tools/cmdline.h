@@ -365,12 +365,34 @@ class CommandLineParser {
 //
 
 static inline bool ParseSigned(const char* arg, int* out) {
-  char* end;
-  *out = static_cast<int>(strtol(arg, &end, 0));
-  if (end[0] != '\0') {
-    fprintf(stderr, "Unable to interpret as signed integer: %s.\n", arg);
+  const char* printable_arg = (arg != nullptr) ? arg : "(null)";
+  if (arg == nullptr) {
+    fprintf(stderr, "Unable to interpret as signed integer: %s.\n",
+            printable_arg);
     return false;
   }
+
+  const char* p = arg;
+  while (*p != '\0' &&
+         std::isspace(static_cast<unsigned char>(*p)) != 0) {
+    ++p;
+  }
+  if (*p == '\0') {
+    fprintf(stderr, "Unable to interpret as signed integer: %s.\n",
+            printable_arg);
+    return false;
+  }
+  char* end;
+  errno = 0;
+  const long value = strtol(arg, &end, 0);
+  if (errno == ERANGE || end == arg || end[0] != '\0' ||
+      value < std::numeric_limits<int>::min() ||
+      value > std::numeric_limits<int>::max()) {
+    fprintf(stderr, "Unable to interpret as signed integer: %s.\n",
+            printable_arg);
+    return false;
+  }
+  *out = static_cast<int>(value);
   return true;
 }
 
