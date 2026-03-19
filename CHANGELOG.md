@@ -15,45 +15,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.11.2] - 2026-02-10
 
 ### Fixed
-  - Corrupted images when using effort 1 lossless. (#4027)
-  - Extremely tall/wide images failed to encode using modular. (#3937)
-  - Progressive VarDCT couldn't load progressively. (#4223)
-  - Lossless Faster Decoding would create uncompressed files for levels 1 and 2,
-    with levels 3 and 4 being slower instead of faster. (#4201)
+  - Noise is no longer rendered on LF frames. (#4514)
+  -  Float16 values roundtrip more accurately. (#4461)
+  - JXL input to cjxl no longer gets double orientation applied and keeps
+    frame names. (#4374 and #4561)
+  - `JxlBasicInfo.alpha_premultiplied` was not correctly forwarded. (#4357)
+  - CMYK JXL files would not decode to PNG correctly. (#4301)
+  - Encoder would hang with specific parameters on images containing
+    more than 256 groups. (#4302)
+  - Decoding would fail with LZ77 runs that crossed entropy-coded streams
+    within the same section. (#4298)
+  - Images could be corrupted when encoding effort 1 lossless. (#4027 and #4291)
+  - Extremely high quality lossy would not conform to Level 5. (#4238)
   - Density regression with Predictor Zero since v0.11. (#4225)
+  - Progressive VarDCT encoding would create non-progressive files. (#4223)
+  - Lossless Faster Decoding would create uncompressed files for levels 1 and 2,
+    with levels 3 and 4 being slower. (#4201)
+  - Lossy Delta Palette encoding now works on images larger than 2048*2048. (#4201)
+  - Extremely tall/wide images failed to encode using modular. (#3937 and #4308)
+  - Empty DHT markers no longer cause JPEG transcoding to fail. (#2704)
 
 ### Changed / clarified
-  - Empty DHT markers are now valid for JPEG transcoding. (#2704)
-  - Resampling 2 is now enabled at distance 10 and is up to 10x faster below
-     effort 10, by using a faster downsampling method. (#4147)
-  - Progressive lossless is now 30-40% smaller on average and can utilize multithreading. (#4201)
+  - Numerous speed/memory usage improvements. (#4322, #4330, #4332, #4341, #4384,
+    #4448, #4449, #4529)
+  - Output is now buffered by default, allowing for much better progressive loading
+    by default. (#4634, #4635, #4637 and #4642)
+  - Better Desnity/Speed tradeoff for lossless effort levels. (#4236)
+  - Improved visual quality of gradients by using channel-offset blue noise dithering
+    instead of bayer. (#4305 and #4559)
+  - Lossy modular quality/density improvements. (#3575)
+  -  Significant improvements to EXR input handling. Now supports float32,
+    multilayer and per-channel bitdepth. (#4312)
+  - Layered JXL files are no longer coalesced when re-encoding with cjxl, and can now
+    be decoded to separate PNG/PAM files with djxl by using `--no_coalescing`. (#4299)
+  - Using `-p` in cjxl will now encode a more progressive image at the cost
+    of encode speed. `--patches 0` can be used to significantly improve encode speed
+    or `--progressive_dc 0` can be used to return to old behaviour. (#4258)
+  - Progressive lossless is now 30-40% smaller on average and
+    can utilize multithreaded encoding. (#4201 and #4641)
+  - Resampling 2 is now enabled at distance 10, and is up to 10x faster below
+    effort 10 by using a faster downsampling method. (#4147)
+
+## [0.11.2] - 2026-02-10
+
+### Fixed
+  - Fix tile dimension in low memory rendering pipeline. (#4495 -
+    [CVE-2025-12474](https://www.cve.org/cverecord?id=CVE-2025-12474))
+  - Fix number of channels for gray-to-gray color transform. (#4579 -
+    [CVE-2026-1837](https://www.cve.org/cverecord?id=CVE-2026-1837))
+  - `djxl`: Reject decoding JXL files if "packed" representation size overflows
+    `size_t`. (#4589 - Thanks to Mateusz Jurczyk of Google Project Zero for
+    identifying this issue.)
 
 ## [0.11.1] - 2024-11-26
 
 ### Fixed
-  - Huffman lookup table size fix (#3871 -
+  - Huffman lookup table size fix. (#3871 -
     [CVE-2024-11403](https://www.cve.org/cverecord?id=CVE-2024-11403))
   - Check height limit in modular trees. (#3943 -
     [CVE-2024-11498](https://www.cve.org/cverecord?id=CVE-2024-11498))
 
 ### Changed / clarified
-  - encoder API: document that `JxlEncoderFrameSettingsCreate` could return
-    `NULL`
+  - Encoder API: Document that `JxlEncoderFrameSettingsCreate` could return
+    `NULL`. (#4121)
 
 ## [0.11.0] - 2024-09-13
 
 ### Added
-  - Gain Map API (#3552 and #3628):  `JxlGainMapBundle` struct and API functions
+  - Gain Map API: `JxlGainMapBundle` struct and API functions
     to read and write gain map bundles`JxlGainMapWriteBundle` and
-    `JxlGainMapReadBundle` as well as handling compressed ICC profiles:
-    `JxlICCProfileEncode` and `JxlICCProfileDecode`.
-  - decoder API: added `JXL_DEC_BOX_COMPLETE` event to signal that the output
+    `JxlGainMapReadBundle`. (#3552)
+  - Handling of compressed ICC profiles: `JxlICCProfileEncode` and
+    `JxlICCProfileDecode`. (#3628)
+  - Decoder API: added `JXL_DEC_BOX_COMPLETE` event to signal that the output
     buffer for the current box has received all contents. Previously, this was
     to be determined from the fact that the decoder had moved on either to
     `JXL_DEC_SUCCESS` or to another subsequent `JXL_DEC_BOX`. This change is
     made backward-compatible by the fact that the new event must be explicitly
     subscribed to, and that `JXL_DEC_SUCCESS` / `JXL_DEC_BOX` still occur
-    afterwards and still imply that the previous box must be complete.
+    afterwards and still imply that the previous box must be complete. (#3657)
 
 ### Changed / clarified
   - avoiding abort in release build (#3631 and #3639)
