@@ -47,6 +47,14 @@ Status SelectFormat(const std::vector<JxlPixelFormat>& accepted_formats,
         --num_channels;
         continue;
       }
+      if (basic_info.num_color_channels == 1 && num_channels == 1) {
+        // Grayscale source, but no 1-channel format available. Try promoting
+        // to 3 channels (RGB) so that the decoder converts gray to RGB.
+        // This handles e.g. grayscale JXL decoded to PPM (which requires 3
+        // channels).
+        num_channels = 3;
+        continue;
+      }
       return JXL_FAILURE("no appropriate format found");
     }
     break;
