@@ -461,6 +461,50 @@ TEST(CodecTest, FormatNegotiation) {
   EXPECT_EQ(format.data_type, JXL_TYPE_UINT16);
 }
 
+TEST(CodecTest, FormatNegotiationGrayscalePromotion) {
+  // Only 3-channel formats available (e.g. PPM output).
+  const std::vector<JxlPixelFormat> accepted_formats = {
+      {/*num_channels=*/3,
+       /*data_type=*/JXL_TYPE_UINT8,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+      {/*num_channels=*/3,
+       /*data_type=*/JXL_TYPE_UINT16,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+  };
+
+  JxlBasicInfo info;
+  JxlEncoderInitBasicInfo(&info);
+  info.bits_per_sample = 8;
+  info.num_color_channels = 1;
+
+  JxlPixelFormat format;
+  ASSERT_TRUE(SelectFormat(accepted_formats, info, &format));
+  EXPECT_EQ(format.num_channels, 3u);
+  EXPECT_EQ(format.data_type, JXL_TYPE_UINT8);
+}
+
+#if (!JXL_CRASH_ON_ERROR)
+TEST(CodecTest, FormatNegotiationGrayscaleNoMatch) {
+  // No 1-channel or 3-channel format; promotion must not loop forever.
+  const std::vector<JxlPixelFormat> accepted_formats = {
+      {/*num_channels=*/5,
+       /*data_type=*/JXL_TYPE_UINT8,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+  };
+
+  JxlBasicInfo info;
+  JxlEncoderInitBasicInfo(&info);
+  info.bits_per_sample = 8;
+  info.num_color_channels = 1;
+
+  JxlPixelFormat format;
+  EXPECT_FALSE(SelectFormat(accepted_formats, info, &format));
+}
+#endif
+
 TEST(CodecTest, EncodeToPNG) {
   ThreadPool* const pool = nullptr;
 
