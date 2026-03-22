@@ -281,7 +281,12 @@ Status ConvertChannelsToExternal(const ImageF* in_channels[],
   channels.assign(in_channels, in_channels + num_channels);
 
   const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
-  const size_t bytes_per_pixel = num_channels * bytes_per_channel;
+  uint64_t bpp;
+  if (!SafeMul(static_cast<uint64_t>(num_channels),
+               static_cast<uint64_t>(bytes_per_channel), bpp)) {
+    return JXL_FAILURE("bytes_per_pixel overflow");
+  }
+  const size_t bytes_per_pixel = static_cast<size_t>(bpp);
 
   std::vector<std::vector<uint8_t>> row_out_callback;
   const auto FreeCallbackOpaque = [&out_callback](void* p) {

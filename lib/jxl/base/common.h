@@ -38,6 +38,15 @@ static inline bool JXL_MAYBE_UNUSED SafeAdd(const uint64_t a, const uint64_t b,
   return sum >= a;  // no need to check b - either sum >= both or < both.
 }
 
+static inline bool JXL_MAYBE_UNUSED SafeMul(const uint64_t a, const uint64_t b,
+                                            uint64_t& product) {
+  if (a != 0 && b > UINT64_MAX / a) {
+    return false;
+  }
+  product = a * b;
+  return true;
+}
+
 template <typename T1, typename T2>
 constexpr inline T1 DivCeil(T1 a, T2 b) {
   return (a + b - 1) / b;

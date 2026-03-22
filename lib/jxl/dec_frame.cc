@@ -244,9 +244,18 @@ Status FrameDecoder::InitFrameOutput() {
           1 << frame_header_.chroma_subsampling.RawHShift(c);
       component.v_samp_factor =
           1 << frame_header_.chroma_subsampling.RawVShift(c);
-      size_t num_blocks = static_cast<size_t>(component.width_in_blocks) *
-                          component.height_in_blocks;
-      component.coeffs.resize(num_blocks * jxl::kDCTBlockSize);
+      uint64_t num_blocks;
+      if (!SafeMul(static_cast<uint64_t>(component.width_in_blocks),
+                   static_cast<uint64_t>(component.height_in_blocks),
+                   num_blocks)) {
+        return JXL_FAILURE("JPEG component dimensions overflow");
+      }
+      uint64_t coeffs_size;
+      if (!SafeMul(num_blocks, static_cast<uint64_t>(jxl::kDCTBlockSize),
+                   coeffs_size)) {
+        return JXL_FAILURE("JPEG coefficient buffer size overflow");
+      }
+      component.coeffs.resize(static_cast<size_t>(coeffs_size));
     }
   }
 
@@ -288,8 +297,13 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   }
   shared.image_features.splines.Clear();
   if (frame_header_.flags & FrameHeader::kSplines) {
+    uint64_t spline_limit;
+    if (!SafeMul(static_cast<uint64_t>(frame_dim_.xsize),
+                 static_cast<uint64_t>(frame_dim_.ysize), spline_limit)) {
+      return JXL_FAILURE("Frame dimensions overflow");
+    }
     JXL_RETURN_IF_ERROR(shared.image_features.splines.Decode(
-        memory_manager, br, frame_dim_.xsize * frame_dim_.ysize));
+        memory_manager, br, spline_limit));
   }
   if (frame_header_.flags & FrameHeader::kNoise) {
     JXL_RETURN_IF_ERROR(DecodeNoise(br, &shared.image_features.noise_params));
