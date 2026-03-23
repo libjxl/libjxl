@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
@@ -48,7 +49,12 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
   size_t num_ref_patch = read_num(kNumRefPatchContext);
   // Limit max memory usage of patches to about 66 bytes per pixel (assuming 8
   // bytes per size_t)
-  const size_t num_pixels = xsize * ysize;
+  uint64_t num_pixels_u64;
+  if (!SafeMul(static_cast<uint64_t>(xsize), static_cast<uint64_t>(ysize),
+               num_pixels_u64)) {
+    return JXL_FAILURE("Patch dictionary dimensions overflow");
+  }
+  const size_t num_pixels = static_cast<size_t>(num_pixels_u64);
   const size_t max_ref_patches = 1024 + num_pixels / 4;
   const size_t max_patches = max_ref_patches * 4;
   const size_t max_blending_infos = max_patches * 4;

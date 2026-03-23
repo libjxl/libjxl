@@ -16,6 +16,7 @@
 #include "lib/jxl/ans_common.h"
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
@@ -231,8 +232,17 @@ Status DecodeANSCodes(JxlMemoryManager* memory_manager,
     }
   } else {
     JXL_ENSURE(max_alphabet_size <= ANS_MAX_ALPHABET_SIZE);
-    size_t alloc_size = num_histograms * (1 << result->log_alpha_size) *
-                        sizeof(AliasTable::Entry);
+    uint64_t table_entries;
+    if (!SafeMul(static_cast<uint64_t>(num_histograms),
+                 static_cast<uint64_t>(1) << result->log_alpha_size,
+                 table_entries)) {
+      return JXL_FAILURE("Alias table size overflow");
+    }
+    uint64_t alloc_size_u64;
+    if (!SafeMul(table_entries, sizeof(AliasTable::Entry), alloc_size_u64)) {
+      return JXL_FAILURE("Alias table allocation overflow");
+    }
+    size_t alloc_size = static_cast<size_t>(alloc_size_u64);
     JXL_ASSIGN_OR_RETURN(result->alias_tables,
                          AlignedMemory::Create(memory_manager, alloc_size));
     AliasTable::Entry* alias_tables =

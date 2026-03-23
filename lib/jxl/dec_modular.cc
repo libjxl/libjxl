@@ -223,10 +223,18 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   if (!allow_truncated_group ||
       reader->TotalBitsConsumed() < reader->TotalBytes() * kBitsPerByte) {
     if (has_tree) {
+      uint64_t tree_limit_product;
+      if (!SafeMul(static_cast<uint64_t>(frame_dim.xsize),
+                   static_cast<uint64_t>(frame_dim.ysize),
+                   tree_limit_product) ||
+          !SafeMul(tree_limit_product,
+                   static_cast<uint64_t>(nb_chans + nb_extra),
+                   tree_limit_product)) {
+        return JXL_FAILURE("Frame dimensions overflow");
+      }
       size_t tree_size_limit =
           std::min(static_cast<size_t>(1 << 22),
-                   1024 + frame_dim.xsize * frame_dim.ysize *
-                              (nb_chans + nb_extra) / 16);
+                   static_cast<size_t>(1024 + tree_limit_product / 16));
       JXL_RETURN_IF_ERROR(
           DecodeTree(memory_manager, reader, &tree, tree_size_limit));
       JXL_RETURN_IF_ERROR(DecodeHistograms(
