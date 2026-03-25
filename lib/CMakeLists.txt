@@ -188,9 +188,6 @@ if(JPEGXL_ENABLE_TOOLS OR BUILD_TESTING)
   include(jxl_extras.cmake)
 endif()
 include(jxl_threads.cmake)
-if (JPEGXL_ENABLE_JPEGLI)
-  include(jpegli.cmake)
-endif()
 
 # For simplicity all the library headers, both source and generated ones, are
 # gathered in the binary folder. There is no distinction on which libraries use
