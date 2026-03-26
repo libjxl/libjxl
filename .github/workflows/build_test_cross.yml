@@ -62,7 +62,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
       with:
         egress-policy: audit
 
@@ -145,7 +145,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
       with:
         egress-policy: audit
 
@@ -155,7 +155,7 @@ jobs:
         submodules: true
         fetch-depth: 1
     
-    - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       with:
         name: cross_binary-${{ matrix.identifier }}
@@ -178,7 +178,7 @@ jobs:
 
     - name: Cache SDE
       if: ${{ matrix.arch == 'i686' }}
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: ${{ github.workspace }}/sde
         key: sde-${{ env.SDE_ID }}
@@ -207,7 +207,7 @@ jobs:
         BUILD_DIR=build \
         ${EMULATOR} ./ci.sh test \
           -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
-          -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper|test_jpegli_jni_wrapper)'
+          -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper)'
 
     - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       name: Upload test cost

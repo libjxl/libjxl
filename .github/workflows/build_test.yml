@@ -40,14 +40,11 @@ jobs:
             test_in_pr: true
             cmake_args: >-
               -DJPEGXL_TEST_TOOLS=ON
-              -DJPEGLI_LIBJPEG_LIBRARY_VERSION="8.2.2"
-              -DJPEGLI_LIBJPEG_LIBRARY_SOVERSION="8"
             # Track static stack size on build and check it doesn't exceed 3 kB.
             emit_stack_sizes: 1
             max_stack: 2400
             # Conformance tooling test requires numpy.
-            # jpegli tests require imagemagick and libjpeg-turbo-progs
-            apt_pkgs: imagemagick libjpeg-turbo-progs python3-numpy
+            apt_pkgs: python3-numpy
           - name: lowprecision
             mode: release
             run_bench: true
@@ -73,8 +70,6 @@ jobs:
             skip_install: true
           - name: coverage
             skip_install: true
-            disable_tests:
-              - test_jpegli_jni_wrapper # TODO: why this does not work?
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
@@ -226,7 +221,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
       with:
         egress-policy: audit
 
@@ -285,7 +280,7 @@ jobs:
 
     - name: Cache LLVM sources
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
@@ -306,7 +301,7 @@ jobs:
       shell: bash
 
     - name: ccache
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -396,7 +391,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
+      uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad # v5.5.3
       with:
         flags: unittests
         files: build/coverage.xml
