@@ -14,6 +14,7 @@
 #undef GDK_PIXBUF_ENABLE_BACKEND
 
 G_BEGIN_DECLS
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 
 // Information about a single frame.
 typedef struct {
@@ -113,7 +114,6 @@ static void gdk_pixbuf_jxl_animation_get_size(GdkPixbufAnimation *anim,
   if (height) *height = jxl_anim->ysize;
 }
 
-G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 static gboolean gdk_pixbuf_jxl_animation_iter_advance(
     GdkPixbufAnimationIter *iter, const GTimeVal *current_time);
 
@@ -128,7 +128,6 @@ static GdkPixbufAnimationIter *gdk_pixbuf_jxl_animation_get_iter(
                                         start_time);
   return (GdkPixbufAnimationIter *)iter;
 }
-G_GNUC_END_IGNORE_DEPRECATIONS
 
 static void gdk_pixbuf_jxl_animation_finalize(GObject *obj) {
   GdkPixbufJxlAnimation *decoder_state = (GdkPixbufJxlAnimation *)obj;
@@ -195,7 +194,6 @@ static gboolean gdk_pixbuf_jxl_animation_iter_on_currently_loading_frame(
               .decoded;
 }
 
-G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 static gboolean gdk_pixbuf_jxl_animation_iter_advance(
     GdkPixbufAnimationIter *iter, const GTimeVal *current_time) {
   GdkPixbufJxlAnimationIter *jxl_iter = (GdkPixbufJxlAnimationIter *)iter;
@@ -235,7 +233,6 @@ static gboolean gdk_pixbuf_jxl_animation_iter_advance(
 
   return old_frame != jxl_iter->current_frame;
 }
-G_GNUC_END_IGNORE_DEPRECATIONS
 
 static void gdk_pixbuf_jxl_animation_iter_finalize(GObject *obj) {
   GdkPixbufJxlAnimationIter *iter = (GdkPixbufJxlAnimationIter *)obj;
@@ -253,6 +250,7 @@ static void gdk_pixbuf_jxl_animation_iter_class_init(
   klass->parent_class.advance = gdk_pixbuf_jxl_animation_iter_advance;
 }
 
+G_GNUC_END_IGNORE_DEPRECATIONS
 G_END_DECLS
 
 static gpointer begin_load(GdkPixbufModuleSizeFunc size_func,
