@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -32,10 +33,21 @@ constexpr inline size_t RoundUpToBlockDim(size_t dim) {
   return (dim + 7) & ~static_cast<size_t>(7);
 }
 
-static inline bool JXL_MAYBE_UNUSED SafeAdd(const uint64_t a, const uint64_t b,
-                                            uint64_t& sum) {
+template <typename U,
+          class = typename std::enable_if<std::is_unsigned<U>::value>::type>
+static inline bool SafeAdd(const U a, const U b, U& sum) {
   sum = a + b;
   return sum >= a;  // no need to check b - either sum >= both or < both.
+}
+
+template <typename U,
+          class = typename std::enable_if<std::is_unsigned<U>::value>::type>
+static inline bool SafeMul(const U a, const U b, U& product) {
+  product = 0;
+  if (a == 0 || b == 0) return true;
+  if (b > (std::numeric_limits<U>::max() / a)) return false;
+  product = a * b;
+  return true;
 }
 
 template <typename T1, typename T2>

@@ -56,7 +56,7 @@ else ()
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       list(APPEND JPEGXL_INTERNAL_FLAGS -Wframe-larger-than=5632)
     elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14.0)
-      list(APPEND JPEGXL_INTERNAL_FLAGS -Wframe-larger-than=5120)
+      list(APPEND JPEGXL_INTERNAL_FLAGS -Wframe-larger-than=5632)
     endif()
   endif()
 
@@ -188,9 +188,6 @@ if(JPEGXL_ENABLE_TOOLS OR BUILD_TESTING)
   include(jxl_extras.cmake)
 endif()
 include(jxl_threads.cmake)
-if (JPEGXL_ENABLE_JPEGLI)
-  include(jpegli.cmake)
-endif()
 
 # For simplicity all the library headers, both source and generated ones, are
 # gathered in the binary folder. There is no distinction on which libraries use

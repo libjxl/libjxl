@@ -1616,6 +1616,13 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       dec->AdvanceInput(dec->header_size);
       dec->header_size = 0;
 #if JPEGXL_ENABLE_BOXES
+      if ((dec->events_wanted & JXL_DEC_BOX) && dec->box_event &&
+          !dec->box_out_buffer_set_current_box) {
+        // The user did not set an output buffer for this box before
+        // continuing decoding past the box header; treat this as opting out
+        // of box output for this box and disallow late buffer setup.
+        dec->box_event = false;
+      }
       if ((dec->events_wanted & JXL_DEC_BOX) &&
           dec->box_out_buffer_set_current_box) {
         uint8_t* next_out = dec->box_out_buffer + dec->box_out_buffer_pos;
@@ -2390,7 +2397,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
     JxlDecoder* dec, const JxlPixelFormat* format, void* buffer, size_t size) {
   if (!dec->got_basic_info || !dec->metadata.m.have_preview ||
-      !(dec->orig_events_wanted & JXL_DEC_PREVIEW_IMAGE)) {
+      !(dec->orig_events_wanted & JXL_DEC_PREVIEW_IMAGE) ||
+      dec->got_preview_image || !dec->preview_frame) {
     return JXL_API_ERROR("No preview out buffer needed at this time");
   }
   if (format->num_channels < 3 &&
@@ -2428,7 +2436,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
 JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
                                              const JxlPixelFormat* format,
                                              void* buffer, size_t size) {
-  if (!dec->got_basic_info || !(dec->orig_events_wanted & JXL_DEC_FULL_IMAGE)) {
+  if (!dec->got_basic_info || !(dec->orig_events_wanted & JXL_DEC_FULL_IMAGE) ||
+      dec->preview_frame) {
     return JXL_API_ERROR("No image out buffer needed at this time");
   }
   if (dec->image_out_buffer_set && !!dec->image_out_run_callback) {

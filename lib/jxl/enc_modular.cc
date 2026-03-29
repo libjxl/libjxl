@@ -557,32 +557,37 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       case SpeedTier::kHare:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 4);
-        cparams_.options.max_property_values = 24;
+        cparams_.options.max_property_values = 48;
+        cparams_.options.nb_repeats *= 0.5f;
         break;
       case SpeedTier::kWombat:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 5);
-        cparams_.options.max_property_values = 32;
+        cparams_.options.max_property_values = 64;
+        cparams_.options.nb_repeats *= 0.7f;
         break;
       case SpeedTier::kSquirrel:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 7);
-        cparams_.options.max_property_values = 48;
+        cparams_.options.max_property_values = 96;
         break;
       case SpeedTier::kKitten:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 10);
-        cparams_.options.max_property_values = 96;
+        cparams_.options.max_property_values = 128;
+        cparams_.options.nb_repeats *= 1.1f;
         break;
       case SpeedTier::kGlacier:
       case SpeedTier::kTortoise:
         cparams_.options.splitting_heuristics_properties = prop_order;
         cparams_.options.max_property_values = 256;
+        cparams_.options.nb_repeats *= 1.3f;
         break;
       default:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 3);
-        cparams_.options.max_property_values = 16;
+        cparams_.options.max_property_values = 32;
+        cparams_.options.nb_repeats *= 0.3f;
         break;
     }
     if (cparams_.speed_tier > SpeedTier::kTortoise) {
@@ -599,6 +604,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       }
     }
   }
+  cparams_.options.nb_repeats = std::min(1.0f, cparams_.options.nb_repeats);
 
   if ((cparams_.options.predictor == Predictor::Average0 ||
        cparams_.options.predictor == Predictor::Average1 ||
@@ -882,7 +888,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
     channel_colors_percent = cparams_.channel_colors_pre_transform_percent;
   }
-  if (!groupwise) {
+  if (!groupwise &&
+     (!(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
     JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams_,
                                      channel_colors_percent, pool));
   }
@@ -1412,14 +1419,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // Local palette transforms
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
-    if (cparams.butteraugli_distance == 0.f && !cparams.lossy_palette &&
-        cparams.speed_tier < SpeedTier::kCheetah) {
+    if (cparams_.ModularPartIsLossless() && !cparams.responsive &&
+        !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
-      if (!(cparams.responsive &&
-            (cparams.decoding_speed_tier >= 1 || cparams.IsLossless()))) {
         channel_color_percent = cparams.channel_colors_percent;
-      }
       JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams,
                                        channel_color_percent));
     }
@@ -1537,13 +1541,19 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
 constexpr float q_deadzone = 0.62f;
 int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
                size_t w, weighted::State* wp_state, float value,
-               float inv_factor) {
+               float inv_factor, bool* has_outliers) {
   float svalue = value * inv_factor;
   PredictionResult pred =
       PredictNoTreeWP(w, qrow + x, onerow, x, y, Predictor::Weighted, wp_state);
   svalue -= pred.guess;
   if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
-  int residual = std::round(svalue);
+  int residual = 0;
+  if (svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
+      svalue < static_cast<float>(std::numeric_limits<int>::min())) {
+    *has_outliers = true;
+  } else {
+    residual = std::round(svalue);
+  }
   if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5f) * 2;
   return residual + pred.guess;
 }
@@ -1568,6 +1578,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
   JxlMemoryManager* memory_manager = dc.memory_manager();
   extra_dc_precision[group_index] = nl_dc ? 1 : 0;
   float mul = 1 << extra_dc_precision[group_index];
+  bool has_outliers = false;
 
   size_t stream_id = ModularStreamId::VarDCTDC(group_index).ID(frame_dim_);
   stream_options_[stream_id].max_chan_size = 0xFFFFFF;
@@ -1642,17 +1653,19 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = QuantizeWP(quant_row, stride, c, x, y, r.xsize(),
-                                      &wp_state, row[x], inv_factor);
+            quant_row[x] =
+                QuantizeWP(quant_row, stride, c, x, y, r.xsize(), &wp_state,
+                           row[x], inv_factor, &has_outliers);
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());
           }
         } else {
           int32_t* quant_row_y =
               stream_images_[stream_id].channel[0].plane.Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = QuantizeWP(
-                quant_row, stride, c, x, y, r.xsize(), &wp_state,
-                row[x] - quant_row_y[x] * (y_factor * cfl_factor), inv_factor);
+            quant_row[x] =
+                QuantizeWP(quant_row, stride, c, x, y, r.xsize(), &wp_state,
+                           row[x] - quant_row_y[x] * (y_factor * cfl_factor),
+                           inv_factor, &has_outliers);
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());
           }
         }
@@ -1703,6 +1716,10 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         }
       }
     }
+  }
+
+  if (has_outliers) {
+    return JXL_FAILURE("Unsupported range of DC values");
   }
 
   DequantDC(r, &enc_state->shared.dc_storage, &enc_state->shared.quant_dc,
