@@ -334,7 +334,6 @@ class WriteToOutputStage : public RenderPipelineStage {
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
-    JXL_ENSURE(xextra == 0);
     JXL_ENSURE(main_.run_opaque_ || main_.buffer_);
     if (ypos >= height_) return true;
     if (xpos >= width_) return true;

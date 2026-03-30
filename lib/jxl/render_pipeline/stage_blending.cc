@@ -135,6 +135,7 @@ class BlendingStage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     JXL_ENSURE(initialized_);
+    // TODO(eustas): investigate if we need to process xextra for InPlace
     JxlMemoryManager* memory_manager = state_.memory_manager;
     const FrameOrigin& frame_origin = frame_header_.frame_origin;
     ptrdiff_t bg_xpos = frame_origin.x0 + static_cast<ptrdiff_t>(xpos);

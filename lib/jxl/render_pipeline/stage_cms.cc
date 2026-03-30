@@ -53,6 +53,7 @@ class CmsStage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     JXL_ENSURE(xsize <= xsize_);
+    // TODO(eustas): investigate if we need to process xextra for InPlace
     bool gray_src = (c_src_.Channels() == 1);
     bool gray_dst = (output_encoding_info_.color_encoding.Channels() == 1);
     float* mutable_buf_src = color_space_transform->BufSrc(thread_id);

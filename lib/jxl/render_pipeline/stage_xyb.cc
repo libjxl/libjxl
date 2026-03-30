@@ -41,7 +41,10 @@ class XYBStage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     const HWY_FULL(float) d;
-    JXL_ENSURE(xextra == 0);
+    // TODO(eustas): investigate if we need to process xextra for InPlace
+    // TODO(eustas): change StoreU to Store?
+    ptrdiff_t x_start = 0;
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize);
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
@@ -61,8 +64,7 @@ class XYBStage : public RenderPipelineStage {
       const auto offset_x = Set(d, jxl::cms::kScaledXYBOffset[0]);
       const auto offset_y = Set(d, jxl::cms::kScaledXYBOffset[1]);
       const auto offset_bmy = Set(d, jxl::cms::kScaledXYBOffset[2]);
-      for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-           x += Lanes(d)) {
+      for (ptrdiff_t x = x_start; x < x_end; x += Lanes(d)) {
         const auto in_x = LoadU(d, row0 + x);
         const auto in_y = LoadU(d, row1 + x);
         const auto in_b = LoadU(d, row2 + x);
@@ -146,7 +148,6 @@ class FastXYBStage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     if (ypos >= height_) return true;
-    JXL_ENSURE(xextra == 0);
     const float* xyba[4] = {
         GetInputRow(input_rows, 0, 0), GetInputRow(input_rows, 1, 0),
         GetInputRow(input_rows, 2, 0),

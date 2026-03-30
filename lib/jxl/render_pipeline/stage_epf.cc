@@ -87,7 +87,11 @@ class EPF0Stage : public RenderPipelineStage {
     V t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, tA, tB;  // NOLINT
     V* sads[12] = {&t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7, &t8, &t9, &tA, &tB};
 
-    xextra = RoundUpTo(xextra, Lanes(df));
+    // Make sure "Store" is aligned?
+    // TODO(eustas): change StoreU to Store
+    // TODO(eustas): cache GetOutputRow
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(RoundUpTo(xextra, Lanes(df)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra);
     const float* JXL_RESTRICT row_sigma =
         sigma_->Row(ypos / kBlockDim + kSigmaPadding);
 
@@ -110,8 +114,7 @@ class EPF0Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-         x += Lanes(df)) {
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
 
@@ -221,7 +224,10 @@ class EPF1Stage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     DF df;
-    xextra = RoundUpTo(xextra, Lanes(df));
+    // Make sure "Store" is aligned.
+    // TODO(eustas): cache GetOutputRow
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(RoundUpTo(xextra, Lanes(df)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra);
     const float* JXL_RESTRICT row_sigma =
         sigma_->Row(ypos / kBlockDim + kSigmaPadding);
 
@@ -245,8 +251,7 @@ class EPF1Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-         x += Lanes(df)) {
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
 
@@ -407,7 +412,10 @@ class EPF2Stage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     DF df;
-    xextra = RoundUpTo(xextra, Lanes(df));
+    // Make sure "Store" is aligned.
+    // TODO(eustas): cache GetOutputRow
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(RoundUpTo(xextra, Lanes(df)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra);
     const float* JXL_RESTRICT row_sigma =
         sigma_->Row(ypos / kBlockDim + kSigmaPadding);
 
@@ -431,8 +439,7 @@ class EPF2Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-         x += Lanes(df)) {
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
 

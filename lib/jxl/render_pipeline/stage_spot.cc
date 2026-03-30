@@ -24,12 +24,14 @@ class SpotColorStage : public RenderPipelineStage {
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(xextra);
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra);
     // TODO(veluca): add SIMD.
     float scale = spot_color_[3];
     for (size_t c = 0; c < 3; c++) {
       float* JXL_RESTRICT p = GetInputRow(input_rows, c, 0);
       const float* JXL_RESTRICT s = GetInputRow(input_rows, spot_c_, 0);
-      for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra); x++) {
+      for (ptrdiff_t x = x_start; x < x_end; x++) {
         float mix = scale * s[x];
         p[x] = mix * spot_color_[c] + (1.0f - mix) * p[x];
       }

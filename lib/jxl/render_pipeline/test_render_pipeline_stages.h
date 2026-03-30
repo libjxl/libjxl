@@ -20,10 +20,12 @@ class UpsampleXSlowStage : public RenderPipelineStage {
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(xextra);
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra);
     for (size_t c = 0; c < input_rows.size(); c++) {
       const float* row = GetInputRow(input_rows, c, 0);
       float* row_out = GetOutputRow(output_rows, c, 0);
-      for (int64_t x = -xextra; x < static_cast<int64_t>(xsize + xextra); x++) {
+      for (ptrdiff_t x = x_start; x < x_end; x++) {
         float xp = *(row + x - 1);
         float xc = *(row + x);
         float xn = *(row + x + 1);
@@ -51,13 +53,15 @@ class UpsampleYSlowStage : public RenderPipelineStage {
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(xextra);
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra);
     for (size_t c = 0; c < input_rows.size(); c++) {
       const float* rowp = GetInputRow(input_rows, c, -1);
       const float* rowc = GetInputRow(input_rows, c, 0);
       const float* rown = GetInputRow(input_rows, c, 1);
       float* row_out0 = GetOutputRow(output_rows, c, 0);
       float* row_out1 = GetOutputRow(output_rows, c, 1);
-      for (int64_t x = -xextra; x < static_cast<int64_t>(xsize + xextra); x++) {
+      for (ptrdiff_t x = x_start; x < x_end; x++) {
         float xp = *(rowp + x);
         float xc = *(rowc + x);
         float xn = *(rown + x);

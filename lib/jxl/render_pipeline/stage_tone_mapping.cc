@@ -72,6 +72,8 @@ class ToneMappingStage : public RenderPipelineStage {
     // Other inveriants: !tone_mapper_ means !!hlg_ootf_ and vice-versa.
 
     const HWY_FULL(float) d;
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(xextra);
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra);
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
@@ -79,11 +81,11 @@ class ToneMappingStage : public RenderPipelineStage {
     // All calculations are lane-wise, still some might require
     // value-dependent behaviour (e.g. NearestInt). Temporary unpoison last
     // vector tail.
+    // TODO(eustas): what about xextra?
     msan::UnpoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
-    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-         x += Lanes(d)) {
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(d)) {
       auto r = LoadU(d, row0 + x);
       auto g = LoadU(d, row1 + x);
       auto b = LoadU(d, row2 + x);

@@ -38,13 +38,15 @@ class HorizontalChromaUpsamplingStage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     HWY_FULL(float) df;
-    xextra = RoundUpTo(xextra, Lanes(df));
+    // Make sure "StoreInterleaved" is aligned.
+    ptrdiff_t x_start =
+        -static_cast<ptrdiff_t>(RoundUpTo(DivCeil(xextra, 2), Lanes(df)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + DivCeil(xextra, 2));
     auto threefour = Set(df, 0.75f);
     auto onefour = Set(df, 0.25f);
     const float* row_in = GetInputRow(input_rows, c_, 0);
     float* row_out = GetOutputRow(output_rows, c_, 0);
-    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-         x += Lanes(df)) {
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(df)) {
       auto current = Mul(LoadU(df, row_in + x), threefour);
       auto prev = LoadU(df, row_in + x - 1);
       auto next = LoadU(df, row_in + x + 1);
@@ -77,7 +79,9 @@ class VerticalChromaUpsamplingStage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     HWY_FULL(float) df;
-    xextra = RoundUpTo(xextra, Lanes(df));
+    // Make sure "Store" is aligned.
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(RoundUpTo(xextra, Lanes(df)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra);
     auto threefour = Set(df, 0.75f);
     auto onefour = Set(df, 0.25f);
     const float* row_top = GetInputRow(input_rows, c_, -1);
@@ -85,8 +89,7 @@ class VerticalChromaUpsamplingStage : public RenderPipelineStage {
     const float* row_bot = GetInputRow(input_rows, c_, 1);
     float* row_out0 = GetOutputRow(output_rows, c_, 0);
     float* row_out1 = GetOutputRow(output_rows, c_, 1);
-    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-         x += Lanes(df)) {
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(df)) {
       auto it = LoadU(df, row_top + x);
       auto im = LoadU(df, row_mid + x);
       auto ib = LoadU(df, row_bot + x);

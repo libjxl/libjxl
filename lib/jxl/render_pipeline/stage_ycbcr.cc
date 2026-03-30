@@ -34,6 +34,7 @@ class kYCbCrStage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     const HWY_FULL(float) df;
+    // TODO(eustas): investigate if we need to process xextra for InPlace
 
     // Full-range BT.601 as defined by JFIF Clause 7:
     // https://www.itu.int/rec/T-REC-T.871-201105-I/en

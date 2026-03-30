@@ -32,6 +32,7 @@ class SplineStage : public RenderPipelineStage {
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
+    // TODO(eustas): investigate if we need to process xextra for InPlace
     float* row_x = GetInputRow(input_rows, 0, 0);
     float* row_y = GetInputRow(input_rows, 1, 0);
     float* row_b = GetInputRow(input_rows, 2, 0);

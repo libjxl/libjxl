@@ -181,6 +181,7 @@ class AddNoiseStage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     if (!noise_params_.HasAny()) return true;
+    // TODO(eustas): investigate if we need to process xextra for InPlace
     const StrengthEvalLut noise_model(noise_params_);
     D d;
     const auto half = Set(d, 0.5f);
@@ -263,14 +264,17 @@ class ConvolveNoiseStage : public RenderPipelineStage {
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                     size_t thread_id) const final {
     const HWY_FULL(float) d;
+    // Make sure "Store" is aligned.
+    // TODO(eustas): change StoreU to Store
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(RoundUpTo(xextra, Lanes(d)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra);
     for (size_t c = first_c_; c < first_c_ + 3; c++) {
       float* JXL_RESTRICT rows[5];
       for (size_t i = 0; i < 5; i++) {
         rows[i] = GetInputRow(input_rows, c, i - 2);
       }
       float* JXL_RESTRICT row_out = GetOutputRow(output_rows, c, 0);
-      for (ptrdiff_t x = -RoundUpTo(xextra, Lanes(d));
-           x < static_cast<ptrdiff_t>(xsize + xextra); x += Lanes(d)) {
+      for (ptrdiff_t x = x_start; x < x_end; x += Lanes(d)) {
         const auto p00 = LoadU(d, rows[2] + x);
         auto others = Zero(d);
         // TODO(eustas): sum loaded values to reduce the calculation chain
