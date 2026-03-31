@@ -45,6 +45,40 @@ enum class RenderPipelineChannelMode {
 
 class RenderPipeline;
 
+/*
+   RenderPipelineStage implementations
+
+  +---------------------------------+---+---+---+---+-------------------------+
+  | class                           | b | b | x | y | mode                    |
+  |                                 | x | y | s | s |                         |
+  +---------------------------------+---+---+---+---+-------------------------|
+  | UpsamplingStage                 | 2 | 2 | N | N | InOut, Ignored          |
+  | HorizontalChromaUpsamplingStage | 1 | 0 | 1 | 0 | InOut, Ignored          |
+  | VerticalChromaUpsamplingStage   | 0 | 1 | 0 | 1 | InOut, Ignored          |
+  | UpsampleXSlowStage (test)       | 1 | 0 | 1 | 0 | InOut                   |
+  | UpsampleYSlowStage (test)       | 0 | 1 | 0 | 1 | InOut                   |
+  | EPF0Stage                       | 3 | 3 | 0 | 0 | InOut, Ignored          |
+  | EPF1Stage                       | 2 | 2 | 0 | 0 | InOut, Ignored          |
+  | EPF2Stage                       | 1 | 1 | 0 | 0 | InOut, Ignored          |
+  | ConvolveNoiseStage              | 2 | 2 | 0 | 0 | InOut, Ignored          |
+  | GaborishStage                   | 1 | 1 | 0 | 0 | InOut, Ignored          |
+  | BlendingStage                   | 0 | 0 | 0 | 0 | InPlace                 |
+  | CmsStage                        | 0 | 0 | 0 | 0 | InPlace, Ignored        |
+  | FromLinearStage                 | 0 | 0 | 0 | 0 | InPlace, Ignored        |
+  | AddNoiseStage                   | 0 | 0 | 0 | 0 | Input, InPlace, Ignored |
+  | PatchDictionaryStage            | 0 | 0 | 0 | 0 | InPlace, Ignored        |
+  | SplineStage                     | 0 | 0 | 0 | 0 | InPlace, Ignored        |
+  | SpotColorStage                  | 0 | 0 | 0 | 0 | InPlace, Input, Ignored |
+  | ToLinearStage                   | 0 | 0 | 0 | 0 | InPlace, Ignored        |
+  | ToneMappingStage                | 0 | 0 | 0 | 0 | InPlace, Ignored        |
+  | WriteToOutputStage              | 0 | 0 | 0 | 0 | Input, Ignored          |
+  | WriteToImageBundleStage         | 0 | 0 | 0 | 0 | Input                   |
+  | WriteToImage3FStage             | 0 | 0 | 0 | 0 | Input, Ignored          |
+  | XYBStage                        | 0 | 0 | 0 | 0 | InPlace, Ignored        |
+  | kYCbCrStage                     | 0 | 0 | 0 | 0 | InPlace, Ignored        |
+  | Check0FinalStage (test)         | 0 | 0 | 0 | 0 | Input                   |
+  +---------------------------------+---+---+---+---+-------------------------+
+*/
 class RenderPipelineStage {
  protected:
   using Row = float*;
@@ -85,7 +119,7 @@ class RenderPipelineStage {
     }
 
     static Settings SymmetricBorderOnly(size_t border) {
-      return Symmetric(0, border);
+      return Symmetric(/*shift=*/0, border);
     }
   };
 

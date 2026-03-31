@@ -353,6 +353,8 @@ Status LowMemoryRenderPipeline::Init() {
   }
 
   virtual_ypadding_for_output_.resize(stages_.size());
+  // How many "xextra" pixels to be processed by the stage to have enough
+  // "xextra" plus "border_x" pixels initialized for the next stage(s).
   xpadding_for_output_.resize(stages_.size());
   for (size_t c = 0; c < shifts.size(); c++) {
     int ypad = 0;
