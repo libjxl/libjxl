@@ -269,7 +269,7 @@ jobs:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+    - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -361,17 +361,25 @@ jobs:
       shell: 'bash'
       if: matrix.upload != 'OFF'
       run: |
-        7z -mx a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
-        7z -mx a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
+        7z -mx=9 -mfb=273 -mmt=1 -ms=on a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
+        7z -mx=9 a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
 
-    - name: Upload release
+    - name: Upload ZIP release 
       if: matrix.upload != 'OFF'
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: jxl-${{matrix.triplet}}
         path: |
-          jxl-${{matrix.triplet}}.7z
           jxl-${{matrix.triplet}}.zip
+        compression-level: 0
+
+    - name: Upload 7Z release 
+      if: matrix.upload != 'OFF'
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      with:
+        name: jxl-${{matrix.triplet}}-7z
+        path: |
+          jxl-${{matrix.triplet}}.7z
         compression-level: 0
 
 
