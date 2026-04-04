@@ -552,7 +552,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
         cparams_.options.max_properties,
         static_cast<int>(
             frame_header.nonserialized_metadata->m.num_extra_channels) +
-            (frame_header.encoding == FrameEncoding::kModular ? 2 : -1));
+            (frame_header.nonserialized_metadata->m.color_encoding.IsGray() ? 0 : 2));
     switch (cparams_.speed_tier) {
       case SpeedTier::kHare:
         cparams_.options.splitting_heuristics_properties.assign(
