@@ -23,6 +23,8 @@ target_include_directories(jxl_cms PRIVATE
 generate_export_header(jxl_cms
   BASE_NAME JXL_CMS
   EXPORT_FILE_NAME include/jxl/jxl_cms_export.h)
+target_compile_definitions(jxl_cms PUBLIC
+  "$<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:JXL_CMS_STATIC_DEFINE>")
 target_include_directories(jxl_cms BEFORE PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>")
 
