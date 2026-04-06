@@ -818,8 +818,8 @@ Status RoundtripPatchFrame(Image3F* reference_frame,
   cparams.progressive_mode = Override::kOff;
   cparams.qprogressive_mode = Override::kOff;
   // Try all predictors except Weighted due to decode speed.
-  cparams.options.predictor = Predictor::Variable;
-  cparams.options.wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  cparams_attempt.options.predictor = Predictor::Zero;
+  cparams_attempt.options.nb_repeats = 0;
   patch_frame_info.save_as_reference = idx;  // always saved.
   patch_frame_info.frame_type = FrameType::kReferenceOnly;
   patch_frame_info.save_before_color_transform = true;
