@@ -1106,9 +1106,10 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
 
   JXL_RETURN_IF_ERROR(
       ComputeJPEGContextMap(jpeg_data, enc_state, total_dc, dc_counts, qt));
-  if (enc_state->cparams.speed_tier <= SpeedTier::kSquirrel /*kKitten*/) {
+  if (enc_state->cparams.speed_tier <= SpeedTier::kSquirrel) {
     JXL_RETURN_IF_ERROR(OptimizeJPEGContextMap(
-        jpeg_data, frame_header, enc_state->shared.block_ctx_map, pool));
+        jpeg_data, enc_state->cparams.speed_tier,
+        enc_state->shared.block_ctx_map, pool));
   }
 
   // disable DC frame for now

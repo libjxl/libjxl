@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -26,7 +27,6 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/enc_ans_params.h"
-#include "lib/jxl/frame_header.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
@@ -69,6 +69,60 @@ struct ThresholdSet {
   const Thresholds& TCb() const { return T[1]; }
   Thresholds& TCr() { return T[2]; }
   const Thresholds& TCr() const { return T[2]; }
+};
+
+struct JPEGCtxEffortParams {
+  uint32_t keep_top_k;
+  uint32_t rank_m_target;
+  uint32_t rank_iters;
+  uint32_t final_m_target;
+  uint32_t final_iters;
+  bool overhead_aware_tail;
+  uint32_t refine_iters;
+  ptrdiff_t refine_radius;
+
+  static JPEGCtxEffortParams FromSpeedTier(SpeedTier speed_tier) {
+    switch (speed_tier) {
+      case SpeedTier::kSquirrel:
+        return {/*keep_top_k=*/4,
+                /*rank_m_target=*/0,
+                /*rank_iters=*/0,
+                /*final_m_target=*/64,
+                /*final_iters=*/2,
+                /*overhead_aware_tail=*/false,
+                /*refine_iters=*/0,
+                /*refine_radius=*/0};
+      case SpeedTier::kKitten:
+        return {/*keep_top_k=*/6,
+                /*rank_m_target=*/64,
+                /*rank_iters=*/1,
+                /*final_m_target=*/128,
+                /*final_iters=*/4,
+                /*overhead_aware_tail=*/true,
+                /*refine_iters=*/1,
+                /*refine_radius=*/4};
+      case SpeedTier::kTortoise:
+        return {/*keep_top_k=*/12,
+                /*rank_m_target=*/128,
+                /*rank_iters=*/2,
+                /*final_m_target=*/256,
+                /*final_iters=*/8,
+                /*overhead_aware_tail=*/true,
+                /*refine_iters=*/2,
+                /*refine_radius=*/8};
+      case SpeedTier::kTectonicPlate:
+      case SpeedTier::kGlacier:
+      default:
+        return {/*keep_top_k=*/0,
+                /*rank_m_target=*/0,
+                /*rank_iters=*/0,
+                /*final_m_target=*/kMTarget,
+                /*final_iters=*/20,
+                /*overhead_aware_tail=*/true,
+                /*refine_iters=*/5,
+                /*refine_radius=*/16};
+    }
+  }
 };
 
 struct JPEGOptData {
@@ -849,12 +903,11 @@ struct PartitioningCtx {
           mask &= mask - 1;
           auto& hist = ch[ci];
           uint32_t total = 0;
-          for (size_t hi = 0; hi < hist.size(); hi++) total += hist[hi].second;
+          for (const auto& hi : hist) total += hi.second;
           uint32_t j_before_l = 0;
           uint32_t l = 1;
           int64_t prev_term = 0;
-          for (size_t hi = 0; hi < hist.size(); hi++) {
-            const Bin& h = hist[hi];
+          for (const auto& h : hist) {
             int64_t term =
                 sign * (d.ftab[j_before_l] + d.ftab[total - j_before_l]);
             costs[l] += term - prev_term;
@@ -1189,7 +1242,9 @@ struct PartitioningCtx {
     SparseHistogram hist_nz_N;
 
     Status AgglomerativeClusterCore(const JPEGOptData& d, uint32_t total_ctxs,
-                                    uint32_t num_clusters, ThreadPool* pool) {
+                                    uint32_t num_clusters,
+                                    bool overhead_aware_tail,
+                                    ThreadPool* pool) {
       num_clusters = std::max(num_clusters, uint32_t{1});
       ctx_map.assign(total_ctxs, 0);
 
@@ -1219,18 +1274,10 @@ struct PartitioningCtx {
       std::vector<uint32_t> initial_active = active;
 
       uint32_t active_clusters = static_cast<uint32_t>(active.size());
-      if (active_clusters <= num_clusters) {
-        ctx_num = active_clusters;
-        uint32_t cluster_ind = 0;
-        for (uint32_t active_ctx : active) ctx_map[active_ctx] = cluster_ind++;
-        clustered_cost = initial_cost;
-        return true;
-      }
-
       std::vector<uint32_t> parent(total_ctxs);
       std::iota(parent.begin(), parent.end(), 0);
 
-      std::vector<int64_t> deltas(total_ctxs * total_ctxs, 0);
+      std::vector<int64_t> deltas;
       auto get_delta = [&](uint32_t cl_a, uint32_t cl_b) -> int64_t& {
         return deltas[std::min(cl_a, cl_b) * total_ctxs + std::max(cl_a, cl_b)];
       };
@@ -1268,15 +1315,19 @@ struct PartitioningCtx {
         return delta;
       };
 
-      JXL_RETURN_IF_ERROR(RunOnPool(
-          pool, 0, active_clusters - 1, ThreadPool::NoInit,
-          [&](uint32_t i, size_t) -> Status {
-            uint32_t id_i = active[i];
-            for (uint32_t j = i + 1; j < active_clusters; j++)
-              get_delta(id_i, active[j]) = merge_delta(id_i, active[j]);
-            return true;
-          },
-          "MergeDelta"));
+      if (active_clusters > 1) {
+        deltas.assign(total_ctxs * total_ctxs, 0);
+        JXL_RETURN_IF_ERROR(RunOnPool(
+            pool, 0, active_clusters - 1, ThreadPool::NoInit,
+            [&](uint32_t i, size_t) -> Status {
+              uint32_t id_i = active[i];
+              for (uint32_t j = i + 1; j < active_clusters; j++) {
+                get_delta(id_i, active[j]) = merge_delta(id_i, active[j]);
+              }
+              return true;
+            },
+            "MergeDelta"));
+      }
 
       auto find_best_merge = [&](size_t& best_i, size_t& best_j,
                                  int64_t& best_delta) -> Status {
@@ -1359,78 +1410,80 @@ struct PartitioningCtx {
         JXL_RETURN_IF_ERROR(update_distances(a_id));
       }
 
-      // On small images max number of clusters can be an overkkill and
-      // gains will be nullified by the signalling cost. To avoid this problem
-      // we continue greedy agglomeration from current state while
-      // entropy + signalling overhead drops.
-      int64_t best_total_cost = std::numeric_limits<int64_t>::max();
-      JXL_ASSIGN_OR_RETURN(int64_t initial_overhead,
-                           ComputeSignallingOverhead());
-      best_total_cost = current_entropy_cost + initial_overhead;
+      if (overhead_aware_tail) {
+        // On small images max number of clusters can be an overkkill and
+        // gains will be nullified by the signalling cost. To avoid this problem
+        // we continue greedy agglomeration from current state while
+        // entropy + signalling overhead drops.
+        int64_t best_total_cost = std::numeric_limits<int64_t>::max();
+        JXL_ASSIGN_OR_RETURN(int64_t initial_overhead,
+                             ComputeSignallingOverhead());
+        best_total_cost = current_entropy_cost + initial_overhead;
 
-      while (active_clusters > 1) {
-        size_t best_i = 0;
-        size_t best_j = 1;
-        int64_t best_delta = 0;
-        JXL_RETURN_IF_ERROR(find_best_merge(best_i, best_j, best_delta));
+        while (active_clusters > 1) {
+          size_t best_i = 0;
+          size_t best_j = 1;
+          int64_t best_delta = 0;
+          JXL_RETURN_IF_ERROR(find_best_merge(best_i, best_j, best_delta));
 
-        uint32_t a_id = active[best_i];
-        uint32_t b_id = active[best_j];
-        int64_t old_Ea = E[a_id];
-        uint32_t old_parent_b = parent[b_id];
-        std::vector<uint32_t> old_active = active;
-        uint32_t old_active_clusters = active_clusters;
-        auto old_hist_N_a = hist_N[a_id];
-        auto old_hist_h_a = hist_h[a_id];
-        auto old_hist_nz_N_a = hist_nz_N[a_id];
-        auto old_hist_nz_h_a = hist_nz_h[a_id];
-        std::unordered_map<uint32_t, uint32_t> old_hist_N_b;
-        std::unordered_map<uint32_t, uint32_t> old_hist_h_b;
-        std::unordered_map<uint32_t, uint32_t> old_hist_nz_N_b;
-        std::unordered_map<uint32_t, uint32_t> old_hist_nz_h_b;
-        old_hist_N_b.swap(hist_N[b_id]);
-        old_hist_h_b.swap(hist_h[b_id]);
-        old_hist_nz_N_b.swap(hist_nz_N[b_id]);
-        old_hist_nz_h_b.swap(hist_nz_h[b_id]);
+          uint32_t a_id = active[best_i];
+          uint32_t b_id = active[best_j];
+          int64_t old_Ea = E[a_id];
+          uint32_t old_parent_b = parent[b_id];
+          std::vector<uint32_t> old_active = active;
+          uint32_t old_active_clusters = active_clusters;
+          auto old_hist_N_a = hist_N[a_id];
+          auto old_hist_h_a = hist_h[a_id];
+          auto old_hist_nz_N_a = hist_nz_N[a_id];
+          auto old_hist_nz_h_a = hist_nz_h[a_id];
+          std::unordered_map<uint32_t, uint32_t> old_hist_N_b;
+          std::unordered_map<uint32_t, uint32_t> old_hist_h_b;
+          std::unordered_map<uint32_t, uint32_t> old_hist_nz_N_b;
+          std::unordered_map<uint32_t, uint32_t> old_hist_nz_h_b;
+          old_hist_N_b.swap(hist_N[b_id]);
+          old_hist_h_b.swap(hist_h[b_id]);
+          old_hist_nz_N_b.swap(hist_nz_N[b_id]);
+          old_hist_nz_h_b.swap(hist_nz_h[b_id]);
 
-        E[a_id] += E[b_id] + best_delta;
-        for (const auto& bin : old_hist_N_b)
-          hist_N[a_id][bin.first] += bin.second;
-        for (const auto& bin : old_hist_h_b)
-          hist_h[a_id][bin.first] += bin.second;
-        for (const auto& bin : old_hist_nz_N_b)
-          hist_nz_N[a_id][bin.first] += bin.second;
-        for (const auto& bin : old_hist_nz_h_b)
-          hist_nz_h[a_id][bin.first] += bin.second;
-        parent[b_id] = a_id;
-        std::swap(active[best_j], active.back());
-        active.pop_back();
-        --active_clusters;
-        current_entropy_cost += best_delta;
-        JXL_RETURN_IF_ERROR(update_distances(a_id));
+          E[a_id] += E[b_id] + best_delta;
+          for (const auto& bin : old_hist_N_b)
+            hist_N[a_id][bin.first] += bin.second;
+          for (const auto& bin : old_hist_h_b)
+            hist_h[a_id][bin.first] += bin.second;
+          for (const auto& bin : old_hist_nz_N_b)
+            hist_nz_N[a_id][bin.first] += bin.second;
+          for (const auto& bin : old_hist_nz_h_b)
+            hist_nz_h[a_id][bin.first] += bin.second;
+          parent[b_id] = a_id;
+          std::swap(active[best_j], active.back());
+          active.pop_back();
+          --active_clusters;
+          current_entropy_cost += best_delta;
+          JXL_RETURN_IF_ERROR(update_distances(a_id));
 
-        JXL_ASSIGN_OR_RETURN(int64_t overhead, ComputeSignallingOverhead());
-        int64_t merged_total_cost = current_entropy_cost + overhead;
-        if (merged_total_cost < best_total_cost) {
-          best_total_cost = merged_total_cost;
-          continue;
+          JXL_ASSIGN_OR_RETURN(int64_t overhead, ComputeSignallingOverhead());
+          int64_t merged_total_cost = current_entropy_cost + overhead;
+          if (merged_total_cost < best_total_cost) {
+            best_total_cost = merged_total_cost;
+            continue;
+          }
+
+          // Roll back the rejected merge and stop.
+          active = std::move(old_active);
+          active_clusters = old_active_clusters;
+          E[a_id] = old_Ea;
+          parent[b_id] = old_parent_b;
+          hist_N[a_id] = std::move(old_hist_N_a);
+          hist_h[a_id] = std::move(old_hist_h_a);
+          hist_nz_N[a_id] = std::move(old_hist_nz_N_a);
+          hist_nz_h[a_id] = std::move(old_hist_nz_h_a);
+          hist_N[b_id].swap(old_hist_N_b);
+          hist_h[b_id].swap(old_hist_h_b);
+          hist_nz_N[b_id].swap(old_hist_nz_N_b);
+          hist_nz_h[b_id].swap(old_hist_nz_h_b);
+          current_entropy_cost -= best_delta;
+          break;
         }
-
-        // Roll back the rejected merge and stop.
-        active = std::move(old_active);
-        active_clusters = old_active_clusters;
-        E[a_id] = old_Ea;
-        parent[b_id] = old_parent_b;
-        hist_N[a_id] = std::move(old_hist_N_a);
-        hist_h[a_id] = std::move(old_hist_h_a);
-        hist_nz_N[a_id] = std::move(old_hist_nz_N_a);
-        hist_nz_h[a_id] = std::move(old_hist_nz_h_a);
-        hist_N[b_id].swap(old_hist_N_b);
-        hist_h[b_id].swap(old_hist_h_b);
-        hist_nz_N[b_id].swap(old_hist_nz_N_b);
-        hist_nz_h[b_id].swap(old_hist_nz_h_b);
-        current_entropy_cost -= best_delta;
-        break;
       }
 
       clustered_cost = 0;
@@ -1689,6 +1742,7 @@ struct PartitioningCtx {
 
   StatusOr<Clustering> ClusterContexts(const ThresholdSet& thresholds,
                                        uint32_t num_clusters = kMaxClusters,
+                                       bool overhead_aware_tail = true,
                                        ThreadPool* pool = nullptr) {
     const JPEGOptData& d = data();
     uint32_t n0 = static_cast<uint32_t>(thresholds.TY().size() + 1);
@@ -1762,8 +1816,8 @@ struct PartitioningCtx {
       }
     }
 
-    JXL_RETURN_IF_ERROR(
-        cl.AgglomerativeClusterCore(d, total_ctxs, num_clusters, pool));
+    JXL_RETURN_IF_ERROR(cl.AgglomerativeClusterCore(d, total_ctxs, num_clusters,
+                                                    overhead_aware_tail, pool));
     return cl;
   }
 
@@ -2167,24 +2221,101 @@ double bit_cost(int64_t cost) { return static_cast<double>(cost) / kFScale; }
 }  // namespace
 
 Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
-                              const FrameHeader& frame_header,
-                              BlockCtxMap& ctx_map, ThreadPool* pool) {
+                              SpeedTier speed_tier, BlockCtxMap& ctx_map,
+                              ThreadPool* pool) {
   auto opt_data = std::make_shared<JPEGOptData>();
   JXL_RETURN_IF_ERROR(opt_data->BuildFromJPEG(jpeg_data, pool));
+  const JPEGCtxEffortParams effort =
+      JPEGCtxEffortParams::FromSpeedTier(speed_tier);
 
   auto factorizations = opt_data->MaximalFactorizations();
   if (factorizations.empty()) return true;
   JXL_DEBUG_V(2, "Searching %i maximal factorizations\n",
               static_cast<int>(factorizations.size()));
 
+  struct FactorizationCandidate {
+    uint32_t a;
+    uint32_t b;
+    uint32_t c;
+    ThresholdSet init;
+    int64_t rank_cost = std::numeric_limits<int64_t>::max();
+  };
+
+  std::vector<FactorizationCandidate> candidates;
+  candidates.reserve(factorizations.size());
+  for (const auto& factorization : factorizations) {
+    FactorizationCandidate candidate;
+    candidate.a = std::get<0>(factorization);
+    candidate.b = std::get<1>(factorization);
+    candidate.c = std::get<2>(factorization);
+    candidate.init.T[0] = opt_data->InitThresh(0, candidate.a);
+    candidate.init.T[1] = opt_data->InitThresh(1, candidate.b);
+    candidate.init.T[2] = opt_data->InitThresh(2, candidate.c);
+    candidates.push_back(std::move(candidate));
+  }
+
+  if (effort.keep_top_k != 0 && candidates.size() > effort.keep_top_k) {
+    std::vector<PartitioningCtx> rank_ctx_pool;
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, static_cast<uint32_t>(candidates.size()),
+        [&](size_t num_threads) -> Status {
+          rank_ctx_pool.reserve(num_threads);
+          for (size_t i = 0; i < num_threads; ++i) {
+            rank_ctx_pool.emplace_back(opt_data);
+          }
+          return true;
+        },
+        [&](uint32_t idx, size_t thread_id) -> Status {
+          FactorizationCandidate& candidate = candidates[idx];
+          PartitioningCtx& ctx = rank_ctx_pool[thread_id];
+          candidate.rank_cost =
+              (effort.rank_iters == 0)
+                  ? ctx.TotalCost(candidate.init)
+                  : ctx.OptimizeThresholds(candidate.init, effort.rank_m_target,
+                                           effort.rank_iters)
+                        .first;
+          return true;
+        },
+        "JpegCtxRank"));
+
+    auto better_candidate = [](const FactorizationCandidate& lhs,
+                               const FactorizationCandidate& rhs) {
+      if (lhs.rank_cost != rhs.rank_cost) return lhs.rank_cost < rhs.rank_cost;
+      const uint32_t lhs_cells = lhs.a * lhs.b * lhs.c;
+      const uint32_t rhs_cells = rhs.a * rhs.b * rhs.c;
+      if (lhs_cells != rhs_cells) return lhs_cells > rhs_cells;
+      if (lhs.a != rhs.a) return lhs.a > rhs.a;
+      return std::tie(lhs.a, lhs.b, lhs.c) < std::tie(rhs.a, rhs.b, rhs.c);
+    };
+    std::stable_sort(candidates.begin(), candidates.end(), better_candidate);
+    candidates.resize(effort.keep_top_k);
+  }
+
+  JXL_DEBUG_V(2,
+              "JPEG ctx effort at speed tier %i: %i candidates, rank_iters=%u "
+              "final_iters=%u refine_iters=%u\n",
+              static_cast<int>(speed_tier), static_cast<int>(candidates.size()),
+              effort.rank_iters, effort.final_iters, effort.refine_iters);
+
   int64_t best_cost = std::numeric_limits<int64_t>::max();
   ThresholdSet best_thr;
   ContextMap best_ctx;
   std::mutex mu;
 
+  auto compute_nz_cost = [&](const PartitioningCtx::Clustering& clustering) {
+    int64_t nz_cost = 0;
+    for (const auto& cl_N : clustering.hist_nz_N) {
+      for (const auto& bin : cl_N) nz_cost += opt_data->nz_entropy(bin.second);
+    }
+    for (const auto& cl_h : clustering.hist_nz_h) {
+      for (const auto& bin : cl_h) nz_cost -= opt_data->nz_entropy(bin.second);
+    }
+    return nz_cost;
+  };
+
   std::vector<PartitioningCtx> ctx_pool;
   JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, static_cast<uint32_t>(factorizations.size()),
+      pool, 0, static_cast<uint32_t>(candidates.size()),
       [&](size_t num_threads) -> Status {
         ctx_pool.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i) {
@@ -2193,30 +2324,38 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
         return true;
       },
       [&](uint32_t idx, size_t thread_id) -> Status {
-        uint32_t a = std::get<0>(factorizations[idx]);
-        uint32_t b = std::get<1>(factorizations[idx]);
-        uint32_t c = std::get<2>(factorizations[idx]);
+        const FactorizationCandidate& candidate = candidates[idx];
+        uint32_t a = candidate.a;
+        uint32_t b = candidate.b;
+        uint32_t c = candidate.c;
         PartitioningCtx& ctx = ctx_pool[thread_id];
-        ThresholdSet init;
-        init.T[0] = opt_data->InitThresh(0, a);
-        init.T[1] = opt_data->InitThresh(1, b);
-        init.T[2] = opt_data->InitThresh(2, c);
-
-        auto opt_result = ctx.OptimizeThresholds(init, kMTarget /*2048 64*/);
+        auto opt_result = ctx.OptimizeThresholds(
+            candidate.init, effort.final_m_target, effort.final_iters);
 
         PartitioningCtx::Clustering cl_result;
         JXL_ASSIGN_OR_RETURN(
-            cl_result,
-            ctx.ClusterContexts(
-                opt_result.second,
-                kMaxClusters - (jpeg_data.components.size() == 1), nullptr));
+            cl_result, ctx.ClusterContexts(
+                           opt_result.second,
+                           kMaxClusters - (jpeg_data.components.size() == 1),
+                           effort.overhead_aware_tail, nullptr));
         ContextMap& cluster_map = cl_result.ctx_map;
 
-        auto refine_result =
-            ctx.RefineClustered(opt_result.second, cl_result, 5, 16);
-        ThresholdSet refined_thr =
-            refine_result.thresholds;  // opt_result.second;
-        int64_t total_cost = refine_result.cost;
+        ThresholdSet refined_thr;
+        int64_t entropy_cost = 0;
+        int64_t nz_cost = 0;
+        if (effort.refine_iters == 0) {
+          refined_thr = cl_result.PruneDeadThresholds(opt_result.second);
+          entropy_cost = cl_result.clustered_cost;
+          nz_cost = compute_nz_cost(cl_result);
+        } else {
+          auto refine_result =
+              ctx.RefineClustered(opt_result.second, cl_result,
+                                  effort.refine_iters, effort.refine_radius);
+          refined_thr = refine_result.thresholds;
+          entropy_cost = refine_result.cost;
+          nz_cost = refine_result.nz_cost;
+        }
+        int64_t total_cost = entropy_cost;
 
         // Add signalling overhead for histogram headers
         int64_t overhead = 0;
@@ -2233,9 +2372,8 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
             "(%u,%u,%u) cost: unclustered=%.2f clustered=%.2f "
             "refined=%.2f nz=%.2f overhead=%.2f total=%.2f\n",
             a, b, c, bit_cost(opt_result.first),
-            bit_cost(cl_result.clustered_cost), bit_cost(refine_result.cost),
-            bit_cost(refine_result.nz_cost), bit_cost(overhead),
-            bit_cost(total_cost));
+            bit_cost(cl_result.clustered_cost), bit_cost(entropy_cost),
+            bit_cost(nz_cost), bit_cost(overhead), bit_cost(total_cost));
         if (total_cost < best_cost) {
           best_cost = total_cost;
           best_thr = refined_thr;

@@ -9,7 +9,7 @@
 #include "lib/jxl/ac_context.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/frame_header.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
@@ -19,7 +19,7 @@ namespace jxl {
 // JPEG AC coefficients by finding optimal DC thresholds
 // and clustering similar contexts together.
 Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
-                              const FrameHeader& frame_header,
+                              SpeedTier speed_tier,
                               BlockCtxMap& ctx_map, ThreadPool* pool);
 
 }  // namespace jxl
