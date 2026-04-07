@@ -336,6 +336,8 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_fields.h
   jxl/enc_frame.cc
   jxl/enc_frame.h
+  jxl/enc_jpeg_frame.cc
+  jxl/enc_jpeg_frame.h
   jxl/enc_gaborish.cc
   jxl/enc_gaborish.h
   jxl/enc_gamma_correct.h

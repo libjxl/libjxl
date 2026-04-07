@@ -1278,10 +1278,11 @@ struct PartitioningCtx {
           },
           "MergeDelta"));
 
-      do {
-        int64_t best_delta = std::numeric_limits<int64_t>::max();
-        size_t best_i = 0;
-        size_t best_j = 1;
+      auto find_best_merge = [&](size_t& best_i, size_t& best_j,
+                                 int64_t& best_delta) -> Status {
+        best_delta = std::numeric_limits<int64_t>::max();
+        best_i = 0;
+        best_j = 1;
         std::mutex best_mtx;
 
         JXL_RETURN_IF_ERROR(RunOnPool(
@@ -1306,7 +1307,12 @@ struct PartitioningCtx {
               return true;
             },
             "FindBestMerge"));
+        return true;
+      };
 
+      auto apply_merge =
+          [&](size_t best_i, size_t best_j,
+              int64_t best_delta) -> std::pair<uint32_t, uint32_t> {
         uint32_t a_id = active[best_i];
         uint32_t b_id = active[best_j];
         E[a_id] += E[b_id] + best_delta;
@@ -1316,27 +1322,121 @@ struct PartitioningCtx {
           hist_nz_N[a_id][bin.first] += bin.second;
         for (auto bin : hist_nz_h[b_id])
           hist_nz_h[a_id][bin.first] += bin.second;
+        hist_N[b_id].clear();
+        hist_h[b_id].clear();
+        hist_nz_N[b_id].clear();
+        hist_nz_h[b_id].clear();
         parent[b_id] = a_id;
         std::swap(active[best_j], active.back());
         active.pop_back();
-
         --active_clusters;
-        if (active_clusters > num_clusters) {
-          JXL_RETURN_IF_ERROR(RunOnPool(
-              pool, 0, active_clusters, ThreadPool::NoInit,
-              [&](uint32_t k, size_t) -> Status {
-                if (active[k] != a_id)
-                  get_delta(a_id, active[k]) = merge_delta(a_id, active[k]);
-                return true;
-              },
-              "UpdateDist"));
+        return {a_id, b_id};
+      };
+
+      auto update_distances = [&](uint32_t a_id) -> Status {
+        if (active_clusters <= 1) return true;
+        JXL_RETURN_IF_ERROR(RunOnPool(
+            pool, 0, active_clusters, ThreadPool::NoInit,
+            [&](uint32_t k, size_t) -> Status {
+              if (active[k] != a_id)
+                get_delta(a_id, active[k]) = merge_delta(a_id, active[k]);
+              return true;
+            },
+            "UpdateDist"));
+        return true;
+      };
+
+      int64_t current_entropy_cost = initial_cost;
+      while (active_clusters > num_clusters) {
+        size_t best_i = 0;
+        size_t best_j = 1;
+        int64_t best_delta = 0;
+        JXL_RETURN_IF_ERROR(find_best_merge(best_i, best_j, best_delta));
+        std::pair<uint32_t, uint32_t> merged =
+            apply_merge(best_i, best_j, best_delta);
+        uint32_t a_id = merged.first;
+        current_entropy_cost += best_delta;
+        JXL_RETURN_IF_ERROR(update_distances(a_id));
+      }
+
+      // On small images max number of clusters can be an overkkill and
+      // gains will be nullified by the signalling cost. To avoid this problem
+      // we continue greedy agglomeration from current state while
+      // entropy + signalling overhead drops.
+      int64_t best_total_cost = std::numeric_limits<int64_t>::max();
+      JXL_ASSIGN_OR_RETURN(int64_t initial_overhead,
+                           ComputeSignallingOverhead());
+      best_total_cost = current_entropy_cost + initial_overhead;
+
+      while (active_clusters > 1) {
+        size_t best_i = 0;
+        size_t best_j = 1;
+        int64_t best_delta = 0;
+        JXL_RETURN_IF_ERROR(find_best_merge(best_i, best_j, best_delta));
+
+        uint32_t a_id = active[best_i];
+        uint32_t b_id = active[best_j];
+        int64_t old_Ea = E[a_id];
+        uint32_t old_parent_b = parent[b_id];
+        std::vector<uint32_t> old_active = active;
+        uint32_t old_active_clusters = active_clusters;
+        auto old_hist_N_a = hist_N[a_id];
+        auto old_hist_h_a = hist_h[a_id];
+        auto old_hist_nz_N_a = hist_nz_N[a_id];
+        auto old_hist_nz_h_a = hist_nz_h[a_id];
+        std::unordered_map<uint32_t, uint32_t> old_hist_N_b;
+        std::unordered_map<uint32_t, uint32_t> old_hist_h_b;
+        std::unordered_map<uint32_t, uint32_t> old_hist_nz_N_b;
+        std::unordered_map<uint32_t, uint32_t> old_hist_nz_h_b;
+        old_hist_N_b.swap(hist_N[b_id]);
+        old_hist_h_b.swap(hist_h[b_id]);
+        old_hist_nz_N_b.swap(hist_nz_N[b_id]);
+        old_hist_nz_h_b.swap(hist_nz_h[b_id]);
+
+        E[a_id] += E[b_id] + best_delta;
+        for (const auto& bin : old_hist_N_b)
+          hist_N[a_id][bin.first] += bin.second;
+        for (const auto& bin : old_hist_h_b)
+          hist_h[a_id][bin.first] += bin.second;
+        for (const auto& bin : old_hist_nz_N_b)
+          hist_nz_N[a_id][bin.first] += bin.second;
+        for (const auto& bin : old_hist_nz_h_b)
+          hist_nz_h[a_id][bin.first] += bin.second;
+        parent[b_id] = a_id;
+        std::swap(active[best_j], active.back());
+        active.pop_back();
+        --active_clusters;
+        current_entropy_cost += best_delta;
+        JXL_RETURN_IF_ERROR(update_distances(a_id));
+
+        JXL_ASSIGN_OR_RETURN(int64_t overhead, ComputeSignallingOverhead());
+        int64_t merged_total_cost = current_entropy_cost + overhead;
+        if (merged_total_cost < best_total_cost) {
+          best_total_cost = merged_total_cost;
+          continue;
         }
-      } while (active_clusters > num_clusters);
+
+        // Roll back the rejected merge and stop.
+        active = std::move(old_active);
+        active_clusters = old_active_clusters;
+        E[a_id] = old_Ea;
+        parent[b_id] = old_parent_b;
+        hist_N[a_id] = std::move(old_hist_N_a);
+        hist_h[a_id] = std::move(old_hist_h_a);
+        hist_nz_N[a_id] = std::move(old_hist_nz_N_a);
+        hist_nz_h[a_id] = std::move(old_hist_nz_h_a);
+        hist_N[b_id].swap(old_hist_N_b);
+        hist_h[b_id].swap(old_hist_h_b);
+        hist_nz_N[b_id].swap(old_hist_nz_N_b);
+        hist_nz_h[b_id].swap(old_hist_nz_h_b);
+        current_entropy_cost -= best_delta;
+        break;
+      }
 
       clustered_cost = 0;
       for (unsigned int k : active) clustered_cost += E[k];
 
-      ctx_num = num_clusters;
+      ctx_num = active_clusters;
       std::function<uint32_t(uint32_t)> find_cluster =
           [&parent, &find_cluster](uint32_t ctx) -> uint32_t {
         return parent[ctx] == ctx ? ctx
@@ -1347,19 +1447,19 @@ struct PartitioningCtx {
                      active.begin();
       }
       // Save cluster histograms
-      SparseHistogram tmp(num_clusters);
+      SparseHistogram tmp(active_clusters);
       uint32_t ind = 0;
       for (uint32_t i : active) tmp[ind++].swap(hist_h[i]);
       hist_h.swap(tmp);
-      tmp.assign(num_clusters, {});
+      tmp.assign(active_clusters, {});
       ind = 0;
       for (uint32_t i : active) tmp[ind++].swap(hist_N[i]);
       hist_N.swap(tmp);
-      tmp.assign(num_clusters, {});
+      tmp.assign(active_clusters, {});
       ind = 0;
       for (uint32_t i : active) tmp[ind++].swap(hist_nz_h[i]);
       hist_nz_h.swap(tmp);
-      tmp.assign(num_clusters, {});
+      tmp.assign(active_clusters, {});
       ind = 0;
       for (uint32_t i : active) tmp[ind++].swap(hist_nz_N[i]);
       hist_nz_N.swap(tmp);
@@ -1367,61 +1467,48 @@ struct PartitioningCtx {
       return true;
     }
 
-    // Compute accurate signalling cost using ANSPopulationCost() for each
-    // clustered histogram. This includes the header bits plus data bits for
-    // encoding each histogram.
+    // Compute the signalling overhead (header cost) for the clustered
+    // histograms. This estimates the bit cost of encoding the histogram
+    // headers in the bitstream, which is not included in the entropy cost
+    // computed by `TotalCost()`.
     //
-    // Key insight: hist_h[cluster] stores symbols as (zdc << 11) | ai, where
-    // zdc is the zero density context and ai is the AC coefficient bin.
-    // In the actual bitstream, each zdc value corresponds to a separate
-    // histogram, so we need to split by zdc and compute cost per sub-histogram.
+    // Each ANS histogram header costs approximately:
+    // - 2 bits for markers (not-small-tree, not-flat)
+    // - 1-7 bits for shift parameter
+    // - 1-21 bits for alphabet size (varint8)
+    // - 3-7 bits per symbol for bit widths (static Huffman)
+    // - 0-3 bits per symbol for precision bits (if shift > 0)
     //
-    // Additionally, the HybridUintConfig reduces the effective alphabet size
-    // by splitting values into a "histogrammed part" (token) and a "residual
-    // part" (extra bits). We apply this transformation before computing costs.
-    StatusOr<int64_t> ComputeSignallingCost() const {
-      int64_t signalling_cost = 0;
+    // For typical histograms with alphabet size 20-60, this is ~100-300 bits.
+    // We use `ANSPopulationCost() - ShannonEntropy` to estimate the overhead.
+    StatusOr<int64_t> ComputeSignallingOverhead() const {
+      int64_t overhead = 0;
 
       // Default HybridUintConfig for AC coefficients: (split_exponent=4,
       // msb_in_token=2, lsb_in_token=0)
-      constexpr uint32_t kSplitExponent = 4;
-      constexpr uint32_t kMsbInToken = 2;
-      constexpr uint32_t kLsbInToken = 0;
-      constexpr uint32_t kSplitToken = 1 << kSplitExponent;  // 16
+      const HybridUintConfig hybrid_uint_config(4, 2, 0);
 
-      // Helper to apply HybridUintConfig transformation
-      auto apply_hybrid_uint = [&](uint32_t value) -> uint32_t {
-        if (value < kSplitToken) return value;
-        uint32_t n = FloorLog2Nonzero(value);
-        uint32_t m = value - (1u << n);
-        return kSplitToken +
-               ((n - kSplitExponent) << (kMsbInToken + kLsbInToken)) +
-               ((m >> (n - kMsbInToken)) << kLsbInToken) +
-               (m & ((1u << kLsbInToken) - 1));
-      };
+      // Process `hist_h`: split by `zdc` and compute overhead per histogram
+      for (const auto& cluster : hist_h) {
+        if (cluster.empty()) continue;
 
-      // Process hist_h: split by zdc and compute cost per sub-histogram
-      for (size_t cluster = 0; cluster < hist_h.size(); cluster++) {
-        if (hist_h[cluster].empty()) continue;
-
-        // Group symbols by zdc value, applying HybridUintConfig transformation
+        // Group symbols by `zdc` value, applying `HybridUintConfig`
         std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint32_t>>
             by_zdc;
-        for (const auto& kv : hist_h[cluster]) {
+        for (const auto& kv : cluster) {
           uint32_t symbol = kv.first;
           uint32_t zdc = symbol >> 11;
           uint32_t ai = symbol & 0x7FFu;
-          // Apply HybridUintConfig to reduce alphabet
-          uint32_t token = apply_hybrid_uint(ai);
+          uint32_t token, nbits, bits;
+          hybrid_uint_config.Encode(ai, &token, &nbits, &bits);
           by_zdc[zdc][token] += kv.second;
         }
 
-        // Compute cost for each zdc sub-histogram
+        // Compute overhead for each `zdc` histogram
         for (const auto& zdc_pair : by_zdc) {
           const auto& token_hist = zdc_pair.second;
           if (token_hist.empty()) continue;
 
-          // Find max token value and total count
           uint32_t max_token = 0;
           size_t total = 0;
           for (const auto& kv : token_hist) {
@@ -1430,44 +1517,41 @@ struct PartitioningCtx {
           }
           if (total == 0) continue;
 
-          // Cap alphabet size to ANS_MAX_ALPHABET_SIZE
           JXL_ENSURE(max_token < ANS_MAX_ALPHABET_SIZE);
           size_t alphabet_size = max_token + 1;
           if (alphabet_size == 0) continue;
 
-          // Build Histogram object for ANSPopulationCost
           Histogram h(alphabet_size);
           for (const auto& kv : token_hist) {
-            if (kv.first < alphabet_size) {
-              h.counts[kv.first] = static_cast<ANSHistBin>(kv.second);
-            } else {
-              h.counts.back() += static_cast<ANSHistBin>(kv.second);
-            }
+            h.counts[kv.first] = static_cast<ANSHistBin>(kv.second);
           }
           h.total_count = total;
 
-          JXL_ASSIGN_OR_RETURN(float cost, h.ANSPopulationCost());
-          signalling_cost += static_cast<int64_t>(std::ceil(cost)) * kFScale;
+          // ANSPopulationCost() includes header + data cost
+          JXL_ASSIGN_OR_RETURN(float ans_cost, h.ANSPopulationCost());
+          // Shannon entropy is the ideal data cost
+          float shannon = h.ShannonEntropy();
+          // Overhead = total cost - data cost
+          float header_cost = ans_cost - shannon;
+          if (header_cost > 0) {
+            overhead += static_cast<int64_t>(header_cost * kFScale);
+          }
         }
       }
 
-      // Process hist_nz_h: split by predicted bucket (pb) and compute cost
-      // per sub-histogram. Symbols are stored as (pb << 6) | nz_count.
-      // For nz_count histograms, also apply HybridUintConfig.
-      for (size_t cluster = 0; cluster < hist_nz_h.size(); cluster++) {
-        if (hist_nz_h[cluster].empty()) continue;
+      // Process hist_nz_h: split by predicted bucket (pb)
+      for (const auto& cluster : hist_nz_h) {
+        if (cluster.empty()) continue;
 
-        // Group symbols by predicted bucket (pb) value
         std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint32_t>>
             by_pb;
-        for (const auto& kv : hist_nz_h[cluster]) {
+        for (const auto& kv : cluster) {
           uint32_t symbol = kv.first;
           uint32_t pb = symbol >> 6;
           uint32_t nz_count = symbol & 0x3Fu;
           by_pb[pb][nz_count] += kv.second;
         }
 
-        // Compute cost for each pb sub-histogram
         for (const auto& pb_pair : by_pb) {
           const auto& nz_hist = pb_pair.second;
           if (nz_hist.empty()) continue;
@@ -1480,10 +1564,7 @@ struct PartitioningCtx {
           }
           if (total == 0) continue;
 
-          size_t alphabet_size =
-              std::min<size_t>(max_nz + 1, ANS_MAX_ALPHABET_SIZE);
-          if (alphabet_size == 0) continue;
-
+          size_t alphabet_size = max_nz + 1;
           Histogram h(alphabet_size);
           for (const auto& kv : nz_hist) {
             if (kv.first < alphabet_size) {
@@ -1494,12 +1575,115 @@ struct PartitioningCtx {
           }
           h.total_count = total;
 
-          JXL_ASSIGN_OR_RETURN(float cost, h.ANSPopulationCost());
-          signalling_cost += static_cast<int64_t>(std::ceil(cost)) * kFScale;
+          JXL_ASSIGN_OR_RETURN(float ans_cost, h.ANSPopulationCost());
+          float shannon = h.ShannonEntropy();
+          float header_cost = ans_cost - shannon;
+          if (header_cost > 0) {
+            overhead += static_cast<int64_t>(header_cost * kFScale);
+          }
         }
       }
 
-      return signalling_cost;
+      return overhead;
+    }
+
+    // Removes thresholds that are structurally inert: i.e. the `ctx_map`
+    // assigns the same cluster on both sides. Rebuilds `ctx_map` to match the
+    // pruned grid.
+    ThresholdSet PruneDeadThresholds(const ThresholdSet& thresholds) {
+      ThresholdSet T = thresholds;
+      // Greyscale: the grid is Y axis only, `ctx_map` is flat per channel.
+      if (T.TCb().empty() && T.TCr().empty()) {
+        Thresholds new_thr;
+        new_thr.reserve(T.TY().size());
+        std::vector<uint32_t> old_from_new = {0};
+        for (uint32_t t = 0; t < T.TY().size(); ++t) {
+          if (ctx_map[t] != ctx_map[t + 1]) {
+            old_from_new.push_back(t + 1);
+            new_thr.push_back(T.TY()[t]);
+          }
+        }
+        T.TY().swap(new_thr);
+        const uint32_t new_n = static_cast<uint32_t>(T.TY().size() + 1);
+        ContextMap new_ctx_map(kNumCh * new_n, 0);
+        for (uint32_t x = 0; x < new_n; ++x) {
+          new_ctx_map[x] = ctx_map[old_from_new[x]];
+        }
+        ctx_map.swap(new_ctx_map);
+        return T;
+      }
+
+      const uint32_t sizes[3] = {static_cast<uint32_t>(T.TY().size() + 1),
+                                 static_cast<uint32_t>(T.TCb().size() + 1),
+                                 static_cast<uint32_t>(T.TCr().size() + 1)};
+      const uint32_t num_cells_init = sizes[0] * sizes[1] * sizes[2];
+      // Stride when stepping from cell `t` to `t+1` along each axis.
+      // Cell layout: `index = (b[1]*sizes[2] + b[2])*sizes[0] + b[0]`
+      // where b[0]=Y, b[1]=Cb, b[2]=Cr (Y is innermost/stride-1, matching
+      // the `dc_idx` formula in `compressed_dc.cc` and the `UpdateMaps`
+      // bucket maps).
+      const uint32_t axis_stride[3] = {1, sizes[0] * sizes[2], sizes[0]};
+
+      std::array<std::vector<uint32_t>, kNumCh> old_from_new = {
+          {{0}, {0}, {0}}};
+      for (uint32_t axis = 0; axis < kNumCh; ++axis) {
+        Thresholds& thr = T.T[axis];
+        const uint32_t ax1 = (axis + 1) % 3;
+        const uint32_t ax2 = (axis + 2) % 3;
+        Thresholds new_thr;
+        new_thr.reserve(thr.size());
+        std::vector<uint32_t>& ofn = old_from_new[axis];
+        auto add_active = [&](uint32_t t) {
+          uint32_t b[3] = {};
+          b[axis] = t;
+          for (uint32_t c = 0; c < kNumCh; ++c) {
+            const uint32_t c_base = c * num_cells_init;
+            for (uint32_t k1 = 0; k1 < sizes[ax1]; ++k1) {
+              b[ax1] = k1;
+              for (uint32_t k2 = 0; k2 < sizes[ax2]; ++k2) {
+                b[ax2] = k2;
+                const uint32_t gl = (b[1] * sizes[2] + b[2]) * sizes[0] + b[0];
+                if (ctx_map[c_base + gl] !=
+                    ctx_map[c_base + gl + axis_stride[axis]]) {
+                  ofn.push_back(t + 1);
+                  new_thr.push_back(thr[t]);
+                  return;
+                }
+              }
+            }
+          }
+        };
+
+        for (uint32_t t = 0; t < thr.size(); ++t) {
+          add_active(t);
+        }
+        thr.swap(new_thr);
+      }
+
+      const uint32_t new_sizes[3] = {static_cast<uint32_t>(T.TY().size() + 1),
+                                     static_cast<uint32_t>(T.TCb().size() + 1),
+                                     static_cast<uint32_t>(T.TCr().size() + 1)};
+      const uint32_t new_num_cells = new_sizes[0] * new_sizes[1] * new_sizes[2];
+      ContextMap new_ctx_map(kNumCh * new_num_cells, 0);
+      for (uint32_t c = 0; c < kNumCh; ++c) {
+        const uint32_t old_base = c * num_cells_init;
+        const uint32_t new_base = c * new_num_cells;
+        for (uint32_t Cb = 0; Cb < new_sizes[1]; ++Cb) {
+          for (uint32_t Cr = 0; Cr < new_sizes[2]; ++Cr) {
+            for (uint32_t Y = 0; Y < new_sizes[0]; ++Y) {
+              const uint32_t g_old =
+                  (old_from_new[1][Cb] * sizes[2] + old_from_new[2][Cr]) *
+                      sizes[0] +
+                  old_from_new[0][Y];
+              const uint32_t g_new =
+                  (Cb * new_sizes[2] + Cr) * new_sizes[0] + Y;
+              new_ctx_map[new_base + g_new] = ctx_map[old_base + g_old];
+            }
+          }
+        }
+      }
+      ctx_map.swap(new_ctx_map);
+      return T;
     }
   };
 
@@ -1593,25 +1777,20 @@ struct PartitioningCtx {
                                Clustering& clustering, uint32_t max_iters = 5,
                                ptrdiff_t search_radius = 2048) {
     const JPEGOptData& d = data();
-    ThresholdSet cur_T = thresholds;
     // Scratch histograms for speculative cost updates.
     SparseHistogram scratch_hist_h;
     SparseHistogram scratch_hist_N;
     SparseHistogram scratch_hist_nz_N;
     SparseHistogram scratch_hist_nz_h;
 
-    // Construct the baseline AC histogram exactly once.
-    int64_t base_cost = clustering.clustered_cost;
+    ThresholdSet cur_T = clustering.PruneDeadThresholds(thresholds);
 
+    std::vector<uint8_t> local_cluster_map[3];
     uint32_t size_Y = static_cast<uint32_t>(cur_T.TY().size() + 1);
     uint32_t size_Cb = static_cast<uint32_t>(cur_T.TCb().size() + 1);
     uint32_t size_Cr = static_cast<uint32_t>(cur_T.TCr().size() + 1);
     uint32_t num_cells = size_Y * size_Cb * size_Cr;
-
-    // Build axis-relative cluster maps for axes 1 and 2.
-    std::vector<uint8_t> local_cluster_map[3];
-    local_cluster_map[0] = clustering.ctx_map;
-    for (uint32_t axis : {1u, 2u}) {
+    for (uint32_t axis = 0; axis < d.channels; ++axis) {
       uint32_t ax1 = (axis + 1) % 3;
       uint32_t ax2 = (axis + 2) % 3;
       uint32_t na = static_cast<uint32_t>(cur_T.T[axis].size() + 1);
@@ -1638,6 +1817,7 @@ struct PartitioningCtx {
     }
 
     // Coordinate descent loop repeatedly jittering all 3 color axes
+    int64_t base_cost = clustering.clustered_cost;
     bool changed = true;
     for (uint32_t iter = 0; iter < max_iters && changed; iter++) {
       changed = false;
@@ -1647,8 +1827,8 @@ struct PartitioningCtx {
         const auto& DC_axis = d.dc_vals[axis];
         uint32_t ax1 = (axis + 1) % 3;
         uint32_t ax2 = (axis + 2) % 3;
-        uint32_t na = static_cast<uint32_t>(thr.size() + 1);
         UpdateMaps(axis, thr, cur_T.T[ax1], cur_T.T[ax2]);
+        uint32_t na = static_cast<uint32_t>(thr.size() + 1);
         const auto& sorted_blocks = d.dc_sorted_blocks[axis];
         const auto& block_off = d.dc_block_offsets[axis];
 
@@ -1675,37 +1855,49 @@ struct PartitioningCtx {
                                  uint32_t N_bin) -> int64_t {
             int64_t delta = 0;
 
-            // h-term: negative contribution to cost.
-            uint32_t* freq = &hist_h[old_cl][h_bin];
-            uint32_t old_freq = *freq;
-            uint32_t new_freq = old_freq - 1;
-            delta -= d.nz_entropy(new_freq) - d.nz_entropy(old_freq);
-            *freq = new_freq;
+            auto dec_bin = [&](SparseHistogram& hist, uint32_t cl, uint32_t bin,
+                               int64_t sign) {
+              auto& m = hist[cl];
+              auto it = m.find(bin);
+              // A missing/zero bin here indicates inconsistent context
+              // transitions; guard against unsigned underflow in release
+              // builds and trip in debug builds.
+              JXL_DASSERT(it != m.end() && it->second > 0);
+              if (it == m.end() || it->second == 0) return;
+              uint32_t old_freq = it->second;
+              uint32_t new_freq = old_freq - 1;
+              delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
+              if (new_freq == 0) {
+                m.erase(it);
+              } else {
+                it->second = new_freq;
+              }
+            };
+            auto inc_bin = [&](SparseHistogram& hist, uint32_t cl, uint32_t bin,
+                               int64_t sign) {
+              auto& freq = hist[cl][bin];
+              uint32_t old_freq = freq;
+              uint32_t new_freq = old_freq + 1;
+              delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
+              freq = new_freq;
+            };
 
-            freq = &hist_h[new_cl][h_bin];
-            old_freq = *freq;
-            new_freq = old_freq + 1;
-            delta -= d.nz_entropy(new_freq) - d.nz_entropy(old_freq);
-            *freq = new_freq;
+            // h-term: negative contribution to cost.
+            dec_bin(hist_h, old_cl, h_bin, -1);
+            inc_bin(hist_h, new_cl, h_bin, -1);
 
             // N-term: positive contribution to cost.
-            freq = &hist_N[old_cl][N_bin];
-            old_freq = *freq;
-            new_freq = old_freq - 1;
-            delta += d.nz_entropy(new_freq) - d.nz_entropy(old_freq);
-            *freq = new_freq;
-
-            freq = &hist_N[new_cl][N_bin];
-            old_freq = *freq;
-            new_freq = old_freq + 1;
-            delta += d.nz_entropy(new_freq) - d.nz_entropy(old_freq);
-            *freq = new_freq;
+            dec_bin(hist_N, old_cl, N_bin, +1);
+            inc_bin(hist_N, new_cl, N_bin, +1);
 
             return delta;
           };
 
           auto apply_slice = [&](ptrdiff_t slice, bool upward) -> int64_t {
             int64_t cost_change = 0;
+            auto div_ceil_u32 = [](uint32_t num, uint32_t den) -> uint32_t {
+              return (num + den - 1) / den;
+            };
             // Blocks with `DC[axis] = slice`
             uint32_t blk_lo = block_off[static_cast<size_t>(slice)];
             uint32_t blk_hi = block_off[static_cast<size_t>(slice + 1)];
@@ -1716,19 +1908,34 @@ struct PartitioningCtx {
               uint32_t b0 = b0_y * d.block_grid_w[axis] + b0_x;
 
               if (d.channels == kNumCh) {
-                uint32_t b1_y = b0_y * d.ss_y[axis] / d.ss_y[ax1];
-                uint32_t b1_x = b0_x * d.ss_x[axis] / d.ss_x[ax1];
-                uint32_t b1e_y = (b0_y + 1) * d.ss_y[axis] / d.ss_y[ax1];
-                uint32_t b1e_x = (b0_x + 1) * d.ss_x[axis] / d.ss_x[ax1];
+                // Top-left mapped reference blocks for the moved axis block.
+                uint32_t b1_ref_y = b0_y * d.ss_y[axis] / d.ss_y[ax1];
+                uint32_t b1_ref_x = b0_x * d.ss_x[axis] / d.ss_x[ax1];
+                uint32_t b2_ref_y = b0_y * d.ss_y[axis] / d.ss_y[ax2];
+                uint32_t b2_ref_x = b0_x * d.ss_x[axis] / d.ss_x[ax2];
 
-                uint32_t b2_y = b0_y * d.ss_y[axis] / d.ss_y[ax2];
-                uint32_t b2_x = b0_x * d.ss_x[axis] / d.ss_x[ax2];
-                uint32_t b2e_y = (b0_y + 1) * d.ss_y[axis] / d.ss_y[ax2];
-                uint32_t b2e_x = (b0_x + 1) * d.ss_x[axis] / d.ss_x[ax2];
+                // Invert floor mapping used by context construction:
+                //   `b_axis = floor(b_comp * ss_comp / ss_axis)`.
+                // The set of component blocks affected by moved axis block `b0`
+                // is `[ceil(b0 * ss_axis / ss_comp),
+                //     ceil((b0 + 1) * ss_axis / ss_comp))`.
+                uint32_t b1_y = div_ceil_u32(b0_y * d.ss_y[axis], d.ss_y[ax1]);
+                uint32_t b1_x = div_ceil_u32(b0_x * d.ss_x[axis], d.ss_x[ax1]);
+                uint32_t b1e_y =
+                    div_ceil_u32((b0_y + 1) * d.ss_y[axis], d.ss_y[ax1]);
+                uint32_t b1e_x =
+                    div_ceil_u32((b0_x + 1) * d.ss_x[axis], d.ss_x[ax1]);
 
-                // Axis component block
-                uint32_t b1 = b1_y * d.block_grid_w[ax1] + b1_x;
-                uint32_t b2 = b2_y * d.block_grid_w[ax2] + b2_x;
+                uint32_t b2_y = div_ceil_u32(b0_y * d.ss_y[axis], d.ss_y[ax2]);
+                uint32_t b2_x = div_ceil_u32(b0_x * d.ss_x[axis], d.ss_x[ax2]);
+                uint32_t b2e_y =
+                    div_ceil_u32((b0_y + 1) * d.ss_y[axis], d.ss_y[ax2]);
+                uint32_t b2e_x =
+                    div_ceil_u32((b0_x + 1) * d.ss_x[axis], d.ss_x[ax2]);
+
+                // `axis` component block
+                uint32_t b1 = b1_ref_y * d.block_grid_w[ax1] + b1_ref_x;
+                uint32_t b2 = b2_ref_y * d.block_grid_w[ax2] + b2_ref_x;
                 uint32_t dc_ax1_ind = d.block_dc_idx[ax1][b1];
                 uint32_t dc_ax2_ind = d.block_dc_idx[ax2][b2];
 
@@ -1754,7 +1961,7 @@ struct PartitioningCtx {
                   }
                 }
 
-                // ax1 component blocks
+                // `ax1` component blocks
                 for (uint32_t y1 = b1_y; y1 < b1e_y; ++y1) {
                   for (uint32_t x1 = b1_x; x1 < b1e_x; ++x1) {
                     b1 = y1 * d.block_grid_w[ax1] + x1;
@@ -1789,7 +1996,7 @@ struct PartitioningCtx {
                     }
                   }
                 }
-                // ax2 component blocks
+                // `ax2` component blocks
                 for (uint32_t y2 = b2_y; y2 < b2e_y; ++y2) {
                   for (uint32_t x2 = b2_x; x2 < b2e_x; ++x2) {
                     b2 = y2 * d.block_grid_w[ax2] + x2;
@@ -2008,32 +2215,29 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
         auto refine_result =
             ctx.RefineClustered(opt_result.second, cl_result, 5, 16);
         ThresholdSet refined_thr =
-            refine_result.thresholds;             // opt_result.second;
-        int64_t total_cost = refine_result.cost;  // opt_result.first;
+            refine_result.thresholds;  // opt_result.second;
+        int64_t total_cost = refine_result.cost;
 
-        // Add accurate histogram signalling cost using ANSPopulationCost()
-        int64_t signalling_cost = 0;
-        auto signalling_cost_or = cl_result.ComputeSignallingCost();
-        if (signalling_cost_or.ok()) {
-          signalling_cost = std::move(signalling_cost_or).value_();
-        } else {
-          JXL_DEBUG_V(1, "ComputeSignallingCost failed for (%u,%u,%u): %s", a,
-                      b, c, signalling_cost_or.message());
+        // Add signalling overhead for histogram headers
+        int64_t overhead = 0;
+        auto overhead_or = cl_result.ComputeSignallingOverhead();
+        if (overhead_or.ok()) {
+          overhead = std::move(overhead_or).value_();
+          total_cost += overhead;
         }
 
         std::lock_guard<std::mutex> lock(mu);
         // JXL_DEBUG_V(
         //     2,
         printf(
-            "(%u,%u,%u) cost: unclustered=%.2f clustered=%.2f refined=%.2f "
-            "nz=%.2f signalling=%.2f total=%.2f\n",
+            "(%u,%u,%u) cost: unclustered=%.2f clustered=%.2f "
+            "refined=%.2f nz=%.2f overhead=%.2f total=%.2f\n",
             a, b, c, bit_cost(opt_result.first),
-            bit_cost(cl_result.clustered_cost),
-            bit_cost(refine_result.cost - refine_result.nz_cost),
-            bit_cost(refine_result.nz_cost), bit_cost(signalling_cost),
-            bit_cost(total_cost + signalling_cost));
-        if (total_cost + signalling_cost < best_cost) {
-          best_cost = total_cost + signalling_cost;
+            bit_cost(cl_result.clustered_cost), bit_cost(refine_result.cost),
+            bit_cost(refine_result.nz_cost), bit_cost(overhead),
+            bit_cost(total_cost));
+        if (total_cost < best_cost) {
+          best_cost = total_cost;
           best_thr = refined_thr;
           best_ctx = cluster_map;
         }
