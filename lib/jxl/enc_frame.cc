@@ -778,16 +778,15 @@ Status ComputeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
   auto& dct = enc_state->shared.block_ctx_map.dc_thresholds;
   auto& num_dc_ctxs = enc_state->shared.block_ctx_map.num_dc_ctxs;
 
-  for (size_t i = 0; i < 3; i++) {
-    dct[i].clear();
-  }
+  for (auto& i : dct) i.clear();
 
   // use more contexts for larger and higher quality images
   int num_thresholds = CeilLog2Nonzero(total_dc[1]) -
                        CeilLog2Nonzero(static_cast<unsigned>(
                            qt[1] + qt[2] + qt[3] + qt[4] + qt[5])) -
                        7;
-  // up to 8 buckets, based on luma only
+  // printf("intervals: %d\n", num_thresholds + 1);
+  //  up to 8 buckets, based on luma only
   num_thresholds = jxl::Clamp1(num_thresholds, 1, 7);
   size_t cumsum = 0;
   size_t cut = total_dc[1] / (num_thresholds + 1);
@@ -801,8 +800,7 @@ Status ComputeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
   num_dc_ctxs = dct[1].size() + 1;
 
   auto& ctx_map = enc_state->shared.block_ctx_map.ctx_map;
-  ctx_map.clear();
-  ctx_map.resize(3 * kNumOrders * num_dc_ctxs, 0);
+  ctx_map.assign(3 * kNumOrders * num_dc_ctxs, 0);
 
   for (size_t i = 0; i < num_dc_ctxs; i++) {
     // luma: one context per luma DC bucket
@@ -1108,10 +1106,9 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
 
   JXL_RETURN_IF_ERROR(
       ComputeJPEGContextMap(jpeg_data, enc_state, total_dc, dc_counts, qt));
-
   if (enc_state->cparams.speed_tier <= SpeedTier::kSquirrel /*kKitten*/) {
-    JXL_RETURN_IF_ERROR(
-        OptimizeJPEGContextMap(jpeg_data, frame_header, enc_state, pool));
+    JXL_RETURN_IF_ERROR(OptimizeJPEGContextMap(
+        jpeg_data, frame_header, enc_state->shared.block_ctx_map, pool));
   }
 
   // disable DC frame for now

@@ -6,9 +6,9 @@
 #ifndef LIB_JXL_ENC_JPEG_FRAME_H_
 #define LIB_JXL_ENC_JPEG_FRAME_H_
 
+#include "lib/jxl/ac_context.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/enc_cache.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
@@ -20,8 +20,7 @@ namespace jxl {
 // and clustering similar contexts together.
 Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
                               const FrameHeader& frame_header,
-                              PassesEncoderState* enc_state, ThreadPool* pool,
-                              bool verbose = false);
+                              BlockCtxMap& ctx_map, ThreadPool* pool);
 
 }  // namespace jxl
 

@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -35,15 +34,22 @@ namespace {
 constexpr int64_t kFScale = 1LL << 25;
 constexpr int kDCTOff = 1024;
 constexpr int kDCTRange = 2048;
+// Each threshold count is written with 4 bits (max 15), so each dimension
+// of intervals is capped at 16.
+constexpr uint32_t kMaxIntervals = 16;
 constexpr int kMaxCells = 64;
+constexpr int kMaxClusters = 16;
 constexpr int kNumPos = 63;
 constexpr int kNumCh = 3;
 constexpr uint32_t kMTarget = 256;
+constexpr uint32_t kBinCount = kMaxCells / 2 * kDCTRange >> 6;
+constexpr uint32_t kGroupCount = kMaxCells / 2 * kDCTRange >> 12;
+// constexpr uint32_t kZeroNumContexts = 36;
 
-typedef std::vector<int16_t> Thresholds;
-typedef uint32_t ACEntry;
-typedef std::vector<uint8_t> ContextMap;
-typedef std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> Factorizations;
+using Thresholds = std::vector<int16_t>;
+using ACEntry = uint32_t;
+using ContextMap = std::vector<uint8_t>;
+using Factorizations = std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>;
 
 JXL_INLINE int CountrZero64(uint64_t x) {
 #if JXL_COMPILER_MSVC
@@ -70,21 +76,40 @@ struct JPEGOptData {
 
   std::vector<int64_t> ftab;
 
+  uint32_t channels;
   uint32_t num_blocks[kNumCh];
   uint32_t block_grid_w[kNumCh];
   uint32_t block_grid_h[kNumCh];
+  uint32_t w_max;
+  uint32_t h_max;
+  uint32_t ss_y[kNumCh];
+  uint32_t ss_x[kNumCh];
+  uint32_t fh_mask[kNumCh];  // horizontal subsampling mask (factor - 1)
+  uint32_t fv_mask[kNumCh];  // vertical subsampling mask (factor - 1)
   Thresholds dc_vals[kNumCh];
   uint32_t DC_cnt[kNumCh][kDCTRange];
-  uint32_t DC_idx_LUT[kNumCh][kDCTRange];
+  uint16_t DC_idx_LUT[kNumCh][kDCTRange];
   uint32_t num_zdcai;
 
   std::vector<ACEntry> AC_stream;
+  // AC events of consequitive blocks per component
   std::array<std::vector<uint32_t>, kNumCh> block_bins;
+  // Indices into `block_bins`, separating consequent blocks data,
+  // size `y_comp * x_comp`
   std::array<std::vector<uint32_t>, kNumCh> block_offsets;
+  // Block nonzero number and nonzero prediction context,
+  // size `y_comp * x_comp`
   std::array<std::vector<uint8_t>, kNumCh> block_nonzeros;
-  std::vector<uint32_t> compact_map_h;
-  std::array<std::vector<uint16_t>, kNumCh> block_dc;
+  std::array<std::vector<uint8_t>, kNumCh> nz_pred_bucket;
+  // std::vector<uint32_t> compact_map_h;
+  // DC indices of blocks of components (DC of the block component),
+  // size `y_comp * x_comp`
+  std::array<std::vector<uint16_t>, kNumCh> block_dc_idx;
+  // Indices into `block_dc_idx`, sorted by DC index,
+  // size `y_comp * x_comp`
   std::array<std::vector<uint32_t>, kNumCh> dc_sorted_blocks;
+  // Indices into `dc_sorted_blocks, separating different DC indices,
+  // size `M_comp`
   std::array<std::vector<uint32_t>, kNumCh> dc_block_offsets;
 
   void InitFTab(size_t max_n) {
@@ -95,6 +120,13 @@ struct JPEGOptData {
       double n = static_cast<double>(i);
       ftab[i] = static_cast<int64_t>(std::llround(n * std::log2(n) * kFScale));
     }
+  }
+  // `ftab` may not cover counts as large as `N_blocks`; fall back to
+  // floating-point for large values.
+  int64_t nz_entropy(uint32_t n) const {
+    if (n < ftab.size()) return ftab[n];
+    const double nd = static_cast<double>(n);
+    return static_cast<int64_t>(std::llround(nd * std::log2(nd) * kFScale));
   }
 
   Thresholds InitThresh(int axis, uint32_t n_intervals) const {
@@ -119,21 +151,10 @@ struct JPEGOptData {
     return result;
   }
 
-  uint32_t ToChBlock(uint32_t b, uint32_t c) const {
-    if (c == 0) return b;
-    uint32_t bx = b % block_grid_w[0];
-    uint32_t by = b / block_grid_w[0];
-    return (by * block_grid_h[c] / block_grid_h[0]) * block_grid_w[c] +
-           bx * block_grid_w[c] / block_grid_w[0];
-  }
-
   Factorizations MaximalFactorizations() const {
     uint32_t cap0 = std::max(1u, static_cast<uint32_t>(dc_vals[0].size()));
     uint32_t cap1 = std::max(1u, static_cast<uint32_t>(dc_vals[1].size()));
     uint32_t cap2 = std::max(1u, static_cast<uint32_t>(dc_vals[2].size()));
-    // Each threshold count is written with 4 bits (max 15), so each dimension
-    // of intervals is capped at 16.
-    constexpr uint32_t kMaxIntervals = 16;
     Factorizations result;
     for (uint32_t a = 1; a <= cap0 && a <= kMaxCells && a <= kMaxIntervals;
          ++a) {
@@ -152,19 +173,27 @@ struct JPEGOptData {
         }
       }
     }
+    // On greyscale images we need to join the rest two components into
+    // an additional empty context, so we have 1 less context for optimization,
+    // max 15 contexts
+    if (channels == 1) {
+      uint32_t ctxs = std::min(std::get<0>(result[0]), 15u);
+      std::get<0>(result[0]) = ctxs;
+      // while (--ctxs > 0) {
+      //   result.emplace_back(ctxs, 1, 1);
+      // }
+    }
     return result;
   }
 
-  Status CountDCAC(const jpeg::JPEGData& jpeg_data,
-                   const std::array<int, 3>& jpeg_c_map, ThreadPool* pool,
+  Status CountDCAC(const jpeg::JPEGData& jpeg_data, ThreadPool* pool,
                    ACCounts& ac_cnt) {
     memset(DC_cnt, 0, sizeof(DC_cnt));
     memset(ac_cnt.data(), 0, sizeof(ac_cnt));
     JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, kNumCh, ThreadPool::NoInit,
+        pool, 0, channels, ThreadPool::NoInit,
         [&](uint32_t c, size_t) -> Status {
-          uint32_t jpeg_c = static_cast<uint32_t>(jpeg_c_map[c]);
-          const auto& comp = jpeg_data.components[jpeg_c];
+          const auto& comp = jpeg_data.components[c];
           uint32_t wb = comp.width_in_blocks;
           uint32_t hb = comp.height_in_blocks;
           for (uint32_t by = 0; by < hb; ++by) {
@@ -180,9 +209,9 @@ struct JPEGOptData {
         },
         "CountDCAC"));
 
-    for (uint32_t c = 0; c < kNumCh; ++c) {
+    for (auto& v : dc_vals) v.clear();
+    for (uint32_t c = 0; c < channels; ++c) {
       auto& v = dc_vals[c];
-      v.clear();
       for (int di = 0; di < kDCTRange; ++di) {
         if (DC_cnt[c][di]) {
           DC_idx_LUT[c][di] = static_cast<uint32_t>(v.size());
@@ -228,26 +257,20 @@ struct JPEGOptData {
     }
   }
 
-  Status CollectACBins(const jpeg::JPEGData& jpeg_data,
-                       const std::array<int, 3>& jpeg_c_map, ThreadPool* pool,
+  Status CollectACBins(const jpeg::JPEGData& jpeg_data, ThreadPool* pool,
                        const ACCounts& ac_cnt) {
     std::array<std::array<uint8_t, kNumPos>, kNumCh> scan_order = {};
     std::array<std::array<bool, kNumPos>, kNumCh> active_scan = {};
     BuildACScanOrder(ac_cnt, scan_order, active_scan);
 
-    uint32_t wb0 = block_grid_w[0];
-    uint32_t hb0 = block_grid_h[0];
     JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, kNumCh, ThreadPool::NoInit,
+        pool, 0, channels, ThreadPool::NoInit,
         [&](uint32_t c, size_t) -> Status {
-          uint32_t jpeg_c = static_cast<uint32_t>(jpeg_c_map[c]);
-          const auto& comp = jpeg_data.components[jpeg_c];
+          const auto& comp = jpeg_data.components[c];
           uint32_t wb = comp.width_in_blocks;
           uint32_t hb = comp.height_in_blocks;
-          uint32_t f_h = wb0 / std::max(1u, wb);
-          uint32_t f_v = hb0 / std::max(1u, hb);
 
-          block_dc[c].assign(num_blocks[0], 0);
+          block_dc_idx[c].assign(num_blocks[c], 0);
           block_offsets[c].resize(num_blocks[c] + 1);
           block_nonzeros[c].assign(num_blocks[c], 0);
           block_bins[c].clear();
@@ -259,15 +282,7 @@ struct JPEGOptData {
               const int16_t* q = comp.coeffs.data() + (by * wb + bx) * 64;
               uint16_t dc_idx =
                   static_cast<uint16_t>(DC_idx_LUT[c][q[0] + kDCTOff]);
-              for (uint32_t dy = 0; dy < f_v; ++dy) {
-                uint32_t by0 = by * f_v + dy;
-                if (by0 >= hb0) break;
-                for (uint32_t dx = 0; dx < f_h; ++dx) {
-                  uint32_t bx0 = bx * f_h + dx;
-                  if (bx0 >= wb0) break;
-                  block_dc[c][by0 * wb0 + bx0] = dc_idx;
-                }
-              }
+              block_dc_idx[c][bc] = dc_idx;
               uint32_t nonzeros_left = 0;
               for (uint32_t s = 0; s < kNumPos; ++s)
                 if (q[scan_order[c][s]] != 0) ++nonzeros_left;
@@ -281,7 +296,7 @@ struct JPEGOptData {
                   uint32_t zdc = static_cast<uint32_t>(
                       ZeroDensityContext(nonzeros_left, s + 1, 1, 0, nz_prev));
                   uint32_t ai = static_cast<uint32_t>(coeff + kDCTOff);
-                  block_bins[c].push_back((zdc << 11) | ai);
+                  block_bins[c].push_back((c << 20) | (zdc << 11) | ai);
                 }
                 nonzeros_left -= (coeff != 0);
               }
@@ -292,23 +307,63 @@ struct JPEGOptData {
           return true;
         },
         "CollectBins"));
+    // Precompute predict bucket per (channel, block). `predicted_nz` comes
+    // from actual nonzero counts of top/left neighbors and is independent of
+    // threshold assignments, so it can be precomputed once here.
+    std::vector<uint32_t> row_top;
+    std::vector<uint32_t> row_cur;
+    for (uint32_t c = 0; c < kNumCh; ++c) {
+      const uint32_t w = block_grid_w[c];
+      const uint32_t h = block_grid_h[c];
+      nz_pred_bucket[c].resize(num_blocks[c]);
+      row_top.assign(w, 32u);
+      row_cur.assign(w, 32u);
+      bool has_top = false;
+      for (uint32_t by = 0; by < h; ++by) {
+        for (uint32_t bx = 0; bx < w; ++bx) {
+          const uint32_t b = by * w + bx;
+          uint32_t predicted_nz;
+          if (bx == 0) {
+            predicted_nz = has_top ? row_top[bx] : 32u;
+          } else if (!has_top) {
+            predicted_nz = row_cur[bx - 1];
+          } else {
+            predicted_nz = (row_top[bx] + row_cur[bx - 1] + 1u) / 2u;
+          }
+          nz_pred_bucket[c][b] = static_cast<uint8_t>(
+              (predicted_nz < 8) ? predicted_nz : (4 + predicted_nz / 2));
+          row_cur[bx] = block_nonzeros[c][b];
+        }
+        row_top.swap(row_cur);
+        has_top = true;
+      }
+    }
     return true;
   }
 
   Status FinalizeSpatialIndexing(ThreadPool* pool) {
     memset(DC_cnt, 0, sizeof(DC_cnt));
-    uint32_t wb0 = block_grid_w[0];
-    uint32_t hb0 = block_grid_h[0];
-    for (uint32_t y = 0; y < hb0; ++y) {
-      for (uint32_t x = 0; x < wb0; ++x) {
-        uint32_t b = y * wb0 + x;
-        uint32_t dc0 = block_dc[0][b];
-        uint32_t dc1 = block_dc[1][b];
-        uint32_t dc2 = block_dc[2][b];
-        for (uint32_t c = 0; c < kNumCh; ++c) {
-          uint32_t bc = ToChBlock(b, c);
-          for (uint32_t pi = block_offsets[c][bc];
-               pi < block_offsets[c][bc + 1]; ++pi) {
+
+    // Loop over image blocks
+    if (channels == 1) {
+      for (uint32_t b = 0; b < num_blocks[0]; ++b) {
+        uint16_t dc0 = block_dc_idx[0][b];
+
+        ++DC_cnt[0][dc_vals[0][dc0] + kDCTOff];
+      }
+    } else {
+      for (uint32_t c = 0; c < kNumCh; ++c) {
+        for (uint32_t y = 0; y < block_grid_h[c]; ++y) {
+          for (uint32_t x = 0; x < block_grid_w[c]; ++x) {
+            uint32_t by = y * ss_y[c];
+            uint32_t bx = x * ss_x[c];
+            uint16_t dc0 = block_dc_idx[0][(by / ss_y[0]) * block_grid_w[0] +
+                                           bx / ss_x[0]];
+            uint16_t dc1 = block_dc_idx[1][(by / ss_y[1]) * block_grid_w[1] +
+                                           bx / ss_x[1]];
+            uint16_t dc2 = block_dc_idx[2][(by / ss_y[2]) * block_grid_w[2] +
+                                           bx / ss_x[2]];
+
             ++DC_cnt[0][dc_vals[0][dc0] + kDCTOff];
             ++DC_cnt[1][dc_vals[1][dc1] + kDCTOff];
             ++DC_cnt[2][dc_vals[2][dc2] + kDCTOff];
@@ -318,7 +373,7 @@ struct JPEGOptData {
     }
 
     JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, kNumCh, ThreadPool::NoInit,
+        pool, 0, channels, ThreadPool::NoInit,
         [&](uint32_t c, size_t) -> Status {
           Thresholds pruned;
           uint32_t idx = 0;
@@ -328,15 +383,11 @@ struct JPEGOptData {
               DC_idx_LUT[c][di] = idx++;
             }
           }
-          uint32_t N_blocks = num_blocks[0];
           uint32_t M = static_cast<uint32_t>(pruned.size());
           dc_block_offsets[c].assign(M + 1, 0);
-          for (uint32_t b = 0; b < N_blocks; ++b) {
-            uint32_t raw_val =
-                static_cast<uint32_t>(dc_vals[c][block_dc[c][b]]) + kDCTOff;
-            uint16_t new_dc = static_cast<uint16_t>(DC_idx_LUT[c][raw_val]);
-            block_dc[c][b] = new_dc;
-            ++dc_block_offsets[c][new_dc + 1];
+          for (uint16_t& dc_idx : block_dc_idx[c]) {
+            dc_idx = DC_idx_LUT[c][dc_vals[c][dc_idx] + kDCTOff];
+            ++dc_block_offsets[c][dc_idx + 1];
           }
           for (uint32_t v = 0; v < M; ++v)
             dc_block_offsets[c][v + 1] += dc_block_offsets[c][v];
@@ -345,15 +396,15 @@ struct JPEGOptData {
         },
         "PruneDC"));
 
-    uint32_t N_blocks = num_blocks[0];
     JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, kNumCh, ThreadPool::NoInit,
-        [&](uint32_t axis, size_t) -> Status {
-          dc_sorted_blocks[axis].resize(N_blocks);
-          std::vector<uint32_t> write_pos = dc_block_offsets[axis];
-          for (uint32_t b = 0; b < N_blocks; ++b) {
-            uint32_t v = block_dc[axis][b];
-            dc_sorted_blocks[axis][write_pos[v]++] = b;
+        pool, 0, channels, ThreadPool::NoInit,
+        [&](uint32_t c, size_t) -> Status {
+          dc_sorted_blocks[c].resize(num_blocks[c]);
+          std::vector<uint32_t> write_pos = dc_block_offsets[c];
+          for (uint32_t b = 0; b < num_blocks[c]; ++b) {
+            uint32_t v = block_dc_idx[c][b];
+            dc_sorted_blocks[c][write_pos[v]++] =
+                (b / block_grid_w[c]) << 16 | (b % block_grid_w[c]);
           }
           return true;
         },
@@ -362,22 +413,22 @@ struct JPEGOptData {
   }
 
   Status GenerateRLEStream(ThreadPool* pool) {
-    constexpr uint32_t BIN_N = 3u << 20;
+    const uint32_t BIN_N = channels << 20;
     std::vector<uint32_t> bin_start_lo(BIN_N + 1, 0);
     std::vector<uint32_t> bin_start_hi(BIN_N + 1, 0);
 
-    uint32_t w = block_grid_w[0];
-    uint32_t h = block_grid_h[0];
-    for (uint32_t y = 0; y < h; ++y) {
-      for (uint32_t x = 0; x < w; ++x) {
-        uint32_t b = y * w + x;
-        uint32_t dc0 = block_dc[0][b];
-        for (uint32_t c = 0; c < kNumCh; ++c) {
-          uint32_t bc = ToChBlock(b, c);
-          uint32_t ch_prefix = c << 20;
-          for (uint32_t pi = block_offsets[c][bc];
-               pi < block_offsets[c][bc + 1]; ++pi) {
-            uint32_t bin = ch_prefix | block_bins[c][pi];
+    for (uint32_t c = 0; c < channels; ++c) {
+      uint32_t w = block_grid_w[c];
+      uint32_t h = block_grid_h[c];
+      for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+          uint32_t b = y * w + x;
+          uint32_t b0 = (y * ss_y[c] / ss_y[0]) * block_grid_w[0] +
+                        (x * ss_x[c] / ss_x[0]);
+          uint32_t dc0 = block_dc_idx[0][b0];
+          for (uint32_t pi = block_offsets[c][b]; pi < block_offsets[c][b + 1];
+               ++pi) {
+            uint32_t bin = block_bins[c][pi];
             if (dc0 & 0x400u) {
               ++bin_start_hi[bin + 1];
             } else {
@@ -397,6 +448,7 @@ struct JPEGOptData {
       bin_start_hi[b + 1] = bin_start_hi[b] + c_hi;
       if (c_lo != 0 || c_hi != 0) active_bins.push_back(b);
     }
+    active_bins.shrink_to_fit();
 
     size_t lo_size = bin_start_lo[BIN_N];
     size_t hi_size = bin_start_hi[BIN_N];
@@ -404,23 +456,46 @@ struct JPEGOptData {
     std::vector<uint32_t> flat_lo(lo_size);
     std::vector<uint32_t> flat_hi(hi_size);
 
-    for (uint32_t y = 0; y < h; ++y) {
-      for (uint32_t x = 0; x < w; ++x) {
-        uint32_t b = y * w + x;
-        uint32_t dc0 = block_dc[0][b];
-        uint32_t dc1 = block_dc[1][b];
-        uint32_t dc2 = block_dc[2][b];
-        for (uint32_t c = 0; c < kNumCh; ++c) {
-          uint32_t bc = ToChBlock(b, c);
-          uint32_t ch_prefix = c << 20;
-          for (uint32_t pi = block_offsets[c][bc];
-               pi < block_offsets[c][bc + 1]; ++pi) {
-            uint32_t bin = ch_prefix | block_bins[c][pi];
-            uint32_t dc_key = ((dc0 & 0x3FFu) << 22) | (dc1 << 11) | dc2;
-            if (dc0 & 0x400u) {
-              flat_hi[bin_start_hi[bin]++] = dc_key;
-            } else {
-              flat_lo[bin_start_lo[bin]++] = dc_key;
+    if (channels == 1) {
+      for (uint32_t b = 0; b < num_blocks[0]; ++b) {
+        uint32_t dc0 = block_dc_idx[0][b];
+        for (uint32_t pi = block_offsets[0][b]; pi < block_offsets[0][b + 1];
+             ++pi) {
+          uint32_t bin = block_bins[0][pi];
+          uint32_t dc_key = (dc0 & 0x3FFu) << 22;
+          if (dc0 & 0x400u) {
+            flat_hi[bin_start_hi[bin]++] = dc_key;
+          } else {
+            flat_lo[bin_start_lo[bin]++] = dc_key;
+          }
+        }
+      }
+    } else {
+      for (uint32_t c = 0; c < kNumCh; ++c) {
+        uint32_t w = block_grid_w[c];
+        uint32_t h = block_grid_h[c];
+        for (uint32_t y = 0; y < h; ++y) {
+          for (uint32_t x = 0; x < w; ++x) {
+            uint32_t b = y * w + x;
+            uint32_t b0 = (y * ss_y[c] / ss_y[0]) * block_grid_w[0] +
+                          (x * ss_x[c] / ss_x[0]);
+            uint32_t b1 = (y * ss_y[c] / ss_y[1]) * block_grid_w[1] +
+                          (x * ss_x[c] / ss_x[1]);
+            uint32_t b2 = (y * ss_y[c] / ss_y[2]) * block_grid_w[2] +
+                          (x * ss_x[c] / ss_x[2]);
+
+            uint32_t dc0 = block_dc_idx[0][b0];
+            uint32_t dc1 = block_dc_idx[1][b1];
+            uint32_t dc2 = block_dc_idx[2][b2];
+            for (uint32_t pi = block_offsets[c][b];
+                 pi < block_offsets[c][b + 1]; ++pi) {
+              uint32_t bin = block_bins[c][pi];
+              uint32_t dc_key = ((dc0 & 0x3FFu) << 22) | (dc1 << 11) | dc2;
+              if (dc0 & 0x400u) {
+                flat_hi[bin_start_hi[bin]++] = dc_key;
+              } else {
+                flat_lo[bin_start_lo[bin]++] = dc_key;
+              }
             }
           }
         }
@@ -454,59 +529,59 @@ struct JPEGOptData {
     std::vector<ACEntry> stream;
     stream.reserve(raw_size + raw_size / 16);
     uint32_t ctx_len = 0;
-    uint32_t prev_b = UINT32_MAX;
+    uint32_t prev_bin = UINT32_MAX;
     std::array<uint32_t, kZeroDensityContextCount> zdc_total = {};
 
-    uint32_t MAX_KEY_H_SPARSE =
-        static_cast<uint32_t>(kZeroDensityContextCount) * 2048;
-    compact_map_h.assign(MAX_KEY_H_SPARSE, 0xFFFFFFFF);
+    // uint32_t MAX_KEY_H_SPARSE =
+    //     static_cast<uint32_t>(kZeroDensityContextCount) * 2048;
+    // compact_map_h.assign(MAX_KEY_H_SPARSE, 0xFFFFFFFF);
     num_zdcai = 0;
 
     uint32_t lo_pos = 0;
     uint32_t hi_pos = 0;
-    for (size_t bi = 0; bi < active_bins.size(); ++bi) {
-      uint32_t b = active_bins[bi];
-      uint32_t zdc_ai = b & 0xFFFFF;
-      if (compact_map_h[zdc_ai] == 0xFFFFFFFF)
-        compact_map_h[zdc_ai] = num_zdcai++;
+    for (unsigned int bin : active_bins) {
+      // uint32_t zdc_ai = b & 0xFFFFF;
+      // if (compact_map_h[zdc_ai] == 0xFFFFFFFF)
+      //   compact_map_h[zdc_ai] = num_zdcai++;
 
       uint32_t start_lo = lo_pos;
       uint32_t start_hi = hi_pos;
-      uint32_t end_lo = bin_start_lo[b];
-      uint32_t end_hi = bin_start_hi[b];
+      uint32_t end_lo = bin_start_lo[bin];
+      uint32_t end_hi = bin_start_hi[bin];
       lo_pos = end_lo;
       hi_pos = end_hi;
 
-      bool new_ctx = (prev_b == UINT32_MAX) || ((b >> 11) != (prev_b >> 11));
+      bool new_ctx =
+          (prev_bin == UINT32_MAX) || ((bin >> 11) != (prev_bin >> 11));
       if (new_ctx) {
-        if (prev_b != UINT32_MAX) {
-          zdc_total[(prev_b >> 11) & 0x1FFu] += ctx_len;
+        if (prev_bin != UINT32_MAX) {
+          zdc_total[(prev_bin >> 11) & 0x1FFu] += ctx_len;
         }
         ctx_len = 0;
       }
       ctx_len += (end_lo - start_lo) + (end_hi - start_hi);
 
-      bool bin_ch = (prev_b != UINT32_MAX);
-      bool ctx_ch = bin_ch && ((b >> 11) != (prev_b >> 11));
+      bool bin_change = (prev_bin != UINT32_MAX);
+      bool ctx_change = bin_change && ((bin >> 11) != (prev_bin >> 11));
 
       uint32_t cur_dc0 = 0;
       bool first_in_bin = true;
-      auto emit_half = [&](const uint32_t* data_ptr, uint32_t start,
+      auto emit_half = [&](const std::vector<uint32_t>& data, uint32_t start,
                            uint32_t end, uint32_t dc0_base) {
         uint32_t i = start;
         while (i < end) {
           uint32_t j = i + 1;
-          while (j < end && data_ptr[j] == data_ptr[i]) ++j;
+          while (j < end && data[j] == data[i]) ++j;
           uint32_t run = j - i;
-          uint32_t dc0 = (data_ptr[i] >> 22) | dc0_base;
-          uint32_t dc1 = (data_ptr[i] >> 11) & 0x7FFu;
-          uint32_t dc2 = data_ptr[i] & 0x7FFu;
+          uint32_t dc0 = (data[i] >> 22) | dc0_base;
+          uint32_t dc1 = (data[i] >> 11) & 0x7FFu;
+          uint32_t dc2 = data[i] & 0x7FFu;
           if (first_in_bin || (dc0 - cur_dc0 > 15u)) {
             stream.push_back(
                 (1u << 31) |
-                (static_cast<uint32_t>(ctx_ch && first_in_bin) << 30) |
-                (static_cast<uint32_t>(bin_ch && first_in_bin) << 29) |
-                (b << 7) | (dc0 >> 4));
+                (static_cast<uint32_t>(ctx_change && first_in_bin) << 30) |
+                (static_cast<uint32_t>(bin_change && first_in_bin) << 29) |
+                (bin << 7) | (dc0 >> 4));
             cur_dc0 = (dc0 >> 4) << 4;
           }
           uint32_t delta_dc0 = dc0 - cur_dc0;
@@ -523,13 +598,13 @@ struct JPEGOptData {
         }
       };
 
-      emit_half(flat_lo.data(), start_lo, end_lo, 0u);
-      emit_half(flat_hi.data(), start_hi, end_hi, 0x400u);
-      prev_b = b;
+      emit_half(flat_lo, start_lo, end_lo, 0u);
+      emit_half(flat_hi, start_hi, end_hi, 0x400u);
+      prev_bin = bin;
     }
 
-    if (prev_b != UINT32_MAX) {
-      zdc_total[(prev_b >> 11) & 0x1FFu] += ctx_len;
+    if (prev_bin != UINT32_MAX) {
+      zdc_total[(prev_bin >> 11) & 0x1FFu] += ctx_len;
     }
     stream.shrink_to_fit();
     AC_stream = std::move(stream);
@@ -541,8 +616,7 @@ struct JPEGOptData {
     return true;
   }
 
-  Status BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
-                       const std::array<int, 3>& jpeg_c_map, ThreadPool* pool);
+  Status BuildFromJPEG(const jpeg::JPEGData& jpeg_data, ThreadPool* pool);
 };
 
 struct PartitioningCtx {
@@ -557,20 +631,15 @@ struct PartitioningCtx {
   std::vector<uint16_t> row_done;
   std::vector<int64_t> row_cum;
 
-  typedef std::pair<uint16_t, uint32_t> Bin;
-  typedef std::array<std::vector<Bin>, kMaxCells / 2> CellHistory;
-  CellHistory h_hist;
-  CellHistory N_hist;
+  using Bin = std::pair<uint16_t, uint32_t>;
+  using CellHistory = std::array<std::vector<Bin>, kMaxCells / 2>;
+  CellHistory h_history;
+  CellHistory N_history;
 
   std::vector<uint64_t> touched_h;
   std::vector<uint64_t> touched_N;
   std::vector<uint64_t> group_touched_h;
   std::vector<uint64_t> group_touched_N;
-
-  std::vector<uint32_t> cluster_hist_h;
-  std::vector<uint32_t> cluster_hist_N;
-  std::vector<uint32_t> cluster_touched_h;
-  std::vector<uint32_t> cluster_touched_N;
 
   std::vector<uint16_t> ax0_to_k;
   std::vector<uint16_t> k_to_dc0;
@@ -583,12 +652,12 @@ struct PartitioningCtx {
         DP_curr(kDCTRange, 0),
         row_done(kDCTRange, 0),
         row_cum(kDCTRange, 0),
-        h_hist(),
-        N_hist(),
-        touched_h(kMaxCells / 2 * kDCTRange >> 6, 0),
-        touched_N(kMaxCells / 2 * kDCTRange >> 6, 0),
-        group_touched_h(kMaxCells / 2 * kDCTRange >> 12, 0),
-        group_touched_N(kMaxCells / 2 * kDCTRange >> 12, 0),
+        h_history(),
+        N_history(),
+        touched_h(kBinCount, 0),
+        touched_N(kBinCount, 0),
+        group_touched_h(kGroupCount, 0),
+        group_touched_N(kGroupCount, 0),
         ax0_to_k(kDCTRange, 0),
         k_to_dc0(kDCTRange, 0),
         ax1_row(kDCTRange, 0),
@@ -598,7 +667,10 @@ struct PartitioningCtx {
   const std::vector<ACEntry>& ac_stream() const { return data().AC_stream; }
 
   static ptrdiff_t Bkt(int dc, const Thresholds& T) {
-    return std::upper_bound(T.begin(), T.end(), dc) - T.begin();
+    for (size_t i = 0; i < T.size(); i++)
+      if (T[i] > dc) return i;
+    return T.size();
+    // return std::upper_bound(T.begin(), T.end(), dc) - T.begin();
   }
 
   void UpdateMaps(uint32_t axis, const Thresholds& T0, const Thresholds& T1,
@@ -655,8 +727,8 @@ struct PartitioningCtx {
   }
 
   template <class FlushH, class FlushN, class OnRun>
-  void StreamSweep(const std::vector<uint32_t>& stream, FlushH&& flush_h,
-                   FlushN&& flush_N, OnRun&& on_run) const {
+  void StreamSweep(FlushH&& flush_h, FlushN&& flush_N, OnRun&& on_run) const {
+    const std::vector<uint32_t>& stream = ac_stream();
     uint32_t dc0_idx = 0;
     uint32_t bin_state = 0;
     for (size_t si = 0; si < stream.size(); ++si) {
@@ -682,19 +754,26 @@ struct PartitioningCtx {
   void EnsureCost(uint32_t M, uint32_t l, uint32_t n) {
     l = std::min(l, n);
     if (row_done[n] != UINT16_MAX && row_done[n] >= l) return;
-    uint32_t start = (row_done[n] == UINT16_MAX) ? 0u : (row_done[n] + 1);
-    int64_t cum = (start == 0) ? 0 : row_cum[n];
-    for (uint32_t v = start; v <= l; ++v) {
-      cum += costs[n * M + v];
-      if (n > 0 && v < n) {
-        EnsureCost(M, v, n - 1);
-        costs[n * M + v] = costs[(n - 1) * M + v] + cum;
-      } else {
-        costs[n * M + v] = cum;
+    // Row `nn` needs columns up to `min(l, nn)` because row `nn+1` accesses
+    // `costs[nn*M+v]` for `v` in `[0, min(l, nn)]`. Processing rows from 0
+    // to `n` guarantees that `costs[(nn-1)*M+v]` is already available when
+    // computing row `nn`.
+    for (uint32_t nn = 0; nn <= n; ++nn) {
+      uint32_t needed = std::min(l, nn);
+      if (row_done[nn] != UINT16_MAX && row_done[nn] >= needed) continue;
+      uint32_t start = (row_done[nn] == UINT16_MAX) ? 0u : (row_done[nn] + 1);
+      int64_t cum = (start == 0) ? 0 : row_cum[nn];
+      for (uint32_t v = start; v <= needed; ++v) {
+        cum += costs[nn * M + v];
+        if (nn > 0 && v < nn) {
+          costs[nn * M + v] = costs[(nn - 1) * M + v] + cum;
+        } else {
+          costs[nn * M + v] = cum;
+        }
       }
+      row_cum[nn] = cum;
+      row_done[nn] = static_cast<uint16_t>(needed);
     }
-    row_cum[n] = cum;
-    row_done[n] = static_cast<uint16_t>(l);
   }
 
   int64_t GetCost(uint32_t M, uint32_t l, uint32_t n) {
@@ -751,7 +830,6 @@ struct PartitioningCtx {
   }
 
   Thresholds OptimizeAxisSingleSplit(uint32_t axis, uint32_t ncells,
-                                     const std::vector<uint32_t>& stream,
                                      uint32_t M_eff) {
     const JPEGOptData& d = data();
     if (costs.size() < M_eff + 1) {
@@ -789,8 +867,8 @@ struct PartitioningCtx {
       };
 
       StreamSweep(
-          stream, [&]() { flush_hist(h_hist, bin_mask, -1); },
-          [&]() { flush_hist(N_hist, ctx_mask, +1); },
+          [&]() { flush_hist(h_history, bin_mask, -1); },
+          [&]() { flush_hist(N_history, ctx_mask, +1); },
           [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx,
               uint32_t run, uint32_t) {
             uint32_t dc_k_bkt = ax0_to_k[dc0_idx];
@@ -798,19 +876,21 @@ struct PartitioningCtx {
                 static_cast<uint32_t>(ax1_row[dc1_idx] + ax2_col[dc2_idx]);
             bin_mask |= (1ULL << ci);
             ctx_mask |= (1ULL << ci);
-            if (!h_hist[ci].empty() && h_hist[ci].back().first == dc_k_bkt) {
-              h_hist[ci].back().second += run;
+            if (!h_history[ci].empty() &&
+                h_history[ci].back().first == dc_k_bkt) {
+              h_history[ci].back().second += run;
             } else {
-              h_hist[ci].push_back({static_cast<uint16_t>(dc_k_bkt), run});
+              h_history[ci].emplace_back(static_cast<uint16_t>(dc_k_bkt), run);
             }
-            if (!N_hist[ci].empty() && N_hist[ci].back().first == dc_k_bkt) {
-              N_hist[ci].back().second += run;
+            if (!N_history[ci].empty() &&
+                N_history[ci].back().first == dc_k_bkt) {
+              N_history[ci].back().second += run;
             } else {
-              N_hist[ci].push_back({static_cast<uint16_t>(dc_k_bkt), run});
+              N_history[ci].emplace_back(static_cast<uint16_t>(dc_k_bkt), run);
             }
           });
-      flush_hist(h_hist, bin_mask, -1);
-      flush_hist(N_hist, ctx_mask, +1);
+      flush_hist(h_history, bin_mask, -1);
+      flush_hist(N_history, ctx_mask, +1);
     } else {
       uint32_t cnt_size = M_eff * ncells;
       if (h_cnt.size() < cnt_size) h_cnt.assign(cnt_size, 0);
@@ -841,23 +921,22 @@ struct PartitioningCtx {
         }
       };
 
-      StreamSweep(
-          stream, [&]() { flush_dense(h_cnt, bin_mask, -1); },
-          [&]() { flush_dense(N_cnt, ctx_mask, +1); },
-          [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx,
-              uint32_t run, uint32_t) {
-            uint32_t dc_arr[3] = {dc0_idx, dc1_idx, dc2_idx};
-            uint32_t dc_k_bkt = ax0_to_k[dc_arr[axis]];
-            uint32_t ax1 = (axis + 1) % 3;
-            uint32_t ax2 = (axis + 2) % 3;
-            uint32_t ci = static_cast<uint32_t>(ax1_row[dc_arr[ax1]] +
-                                                ax2_col[dc_arr[ax2]]);
-            uint32_t idx = ci * M_eff + dc_k_bkt;
-            h_cnt[idx] += run;
-            bin_mask |= (1ULL << ci);
-            N_cnt[idx] += run;
-            ctx_mask |= (1ULL << ci);
-          });
+      StreamSweep([&]() { flush_dense(h_cnt, bin_mask, -1); },
+                  [&]() { flush_dense(N_cnt, ctx_mask, +1); },
+                  [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx,
+                      uint32_t run, uint32_t) {
+                    uint32_t dc_arr[3] = {dc0_idx, dc1_idx, dc2_idx};
+                    uint32_t dc_k_bkt = ax0_to_k[dc_arr[axis]];
+                    uint32_t ax1 = (axis + 1) % 3;
+                    uint32_t ax2 = (axis + 2) % 3;
+                    uint32_t ci = static_cast<uint32_t>(ax1_row[dc_arr[ax1]] +
+                                                        ax2_col[dc_arr[ax2]]);
+                    uint32_t idx = ci * M_eff + dc_k_bkt;
+                    h_cnt[idx] += run;
+                    bin_mask |= (1ULL << ci);
+                    N_cnt[idx] += run;
+                    ctx_mask |= (1ULL << ci);
+                  });
       flush_dense(h_cnt, bin_mask, -1);
       flush_dense(N_cnt, ctx_mask, +1);
     }
@@ -879,10 +958,10 @@ struct PartitioningCtx {
   void FlushTerm(std::vector<uint32_t>& cnt, uint64_t* group_touched,
                  uint64_t* touched, uint32_t M_eff) {
     const JPEGOptData& d = data();
-    auto& hist = h_hist[0];
-    hist.clear();
+    auto& history = h_history[0];
+    history.clear();
     uint32_t cur_ci = UINT32_MAX;
-    for (uint32_t hi_idx = 0; hi_idx < 16; hi_idx++) {
+    for (uint32_t hi_idx = 0; hi_idx < kGroupCount; hi_idx++) {
       uint64_t group_mask = group_touched[hi_idx];
       while (group_mask) {
         uint32_t lo_idx = static_cast<uint32_t>(CountrZero64(group_mask));
@@ -894,19 +973,18 @@ struct PartitioningCtx {
           uint32_t ci = bit_idx / M_eff;
           uint32_t n = bit_idx % M_eff;
           if (ci != cur_ci) {
-            hist.clear();
+            history.clear();
             cur_ci = ci;
           }
           int64_t* cost_row = &costs[n * M_eff];
           uint32_t freq = cnt[bit_idx];
           uint32_t j_n = freq;
-          if (!hist.empty()) {
-            j_n += hist.back().second;
+          if (!history.empty()) {
+            j_n += history.back().second;
             uint32_t l = 0;
             uint32_t j_before_l = 0;
             int64_t prev_term = 0;
-            for (size_t hi = 0; hi < hist.size(); hi++) {
-              const Bin& h = hist[hi];
+            for (const Bin& h : history) {
               uint32_t j_ln = j_n - j_before_l;
               int64_t term = sign * (d.ftab[j_ln - freq] - d.ftab[j_ln]);
               cost_row[l] += term - prev_term;
@@ -916,7 +994,7 @@ struct PartitioningCtx {
             }
             cost_row[l] -= sign * d.ftab[freq] + prev_term;
           }
-          hist.push_back({static_cast<uint16_t>(n), j_n});
+          history.emplace_back(static_cast<uint16_t>(n), j_n);
           cnt[bit_idx] = 0;
           cell_mask &= cell_mask - 1;
         }
@@ -929,7 +1007,6 @@ struct PartitioningCtx {
 
   Thresholds OptimizeAxisSingleSweep(uint32_t axis, uint32_t num_intervals,
                                      const Thresholds& T1, const Thresholds& T2,
-                                     const std::vector<uint32_t>& stream,
                                      uint32_t M_target = kMTarget) {
     const JPEGOptData& d = data();
     if (num_intervals == 1) return {};
@@ -944,8 +1021,7 @@ struct PartitioningCtx {
     uint32_t ncells = n1 * n2;
     uint32_t M_eff = PrepareBucketing(axis, num_intervals, T1, T2, M_target);
 
-    if (num_intervals == 2)
-      return OptimizeAxisSingleSplit(axis, ncells, stream, M_eff);
+    if (num_intervals == 2) return OptimizeAxisSingleSplit(axis, ncells, M_eff);
 
     size_t cnt_size = static_cast<size_t>(ncells) * M_eff;
     if (h_cnt.size() < cnt_size) h_cnt.assign(cnt_size, 0);
@@ -958,7 +1034,6 @@ struct PartitioningCtx {
     }
 
     StreamSweep(
-        stream,
         [&]() {
           FlushTerm<+1>(h_cnt, group_touched_h.data(), touched_h.data(), M_eff);
         },
@@ -992,8 +1067,7 @@ struct PartitioningCtx {
   }
 
   std::pair<int64_t, ThresholdSet> OptimizeThresholds(
-      ThresholdSet T, const std::vector<uint32_t>& stream,
-      uint32_t M_target = UINT32_MAX, uint32_t max_iters = 20) {
+      ThresholdSet T, uint32_t M_target = UINT32_MAX, uint32_t max_iters = 20) {
     uint32_t a = static_cast<uint32_t>(T.TY().size() + 1);
     uint32_t b = static_cast<uint32_t>(T.TCb().size() + 1);
     uint32_t c = static_cast<uint32_t>(T.TCr().size() + 1);
@@ -1005,24 +1079,21 @@ struct PartitioningCtx {
     bool TCr_changed = (c != 1);
     for (uint32_t iter = 0; iter < max_iters; iter++) {
       if ((a != 1) && (iter == 0 || TCb_changed || TCr_changed)) {
-        newT.TY() =
-            OptimizeAxisSingleSweep(0, a, T.TCb(), T.TCr(), stream, M_target);
+        newT.TY() = OptimizeAxisSingleSweep(0, a, T.TCb(), T.TCr(), M_target);
         TY_changed = (newT.TY() != T.TY());
         std::swap(T.TY(), newT.TY());
       } else {
         TY_changed = false;
       }
       if ((b != 1) && (iter == 0 || TY_changed || TCr_changed)) {
-        newT.TCb() =
-            OptimizeAxisSingleSweep(1, b, T.TCr(), T.TY(), stream, M_target);
+        newT.TCb() = OptimizeAxisSingleSweep(1, b, T.TCr(), T.TY(), M_target);
         TCb_changed = (newT.TCb() != T.TCb());
         std::swap(T.TCb(), newT.TCb());
       } else {
         TCb_changed = false;
       }
       if ((c != 1) && (iter == 0 || TY_changed || TCb_changed)) {
-        newT.TCr() =
-            OptimizeAxisSingleSweep(2, c, T.TY(), T.TCb(), stream, M_target);
+        newT.TCr() = OptimizeAxisSingleSweep(2, c, T.TY(), T.TCb(), M_target);
         TCr_changed = (newT.TCr() != T.TCr());
         std::swap(T.TCr(), newT.TCr());
       } else {
@@ -1030,11 +1101,10 @@ struct PartitioningCtx {
       }
       if (!TY_changed && !TCb_changed && !TCr_changed) break;
     }
-    return {TotalCost(T, stream), T};
+    return {TotalCost(T), T};
   }
 
-  int64_t TotalCost(const ThresholdSet& T,
-                    const std::vector<uint32_t>& stream) {
+  int64_t TotalCost(const ThresholdSet& T) {
     const JPEGOptData& d = data();
     uint32_t na = static_cast<uint32_t>(T.TY().size() + 1);
     uint32_t num_cells = na * static_cast<uint32_t>(T.TCb().size() + 1) *
@@ -1046,7 +1116,7 @@ struct PartitioningCtx {
     int64_t cost = 0;
 
     auto flush_h = [&]() {
-      for (size_t gi = 0; gi < 16; ++gi) {
+      for (size_t gi = 0; gi < kGroupCount; ++gi) {
         uint64_t gm = group_touched_h[gi];
         while (gm) {
           size_t gi2 = (gi << 6) | static_cast<uint32_t>(CountrZero64(gm));
@@ -1064,7 +1134,7 @@ struct PartitioningCtx {
       }
     };
     auto flush_N = [&]() {
-      for (size_t gi = 0; gi < 16; ++gi) {
+      for (size_t gi = 0; gi < kGroupCount; ++gi) {
         uint64_t gm = group_touched_N[gi];
         while (gm) {
           size_t gi2 = (gi << 6) | static_cast<uint32_t>(CountrZero64(gm));
@@ -1082,7 +1152,7 @@ struct PartitioningCtx {
       }
     };
 
-    StreamSweep(stream, flush_h, flush_N,
+    StreamSweep(flush_h, flush_N,
                 [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx,
                     uint32_t run, uint32_t) {
                   uint32_t ci = ax1_row[dc1_idx] + ax2_col[dc2_idx];
@@ -1105,361 +1175,306 @@ struct PartitioningCtx {
     return cost;
   }
 
-  typedef std::vector<std::unordered_map<uint32_t, uint32_t>> SparseHistogram;
+  using SparseHistogram = std::vector<std::unordered_map<uint32_t, uint32_t>>;
+
   struct Clustering {
     int64_t clustered_cost;
+    uint32_t ctx_num;
     ContextMap ctx_map;
-  };
 
-  StatusOr<Clustering> AgglomerativeClusterCore(
-      uint32_t total_ctxs, uint32_t num_clusters, SparseHistogram& hist_h,
-      SparseHistogram& hist_N, uint32_t P, ThreadPool* pool) const {
-    const JPEGOptData& d = data();
+    SparseHistogram hist_h;
+    SparseHistogram hist_N;
+    SparseHistogram hist_nz_h;
+    SparseHistogram hist_nz_N;
 
-    std::vector<int64_t> E(total_ctxs, 0);
-    JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, total_ctxs, ThreadPool::NoInit,
-        [&](uint32_t i, size_t) -> Status {
-          int64_t local_E = 0;
-          for (uint32_t p = 0; p < P; ++p) {
-            uint32_t idx = i * P + p;
-            for (auto kv = hist_N[idx].begin(); kv != hist_N[idx].end(); ++kv)
-              local_E += d.ftab[kv->second];
-            for (auto kv = hist_h[idx].begin(); kv != hist_h[idx].end(); ++kv)
-              local_E -= d.ftab[kv->second];
-          }
-          E[i] = local_E;
-          return true;
-        },
-        "InitEntropy"));
+    Status AgglomerativeClusterCore(const JPEGOptData& d, uint32_t total_ctxs,
+                                    uint32_t num_clusters, ThreadPool* pool) {
+      num_clusters = std::max(num_clusters, uint32_t{1});
+      ctx_map.assign(total_ctxs, 0);
 
-    int64_t initial_cost = 0;
-    for (uint32_t i = 0; i < total_ctxs; i++) initial_cost += E[i];
-
-    if (total_ctxs <= num_clusters) {
-      ContextMap ctx_table(total_ctxs);
-      std::iota(ctx_table.begin(), ctx_table.end(), 0);
-      return Clustering{initial_cost, ctx_table};
-    }
-
-    auto is_ctx_active = [&](uint32_t ctx) -> bool {
-      for (uint32_t p = 0; p < P; ++p) {
-        if (!hist_N[ctx * P + p].empty()) return true;
-      }
-      return false;
-    };
-
-    std::vector<uint32_t> active;
-    active.reserve(total_ctxs);
-    for (uint32_t i = 0; i < total_ctxs; i++) {
-      if (is_ctx_active(i)) active.push_back(i);
-    }
-
-    std::vector<uint32_t> parent(total_ctxs);
-    std::iota(parent.begin(), parent.end(), 0);
-    std::function<uint32_t(uint32_t)> find = [&parent,
-                                              &find](uint32_t x) -> uint32_t {
-      return parent[x] == x ? x : parent[x] = find(parent[x]);
-    };
-
-    std::vector<int64_t> deltas(total_ctxs * total_ctxs, 0);
-    auto get_delta = [&](uint32_t a, uint32_t b) -> int64_t& {
-      return deltas[std::min(a, b) * total_ctxs + std::max(a, b)];
-    };
-    auto merge_delta = [&](uint32_t a, uint32_t b) -> int64_t {
-      int64_t delta = 0;
-      for (uint32_t p = 0; p < P; ++p) {
-        uint32_t ia = a * P + p;
-        uint32_t ib = b * P + p;
-        for (auto kv = hist_N[ia].begin(); kv != hist_N[ia].end(); ++kv) {
-          auto it = hist_N[ib].find(kv->first);
-          if (it != hist_N[ib].end()) {
-            delta += d.ftab[kv->second + it->second] - d.ftab[kv->second] -
-                     d.ftab[it->second];
-          }
-        }
-        for (auto kv = hist_h[ia].begin(); kv != hist_h[ia].end(); ++kv) {
-          auto it = hist_h[ib].find(kv->first);
-          if (it != hist_h[ib].end()) {
-            delta -= d.ftab[kv->second + it->second] - d.ftab[kv->second] -
-                     d.ftab[it->second];
-          }
-        }
-      }
-      return delta;
-    };
-
-    uint32_t num_active = static_cast<uint32_t>(active.size());
-    if (num_active >= 2) {
+      std::vector<int64_t> E(total_ctxs, 0);
       JXL_RETURN_IF_ERROR(RunOnPool(
-          pool, 0, num_active - 1, ThreadPool::NoInit,
+          pool, 0, total_ctxs, ThreadPool::NoInit,
+          [&](uint32_t i, size_t) -> Status {
+            int64_t local_E = 0;
+            for (auto kv : hist_N[i]) local_E += d.ftab[kv.second];
+            for (auto kv : hist_h[i]) local_E -= d.ftab[kv.second];
+            for (auto kv : hist_nz_N[i]) local_E += d.nz_entropy(kv.second);
+            for (auto kv : hist_nz_h[i]) local_E -= d.nz_entropy(kv.second);
+            E[i] = local_E;
+            return true;
+          },
+          "InitEntropy"));
+
+      int64_t initial_cost = 0;
+      for (int64_t e : E) initial_cost += e;
+
+      // List of active clusters - starting from all nonempty contexts
+      std::vector<uint32_t> active;
+      active.reserve(total_ctxs);
+      for (uint32_t i = 0; i < total_ctxs; i++) {
+        if (!hist_N[i].empty() || !hist_nz_N[i].empty()) active.push_back(i);
+      }
+      std::vector<uint32_t> initial_active = active;
+
+      uint32_t active_clusters = static_cast<uint32_t>(active.size());
+      if (active_clusters <= num_clusters) {
+        ctx_num = active_clusters;
+        uint32_t cluster_ind = 0;
+        for (uint32_t active_ctx : active) ctx_map[active_ctx] = cluster_ind++;
+        clustered_cost = initial_cost;
+        return true;
+      }
+
+      std::vector<uint32_t> parent(total_ctxs);
+      std::iota(parent.begin(), parent.end(), 0);
+
+      std::vector<int64_t> deltas(total_ctxs * total_ctxs, 0);
+      auto get_delta = [&](uint32_t cl_a, uint32_t cl_b) -> int64_t& {
+        return deltas[std::min(cl_a, cl_b) * total_ctxs + std::max(cl_a, cl_b)];
+      };
+      auto merge_delta = [&](uint32_t cl_a, uint32_t cl_b) -> int64_t {
+        int64_t delta = 0;
+
+        for (auto bin : hist_N[cl_a]) {
+          auto it = hist_N[cl_b].find(bin.first);
+          if (it != hist_N[cl_b].end()) {
+            delta += d.ftab[bin.second + it->second] - d.ftab[bin.second] -
+                     d.ftab[it->second];
+          }
+        }
+        for (auto bin : hist_h[cl_a]) {
+          auto it = hist_h[cl_b].find(bin.first);
+          if (it != hist_h[cl_b].end()) {
+            delta -= d.ftab[bin.second + it->second] - d.ftab[bin.second] -
+                     d.ftab[it->second];
+          }
+        }
+        for (auto bin : hist_nz_N[cl_a]) {
+          auto it = hist_nz_N[cl_b].find(bin.first);
+          if (it != hist_nz_N[cl_b].end()) {
+            delta += d.nz_entropy(bin.second + it->second) -
+                     d.nz_entropy(bin.second) - d.nz_entropy(it->second);
+          }
+        }
+        for (auto bin : hist_nz_h[cl_a]) {
+          auto it = hist_nz_h[cl_b].find(bin.first);
+          if (it != hist_nz_h[cl_b].end()) {
+            delta -= d.nz_entropy(bin.second + it->second) -
+                     d.nz_entropy(bin.second) - d.nz_entropy(it->second);
+          }
+        }
+        return delta;
+      };
+
+      JXL_RETURN_IF_ERROR(RunOnPool(
+          pool, 0, active_clusters - 1, ThreadPool::NoInit,
           [&](uint32_t i, size_t) -> Status {
             uint32_t id_i = active[i];
-            for (uint32_t j = i + 1; j < num_active; j++)
+            for (uint32_t j = i + 1; j < active_clusters; j++)
               get_delta(id_i, active[j]) = merge_delta(id_i, active[j]);
             return true;
           },
           "MergeDelta"));
-    }
 
-    while (active.size() > num_clusters && active.size() > 1) {
-      int64_t best_delta = std::numeric_limits<int64_t>::max();
-      size_t best_i = 0;
-      size_t best_j = 1;
-      std::mutex best_mtx;
+      do {
+        int64_t best_delta = std::numeric_limits<int64_t>::max();
+        size_t best_i = 0;
+        size_t best_j = 1;
+        std::mutex best_mtx;
 
-      uint32_t cur_active = static_cast<uint32_t>(active.size());
-      JXL_RETURN_IF_ERROR(RunOnPool(
-          pool, 0, cur_active - 1, ThreadPool::NoInit,
-          [&](uint32_t i, size_t) -> Status {
-            uint32_t id_i = active[i];
-            size_t local_best_j = i + 1;
-            int64_t local_best_diff = get_delta(id_i, active[local_best_j]);
-            size_t K = active.size();
-            for (size_t j = i + 2; j < K; j++) {
-              int64_t diff = get_delta(id_i, active[j]);
-              if (diff < local_best_diff) {
-                local_best_diff = diff;
-                local_best_j = j;
-              }
-            }
-            std::lock_guard<std::mutex> lock(best_mtx);
-            if (local_best_diff < best_delta) {
-              best_delta = local_best_diff;
-              best_i = i;
-              best_j = local_best_j;
-            }
-            return true;
-          },
-          "FindBestMerge"));
-
-      uint32_t a_id = active[best_i];
-      uint32_t b_id = active[best_j];
-      E[a_id] += E[b_id] + best_delta;
-      for (uint32_t p = 0; p < P; ++p) {
-        uint32_t ia = a_id * P + p;
-        uint32_t ib = b_id * P + p;
-        for (auto kv = hist_N[ib].begin(); kv != hist_N[ib].end(); ++kv)
-          hist_N[ia][kv->first] += kv->second;
-        for (auto kv = hist_h[ib].begin(); kv != hist_h[ib].end(); ++kv)
-          hist_h[ia][kv->first] += kv->second;
-      }
-      parent[b_id] = a_id;
-      active.erase(active.begin() + static_cast<ptrdiff_t>(best_j));
-      num_active = static_cast<uint32_t>(active.size());
-      if (num_active > 0) {
         JXL_RETURN_IF_ERROR(RunOnPool(
-            pool, 0, num_active, ThreadPool::NoInit,
-            [&](uint32_t k, size_t) -> Status {
-              if (active[k] != a_id)
-                get_delta(a_id, active[k]) = merge_delta(a_id, active[k]);
+            pool, 0, active_clusters - 1, ThreadPool::NoInit,
+            [&](uint32_t i, size_t) -> Status {
+              uint32_t id_i = active[i];
+              size_t local_best_j = i + 1;
+              int64_t local_best_diff = get_delta(id_i, active[local_best_j]);
+              for (size_t j = i + 2; j < active_clusters; j++) {
+                int64_t diff = get_delta(id_i, active[j]);
+                if (diff < local_best_diff) {
+                  local_best_diff = diff;
+                  local_best_j = j;
+                }
+              }
+              std::lock_guard<std::mutex> lock(best_mtx);
+              if (local_best_diff < best_delta) {
+                best_delta = local_best_diff;
+                best_i = i;
+                best_j = local_best_j;
+              }
               return true;
             },
-            "UpdateDist"));
-      }
-    }
+            "FindBestMerge"));
 
-    std::unordered_map<uint32_t, uint32_t> rep_to_cluster;
-    int64_t clustered_cost = 0;
-    for (size_t k = 0; k < active.size(); k++) {
-      rep_to_cluster[active[k]] = static_cast<uint32_t>(k);
-      clustered_cost += E[active[k]];
-    }
+        uint32_t a_id = active[best_i];
+        uint32_t b_id = active[best_j];
+        E[a_id] += E[b_id] + best_delta;
+        for (auto bin : hist_N[b_id]) hist_N[a_id][bin.first] += bin.second;
+        for (auto bin : hist_h[b_id]) hist_h[a_id][bin.first] += bin.second;
+        for (auto bin : hist_nz_N[b_id])
+          hist_nz_N[a_id][bin.first] += bin.second;
+        for (auto bin : hist_nz_h[b_id])
+          hist_nz_h[a_id][bin.first] += bin.second;
+        parent[b_id] = a_id;
+        std::swap(active[best_j], active.back());
+        active.pop_back();
 
-    ContextMap result(total_ctxs, 0);
-    for (uint32_t i = 0; i < total_ctxs; i++) {
-      auto it = rep_to_cluster.find(find(i));
-      if (it != rep_to_cluster.end()) {
-        result[i] = static_cast<uint8_t>(it->second);
-      } else if (!is_ctx_active(i)) {
-        result[i] = 0;
+        --active_clusters;
+        if (active_clusters > num_clusters) {
+          JXL_RETURN_IF_ERROR(RunOnPool(
+              pool, 0, active_clusters, ThreadPool::NoInit,
+              [&](uint32_t k, size_t) -> Status {
+                if (active[k] != a_id)
+                  get_delta(a_id, active[k]) = merge_delta(a_id, active[k]);
+                return true;
+              },
+              "UpdateDist"));
+        }
+      } while (active_clusters > num_clusters);
+
+      clustered_cost = 0;
+      for (unsigned int k : active) clustered_cost += E[k];
+
+      ctx_num = num_clusters;
+      std::function<uint32_t(uint32_t)> find_cluster =
+          [&parent, &find_cluster](uint32_t ctx) -> uint32_t {
+        return parent[ctx] == ctx ? ctx
+                                  : parent[ctx] = find_cluster(parent[ctx]);
+      };
+      for (uint32_t i : initial_active) {
+        ctx_map[i] = std::find(active.begin(), active.end(), find_cluster(i)) -
+                     active.begin();
       }
+      // Save cluster histograms
+      SparseHistogram tmp(num_clusters);
+      uint32_t ind = 0;
+      for (uint32_t i : active) tmp[ind++].swap(hist_h[i]);
+      hist_h.swap(tmp);
+      tmp.assign(num_clusters, {});
+      ind = 0;
+      for (uint32_t i : active) tmp[ind++].swap(hist_N[i]);
+      hist_N.swap(tmp);
+      tmp.assign(num_clusters, {});
+      ind = 0;
+      for (uint32_t i : active) tmp[ind++].swap(hist_nz_h[i]);
+      hist_nz_h.swap(tmp);
+      tmp.assign(num_clusters, {});
+      ind = 0;
+      for (uint32_t i : active) tmp[ind++].swap(hist_nz_N[i]);
+      hist_nz_N.swap(tmp);
+
+      return true;
     }
-    return Clustering{clustered_cost, result};
-  }
+  };
 
   StatusOr<Clustering> ClusterContexts(const ThresholdSet& thresholds,
-                                       uint32_t num_clusters = 16,
+                                       uint32_t num_clusters = kMaxClusters,
                                        ThreadPool* pool = nullptr) {
-    const auto& stream = ac_stream();
-    uint32_t na = static_cast<uint32_t>(thresholds.TY().size() + 1);
+    const JPEGOptData& d = data();
+    uint32_t n0 = static_cast<uint32_t>(thresholds.TY().size() + 1);
     uint32_t n1 = static_cast<uint32_t>(thresholds.TCb().size() + 1);
     uint32_t n2 = static_cast<uint32_t>(thresholds.TCr().size() + 1);
-    uint32_t num_cells = na * n1 * n2;
+    uint32_t num_cells = n0 * n1 * n2;
     uint32_t total_ctxs = kNumCh * num_cells;
     UpdateMaps(thresholds);
 
-    uint32_t P = 1;
-    SparseHistogram hist_h(total_ctxs * P);
-    SparseHistogram hist_N(total_ctxs * P);
+    Clustering cl;
+    cl.hist_h.resize(total_ctxs);
+    cl.hist_N.resize(total_ctxs);
+    cl.hist_nz_h.resize(total_ctxs);
+    cl.hist_nz_N.resize(total_ctxs);
 
     StreamSweep(
-        stream, []() {}, []() {},
+        []() {}, []() {},
         [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
             uint32_t bin_state) {
-          uint32_t cur_c = (bin_state >> 20) & 0x3u;
+          uint32_t c = (bin_state >> 20) & 0x3u;
           uint32_t cell = static_cast<uint32_t>(
-              (ax1_row[dc1_idx] + ax2_col[dc2_idx]) * na + ax0_to_k[dc0_idx]);
-          uint32_t ctx_id = cur_c * num_cells + cell;
-          uint32_t idx = ctx_id * P;
-          hist_h[idx][bin_state & 0xFFFFFu] += run;
-          uint32_t cur_zdc = (bin_state >> 11) & 0x1FFu;
-          hist_N[idx][cur_zdc] += run;
+              (ax1_row[dc1_idx] + ax2_col[dc2_idx]) * n0 + ax0_to_k[dc0_idx]);
+          uint32_t ctx_id = c * num_cells + cell;
+          cl.hist_h[ctx_id][bin_state & 0xFFFFFu] += run;
+          uint32_t zdc = (bin_state >> 11) & 0x1FFu;
+          cl.hist_N[ctx_id][zdc] += run;
         });
 
-    return AgglomerativeClusterCore(total_ctxs, num_clusters, hist_h, hist_N, P,
-                                    pool);
-  }
-
-  int64_t BuildBaselineHistograms(const ThresholdSet& thresholds,
-                                  const ContextMap& cluster_map,
-                                  uint32_t num_clusters = 16) {
-    const JPEGOptData& d = data();
-    const auto& stream = ac_stream();
-    uint32_t na = static_cast<uint32_t>(thresholds.TY().size() + 1);
-    uint32_t n1 = static_cast<uint32_t>(thresholds.TCb().size() + 1);
-    uint32_t n2 = static_cast<uint32_t>(thresholds.TCr().size() + 1);
-    uint32_t num_cells = na * n1 * n2;
-    UpdateMaps(thresholds);
-
-    uint32_t MAX_KEY_H = d.num_zdcai;
-    uint32_t MAX_KEY_N = static_cast<uint32_t>(kZeroDensityContextCount);
-
-    if (cluster_hist_h.size() < num_clusters * MAX_KEY_H) {
-      cluster_hist_h.assign(num_clusters * MAX_KEY_H, 0);
-      cluster_hist_N.assign(num_clusters * MAX_KEY_N, 0);
+    if (d.channels == 1) {
+      for (uint32_t b = 0; b < d.num_blocks[0]; ++b) {
+        uint32_t ctx_id = ax0_to_k[d.block_dc_idx[0][b]];
+        uint32_t nz_count = d.block_nonzeros[0][b];
+        uint32_t pb = d.nz_pred_bucket[0][b];
+        // Combine predicted bucket (0-35) and nz count (0-63) into a single
+        // key for the aggregator.
+        ++cl.hist_nz_h[ctx_id][(pb << 6) | nz_count];
+        ++cl.hist_nz_N[ctx_id][pb];
+      }
     } else {
-      for (uint32_t idx : cluster_touched_N) cluster_hist_N[idx] = 0;
-      for (uint32_t idx : cluster_touched_h) cluster_hist_h[idx] = 0;
-    }
-    cluster_touched_h.clear();
-    cluster_touched_N.clear();
+      for (uint32_t c = 0; c < kNumCh; ++c) {
+        for (uint32_t by = 0; by < d.block_grid_h[c]; ++by) {
+          for (uint32_t bx = 0; bx < d.block_grid_w[c]; ++bx) {
+            // Blocks of subsampled component use DC of top-left block
+            // in upsampled component
+            uint32_t x = bx * d.ss_x[c];
+            uint32_t y = by * d.ss_y[c];
+            uint32_t x0 = x / d.ss_x[0];
+            uint32_t y0 = y / d.ss_y[0];
+            uint32_t b0 = y0 * d.block_grid_w[0] + x0;
+            uint32_t x1 = x / d.ss_x[1];
+            uint32_t y1 = y / d.ss_y[1];
+            uint32_t b1 = y1 * d.block_grid_w[1] + x1;
+            uint32_t x2 = x / d.ss_x[2];
+            uint32_t y2 = y / d.ss_y[2];
+            uint32_t b2 = y2 * d.block_grid_w[2] + x2;
+            uint32_t cell = (ax1_row[d.block_dc_idx[1][b1]] +
+                             ax2_col[d.block_dc_idx[2][b2]]) *
+                                n0 +
+                            ax0_to_k[d.block_dc_idx[0][b0]];
+            uint32_t ctx_id = c * num_cells + cell;
 
-    StreamSweep(
-        stream, []() {}, []() {},
-        [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
-            uint32_t bin_state) {
-          uint32_t cur_c = (bin_state >> 20) & 0x3u;
-          uint32_t cell = static_cast<uint32_t>(
-              (ax1_row[dc1_idx] + ax2_col[dc2_idx]) * na + ax0_to_k[dc0_idx]);
-          uint32_t ctx_id = cur_c * num_cells + cell;
-          uint8_t cluster_id = cluster_map[ctx_id];
-          uint32_t h_idx =
-              cluster_id * MAX_KEY_H + d.compact_map_h[bin_state & 0xFFFFFu];
-          uint32_t N_idx =
-              cluster_id * MAX_KEY_N + ((bin_state >> 11) & 0x1FFu);
-          if (cluster_hist_h[h_idx] == 0) cluster_touched_h.push_back(h_idx);
-          cluster_hist_h[h_idx] += run;
-          if (cluster_hist_N[N_idx] == 0) cluster_touched_N.push_back(N_idx);
-          cluster_hist_N[N_idx] += run;
-        });
-
-    int64_t E = 0;
-    for (uint32_t idx : cluster_touched_N) E += d.ftab[cluster_hist_N[idx]];
-    for (uint32_t idx : cluster_touched_h) E -= d.ftab[cluster_hist_h[idx]];
-    return E;
-  }
-
-  int64_t NZClusteredCost(const ThresholdSet& thresholds,
-                          const ContextMap& cluster_map) {
-    const JPEGOptData& d = data();
-    uint32_t na = static_cast<uint32_t>(thresholds.TY().size() + 1);
-    uint32_t n1 = static_cast<uint32_t>(thresholds.TCb().size() + 1);
-    uint32_t n2 = static_cast<uint32_t>(thresholds.TCr().size() + 1);
-    uint32_t num_cells = na * n1 * n2;
-    uint32_t total_ctxs = kNumCh * num_cells;
-    if (cluster_map.size() != total_ctxs) return 0;
-    UpdateMaps(thresholds);
-
-    uint32_t num_clusters = 0;
-    for (size_t i = 0; i < cluster_map.size(); i++) {
-      num_clusters =
-          std::max(num_clusters, static_cast<uint32_t>(cluster_map[i]) + 1);
-    }
-
-    uint32_t N_keys = 36 * num_clusters;
-    uint32_t H_keys = N_keys << 6;
-    if (h_cnt.size() < N_keys) {
-      h_cnt.assign(N_keys, 0);
-    } else {
-      std::fill(h_cnt.begin(), h_cnt.begin() + N_keys, 0);
-    }
-    if (N_cnt.size() < H_keys) {
-      N_cnt.assign(H_keys, 0);
-    } else {
-      std::fill(N_cnt.begin(), N_cnt.begin() + H_keys, 0);
-    }
-
-    uint32_t w0 = d.block_grid_w[0];
-    uint32_t h0 = d.block_grid_h[0];
-    std::vector<uint32_t> row_top(w0);
-    std::vector<uint32_t> row_cur(w0);
-
-    for (uint32_t c = 0; c < kNumCh; ++c) {
-      std::fill(row_top.begin(), row_top.end(), 32u);
-      std::fill(row_cur.begin(), row_cur.end(), 32u);
-      bool has_top = false;
-      for (uint32_t by = 0; by < h0; ++by) {
-        for (uint32_t bx = 0; bx < w0; ++bx) {
-          uint32_t b = by * w0 + bx;
-          uint32_t bc = d.ToChBlock(b, c);
-          uint32_t predicted_nz;
-          if (bx == 0) {
-            predicted_nz = has_top ? row_top[bx] : 32u;
-          } else if (!has_top) {
-            predicted_nz = row_cur[bx - 1];
-          } else {
-            predicted_nz = (row_top[bx] + row_cur[bx - 1] + 1u) / 2u;
+            uint32_t b = by * d.block_grid_w[c] + bx;
+            uint32_t nz_count = d.block_nonzeros[c][b];
+            uint32_t pb = d.nz_pred_bucket[c][b];
+            // Combine predicted bucket (0-35) and nz count (0-63) into a single
+            // key for the aggregator.
+            ++cl.hist_nz_h[ctx_id][(pb << 6) | nz_count];
+            ++cl.hist_nz_N[ctx_id][pb];
           }
-
-          uint32_t cell = static_cast<uint32_t>(
-              (ax1_row[d.block_dc[1][b]] + ax2_col[d.block_dc[2][b]]) * na +
-              ax0_to_k[d.block_dc[0][b]]);
-          uint32_t block_ctx = cluster_map[c * num_cells + cell];
-          uint32_t nzero_ctx =
-              ((predicted_nz < 8) ? predicted_nz : (4 + predicted_nz / 2)) *
-                  num_clusters +
-              block_ctx;
-          uint32_t nz = d.block_nonzeros[c][bc];
-          h_cnt[nzero_ctx] += 1;
-          N_cnt[(nzero_ctx << 6) | nz] += 1;
-          row_cur[bx] = nz;
         }
-        row_top.swap(row_cur);
-        has_top = true;
       }
     }
 
-    // `h_cnt`/`N_cnt` here store block counts per context,
-    // and can grow up to about `num_blocks`, but `ftab` is sized
-    // only to cover `max_zdc_total`.
-    auto entropy_term = [&d](uint32_t n) -> int64_t {
-      if (n < d.ftab.size()) return d.ftab[n];
-      const double nd = static_cast<double>(n);
-      return static_cast<int64_t>(std::llround(nd * std::log2(nd) * kFScale));
-    };
-    int64_t cost = 0;
-    for (uint32_t i = 0; i < N_keys; i++) cost += entropy_term(h_cnt[i]);
-    for (uint32_t i = 0; i < H_keys; i++) cost -= entropy_term(N_cnt[i]);
-    return cost;
+    JXL_RETURN_IF_ERROR(
+        cl.AgglomerativeClusterCore(d, total_ctxs, num_clusters, pool));
+    return cl;
   }
 
-  std::pair<ThresholdSet, int64_t> RefineClustered(
-      const ThresholdSet& thresholds, const ContextMap& cluster_map,
-      uint32_t max_iters = 5, ptrdiff_t search_radius = 2048) {
+  struct RefineResult {
+    ThresholdSet thresholds;
+    int64_t cost;     // total cost (AC + nz)
+    int64_t nz_cost;  // nz cost portion only
+  };
+
+  RefineResult RefineClustered(const ThresholdSet& thresholds,
+                               Clustering& clustering, uint32_t max_iters = 5,
+                               ptrdiff_t search_radius = 2048) {
     const JPEGOptData& d = data();
     ThresholdSet cur_T = thresholds;
-    std::vector<uint32_t> scratch_hist_h;
-    std::vector<uint32_t> scratch_hist_N;
-    int64_t base_cost = BuildBaselineHistograms(cur_T, cluster_map, 16);
+    // Scratch histograms for speculative cost updates.
+    SparseHistogram scratch_hist_h;
+    SparseHistogram scratch_hist_N;
+    SparseHistogram scratch_hist_nz_N;
+    SparseHistogram scratch_hist_nz_h;
+
+    // Construct the baseline AC histogram exactly once.
+    int64_t base_cost = clustering.clustered_cost;
 
     uint32_t size_Y = static_cast<uint32_t>(cur_T.TY().size() + 1);
     uint32_t size_Cb = static_cast<uint32_t>(cur_T.TCb().size() + 1);
     uint32_t size_Cr = static_cast<uint32_t>(cur_T.TCr().size() + 1);
     uint32_t num_cells = size_Y * size_Cb * size_Cr;
 
+    // Build axis-relative cluster maps for axes 1 and 2.
     std::vector<uint8_t> local_cluster_map[3];
-    local_cluster_map[0] = cluster_map;
+    local_cluster_map[0] = clustering.ctx_map;
     for (uint32_t axis : {1u, 2u}) {
       uint32_t ax1 = (axis + 1) % 3;
       uint32_t ax2 = (axis + 2) % 3;
@@ -1479,27 +1494,27 @@ struct PartitioningCtx {
                   (bkt[1] * size_Cr + bkt[2]) * size_Y + bkt[0];
               uint32_t local_cell = (k1 * n2 + k2) * na + k0;
               local_cluster_map[axis][c * num_cells + local_cell] =
-                  cluster_map[c * num_cells + global_cell];
+                  clustering.ctx_map[c * num_cells + global_cell];
             }
           }
         }
       }
     }
 
+    // Coordinate descent loop repeatedly jittering all 3 color axes
     bool changed = true;
     for (uint32_t iter = 0; iter < max_iters && changed; iter++) {
       changed = false;
-      auto optimize_axis = [&](Thresholds& thr, uint32_t axis) {
+      auto optimize_axis = [&](uint32_t axis) {
+        Thresholds& thr = cur_T.T[axis];
         if (thr.empty()) return;
         const auto& DC_axis = d.dc_vals[axis];
         uint32_t ax1 = (axis + 1) % 3;
         uint32_t ax2 = (axis + 2) % 3;
-        uint32_t na = static_cast<uint32_t>(cur_T.T[axis].size() + 1);
-        UpdateMaps(axis, cur_T.T[axis], cur_T.T[ax1], cur_T.T[ax2]);
+        uint32_t na = static_cast<uint32_t>(thr.size() + 1);
+        UpdateMaps(axis, thr, cur_T.T[ax1], cur_T.T[ax2]);
         const auto& sorted_blocks = d.dc_sorted_blocks[axis];
         const auto& block_off = d.dc_block_offsets[axis];
-        uint32_t MAX_KEY_H = d.num_zdcai;
-        uint32_t MAX_KEY_N = static_cast<uint32_t>(kZeroDensityContextCount);
 
         for (uint32_t thr_ind = 0; thr_ind < thr.size(); thr_ind++) {
           ptrdiff_t cur_idx = Bkt(thr[thr_ind] - 1, DC_axis);
@@ -1516,70 +1531,191 @@ struct PartitioningCtx {
           ptrdiff_t best_idx = cur_idx;
           int64_t best_cost = base_cost;
 
+          // Incremental cost update for moving one item from
+          // `old_cluster` to `new_cluster`.
           auto apply_delta = [&](uint32_t old_cl, uint32_t new_cl,
-                                 uint32_t h_bin, uint32_t zdc_bin,
-                                 uint32_t freq) -> int64_t {
+                                 SparseHistogram& hist_h,
+                                 SparseHistogram& hist_N, uint32_t h_bin,
+                                 uint32_t N_bin) -> int64_t {
             int64_t delta = 0;
-            uint32_t h_old = old_cl * MAX_KEY_H + h_bin;
-            uint32_t h_new = new_cl * MAX_KEY_H + h_bin;
-            uint32_t old_freq = scratch_hist_h[h_old];
-            uint32_t new_freq = old_freq - freq;
-            delta -= d.ftab[new_freq] - d.ftab[old_freq];
-            scratch_hist_h[h_old] = new_freq;
-            old_freq = scratch_hist_h[h_new];
-            new_freq = old_freq + freq;
-            delta -= d.ftab[new_freq] - d.ftab[old_freq];
-            scratch_hist_h[h_new] = new_freq;
-            if (old_freq == 0) cluster_touched_h.push_back(h_new);
 
-            uint32_t N_old = old_cl * MAX_KEY_N + zdc_bin;
-            uint32_t N_new = new_cl * MAX_KEY_N + zdc_bin;
-            old_freq = scratch_hist_N[N_old];
-            new_freq = old_freq - freq;
-            delta += d.ftab[new_freq] - d.ftab[old_freq];
-            scratch_hist_N[N_old] = new_freq;
-            old_freq = scratch_hist_N[N_new];
-            new_freq = old_freq + freq;
-            delta += d.ftab[new_freq] - d.ftab[old_freq];
-            scratch_hist_N[N_new] = new_freq;
-            if (old_freq == 0) cluster_touched_N.push_back(N_new);
+            // h-term: negative contribution to cost.
+            uint32_t* freq = &hist_h[old_cl][h_bin];
+            uint32_t old_freq = *freq;
+            uint32_t new_freq = old_freq - 1;
+            delta -= d.nz_entropy(new_freq) - d.nz_entropy(old_freq);
+            *freq = new_freq;
+
+            freq = &hist_h[new_cl][h_bin];
+            old_freq = *freq;
+            new_freq = old_freq + 1;
+            delta -= d.nz_entropy(new_freq) - d.nz_entropy(old_freq);
+            *freq = new_freq;
+
+            // N-term: positive contribution to cost.
+            freq = &hist_N[old_cl][N_bin];
+            old_freq = *freq;
+            new_freq = old_freq - 1;
+            delta += d.nz_entropy(new_freq) - d.nz_entropy(old_freq);
+            *freq = new_freq;
+
+            freq = &hist_N[new_cl][N_bin];
+            old_freq = *freq;
+            new_freq = old_freq + 1;
+            delta += d.nz_entropy(new_freq) - d.nz_entropy(old_freq);
+            *freq = new_freq;
+
             return delta;
           };
 
           auto apply_slice = [&](ptrdiff_t slice, bool upward) -> int64_t {
             int64_t cost_change = 0;
+            // Blocks with `DC[axis] = slice`
             uint32_t blk_lo = block_off[static_cast<size_t>(slice)];
             uint32_t blk_hi = block_off[static_cast<size_t>(slice + 1)];
             for (uint32_t bi = blk_lo; bi < blk_hi; ++bi) {
-              uint32_t b = sorted_blocks[bi];
-              uint32_t dc_ax1_val = d.block_dc[ax1][b];
-              uint32_t dc_ax2_val = d.block_dc[ax2][b];
-              uint32_t ci = static_cast<uint32_t>(ax1_row[dc_ax1_val] +
-                                                  ax2_col[dc_ax2_val]);
-              for (uint32_t c = 0; c < kNumCh; ++c) {
-                uint32_t bc = d.ToChBlock(b, c);
-                uint32_t ci_base = c * num_cells + ci * na;
+              uint32_t b0_xy = sorted_blocks[bi];
+              uint32_t b0_y = b0_xy >> 16;
+              uint32_t b0_x = b0_xy & 0xFFFF;
+              uint32_t b0 = b0_y * d.block_grid_w[axis] + b0_x;
+
+              if (d.channels == kNumCh) {
+                uint32_t b1_y = b0_y * d.ss_y[axis] / d.ss_y[ax1];
+                uint32_t b1_x = b0_x * d.ss_x[axis] / d.ss_x[ax1];
+                uint32_t b1e_y = (b0_y + 1) * d.ss_y[axis] / d.ss_y[ax1];
+                uint32_t b1e_x = (b0_x + 1) * d.ss_x[axis] / d.ss_x[ax1];
+
+                uint32_t b2_y = b0_y * d.ss_y[axis] / d.ss_y[ax2];
+                uint32_t b2_x = b0_x * d.ss_x[axis] / d.ss_x[ax2];
+                uint32_t b2e_y = (b0_y + 1) * d.ss_y[axis] / d.ss_y[ax2];
+                uint32_t b2e_x = (b0_x + 1) * d.ss_x[axis] / d.ss_x[ax2];
+
+                // Axis component block
+                uint32_t b1 = b1_y * d.block_grid_w[ax1] + b1_x;
+                uint32_t b2 = b2_y * d.block_grid_w[ax2] + b2_x;
+                uint32_t dc_ax1_ind = d.block_dc_idx[ax1][b1];
+                uint32_t dc_ax2_ind = d.block_dc_idx[ax2][b2];
+
+                uint32_t ci = ax1_row[dc_ax1_ind] + ax2_col[dc_ax2_ind];
+                uint32_t ci_base = axis * num_cells + ci * na;
                 uint32_t old_cl =
                     upward ? local_cluster_map[axis][ci_base + thr_ind + 1]
                            : local_cluster_map[axis][ci_base + thr_ind];
                 uint32_t new_cl =
                     upward ? local_cluster_map[axis][ci_base + thr_ind]
                            : local_cluster_map[axis][ci_base + thr_ind + 1];
-                if (old_cl == new_cl) continue;
-                for (uint32_t pi = d.block_offsets[c][bc];
-                     pi < d.block_offsets[c][bc + 1]; ++pi) {
-                  uint32_t bin = d.block_bins[c][pi];
-                  uint32_t zdc = bin >> 11;
-                  uint32_t h_bin = d.compact_map_h[bin];
-                  cost_change += apply_delta(old_cl, new_cl, h_bin, zdc, 1);
+                if (old_cl != new_cl) {
+                  uint32_t N_bin = d.nz_pred_bucket[axis][b0];
+                  uint32_t h_bin = (N_bin << 6) | d.block_nonzeros[axis][b0];
+                  cost_change += apply_delta(old_cl, new_cl, scratch_hist_nz_h,
+                                             scratch_hist_nz_N, h_bin, N_bin);
+                  for (uint32_t pi = d.block_offsets[axis][b0];
+                       pi < d.block_offsets[axis][b0 + 1]; ++pi) {
+                    uint32_t bin = d.block_bins[axis][pi] & 0xFFFFF;
+                    uint32_t zdc = bin >> 11;
+                    cost_change += apply_delta(old_cl, new_cl, scratch_hist_h,
+                                               scratch_hist_N, bin, zdc);
+                  }
+                }
+
+                // ax1 component blocks
+                for (uint32_t y1 = b1_y; y1 < b1e_y; ++y1) {
+                  for (uint32_t x1 = b1_x; x1 < b1e_x; ++x1) {
+                    b1 = y1 * d.block_grid_w[ax1] + x1;
+                    dc_ax1_ind = d.block_dc_idx[ax1][b1];
+                    uint32_t y2 = y1 * d.ss_y[ax1] / d.ss_y[ax2];
+                    uint32_t x2 = x1 * d.ss_x[ax1] / d.ss_x[ax2];
+                    b2 = y2 * d.block_grid_w[ax2] + x2;
+                    dc_ax2_ind = d.block_dc_idx[ax2][b2];
+
+                    ci = ax1_row[dc_ax1_ind] + ax2_col[dc_ax2_ind];
+                    ci_base = ax1 * num_cells + ci * na;
+                    old_cl =
+                        upward ? local_cluster_map[axis][ci_base + thr_ind + 1]
+                               : local_cluster_map[axis][ci_base + thr_ind];
+                    new_cl =
+                        upward ? local_cluster_map[axis][ci_base + thr_ind]
+                               : local_cluster_map[axis][ci_base + thr_ind + 1];
+                    if (old_cl != new_cl) {
+                      uint32_t N_bin = d.nz_pred_bucket[ax1][b1];
+                      uint32_t h_bin = (N_bin << 6) | d.block_nonzeros[ax1][b1];
+                      cost_change +=
+                          apply_delta(old_cl, new_cl, scratch_hist_nz_h,
+                                      scratch_hist_nz_N, h_bin, N_bin);
+                      for (uint32_t pi = d.block_offsets[ax1][b1];
+                           pi < d.block_offsets[ax1][b1 + 1]; ++pi) {
+                        uint32_t bin = d.block_bins[ax1][pi] & 0xFFFFF;
+                        uint32_t zdc = bin >> 11;
+                        cost_change +=
+                            apply_delta(old_cl, new_cl, scratch_hist_h,
+                                        scratch_hist_N, bin, zdc);
+                      }
+                    }
+                  }
+                }
+                // ax2 component blocks
+                for (uint32_t y2 = b2_y; y2 < b2e_y; ++y2) {
+                  for (uint32_t x2 = b2_x; x2 < b2e_x; ++x2) {
+                    b2 = y2 * d.block_grid_w[ax2] + x2;
+                    dc_ax2_ind = d.block_dc_idx[ax2][b2];
+                    uint32_t y1 = y2 * d.ss_y[ax2] / d.ss_y[ax1];
+                    uint32_t x1 = x2 * d.ss_x[ax2] / d.ss_x[ax1];
+                    b1 = y1 * d.block_grid_w[ax1] + x1;
+                    dc_ax1_ind = d.block_dc_idx[ax1][b1];
+
+                    ci = ax1_row[dc_ax1_ind] + ax2_col[dc_ax2_ind];
+                    ci_base = ax2 * num_cells + ci * na;
+                    old_cl =
+                        upward ? local_cluster_map[axis][ci_base + thr_ind + 1]
+                               : local_cluster_map[axis][ci_base + thr_ind];
+                    new_cl =
+                        upward ? local_cluster_map[axis][ci_base + thr_ind]
+                               : local_cluster_map[axis][ci_base + thr_ind + 1];
+                    if (old_cl != new_cl) {
+                      uint32_t N_bin = d.nz_pred_bucket[ax2][b2];
+                      uint32_t h_bin = (N_bin << 6) | d.block_nonzeros[ax2][b2];
+                      cost_change +=
+                          apply_delta(old_cl, new_cl, scratch_hist_nz_h,
+                                      scratch_hist_nz_N, h_bin, N_bin);
+                      for (uint32_t pi = d.block_offsets[ax2][b2];
+                           pi < d.block_offsets[ax2][b2 + 1]; ++pi) {
+                        uint32_t bin = d.block_bins[ax2][pi] & 0xFFFFF;
+                        uint32_t zdc = bin >> 11;
+                        cost_change +=
+                            apply_delta(old_cl, new_cl, scratch_hist_h,
+                                        scratch_hist_N, bin, zdc);
+                      }
+                    }
+                  }
+                }
+              } else {
+                uint32_t old_cl = upward ? local_cluster_map[0][thr_ind + 1]
+                                         : local_cluster_map[0][thr_ind];
+                uint32_t new_cl = upward ? local_cluster_map[0][thr_ind]
+                                         : local_cluster_map[0][thr_ind + 1];
+                if (old_cl != new_cl) {
+                  uint32_t N_bin = d.nz_pred_bucket[0][b0];
+                  uint32_t h_bin = (N_bin << 6) | d.block_nonzeros[0][b0];
+                  cost_change += apply_delta(old_cl, new_cl, scratch_hist_nz_h,
+                                             scratch_hist_nz_N, h_bin, N_bin);
+                  for (uint32_t pi = d.block_offsets[0][b0];
+                       pi < d.block_offsets[0][b0 + 1]; ++pi) {
+                    uint32_t bin = d.block_bins[0][pi] & 0xFFFFF;
+                    uint32_t zdc = bin >> 11;
+                    cost_change += apply_delta(old_cl, new_cl, scratch_hist_h,
+                                               scratch_hist_N, bin, zdc);
+                  }
                 }
               }
             }
             return cost_change;
           };
 
-          scratch_hist_h = cluster_hist_h;
-          scratch_hist_N = cluster_hist_N;
+          // Scan down
+          scratch_hist_h = clustering.hist_h;
+          scratch_hist_N = clustering.hist_N;
+          scratch_hist_nz_N = clustering.hist_nz_N;
+          scratch_hist_nz_h = clustering.hist_nz_h;
           int64_t current_cost = base_cost;
           for (ptrdiff_t idx = cur_idx - 1; idx > lo_edge; --idx) {
             current_cost += apply_slice(idx, false);
@@ -1589,8 +1725,11 @@ struct PartitioningCtx {
             }
           }
 
-          scratch_hist_h = cluster_hist_h;
-          scratch_hist_N = cluster_hist_N;
+          // Scan up
+          scratch_hist_h = clustering.hist_h;
+          scratch_hist_N = clustering.hist_N;
+          scratch_hist_nz_N = clustering.hist_nz_N;
+          scratch_hist_nz_h = clustering.hist_nz_h;
           current_cost = base_cost;
           for (ptrdiff_t idx = cur_idx + 1; idx < hi_edge; ++idx) {
             current_cost += apply_slice(idx - 1, true);
@@ -1600,9 +1739,12 @@ struct PartitioningCtx {
             }
           }
 
+          // Permanently apply the winning shift
           if (best_idx != cur_idx) {
-            scratch_hist_h = cluster_hist_h;
-            scratch_hist_N = cluster_hist_N;
+            scratch_hist_h = clustering.hist_h;
+            scratch_hist_N = clustering.hist_N;
+            scratch_hist_nz_N = clustering.hist_nz_N;
+            scratch_hist_nz_h = clustering.hist_nz_h;
             if (best_idx < cur_idx) {
               for (ptrdiff_t idx = cur_idx - 1; idx >= best_idx; --idx)
                 apply_slice(idx, false);
@@ -1612,36 +1754,62 @@ struct PartitioningCtx {
             }
             thr[thr_ind] = DC_axis[static_cast<size_t>(best_idx)];
             base_cost = best_cost;
-            std::swap(cluster_hist_h, scratch_hist_h);
-            std::swap(cluster_hist_N, scratch_hist_N);
+            std::swap(clustering.hist_h, scratch_hist_h);
+            std::swap(clustering.hist_N, scratch_hist_N);
+            std::swap(clustering.hist_nz_N, scratch_hist_nz_N);
+            std::swap(clustering.hist_nz_h, scratch_hist_nz_h);
             changed = true;
           }
         }
       };
 
-      optimize_axis(cur_T.TY(), 0);
-      optimize_axis(cur_T.TCb(), 1);
-      optimize_axis(cur_T.TCr(), 2);
+      optimize_axis(0);
+      optimize_axis(1);
+      optimize_axis(2);
     }
-    return {cur_T, base_cost};
+
+    // Recompute `nz_cost` for return.
+    int64_t final_nz_cost = 0;
+    for (const auto& cl_N : clustering.hist_nz_N)
+      for (const auto& bin : cl_N) final_nz_cost += d.nz_entropy(bin.second);
+    for (const auto& cl_h : clustering.hist_nz_h)
+      for (const auto& bin : cl_h) final_nz_cost -= d.nz_entropy(bin.second);
+
+    return {cur_T, base_cost, final_nz_cost};
   }
 };
 
 Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
-                                  const std::array<int, 3>& jpeg_c_map,
                                   ThreadPool* pool) {
-  for (uint32_t c = 0; c < kNumCh; ++c) {
-    uint32_t jpeg_c = static_cast<uint32_t>(jpeg_c_map[c]);
-    block_grid_w[c] = jpeg_data.components[jpeg_c].width_in_blocks;
-    block_grid_h[c] = jpeg_data.components[jpeg_c].height_in_blocks;
+  // Keep optimization axes in JPEG component order (Y, Cb, Cr).
+
+  channels = static_cast<uint32_t>(jpeg_data.components.size());
+  w_max = 0;
+  h_max = 0;
+  for (uint32_t c = 0; c < channels; ++c) {
+    block_grid_w[c] = jpeg_data.components[c].width_in_blocks;
+    block_grid_h[c] = jpeg_data.components[c].height_in_blocks;
     num_blocks[c] = block_grid_w[c] * block_grid_h[c];
+    w_max = std::max(w_max, block_grid_w[c]);
+    h_max = std::max(h_max, block_grid_h[c]);
+  }
+  for (uint32_t c = 0; c < channels; ++c) {
+    ss_y[c] = h_max / block_grid_h[c];
+    ss_x[c] = w_max / block_grid_w[c];
+  }
+  for (uint32_t c = channels; c < kNumCh; ++c) {
+    block_grid_w[c] = 0;
+    block_grid_h[c] = 0;
+    num_blocks[c] = 0;
+    ss_y[c] = 0;
+    ss_x[c] = 0;
   }
 
   {
-    auto ac_cnt = make_unique<ACCounts>();
-    JXL_RETURN_IF_ERROR(CountDCAC(jpeg_data, jpeg_c_map, pool, *ac_cnt));
+    auto ac_cnt = jxl::make_unique<ACCounts>();
+    JXL_RETURN_IF_ERROR(CountDCAC(jpeg_data, pool, *ac_cnt));
 
-    JXL_RETURN_IF_ERROR(CollectACBins(jpeg_data, jpeg_c_map, pool, *ac_cnt));
+    JXL_RETURN_IF_ERROR(CollectACBins(jpeg_data, pool, *ac_cnt));
   }
 
   JXL_RETURN_IF_ERROR(FinalizeSpatialIndexing(pool));
@@ -1651,75 +1819,71 @@ Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
   return true;
 }
 
+double bit_cost(int64_t cost) { return static_cast<double>(cost) / kFScale; }
+
 }  // namespace
 
 Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
                               const FrameHeader& frame_header,
-                              PassesEncoderState* enc_state, ThreadPool* pool,
-                              bool verbose) {
-  // Keep optimization axes in JPEG component order (Y, Cb, Cr).
-  const auto jpeg_c_map = (jpeg_data.components.size() == 1)
-                              ? std::array<int, 3>{{0, 0, 0}}
-                              : std::array<int, 3>{{0, 1, 2}};
-
+                              BlockCtxMap& ctx_map, ThreadPool* pool) {
   auto opt_data = std::make_shared<JPEGOptData>();
-  JXL_RETURN_IF_ERROR(opt_data->BuildFromJPEG(jpeg_data, jpeg_c_map, pool));
+  JXL_RETURN_IF_ERROR(opt_data->BuildFromJPEG(jpeg_data, pool));
 
-  auto facts = opt_data->MaximalFactorizations();
-  if (facts.empty()) return true;
-  if (verbose) {
-    printf("Searching %zu maximal factorizations\n", facts.size());
-  }
+  auto factorizations = opt_data->MaximalFactorizations();
+  if (factorizations.empty()) return true;
+  JXL_DEBUG_V(2, "Searching %i maximal factorizations\n",
+              static_cast<int>(factorizations.size()));
 
   int64_t best_cost = std::numeric_limits<int64_t>::max();
   ThresholdSet best_thr;
   ContextMap best_ctx;
   std::mutex mu;
 
-  // TODO: use array of PartitioningCtx per thread instead of unique_ptr
+  std::vector<PartitioningCtx> ctx_pool;
   JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, static_cast<uint32_t>(facts.size()), ThreadPool::NoInit,
-      [&](uint32_t idx, size_t) -> Status {
-        const auto t0 = std::chrono::steady_clock::now();
-        uint32_t a = std::get<0>(facts[idx]);
-        uint32_t b = std::get<1>(facts[idx]);
-        uint32_t c = std::get<2>(facts[idx]);
-        auto ctx = make_unique<PartitioningCtx>(opt_data);
+      pool, 0, static_cast<uint32_t>(factorizations.size()),
+      [&](size_t num_threads) -> Status {
+        ctx_pool.reserve(num_threads);
+        for (size_t i = 0; i < num_threads; ++i) {
+          ctx_pool.emplace_back(opt_data);
+        }
+        return true;
+      },
+      [&](uint32_t idx, size_t thread_id) -> Status {
+        uint32_t a = std::get<0>(factorizations[idx]);
+        uint32_t b = std::get<1>(factorizations[idx]);
+        uint32_t c = std::get<2>(factorizations[idx]);
+        PartitioningCtx& ctx = ctx_pool[thread_id];
         ThresholdSet init;
         init.T[0] = opt_data->InitThresh(0, a);
         init.T[1] = opt_data->InitThresh(1, b);
         init.T[2] = opt_data->InitThresh(2, c);
 
-        auto opt_result =
-            ctx->OptimizeThresholds(init, ctx->ac_stream(), kMTarget);
+        auto opt_result = ctx.OptimizeThresholds(init, kMTarget /*2048 64*/);
 
         PartitioningCtx::Clustering cl_result;
         JXL_ASSIGN_OR_RETURN(
-            cl_result, ctx->ClusterContexts(opt_result.second, 16, nullptr));
+            cl_result,
+            ctx.ClusterContexts(
+                opt_result.second,
+                kMaxClusters - (jpeg_data.components.size() == 1), nullptr));
         ContextMap& cluster_map = cl_result.ctx_map;
 
         auto refine_result =
-            ctx->RefineClustered(opt_result.second, cluster_map);
-        int64_t refined_cost = refine_result.second;
-        ThresholdSet refined_thr = refine_result.first;
-
-        int64_t nz_cost = ctx->NZClusteredCost(refined_thr, cluster_map);
-        int64_t total_cost = refined_cost + nz_cost;
+            ctx.RefineClustered(opt_result.second, cl_result, 5, 16);
+        ThresholdSet refined_thr =
+            refine_result.thresholds;             // opt_result.second;
+        int64_t total_cost = refine_result.cost;  // opt_result.first;
 
         std::lock_guard<std::mutex> lock(mu);
-        if (verbose) {
-          const double dt = std::chrono::duration<double>(
-                                std::chrono::steady_clock::now() - t0)
-                                .count();
-          printf(
-              "(%u,%u,%u) unclustered=%.2f clustered=%.2f refined=%.2f "
-              "nz=%.2f total=%.2f [%.2fs]\n",
-              a, b, c, static_cast<double>(opt_result.first) / kFScale,
-              static_cast<double>(cl_result.clustered_cost) / kFScale,
-              static_cast<double>(refined_cost) / kFScale,
-              static_cast<double>(nz_cost) / kFScale,
-              static_cast<double>(total_cost) / kFScale, dt);
-        }
+        JXL_DEBUG_V(
+            2,
+            "(%u,%u,%u) cost: unclustered=%.2f clustered=%.2f refined=%.2f "
+            "nz=%.2f total=%.2f\n",
+            a, b, c, bit_cost(opt_result.first),
+            bit_cost(cl_result.clustered_cost),
+            bit_cost(refine_result.cost - refine_result.nz_cost),
+            bit_cost(refine_result.nz_cost), bit_cost(total_cost));
         if (total_cost < best_cost) {
           best_cost = total_cost;
           best_thr = refined_thr;
@@ -1729,48 +1893,37 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
       },
       "JpegCtxOpt"));
 
-  auto& bcm = enc_state->shared.block_ctx_map;
-  bcm.dc_thresholds[1].clear();
-  bcm.dc_thresholds[0].clear();
-  bcm.dc_thresholds[2].clear();
-
-  for (int16_t t : best_thr.TY()) bcm.dc_thresholds[1].push_back(t - 1);
-  for (int16_t t : best_thr.TCb()) bcm.dc_thresholds[0].push_back(t - 1);
-  for (int16_t t : best_thr.TCr()) bcm.dc_thresholds[2].push_back(t - 1);
-
   size_t na_Y = best_thr.TY().size() + 1;
   size_t na_Cb = best_thr.TCb().size() + 1;
   size_t na_Cr = best_thr.TCr().size() + 1;
-  bcm.num_dc_ctxs = na_Y * na_Cb * na_Cr;
+  size_t num_dc_ctxs = na_Y * na_Cb * na_Cr;
 
-  JXL_ENSURE(bcm.num_dc_ctxs <= 64);
-  JXL_ENSURE(na_Y <= 16 && na_Cb <= 16 && na_Cr <= 16);
+  JXL_ENSURE(num_dc_ctxs <= kMaxCells);
+  JXL_ENSURE(na_Y <= kMaxIntervals && na_Cb <= kMaxIntervals &&
+             na_Cr <= kMaxIntervals);
 
-  bcm.ctx_map.assign(3 * kNumOrders * bcm.num_dc_ctxs, 0);
-  for (size_t cell = 0; cell < bcm.num_dc_ctxs; cell++) {
-    for (size_t ord = 0; ord < kNumOrders; ord++) {
-      for (size_t c = 0; c < 3; c++) {
-        bcm.ctx_map[c * kNumOrders * bcm.num_dc_ctxs + ord * bcm.num_dc_ctxs +
-                    cell] = best_ctx[c * bcm.num_dc_ctxs + cell];
-      }
+  ctx_map.num_dc_ctxs = num_dc_ctxs;
+
+  ctx_map.dc_thresholds[1].clear();
+  ctx_map.dc_thresholds[0].clear();
+  ctx_map.dc_thresholds[2].clear();
+
+  for (int16_t t : best_thr.TY()) ctx_map.dc_thresholds[1].push_back(t - 1);
+  for (int16_t t : best_thr.TCb()) ctx_map.dc_thresholds[0].push_back(t - 1);
+  for (int16_t t : best_thr.TCr()) ctx_map.dc_thresholds[2].push_back(t - 1);
+
+  // Note: `best_ctx` and `ctx_map` are in JPEG order (Y, Cb, Cr)
+  ctx_map.ctx_map.assign(3 * kNumOrders * num_dc_ctxs, 0);
+  for (size_t c = 0; c < opt_data->channels; c++) {
+    for (size_t cell = 0; cell < num_dc_ctxs; ++cell) {
+      ctx_map.ctx_map[c * kNumOrders * num_dc_ctxs + cell] =
+          best_ctx[c * num_dc_ctxs + cell] + (opt_data->channels == 1);
     }
   }
-  bcm.num_ctxs = *std::max_element(bcm.ctx_map.begin(), bcm.ctx_map.end()) + 1;
-  JXL_ENSURE(bcm.num_ctxs <= 16);
-
-  if (verbose) {
-    printf("(%zu, %zu, %zu)\n", na_Y, na_Cb, na_Cr);
-    // JPEG XL thresholds are `<=` value
-    printf("TY: { ");
-    for (int t : best_thr.TY()) printf("%d, ", t - 1);
-    printf(" }\n");
-    printf("TCb: { ");
-    for (int t : best_thr.TCb()) printf("%d, ", t - 1);
-    printf(" }\n");
-    printf("TCr: { ");
-    for (int t : best_thr.TCr()) printf("%d, ", t - 1);
-    printf(" }\n");
-  }
+  size_t num_ctxs =
+      *std::max_element(ctx_map.ctx_map.begin(), ctx_map.ctx_map.end()) + 1;
+  JXL_ENSURE(num_ctxs <= kMaxClusters);
+  ctx_map.num_ctxs = num_ctxs;
 
   return true;
 }

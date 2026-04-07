@@ -50,7 +50,7 @@ else ()
     -Wvla
   )
 
-  if (NOT JPEGXL_ENABLE_COVERAGE AND NOT SANITIZER MATCHES ".san")
+  if (NOT JPEGXL_ENABLE_COVERAGE AND NOT SANITIZER MATCHES ".san" AND NOT CMAKE_BUILD_TYPE MATCHES "Debug")
     # NB: use `-Rpass-analysis=stack-frame-layout -g` for investigation.
     # TODO(eustas): tighten
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
