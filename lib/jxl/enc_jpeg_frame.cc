@@ -25,6 +25,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
@@ -179,9 +180,9 @@ struct JPEGOptData {
     if (channels == 1) {
       uint32_t ctxs = std::min(std::get<0>(result[0]), 15u);
       std::get<0>(result[0]) = ctxs;
-      // while (--ctxs > 0) {
-      //   result.emplace_back(ctxs, 1, 1);
-      // }
+      while (--ctxs > 0) {
+        result.emplace_back(ctxs, 1, 1);
+      }
     }
     return result;
   }
@@ -1365,6 +1366,141 @@ struct PartitioningCtx {
 
       return true;
     }
+
+    // Compute accurate signalling cost using ANSPopulationCost() for each
+    // clustered histogram. This includes the header bits plus data bits for
+    // encoding each histogram.
+    //
+    // Key insight: hist_h[cluster] stores symbols as (zdc << 11) | ai, where
+    // zdc is the zero density context and ai is the AC coefficient bin.
+    // In the actual bitstream, each zdc value corresponds to a separate
+    // histogram, so we need to split by zdc and compute cost per sub-histogram.
+    //
+    // Additionally, the HybridUintConfig reduces the effective alphabet size
+    // by splitting values into a "histogrammed part" (token) and a "residual
+    // part" (extra bits). We apply this transformation before computing costs.
+    StatusOr<int64_t> ComputeSignallingCost() const {
+      int64_t signalling_cost = 0;
+
+      // Default HybridUintConfig for AC coefficients: (split_exponent=4,
+      // msb_in_token=2, lsb_in_token=0)
+      constexpr uint32_t kSplitExponent = 4;
+      constexpr uint32_t kMsbInToken = 2;
+      constexpr uint32_t kLsbInToken = 0;
+      constexpr uint32_t kSplitToken = 1 << kSplitExponent;  // 16
+
+      // Helper to apply HybridUintConfig transformation
+      auto apply_hybrid_uint = [&](uint32_t value) -> uint32_t {
+        if (value < kSplitToken) return value;
+        uint32_t n = FloorLog2Nonzero(value);
+        uint32_t m = value - (1u << n);
+        return kSplitToken +
+               ((n - kSplitExponent) << (kMsbInToken + kLsbInToken)) +
+               ((m >> (n - kMsbInToken)) << kLsbInToken) +
+               (m & ((1u << kLsbInToken) - 1));
+      };
+
+      // Process hist_h: split by zdc and compute cost per sub-histogram
+      for (size_t cluster = 0; cluster < hist_h.size(); cluster++) {
+        if (hist_h[cluster].empty()) continue;
+
+        // Group symbols by zdc value, applying HybridUintConfig transformation
+        std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint32_t>>
+            by_zdc;
+        for (const auto& kv : hist_h[cluster]) {
+          uint32_t symbol = kv.first;
+          uint32_t zdc = symbol >> 11;
+          uint32_t ai = symbol & 0x7FFu;
+          // Apply HybridUintConfig to reduce alphabet
+          uint32_t token = apply_hybrid_uint(ai);
+          by_zdc[zdc][token] += kv.second;
+        }
+
+        // Compute cost for each zdc sub-histogram
+        for (const auto& zdc_pair : by_zdc) {
+          const auto& token_hist = zdc_pair.second;
+          if (token_hist.empty()) continue;
+
+          // Find max token value and total count
+          uint32_t max_token = 0;
+          size_t total = 0;
+          for (const auto& kv : token_hist) {
+            max_token = std::max(max_token, kv.first);
+            total += kv.second;
+          }
+          if (total == 0) continue;
+
+          // Cap alphabet size to ANS_MAX_ALPHABET_SIZE
+          JXL_ENSURE(max_token < ANS_MAX_ALPHABET_SIZE);
+          size_t alphabet_size = max_token + 1;
+          if (alphabet_size == 0) continue;
+
+          // Build Histogram object for ANSPopulationCost
+          Histogram h(alphabet_size);
+          for (const auto& kv : token_hist) {
+            if (kv.first < alphabet_size) {
+              h.counts[kv.first] = static_cast<ANSHistBin>(kv.second);
+            } else {
+              h.counts.back() += static_cast<ANSHistBin>(kv.second);
+            }
+          }
+          h.total_count = total;
+
+          JXL_ASSIGN_OR_RETURN(float cost, h.ANSPopulationCost());
+          signalling_cost += static_cast<int64_t>(std::ceil(cost)) * kFScale;
+        }
+      }
+
+      // Process hist_nz_h: split by predicted bucket (pb) and compute cost
+      // per sub-histogram. Symbols are stored as (pb << 6) | nz_count.
+      // For nz_count histograms, also apply HybridUintConfig.
+      for (size_t cluster = 0; cluster < hist_nz_h.size(); cluster++) {
+        if (hist_nz_h[cluster].empty()) continue;
+
+        // Group symbols by predicted bucket (pb) value
+        std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint32_t>>
+            by_pb;
+        for (const auto& kv : hist_nz_h[cluster]) {
+          uint32_t symbol = kv.first;
+          uint32_t pb = symbol >> 6;
+          uint32_t nz_count = symbol & 0x3Fu;
+          by_pb[pb][nz_count] += kv.second;
+        }
+
+        // Compute cost for each pb sub-histogram
+        for (const auto& pb_pair : by_pb) {
+          const auto& nz_hist = pb_pair.second;
+          if (nz_hist.empty()) continue;
+
+          uint32_t max_nz = 0;
+          size_t total = 0;
+          for (const auto& kv : nz_hist) {
+            max_nz = std::max(max_nz, kv.first);
+            total += kv.second;
+          }
+          if (total == 0) continue;
+
+          size_t alphabet_size =
+              std::min<size_t>(max_nz + 1, ANS_MAX_ALPHABET_SIZE);
+          if (alphabet_size == 0) continue;
+
+          Histogram h(alphabet_size);
+          for (const auto& kv : nz_hist) {
+            if (kv.first < alphabet_size) {
+              h.counts[kv.first] = static_cast<ANSHistBin>(kv.second);
+            } else {
+              h.counts.back() += static_cast<ANSHistBin>(kv.second);
+            }
+          }
+          h.total_count = total;
+
+          JXL_ASSIGN_OR_RETURN(float cost, h.ANSPopulationCost());
+          signalling_cost += static_cast<int64_t>(std::ceil(cost)) * kFScale;
+        }
+      }
+
+      return signalling_cost;
+    }
   };
 
   StatusOr<Clustering> ClusterContexts(const ThresholdSet& thresholds,
@@ -1875,17 +2011,29 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
             refine_result.thresholds;             // opt_result.second;
         int64_t total_cost = refine_result.cost;  // opt_result.first;
 
+        // Add accurate histogram signalling cost using ANSPopulationCost()
+        int64_t signalling_cost = 0;
+        auto signalling_cost_or = cl_result.ComputeSignallingCost();
+        if (signalling_cost_or.ok()) {
+          signalling_cost = std::move(signalling_cost_or).value_();
+        } else {
+          JXL_DEBUG_V(1, "ComputeSignallingCost failed for (%u,%u,%u): %s", a,
+                      b, c, signalling_cost_or.message());
+        }
+
         std::lock_guard<std::mutex> lock(mu);
-        JXL_DEBUG_V(
-            2,
+        // JXL_DEBUG_V(
+        //     2,
+        printf(
             "(%u,%u,%u) cost: unclustered=%.2f clustered=%.2f refined=%.2f "
-            "nz=%.2f total=%.2f\n",
+            "nz=%.2f signalling=%.2f total=%.2f\n",
             a, b, c, bit_cost(opt_result.first),
             bit_cost(cl_result.clustered_cost),
             bit_cost(refine_result.cost - refine_result.nz_cost),
-            bit_cost(refine_result.nz_cost), bit_cost(total_cost));
-        if (total_cost < best_cost) {
-          best_cost = total_cost;
+            bit_cost(refine_result.nz_cost), bit_cost(signalling_cost),
+            bit_cost(total_cost + signalling_cost));
+        if (total_cost + signalling_cost < best_cost) {
+          best_cost = total_cost + signalling_cost;
           best_thr = refined_thr;
           best_ctx = cluster_map;
         }
