@@ -74,8 +74,6 @@ def SplitLibFiles(repo_files):
   srcs, _ = Filter(srcs, HasSuffixFn('.cc', '.h', '.ui'))
   srcs.sort()
 
-  # Let's keep Jpegli sources a bit separate for a while.
-  jpegli_srcs, srcs = Filter(srcs, HasPrefixFn('jpegli'))
   # TODO(eustas): move to tools?
   _, srcs = Filter(srcs, HasSuffixFn('gbench_main.cc'))
   # This stub compilation unit is manually referenced in CMake buildfile.
@@ -83,14 +81,9 @@ def SplitLibFiles(repo_files):
 
   # First pick files scattered across directories.
   tests, srcs = Filter(srcs, HasSuffixFn('_test.cc'))
-  jpegli_tests, jpegli_srcs = Filter(jpegli_srcs, HasSuffixFn('_test.cc'))
   # TODO(eustas): move to separate list?
   _, srcs = Filter(srcs, ContainsFn('testing.h'))
-  _, jpegli_srcs = Filter(jpegli_srcs, ContainsFn('testing.h'))
   testlib_files, srcs = Filter(srcs, ContainsFn('test'))
-  jpegli_testlib_files, jpegli_srcs = Filter(jpegli_srcs, ContainsFn('test'))
-  jpegli_libjpeg_helper_files, jpegli_testlib_files = Filter(
-    jpegli_testlib_files, ContainsFn('libjpeg_test_util'))
   gbench_sources, srcs = Filter(srcs, HasSuffixFn('_gbench.cc'))
 
   extras_sources, srcs = Filter(srcs, HasPrefixFn('extras/'))
@@ -102,15 +95,10 @@ def SplitLibFiles(repo_files):
 
   base_sources, lib_srcs = Filter(lib_srcs, HasPrefixFn('jxl/base/'))
 
-  jpegli_wrapper_sources, jpegli_srcs = Filter(
-      jpegli_srcs, HasSuffixFn('libjpeg_wrapper.cc'))
-  jpegli_sources = jpegli_srcs
-
   threads_public_headers, public_headers = Filter(
       public_headers, ContainsFn('_parallel_runner'))
 
-  codec_names = ['apng', 'exr', 'gif', 'jpegli', 'jpg', 'jxl', 'npy', 'pgx',
-    'pnm']
+  codec_names = ['apng', 'exr', 'gif', 'jpg', 'jxl', 'npy', 'pgx', 'pnm']
   codecs = {}
   for codec in codec_names:
     codec_sources, extras_sources = Filter(extras_sources, HasPrefixFn(
@@ -150,11 +138,6 @@ def SplitLibFiles(repo_files):
     'extras_for_tools_sources': extras_for_tools_sources,
     'extras_sources': extras_sources,
     'gbench_sources': gbench_sources,
-    'jpegli_sources': jpegli_sources,
-    'jpegli_testlib_files': jpegli_testlib_files,
-    'jpegli_libjpeg_helper_files': jpegli_libjpeg_helper_files,
-    'jpegli_tests': jpegli_tests,
-    'jpegli_wrapper_sources' : jpegli_wrapper_sources,
     'public_headers': public_headers,
     'testlib_files': testlib_files,
     'tests': tests,
@@ -211,16 +194,6 @@ def FormatCMakeVar(name, var):
     return f'set({name} {var})\n'
 
 
-def GetJpegLibVersion(src_dir):
-  with open(os.path.join(src_dir, 'CMakeLists.txt'), 'r') as f:
-    cmake_text = f.read()
-    m = re.search(r'set\(JPEGLI_LIBJPEG_LIBRARY_SOVERSION "([0-9]+)"',
-                  cmake_text)
-    version = m.group(1)
-    if len(version) == 1:
-      version += "0"
-    return version
-
 def ToHashComment(lines):
   return [("# " + line).rstrip() for line in lines]
 def ToDocstringComment(lines):
@@ -239,8 +212,6 @@ def BuildCleaner(args):
     #   set(_varname_ _capture_decimal_)
     match = re.search(r'set\(' + cmake_var + r' ([0-9]+)\)', cmake_text)
     version[var] = match.group(1)
-
-  version['jpegli_lib_version'] = GetJpegLibVersion(args.src_dir)
 
   lists = SplitLibFiles(repo_files)
 
