@@ -45,7 +45,10 @@ constexpr int kNumCh = 3;
 constexpr uint32_t kMTarget = 256;
 constexpr uint32_t kBinCount = kMaxCells / 2 * kDCTRange >> 6;
 constexpr uint32_t kGroupCount = kMaxCells / 2 * kDCTRange >> 12;
-// constexpr uint32_t kZeroNumContexts = 36;
+constexpr uint32_t kJPEGNZBucketCount = 36;
+constexpr uint32_t kJPEGNZCountLimit = 64;
+constexpr uint32_t kJPEGNZHistogramSize =
+    kJPEGNZBucketCount * kJPEGNZCountLimit;
 
 using Thresholds = std::vector<int16_t>;
 using ACEntry = uint32_t;
@@ -69,6 +72,97 @@ struct ThresholdSet {
   const Thresholds& TCb() const { return T[1]; }
   Thresholds& TCr() { return T[2]; }
   const Thresholds& TCr() const { return T[2]; }
+};
+
+constexpr uint32_t kInvalidCompactH = std::numeric_limits<uint32_t>::max();
+
+struct CompactHistogram {
+  CompactHistogram() = default;
+  explicit CompactHistogram(size_t size)
+      : counts(size, 0), pos_in_used(size, kInvalidCompactH) {}
+
+  CompactHistogram(const CompactHistogram& other)
+      : counts(other.counts.size(), 0),
+        used_ids(other.used_ids),
+        pos_in_used(other.pos_in_used.size(), kInvalidCompactH) {
+    for (uint32_t i = 0; i < used_ids.size(); ++i) {
+      uint32_t id = used_ids[i];
+      counts[id] = other.counts[id];
+      pos_in_used[id] = i;
+    }
+  }
+
+  CompactHistogram& operator=(const CompactHistogram& other) {
+    if (this == &other) return *this;
+    if (counts.size() != other.counts.size()) {
+      counts.assign(other.counts.size(), 0);
+      pos_in_used.assign(other.pos_in_used.size(), kInvalidCompactH);
+      used_ids.clear();
+    } else {
+      Clear();
+    }
+    used_ids = other.used_ids;
+    for (uint32_t i = 0; i < used_ids.size(); ++i) {
+      uint32_t id = used_ids[i];
+      counts[id] = other.counts[id];
+      pos_in_used[id] = i;
+    }
+    return *this;
+  }
+
+  CompactHistogram(CompactHistogram&&) = default;
+  CompactHistogram& operator=(CompactHistogram&&) = default;
+
+  bool empty() const { return used_ids.empty(); }
+
+  uint32_t Get(uint32_t id) const { return counts[id]; }
+
+  void Add(uint32_t id, uint32_t value = 1) {
+    uint32_t& freq = counts[id];
+    if (freq == 0) {
+      pos_in_used[id] = static_cast<uint32_t>(used_ids.size());
+      used_ids.push_back(id);
+    }
+    freq += value;
+  }
+
+  void Subtract(uint32_t id, uint32_t value = 1) {
+    uint32_t& freq = counts[id];
+    JXL_DASSERT(freq >= value);
+    if (freq < value) return;
+    freq -= value;
+    if (freq != 0) return;
+    uint32_t pos = pos_in_used[id];
+    JXL_DASSERT(pos != kInvalidCompactH);
+    if (pos == kInvalidCompactH) return;
+    uint32_t last = used_ids.back();
+    used_ids[pos] = last;
+    pos_in_used[last] = pos;
+    used_ids.pop_back();
+    pos_in_used[id] = kInvalidCompactH;
+  }
+
+  void AddFrom(const CompactHistogram& other) {
+    for (uint32_t id : other.used_ids) Add(id, other.counts[id]);
+  }
+
+  void Clear() {
+    for (uint32_t id : used_ids) {
+      counts[id] = 0;
+      pos_in_used[id] = kInvalidCompactH;
+    }
+    used_ids.clear();
+  }
+
+  void swap(CompactHistogram& other) {
+    counts.swap(other.counts);
+    used_ids.swap(other.used_ids);
+    pos_in_used.swap(other.pos_in_used);
+  }
+
+  std::vector<uint32_t> counts;
+  std::vector<uint32_t> used_ids;
+  std::vector<uint32_t> pos_in_used;
 };
 
 struct JPEGCtxEffortParams {
@@ -139,12 +233,12 @@ struct JPEGOptData {
   uint32_t h_max;
   uint32_t ss_y[kNumCh];
   uint32_t ss_x[kNumCh];
-  uint32_t fh_mask[kNumCh];  // horizontal subsampling mask (factor - 1)
-  uint32_t fv_mask[kNumCh];  // vertical subsampling mask (factor - 1)
   Thresholds dc_vals[kNumCh];
   uint32_t DC_cnt[kNumCh][kDCTRange];
   uint16_t DC_idx_LUT[kNumCh][kDCTRange];
   uint32_t num_zdcai;
+  std::vector<uint32_t> compact_map_h;
+  std::vector<uint32_t> dense_to_zdcai;
 
   std::vector<ACEntry> AC_stream;
   // AC events of consequitive blocks per component
@@ -182,6 +276,14 @@ struct JPEGOptData {
     if (n < ftab.size()) return ftab[n];
     const double nd = static_cast<double>(n);
     return static_cast<int64_t>(std::llround(nd * std::log2(nd) * kFScale));
+  }
+
+  uint32_t CompactHBin(uint32_t zdc_ai) const {
+    JXL_DASSERT(zdc_ai < compact_map_h.size());
+    if (zdc_ai >= compact_map_h.size()) return kInvalidCompactH;
+    uint32_t dense = compact_map_h[zdc_ai];
+    JXL_DASSERT(dense != kInvalidCompactH);
+    return dense;
   }
 
   Thresholds InitThresh(int axis, uint32_t n_intervals) const {
@@ -587,17 +689,21 @@ struct JPEGOptData {
     uint32_t prev_bin = UINT32_MAX;
     std::array<uint32_t, kZeroDensityContextCount> zdc_total = {};
 
-    // uint32_t MAX_KEY_H_SPARSE =
-    //     static_cast<uint32_t>(kZeroDensityContextCount) * 2048;
-    // compact_map_h.assign(MAX_KEY_H_SPARSE, 0xFFFFFFFF);
+    const uint32_t max_key_h_sparse =
+        static_cast<uint32_t>(kZeroDensityContextCount) * 2048;
+    compact_map_h.assign(max_key_h_sparse, kInvalidCompactH);
+    dense_to_zdcai.clear();
+    dense_to_zdcai.reserve(active_bins.size());
     num_zdcai = 0;
 
     uint32_t lo_pos = 0;
     uint32_t hi_pos = 0;
     for (unsigned int bin : active_bins) {
-      // uint32_t zdc_ai = b & 0xFFFFF;
-      // if (compact_map_h[zdc_ai] == 0xFFFFFFFF)
-      //   compact_map_h[zdc_ai] = num_zdcai++;
+      uint32_t zdc_ai = bin & 0xFFFFFu;
+      if (compact_map_h[zdc_ai] == kInvalidCompactH) {
+        compact_map_h[zdc_ai] = num_zdcai++;
+        dense_to_zdcai.push_back(zdc_ai);
+      }
 
       uint32_t start_lo = lo_pos;
       uint32_t start_hi = hi_pos;
@@ -700,6 +806,12 @@ struct PartitioningCtx {
   std::vector<uint16_t> k_to_dc0;
   std::vector<uint16_t> ax1_row;
   std::vector<uint16_t> ax2_col;
+
+  std::vector<CompactHistogram> scratch_hist_h_;
+  std::vector<std::array<uint32_t, kZeroDensityContextCount>> scratch_hist_N_;
+  std::vector<std::array<uint32_t, kJPEGNZBucketCount>> scratch_hist_nz_N_;
+  std::vector<std::array<uint32_t, kJPEGNZHistogramSize>> scratch_hist_nz_h_;
+  std::array<std::vector<uint8_t>, kNumCh> local_cluster_map_;
 
   explicit PartitioningCtx(std::shared_ptr<const JPEGOptData> d)
       : data_(std::move(d)),
@@ -1229,22 +1341,68 @@ struct PartitioningCtx {
     return cost;
   }
 
-  using SparseHistogram = std::vector<std::unordered_map<uint32_t, uint32_t>>;
+  using DenseNHistogram = std::array<uint32_t, kZeroDensityContextCount>;
+  using DenseNHistogramSet = std::vector<DenseNHistogram>;
+  using DenseNZPredHistogram = std::array<uint32_t, kJPEGNZBucketCount>;
+  using DenseNZPredHistogramSet = std::vector<DenseNZPredHistogram>;
+  using DenseNZHistogram = std::array<uint32_t, kJPEGNZHistogramSize>;
+  using DenseNZHistogramSet = std::vector<DenseNZHistogram>;
+  using CompactHistogramSet = std::vector<CompactHistogram>;
+
+  template <size_t Size>
+  static bool DenseHistogramEmpty(const std::array<uint32_t, Size>& hist) {
+    for (uint32_t freq : hist) {
+      if (freq != 0) return false;
+    }
+    return true;
+  }
+
+  template <size_t Size>
+  static void AddDenseHistogram(std::array<uint32_t, Size>& dst,
+                                const std::array<uint32_t, Size>& src) {
+    for (size_t i = 0; i < dst.size(); ++i) dst[i] += src[i];
+  }
+
+  static uint32_t NZHistogramIndex(uint32_t pb, uint32_t nz_count) {
+    JXL_DASSERT(pb < kJPEGNZBucketCount);
+    JXL_DASSERT(nz_count < kJPEGNZCountLimit);
+    return pb * kJPEGNZCountLimit + nz_count;
+  }
 
   struct Clustering {
+    struct RollbackScratch {
+      DenseNHistogram hist_N_a = {};
+      DenseNHistogram hist_N_b = {};
+      DenseNZPredHistogram hist_nz_N_a = {};
+      DenseNZPredHistogram hist_nz_N_b = {};
+      DenseNZHistogram hist_nz_h_a = {};
+      DenseNZHistogram hist_nz_h_b = {};
+      CompactHistogram hist_h_a;
+      CompactHistogram hist_h_b;
+      std::vector<uint32_t> active;
+    };
+
     int64_t clustered_cost;
     uint32_t ctx_num;
     ContextMap ctx_map;
 
-    SparseHistogram hist_h;
-    SparseHistogram hist_N;
-    SparseHistogram hist_nz_h;
-    SparseHistogram hist_nz_N;
+    CompactHistogramSet hist_h;
+    DenseNHistogramSet hist_N;
+    DenseNZHistogramSet hist_nz_h;
+    DenseNZPredHistogramSet hist_nz_N;
+
+    Clustering() : clustered_cost(0), ctx_num(0) {}
+    Clustering(Clustering&&) = default;
+    Clustering& operator=(Clustering&&) = default;
+    Clustering(const Clustering&) = delete;
+    Clustering& operator=(const Clustering&) = delete;
 
     Status AgglomerativeClusterCore(const JPEGOptData& d, uint32_t total_ctxs,
                                     uint32_t num_clusters,
                                     bool overhead_aware_tail,
                                     ThreadPool* pool) {
+      auto rollback_scratch = make_unique<RollbackScratch>();
+      RollbackScratch& rollback = *rollback_scratch;
       num_clusters = std::max(num_clusters, uint32_t{1});
       ctx_map.assign(total_ctxs, 0);
 
@@ -1253,10 +1411,18 @@ struct PartitioningCtx {
           pool, 0, total_ctxs, ThreadPool::NoInit,
           [&](uint32_t i, size_t) -> Status {
             int64_t local_E = 0;
-            for (auto kv : hist_N[i]) local_E += d.ftab[kv.second];
-            for (auto kv : hist_h[i]) local_E -= d.ftab[kv.second];
-            for (auto kv : hist_nz_N[i]) local_E += d.nz_entropy(kv.second);
-            for (auto kv : hist_nz_h[i]) local_E -= d.nz_entropy(kv.second);
+            for (uint32_t freq : hist_N[i]) {
+              if (freq != 0) local_E += d.ftab[freq];
+            }
+            for (uint32_t id : hist_h[i].used_ids) {
+              local_E -= d.ftab[hist_h[i].Get(id)];
+            }
+            for (uint32_t freq : hist_nz_N[i]) {
+              if (freq != 0) local_E += d.nz_entropy(freq);
+            }
+            for (uint32_t freq : hist_nz_h[i]) {
+              if (freq != 0) local_E -= d.nz_entropy(freq);
+            }
             E[i] = local_E;
             return true;
           },
@@ -1269,7 +1435,10 @@ struct PartitioningCtx {
       std::vector<uint32_t> active;
       active.reserve(total_ctxs);
       for (uint32_t i = 0; i < total_ctxs; i++) {
-        if (!hist_N[i].empty() || !hist_nz_N[i].empty()) active.push_back(i);
+        if (!DenseHistogramEmpty(hist_N[i]) ||
+            !DenseHistogramEmpty(hist_nz_N[i])) {
+          active.push_back(i);
+        }
       }
       std::vector<uint32_t> initial_active = active;
 
@@ -1284,32 +1453,40 @@ struct PartitioningCtx {
       auto merge_delta = [&](uint32_t cl_a, uint32_t cl_b) -> int64_t {
         int64_t delta = 0;
 
-        for (auto bin : hist_N[cl_a]) {
-          auto it = hist_N[cl_b].find(bin.first);
-          if (it != hist_N[cl_b].end()) {
-            delta += d.ftab[bin.second + it->second] - d.ftab[bin.second] -
-                     d.ftab[it->second];
+        for (size_t bin = 0; bin < hist_N[cl_a].size(); ++bin) {
+          uint32_t freq_a = hist_N[cl_a][bin];
+          uint32_t freq_b = hist_N[cl_b][bin];
+          if (freq_a != 0 && freq_b != 0) {
+            delta += d.ftab[freq_a + freq_b] - d.ftab[freq_a] - d.ftab[freq_b];
           }
         }
-        for (auto bin : hist_h[cl_a]) {
-          auto it = hist_h[cl_b].find(bin.first);
-          if (it != hist_h[cl_b].end()) {
-            delta -= d.ftab[bin.second + it->second] - d.ftab[bin.second] -
-                     d.ftab[it->second];
+        const CompactHistogram& hist_h_a = hist_h[cl_a];
+        const CompactHistogram& hist_h_b = hist_h[cl_b];
+        const CompactHistogram* iter_h = &hist_h_a;
+        if (hist_h_a.used_ids.size() > hist_h_b.used_ids.size()) {
+          iter_h = &hist_h_b;
+        }
+        for (uint32_t id : iter_h->used_ids) {
+          uint32_t freq_a = hist_h_a.Get(id);
+          uint32_t freq_b = hist_h_b.Get(id);
+          if (freq_a != 0 && freq_b != 0) {
+            delta -= d.ftab[freq_a + freq_b] - d.ftab[freq_a] - d.ftab[freq_b];
           }
         }
-        for (auto bin : hist_nz_N[cl_a]) {
-          auto it = hist_nz_N[cl_b].find(bin.first);
-          if (it != hist_nz_N[cl_b].end()) {
-            delta += d.nz_entropy(bin.second + it->second) -
-                     d.nz_entropy(bin.second) - d.nz_entropy(it->second);
+        for (size_t bin = 0; bin < hist_nz_N[cl_a].size(); ++bin) {
+          uint32_t freq_a = hist_nz_N[cl_a][bin];
+          uint32_t freq_b = hist_nz_N[cl_b][bin];
+          if (freq_a != 0 && freq_b != 0) {
+            delta += d.nz_entropy(freq_a + freq_b) - d.nz_entropy(freq_a) -
+                     d.nz_entropy(freq_b);
           }
         }
-        for (auto bin : hist_nz_h[cl_a]) {
-          auto it = hist_nz_h[cl_b].find(bin.first);
-          if (it != hist_nz_h[cl_b].end()) {
-            delta -= d.nz_entropy(bin.second + it->second) -
-                     d.nz_entropy(bin.second) - d.nz_entropy(it->second);
+        for (size_t bin = 0; bin < hist_nz_h[cl_a].size(); ++bin) {
+          uint32_t freq_a = hist_nz_h[cl_a][bin];
+          uint32_t freq_b = hist_nz_h[cl_b][bin];
+          if (freq_a != 0 && freq_b != 0) {
+            delta -= d.nz_entropy(freq_a + freq_b) - d.nz_entropy(freq_a) -
+                     d.nz_entropy(freq_b);
           }
         }
         return delta;
@@ -1367,16 +1544,14 @@ struct PartitioningCtx {
         uint32_t a_id = active[best_i];
         uint32_t b_id = active[best_j];
         E[a_id] += E[b_id] + best_delta;
-        for (auto bin : hist_N[b_id]) hist_N[a_id][bin.first] += bin.second;
-        for (auto bin : hist_h[b_id]) hist_h[a_id][bin.first] += bin.second;
-        for (auto bin : hist_nz_N[b_id])
-          hist_nz_N[a_id][bin.first] += bin.second;
-        for (auto bin : hist_nz_h[b_id])
-          hist_nz_h[a_id][bin.first] += bin.second;
-        hist_N[b_id].clear();
-        hist_h[b_id].clear();
-        hist_nz_N[b_id].clear();
-        hist_nz_h[b_id].clear();
+        AddDenseHistogram(hist_N[a_id], hist_N[b_id]);
+        hist_h[a_id].AddFrom(hist_h[b_id]);
+        AddDenseHistogram(hist_nz_N[a_id], hist_nz_N[b_id]);
+        AddDenseHistogram(hist_nz_h[a_id], hist_nz_h[b_id]);
+        hist_N[b_id].fill(0);
+        hist_h[b_id].Clear();
+        hist_nz_N[b_id].fill(0);
+        hist_nz_h[b_id].fill(0);
         parent[b_id] = a_id;
         std::swap(active[best_j], active.back());
         active.pop_back();
@@ -1417,7 +1592,7 @@ struct PartitioningCtx {
         // entropy + signalling overhead drops.
         int64_t best_total_cost = std::numeric_limits<int64_t>::max();
         JXL_ASSIGN_OR_RETURN(int64_t initial_overhead,
-                             ComputeSignallingOverhead());
+                             ComputeSignallingOverhead(d));
         best_total_cost = current_entropy_cost + initial_overhead;
 
         while (active_clusters > 1) {
@@ -1430,30 +1605,26 @@ struct PartitioningCtx {
           uint32_t b_id = active[best_j];
           int64_t old_Ea = E[a_id];
           uint32_t old_parent_b = parent[b_id];
-          std::vector<uint32_t> old_active = active;
+          rollback.active = active;
           uint32_t old_active_clusters = active_clusters;
-          auto old_hist_N_a = hist_N[a_id];
-          auto old_hist_h_a = hist_h[a_id];
-          auto old_hist_nz_N_a = hist_nz_N[a_id];
-          auto old_hist_nz_h_a = hist_nz_h[a_id];
-          std::unordered_map<uint32_t, uint32_t> old_hist_N_b;
-          std::unordered_map<uint32_t, uint32_t> old_hist_h_b;
-          std::unordered_map<uint32_t, uint32_t> old_hist_nz_N_b;
-          std::unordered_map<uint32_t, uint32_t> old_hist_nz_h_b;
-          old_hist_N_b.swap(hist_N[b_id]);
-          old_hist_h_b.swap(hist_h[b_id]);
-          old_hist_nz_N_b.swap(hist_nz_N[b_id]);
-          old_hist_nz_h_b.swap(hist_nz_h[b_id]);
+          rollback.hist_N_a = hist_N[a_id];
+          rollback.hist_h_a = hist_h[a_id];
+          rollback.hist_nz_N_a = hist_nz_N[a_id];
+          rollback.hist_nz_h_a = hist_nz_h[a_id];
+          rollback.hist_N_b = hist_N[b_id];
+          rollback.hist_nz_N_b = hist_nz_N[b_id];
+          rollback.hist_nz_h_b = hist_nz_h[b_id];
+          hist_N[b_id].fill(0);
+          hist_nz_N[b_id].fill(0);
+          hist_nz_h[b_id].fill(0);
+          rollback.hist_h_b = CompactHistogram();
+          rollback.hist_h_b.swap(hist_h[b_id]);
 
           E[a_id] += E[b_id] + best_delta;
-          for (const auto& bin : old_hist_N_b)
-            hist_N[a_id][bin.first] += bin.second;
-          for (const auto& bin : old_hist_h_b)
-            hist_h[a_id][bin.first] += bin.second;
-          for (const auto& bin : old_hist_nz_N_b)
-            hist_nz_N[a_id][bin.first] += bin.second;
-          for (const auto& bin : old_hist_nz_h_b)
-            hist_nz_h[a_id][bin.first] += bin.second;
+          AddDenseHistogram(hist_N[a_id], rollback.hist_N_b);
+          hist_h[a_id].AddFrom(rollback.hist_h_b);
+          AddDenseHistogram(hist_nz_N[a_id], rollback.hist_nz_N_b);
+          AddDenseHistogram(hist_nz_h[a_id], rollback.hist_nz_h_b);
           parent[b_id] = a_id;
           std::swap(active[best_j], active.back());
           active.pop_back();
@@ -1461,7 +1632,7 @@ struct PartitioningCtx {
           current_entropy_cost += best_delta;
           JXL_RETURN_IF_ERROR(update_distances(a_id));
 
-          JXL_ASSIGN_OR_RETURN(int64_t overhead, ComputeSignallingOverhead());
+          JXL_ASSIGN_OR_RETURN(int64_t overhead, ComputeSignallingOverhead(d));
           int64_t merged_total_cost = current_entropy_cost + overhead;
           if (merged_total_cost < best_total_cost) {
             best_total_cost = merged_total_cost;
@@ -1469,18 +1640,18 @@ struct PartitioningCtx {
           }
 
           // Roll back the rejected merge and stop.
-          active = std::move(old_active);
+          active = rollback.active;
           active_clusters = old_active_clusters;
           E[a_id] = old_Ea;
           parent[b_id] = old_parent_b;
-          hist_N[a_id] = std::move(old_hist_N_a);
-          hist_h[a_id] = std::move(old_hist_h_a);
-          hist_nz_N[a_id] = std::move(old_hist_nz_N_a);
-          hist_nz_h[a_id] = std::move(old_hist_nz_h_a);
-          hist_N[b_id].swap(old_hist_N_b);
-          hist_h[b_id].swap(old_hist_h_b);
-          hist_nz_N[b_id].swap(old_hist_nz_N_b);
-          hist_nz_h[b_id].swap(old_hist_nz_h_b);
+          hist_N[a_id] = rollback.hist_N_a;
+          hist_h[a_id] = rollback.hist_h_a;
+          hist_nz_N[a_id] = rollback.hist_nz_N_a;
+          hist_nz_h[a_id] = rollback.hist_nz_h_a;
+          hist_N[b_id] = rollback.hist_N_b;
+          hist_nz_N[b_id] = rollback.hist_nz_N_b;
+          hist_nz_h[b_id] = rollback.hist_nz_h_b;
+          hist_h[b_id].swap(rollback.hist_h_b);
           current_entropy_cost -= best_delta;
           break;
         }
@@ -1500,22 +1671,22 @@ struct PartitioningCtx {
                      active.begin();
       }
       // Save cluster histograms
-      SparseHistogram tmp(active_clusters);
+      CompactHistogramSet tmp(active_clusters, CompactHistogram(d.num_zdcai));
       uint32_t ind = 0;
       for (uint32_t i : active) tmp[ind++].swap(hist_h[i]);
       hist_h.swap(tmp);
-      tmp.assign(active_clusters, {});
+      DenseNHistogramSet tmp_dense(active_clusters);
       ind = 0;
-      for (uint32_t i : active) tmp[ind++].swap(hist_N[i]);
-      hist_N.swap(tmp);
-      tmp.assign(active_clusters, {});
+      for (uint32_t i : active) tmp_dense[ind++].swap(hist_N[i]);
+      hist_N.swap(tmp_dense);
+      DenseNZHistogramSet tmp_nz_h(active_clusters);
       ind = 0;
-      for (uint32_t i : active) tmp[ind++].swap(hist_nz_h[i]);
-      hist_nz_h.swap(tmp);
-      tmp.assign(active_clusters, {});
+      for (uint32_t i : active) tmp_nz_h[ind++].swap(hist_nz_h[i]);
+      hist_nz_h.swap(tmp_nz_h);
+      DenseNZPredHistogramSet tmp_nz_N(active_clusters);
       ind = 0;
-      for (uint32_t i : active) tmp[ind++].swap(hist_nz_N[i]);
-      hist_nz_N.swap(tmp);
+      for (uint32_t i : active) tmp_nz_N[ind++].swap(hist_nz_N[i]);
+      hist_nz_N.swap(tmp_nz_N);
 
       return true;
     }
@@ -1534,7 +1705,7 @@ struct PartitioningCtx {
     //
     // For typical histograms with alphabet size 20-60, this is ~100-300 bits.
     // We use `ANSPopulationCost() - ShannonEntropy` to estimate the overhead.
-    StatusOr<int64_t> ComputeSignallingOverhead() const {
+    StatusOr<int64_t> ComputeSignallingOverhead(const JPEGOptData& d) const {
       int64_t overhead = 0;
 
       // Default HybridUintConfig for AC coefficients: (split_exponent=4,
@@ -1548,13 +1719,13 @@ struct PartitioningCtx {
         // Group symbols by `zdc` value, applying `HybridUintConfig`
         std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint32_t>>
             by_zdc;
-        for (const auto& kv : cluster) {
-          uint32_t symbol = kv.first;
+        for (uint32_t id : cluster.used_ids) {
+          uint32_t symbol = d.dense_to_zdcai[id];
           uint32_t zdc = symbol >> 11;
           uint32_t ai = symbol & 0x7FFu;
           uint32_t token, nbits, bits;
           hybrid_uint_config.Encode(ai, &token, &nbits, &bits);
-          by_zdc[zdc][token] += kv.second;
+          by_zdc[zdc][token] += cluster.Get(id);
         }
 
         // Compute overhead for each `zdc` histogram
@@ -1580,7 +1751,7 @@ struct PartitioningCtx {
           }
           h.total_count = total;
 
-          // ANSPopulationCost() includes header + data cost
+          // `ANSPopulationCost()` includes header + data cost
           JXL_ASSIGN_OR_RETURN(float ans_cost, h.ANSPopulationCost());
           // Shannon entropy is the ideal data cost
           float shannon = h.ShannonEntropy();
@@ -1592,39 +1763,27 @@ struct PartitioningCtx {
         }
       }
 
-      // Process hist_nz_h: split by predicted bucket (pb)
+      // Process `hist_nz_h`: split by predicted bucket `pb`
       for (const auto& cluster : hist_nz_h) {
-        if (cluster.empty()) continue;
-
-        std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint32_t>>
-            by_pb;
-        for (const auto& kv : cluster) {
-          uint32_t symbol = kv.first;
-          uint32_t pb = symbol >> 6;
-          uint32_t nz_count = symbol & 0x3Fu;
-          by_pb[pb][nz_count] += kv.second;
-        }
-
-        for (const auto& pb_pair : by_pb) {
-          const auto& nz_hist = pb_pair.second;
-          if (nz_hist.empty()) continue;
-
+        if (DenseHistogramEmpty(cluster)) continue;
+        for (uint32_t pb = 0; pb < kJPEGNZBucketCount; ++pb) {
           uint32_t max_nz = 0;
           size_t total = 0;
-          for (const auto& kv : nz_hist) {
-            max_nz = std::max(max_nz, kv.first);
-            total += kv.second;
+          const uint32_t base = pb * kJPEGNZCountLimit;
+          for (uint32_t nz_count = 0; nz_count < kJPEGNZCountLimit;
+               ++nz_count) {
+            uint32_t freq = cluster[base + nz_count];
+            if (freq == 0) continue;
+            max_nz = nz_count;
+            total += freq;
           }
           if (total == 0) continue;
 
           size_t alphabet_size = max_nz + 1;
           Histogram h(alphabet_size);
-          for (const auto& kv : nz_hist) {
-            if (kv.first < alphabet_size) {
-              h.counts[kv.first] = static_cast<ANSHistBin>(kv.second);
-            } else {
-              h.counts.back() += static_cast<ANSHistBin>(kv.second);
-            }
+          for (uint32_t nz_count = 0; nz_count <= max_nz; ++nz_count) {
+            h.counts[nz_count] =
+                static_cast<ANSHistBin>(cluster[base + nz_count]);
           }
           h.total_count = total;
 
@@ -1740,6 +1899,62 @@ struct PartitioningCtx {
     }
   };
 
+  void PopulateClusterHistograms(const JPEGOptData& d, uint32_t n0,
+                                 uint32_t num_cells, Clustering* cl) {
+    StreamSweep(
+        []() {}, []() {},
+        [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
+            uint32_t bin_state) {
+          uint32_t c = (bin_state >> 20) & 0x3u;
+          uint32_t cell = static_cast<uint32_t>(
+              (ax1_row[dc1_idx] + ax2_col[dc2_idx]) * n0 + ax0_to_k[dc0_idx]);
+          uint32_t ctx_id = c * num_cells + cell;
+          cl->hist_h[ctx_id].Add(d.CompactHBin(bin_state & 0xFFFFFu), run);
+          uint32_t zdc = (bin_state >> 11) & 0x1FFu;
+          cl->hist_N[ctx_id][zdc] += run;
+        });
+
+    if (d.channels == 1) {
+      for (uint32_t b = 0; b < d.num_blocks[0]; ++b) {
+        uint32_t ctx_id = ax0_to_k[d.block_dc_idx[0][b]];
+        uint32_t nz_count = d.block_nonzeros[0][b];
+        uint32_t pb = d.nz_pred_bucket[0][b];
+        ++cl->hist_nz_h[ctx_id][NZHistogramIndex(pb, nz_count)];
+        ++cl->hist_nz_N[ctx_id][pb];
+      }
+      return;
+    }
+
+    for (uint32_t c = 0; c < kNumCh; ++c) {
+      for (uint32_t by = 0; by < d.block_grid_h[c]; ++by) {
+        for (uint32_t bx = 0; bx < d.block_grid_w[c]; ++bx) {
+          uint32_t x = bx * d.ss_x[c];
+          uint32_t y = by * d.ss_y[c];
+          uint32_t x0 = x / d.ss_x[0];
+          uint32_t y0 = y / d.ss_y[0];
+          uint32_t b0 = y0 * d.block_grid_w[0] + x0;
+          uint32_t x1 = x / d.ss_x[1];
+          uint32_t y1 = y / d.ss_y[1];
+          uint32_t b1 = y1 * d.block_grid_w[1] + x1;
+          uint32_t x2 = x / d.ss_x[2];
+          uint32_t y2 = y / d.ss_y[2];
+          uint32_t b2 = y2 * d.block_grid_w[2] + x2;
+          uint32_t cell = (ax1_row[d.block_dc_idx[1][b1]] +
+                           ax2_col[d.block_dc_idx[2][b2]]) *
+                              n0 +
+                          ax0_to_k[d.block_dc_idx[0][b0]];
+          uint32_t ctx_id = c * num_cells + cell;
+
+          uint32_t b = by * d.block_grid_w[c] + bx;
+          uint32_t nz_count = d.block_nonzeros[c][b];
+          uint32_t pb = d.nz_pred_bucket[c][b];
+          ++cl->hist_nz_h[ctx_id][NZHistogramIndex(pb, nz_count)];
+          ++cl->hist_nz_N[ctx_id][pb];
+        }
+      }
+    }
+  }
+
   StatusOr<Clustering> ClusterContexts(const ThresholdSet& thresholds,
                                        uint32_t num_clusters = kMaxClusters,
                                        bool overhead_aware_tail = true,
@@ -1753,68 +1968,11 @@ struct PartitioningCtx {
     UpdateMaps(thresholds);
 
     Clustering cl;
-    cl.hist_h.resize(total_ctxs);
+    cl.hist_h.assign(total_ctxs, CompactHistogram(d.num_zdcai));
     cl.hist_N.resize(total_ctxs);
     cl.hist_nz_h.resize(total_ctxs);
     cl.hist_nz_N.resize(total_ctxs);
-
-    StreamSweep(
-        []() {}, []() {},
-        [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
-            uint32_t bin_state) {
-          uint32_t c = (bin_state >> 20) & 0x3u;
-          uint32_t cell = static_cast<uint32_t>(
-              (ax1_row[dc1_idx] + ax2_col[dc2_idx]) * n0 + ax0_to_k[dc0_idx]);
-          uint32_t ctx_id = c * num_cells + cell;
-          cl.hist_h[ctx_id][bin_state & 0xFFFFFu] += run;
-          uint32_t zdc = (bin_state >> 11) & 0x1FFu;
-          cl.hist_N[ctx_id][zdc] += run;
-        });
-
-    if (d.channels == 1) {
-      for (uint32_t b = 0; b < d.num_blocks[0]; ++b) {
-        uint32_t ctx_id = ax0_to_k[d.block_dc_idx[0][b]];
-        uint32_t nz_count = d.block_nonzeros[0][b];
-        uint32_t pb = d.nz_pred_bucket[0][b];
-        // Combine predicted bucket (0-35) and nz count (0-63) into a single
-        // key for the aggregator.
-        ++cl.hist_nz_h[ctx_id][(pb << 6) | nz_count];
-        ++cl.hist_nz_N[ctx_id][pb];
-      }
-    } else {
-      for (uint32_t c = 0; c < kNumCh; ++c) {
-        for (uint32_t by = 0; by < d.block_grid_h[c]; ++by) {
-          for (uint32_t bx = 0; bx < d.block_grid_w[c]; ++bx) {
-            // Blocks of subsampled component use DC of top-left block
-            // in upsampled component
-            uint32_t x = bx * d.ss_x[c];
-            uint32_t y = by * d.ss_y[c];
-            uint32_t x0 = x / d.ss_x[0];
-            uint32_t y0 = y / d.ss_y[0];
-            uint32_t b0 = y0 * d.block_grid_w[0] + x0;
-            uint32_t x1 = x / d.ss_x[1];
-            uint32_t y1 = y / d.ss_y[1];
-            uint32_t b1 = y1 * d.block_grid_w[1] + x1;
-            uint32_t x2 = x / d.ss_x[2];
-            uint32_t y2 = y / d.ss_y[2];
-            uint32_t b2 = y2 * d.block_grid_w[2] + x2;
-            uint32_t cell = (ax1_row[d.block_dc_idx[1][b1]] +
-                             ax2_col[d.block_dc_idx[2][b2]]) *
-                                n0 +
-                            ax0_to_k[d.block_dc_idx[0][b0]];
-            uint32_t ctx_id = c * num_cells + cell;
-
-            uint32_t b = by * d.block_grid_w[c] + bx;
-            uint32_t nz_count = d.block_nonzeros[c][b];
-            uint32_t pb = d.nz_pred_bucket[c][b];
-            // Combine predicted bucket (0-35) and nz count (0-63) into a single
-            // key for the aggregator.
-            ++cl.hist_nz_h[ctx_id][(pb << 6) | nz_count];
-            ++cl.hist_nz_N[ctx_id][pb];
-          }
-        }
-      }
-    }
+    PopulateClusterHistograms(d, n0, num_cells, &cl);
 
     JXL_RETURN_IF_ERROR(cl.AgglomerativeClusterCore(d, total_ctxs, num_clusters,
                                                     overhead_aware_tail, pool));
@@ -1831,15 +1989,15 @@ struct PartitioningCtx {
                                Clustering& clustering, uint32_t max_iters = 5,
                                ptrdiff_t search_radius = 2048) {
     const JPEGOptData& d = data();
-    // Scratch histograms for speculative cost updates.
-    SparseHistogram scratch_hist_h;
-    SparseHistogram scratch_hist_N;
-    SparseHistogram scratch_hist_nz_N;
-    SparseHistogram scratch_hist_nz_h;
+    CompactHistogramSet& scratch_hist_h = scratch_hist_h_;
+    DenseNHistogramSet& scratch_hist_N = scratch_hist_N_;
+    DenseNZPredHistogramSet& scratch_hist_nz_N = scratch_hist_nz_N_;
+    DenseNZHistogramSet& scratch_hist_nz_h = scratch_hist_nz_h_;
 
     ThresholdSet cur_T = clustering.PruneDeadThresholds(thresholds);
 
-    std::vector<uint8_t> local_cluster_map[3];
+    std::array<std::vector<uint8_t>, kNumCh>& local_cluster_map =
+        local_cluster_map_;
     uint32_t size_Y = static_cast<uint32_t>(cur_T.TY().size() + 1);
     uint32_t size_Cb = static_cast<uint32_t>(cur_T.TCb().size() + 1);
     uint32_t size_Cr = static_cast<uint32_t>(cur_T.TCr().size() + 1);
@@ -1903,42 +2061,104 @@ struct PartitioningCtx {
 
           // Incremental cost update for moving one item from
           // `old_cluster` to `new_cluster`.
-          auto apply_delta = [&](uint32_t old_cl, uint32_t new_cl,
-                                 SparseHistogram& hist_h,
-                                 SparseHistogram& hist_N, uint32_t h_bin,
-                                 uint32_t N_bin) -> int64_t {
+          auto apply_delta_dense_nz =
+              [&](uint32_t old_cl, uint32_t new_cl, DenseNZHistogramSet& hist_h,
+                  DenseNZPredHistogramSet& hist_N, uint32_t h_bin,
+                  uint32_t N_bin) -> int64_t {
             int64_t delta = 0;
 
-            auto dec_bin = [&](SparseHistogram& hist, uint32_t cl, uint32_t bin,
-                               int64_t sign) {
-              auto& m = hist[cl];
-              auto it = m.find(bin);
-              // A missing/zero bin here indicates inconsistent context
-              // transitions; guard against unsigned underflow in release
-              // builds and trip in debug builds.
-              JXL_DASSERT(it != m.end() && it->second > 0);
-              if (it == m.end() || it->second == 0) return;
-              uint32_t old_freq = it->second;
+            auto dec_bin_h = [&](DenseNZHistogramSet& hist, uint32_t cl,
+                                 uint32_t bin, int64_t sign) {
+              uint32_t& freq = hist[cl][bin];
+              JXL_DASSERT(freq > 0);
+              if (freq == 0) return;
+              uint32_t old_freq = freq;
               uint32_t new_freq = old_freq - 1;
               delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
-              if (new_freq == 0) {
-                m.erase(it);
-              } else {
-                it->second = new_freq;
-              }
+              freq = new_freq;
             };
-            auto inc_bin = [&](SparseHistogram& hist, uint32_t cl, uint32_t bin,
-                               int64_t sign) {
-              auto& freq = hist[cl][bin];
+            auto inc_bin_h = [&](DenseNZHistogramSet& hist, uint32_t cl,
+                                 uint32_t bin, int64_t sign) {
+              uint32_t& freq = hist[cl][bin];
               uint32_t old_freq = freq;
               uint32_t new_freq = old_freq + 1;
               delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
               freq = new_freq;
             };
+            auto dec_bin_N = [&](DenseNZPredHistogramSet& hist, uint32_t cl,
+                                 uint32_t bin, int64_t sign) {
+              uint32_t& freq = hist[cl][bin];
+              JXL_DASSERT(freq > 0);
+              if (freq == 0) return;
+              uint32_t old_freq = freq;
+              uint32_t new_freq = old_freq - 1;
+              delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
+              freq = new_freq;
+            };
+            auto inc_bin_N = [&](DenseNZPredHistogramSet& hist, uint32_t cl,
+                                 uint32_t bin, int64_t sign) {
+              uint32_t& freq = hist[cl][bin];
+              uint32_t old_freq = freq;
+              uint32_t new_freq = old_freq + 1;
+              delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
+              freq = new_freq;
+            };
+            // h-term: negative contribution to cost.
+            dec_bin_h(hist_h, old_cl, h_bin, -1);
+            inc_bin_h(hist_h, new_cl, h_bin, -1);
+
+            // N-term: positive contribution to cost.
+            dec_bin_N(hist_N, old_cl, N_bin, +1);
+            inc_bin_N(hist_N, new_cl, N_bin, +1);
+
+            return delta;
+          };
+          auto apply_delta_dense_h =
+              [&](uint32_t old_cl, uint32_t new_cl, CompactHistogramSet& hist_h,
+                  DenseNHistogramSet& hist_N, uint32_t h_bin,
+                  uint32_t N_bin) -> int64_t {
+            int64_t delta = 0;
+
+            auto dec_bin = [&](DenseNHistogramSet& hist, uint32_t cl,
+                               uint32_t bin, int64_t sign) {
+              uint32_t& freq = hist[cl][bin];
+              JXL_DASSERT(freq > 0);
+              if (freq == 0) return;
+              uint32_t old_freq = freq;
+              uint32_t new_freq = old_freq - 1;
+              delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
+              freq = new_freq;
+            };
+            auto inc_bin = [&](DenseNHistogramSet& hist, uint32_t cl,
+                               uint32_t bin, int64_t sign) {
+              uint32_t& freq = hist[cl][bin];
+              uint32_t old_freq = freq;
+              uint32_t new_freq = old_freq + 1;
+              delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
+              freq = new_freq;
+            };
+            auto dec_bin_h = [&](CompactHistogramSet& hist, uint32_t cl,
+                                 uint32_t bin, int64_t sign) {
+              CompactHistogram& m = hist[cl];
+              uint32_t old_freq = m.Get(bin);
+              JXL_DASSERT(old_freq > 0);
+              if (old_freq == 0) return;
+              uint32_t new_freq = old_freq - 1;
+              delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
+              m.Subtract(bin, 1);
+            };
+            auto inc_bin_h = [&](CompactHistogramSet& hist, uint32_t cl,
+                                 uint32_t bin, int64_t sign) {
+              CompactHistogram& m = hist[cl];
+              uint32_t old_freq = m.Get(bin);
+              uint32_t new_freq = old_freq + 1;
+              delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
+              m.Add(bin, 1);
+            };
 
             // h-term: negative contribution to cost.
-            dec_bin(hist_h, old_cl, h_bin, -1);
-            inc_bin(hist_h, new_cl, h_bin, -1);
+            dec_bin_h(hist_h, old_cl, h_bin, -1);
+            inc_bin_h(hist_h, new_cl, h_bin, -1);
 
             // N-term: positive contribution to cost.
             dec_bin(hist_N, old_cl, N_bin, +1);
@@ -2003,15 +2223,18 @@ struct PartitioningCtx {
                            : local_cluster_map[axis][ci_base + thr_ind + 1];
                 if (old_cl != new_cl) {
                   uint32_t N_bin = d.nz_pred_bucket[axis][b0];
-                  uint32_t h_bin = (N_bin << 6) | d.block_nonzeros[axis][b0];
-                  cost_change += apply_delta(old_cl, new_cl, scratch_hist_nz_h,
-                                             scratch_hist_nz_N, h_bin, N_bin);
+                  uint32_t h_bin =
+                      NZHistogramIndex(N_bin, d.block_nonzeros[axis][b0]);
+                  cost_change +=
+                      apply_delta_dense_nz(old_cl, new_cl, scratch_hist_nz_h,
+                                           scratch_hist_nz_N, h_bin, N_bin);
                   for (uint32_t pi = d.block_offsets[axis][b0];
                        pi < d.block_offsets[axis][b0 + 1]; ++pi) {
                     uint32_t bin = d.block_bins[axis][pi] & 0xFFFFF;
                     uint32_t zdc = bin >> 11;
-                    cost_change += apply_delta(old_cl, new_cl, scratch_hist_h,
-                                               scratch_hist_N, bin, zdc);
+                    cost_change += apply_delta_dense_h(
+                        old_cl, new_cl, scratch_hist_h, scratch_hist_N,
+                        d.CompactHBin(bin), zdc);
                   }
                 }
 
@@ -2035,17 +2258,18 @@ struct PartitioningCtx {
                                : local_cluster_map[axis][ci_base + thr_ind + 1];
                     if (old_cl != new_cl) {
                       uint32_t N_bin = d.nz_pred_bucket[ax1][b1];
-                      uint32_t h_bin = (N_bin << 6) | d.block_nonzeros[ax1][b1];
-                      cost_change +=
-                          apply_delta(old_cl, new_cl, scratch_hist_nz_h,
-                                      scratch_hist_nz_N, h_bin, N_bin);
+                      uint32_t h_bin =
+                          NZHistogramIndex(N_bin, d.block_nonzeros[ax1][b1]);
+                      cost_change += apply_delta_dense_nz(
+                          old_cl, new_cl, scratch_hist_nz_h, scratch_hist_nz_N,
+                          h_bin, N_bin);
                       for (uint32_t pi = d.block_offsets[ax1][b1];
                            pi < d.block_offsets[ax1][b1 + 1]; ++pi) {
                         uint32_t bin = d.block_bins[ax1][pi] & 0xFFFFF;
                         uint32_t zdc = bin >> 11;
-                        cost_change +=
-                            apply_delta(old_cl, new_cl, scratch_hist_h,
-                                        scratch_hist_N, bin, zdc);
+                        cost_change += apply_delta_dense_h(
+                            old_cl, new_cl, scratch_hist_h, scratch_hist_N,
+                            d.CompactHBin(bin), zdc);
                       }
                     }
                   }
@@ -2070,17 +2294,18 @@ struct PartitioningCtx {
                                : local_cluster_map[axis][ci_base + thr_ind + 1];
                     if (old_cl != new_cl) {
                       uint32_t N_bin = d.nz_pred_bucket[ax2][b2];
-                      uint32_t h_bin = (N_bin << 6) | d.block_nonzeros[ax2][b2];
-                      cost_change +=
-                          apply_delta(old_cl, new_cl, scratch_hist_nz_h,
-                                      scratch_hist_nz_N, h_bin, N_bin);
+                      uint32_t h_bin =
+                          NZHistogramIndex(N_bin, d.block_nonzeros[ax2][b2]);
+                      cost_change += apply_delta_dense_nz(
+                          old_cl, new_cl, scratch_hist_nz_h, scratch_hist_nz_N,
+                          h_bin, N_bin);
                       for (uint32_t pi = d.block_offsets[ax2][b2];
                            pi < d.block_offsets[ax2][b2 + 1]; ++pi) {
                         uint32_t bin = d.block_bins[ax2][pi] & 0xFFFFF;
                         uint32_t zdc = bin >> 11;
-                        cost_change +=
-                            apply_delta(old_cl, new_cl, scratch_hist_h,
-                                        scratch_hist_N, bin, zdc);
+                        cost_change += apply_delta_dense_h(
+                            old_cl, new_cl, scratch_hist_h, scratch_hist_N,
+                            d.CompactHBin(bin), zdc);
                       }
                     }
                   }
@@ -2092,15 +2317,18 @@ struct PartitioningCtx {
                                          : local_cluster_map[0][thr_ind + 1];
                 if (old_cl != new_cl) {
                   uint32_t N_bin = d.nz_pred_bucket[0][b0];
-                  uint32_t h_bin = (N_bin << 6) | d.block_nonzeros[0][b0];
-                  cost_change += apply_delta(old_cl, new_cl, scratch_hist_nz_h,
-                                             scratch_hist_nz_N, h_bin, N_bin);
+                  uint32_t h_bin =
+                      NZHistogramIndex(N_bin, d.block_nonzeros[0][b0]);
+                  cost_change +=
+                      apply_delta_dense_nz(old_cl, new_cl, scratch_hist_nz_h,
+                                           scratch_hist_nz_N, h_bin, N_bin);
                   for (uint32_t pi = d.block_offsets[0][b0];
                        pi < d.block_offsets[0][b0 + 1]; ++pi) {
                     uint32_t bin = d.block_bins[0][pi] & 0xFFFFF;
                     uint32_t zdc = bin >> 11;
-                    cost_change += apply_delta(old_cl, new_cl, scratch_hist_h,
-                                               scratch_hist_N, bin, zdc);
+                    cost_change += apply_delta_dense_h(
+                        old_cl, new_cl, scratch_hist_h, scratch_hist_N,
+                        d.CompactHBin(bin), zdc);
                   }
                 }
               }
@@ -2168,9 +2396,11 @@ struct PartitioningCtx {
     // Recompute `nz_cost` for return.
     int64_t final_nz_cost = 0;
     for (const auto& cl_N : clustering.hist_nz_N)
-      for (const auto& bin : cl_N) final_nz_cost += d.nz_entropy(bin.second);
+      for (uint32_t freq : cl_N)
+        if (freq != 0) final_nz_cost += d.nz_entropy(freq);
     for (const auto& cl_h : clustering.hist_nz_h)
-      for (const auto& bin : cl_h) final_nz_cost -= d.nz_entropy(bin.second);
+      for (uint32_t freq : cl_h)
+        if (freq != 0) final_nz_cost -= d.nz_entropy(freq);
 
     return {cur_T, base_cost, final_nz_cost};
   }
@@ -2305,10 +2535,12 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
   auto compute_nz_cost = [&](const PartitioningCtx::Clustering& clustering) {
     int64_t nz_cost = 0;
     for (const auto& cl_N : clustering.hist_nz_N) {
-      for (const auto& bin : cl_N) nz_cost += opt_data->nz_entropy(bin.second);
+      for (uint32_t freq : cl_N)
+        if (freq != 0) nz_cost += opt_data->nz_entropy(freq);
     }
     for (const auto& cl_h : clustering.hist_nz_h) {
-      for (const auto& bin : cl_h) nz_cost -= opt_data->nz_entropy(bin.second);
+      for (uint32_t freq : cl_h)
+        if (freq != 0) nz_cost -= opt_data->nz_entropy(freq);
     }
     return nz_cost;
   };
@@ -2359,7 +2591,7 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
 
         // Add signalling overhead for histogram headers
         int64_t overhead = 0;
-        auto overhead_or = cl_result.ComputeSignallingOverhead();
+        auto overhead_or = cl_result.ComputeSignallingOverhead(*opt_data);
         if (overhead_or.ok()) {
           overhead = std::move(overhead_or).value_();
           total_cost += overhead;
