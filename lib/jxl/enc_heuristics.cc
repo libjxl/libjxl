@@ -1134,9 +1134,9 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   if (frame_header.loop_filter.gab) {
     // Weight below 1.0f helps to reduce ringing.
     float weight[3] = {
-        0.98f,
-        0.98f,
-        0.98f,
+        0.9908511f,
+        0.9908511f,
+        0.9908511f,
     };
     JXL_RETURN_IF_ERROR(GaborishInverse(opsin, rect, weight, pool));
   }
