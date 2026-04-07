@@ -4268,6 +4268,9 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                                /*is_last=*/1);
   size_t output_size = JxlFastLosslessMaxRequiredOutput(frame_state);
   *output = (unsigned char*)malloc(output_size);
+  if (*output == NULL) {
+    return JXL_FAILURE("Memory allocation failed");
+  }
   size_t written = 0;
   size_t total = 0;
   while ((written = JxlFastLosslessWriteOutput(frame_state, *output + total,
