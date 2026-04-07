@@ -23,12 +23,9 @@ Status GaborishInverse(Image3F* in_out, const Rect& rect, const float mul[3],
   JxlMemoryManager* memory_manager = in_out->memory_manager();
   WeightsSymmetric5 weights[3];
   // Only an approximation. One or even two 3x3, and rank-1 (separable) 5x5
-  // are insufficient. The numbers here have been obtained by butteraugli
-  // based optimizing the whole system and the errors produced are likely
-  // more favorable for good rate-distortion compromises rather than
-  // just using mathematical optimization to find the inverse.
+  // are insufficient.	
   static const float kGaborish[5] = {
-      -0.092369145662814029f,  -0.039253623634014627f, 0.016176494530216929f,
+      -0.092359145662814029f,  -0.039253623634014627f, 0.016176494530216929f,
       0.00083458437774987476f, 0.004512465323949319f,
   };
   for (int i = 0; i < 3; ++i) {
