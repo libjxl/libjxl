@@ -173,7 +173,7 @@ JXL_NORETURN inline JXL_NOINLINE bool Abort() {
 #define JXL_RETURN_IF_ERROR(status)                                       \
   do {                                                                    \
     ::jxl::Status jxl_return_if_error_status = (status);                  \
-    if (!jxl_return_if_error_status) {                                    \
+    if (JXL_UNLIKELY(!jxl_return_if_error_status)) {                      \
       (void)::jxl::StatusMessage(                                         \
           jxl_return_if_error_status,                                     \
           "%s:%d: JXL_RETURN_IF_ERROR code=%d: %s\n", __FILE__, __LINE__, \
@@ -197,7 +197,7 @@ JXL_NORETURN inline JXL_NOINLINE bool Abort() {
 // Debug: fatal check.
 #define JXL_ENSURE(condition)                     \
   do {                                            \
-    if (!(condition)) {                           \
+    if (JXL_UNLIKELY(!(condition))) {             \
       ::jxl::Debug("JXL_ENSURE: %s", #condition); \
       ::jxl::Abort();                             \
     }                                             \
@@ -206,7 +206,7 @@ JXL_NORETURN inline JXL_NOINLINE bool Abort() {
 // Release: non-fatal check of condition. If false, just return an error.
 #define JXL_ENSURE(condition)                           \
   do {                                                  \
-    if (!(condition)) {                                 \
+    if (JXL_UNLIKELY(!(condition))) {                   \
       return JXL_FAILURE("JXL_ENSURE: %s", #condition); \
     }                                                   \
   } while (0)
