@@ -526,33 +526,33 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
       {
           AcStrategyType::DCT,
           9,
-          0.83,
+          0.84,
       },
       {
           AcStrategyType::DCT4X4,
           5,
-          0.78,
+          0.79,
       },
       {
           AcStrategyType::DCT2X2,
           5,
-          0.95,
+          0.86,
       },
       {
           AcStrategyType::DCT4X8,
           4,
-          0.82,
+          0.745,
       },
       {
           AcStrategyType::DCT8X4,
           4,
-          0.82,
+          0.745,
       },
       {
           // Hornuss
           AcStrategyType::IDENTITY,
           5,
-          0.98,
+          1.2,
       },
       {
           AcStrategyType::AFV0,
@@ -890,12 +890,12 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // ringing next to sky etc. Optimization will find smaller numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
-  const float entropy_mul16X8 = 1.3;
-  const float entropy_mul16X16 = 1.8;
-  const float entropy_mul16X32 = 2.8;
-  const float entropy_mul32X32 = 3.1;
-  const float entropy_mul64X32 = 4.75;
-  const float entropy_mul64X64 = 6.0;
+  const float entropy_mul16X8 = 1.05;
+  const float entropy_mul16X16 = 1.4;
+  const float entropy_mul16X32 = 2.35;
+  const float entropy_mul32X32 = 3.45;
+  const float entropy_mul64X32 = 5.6;
+  const float entropy_mul64X64 = 9.0;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher
