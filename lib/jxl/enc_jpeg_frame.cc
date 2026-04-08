@@ -2119,8 +2119,8 @@ struct PartitioningCtx {
                   uint32_t N_bin) -> int64_t {
             int64_t delta = 0;
 
-            auto dec_bin = [&](DenseNHistogramSet& hist, uint32_t cl,
-                               uint32_t bin, int64_t sign) {
+            auto dec_bin_N = [&](DenseNHistogramSet& hist, uint32_t cl,
+                                 uint32_t bin, int64_t sign) {
               uint32_t& freq = hist[cl][bin];
               JXL_DASSERT(freq > 0);
               if (freq == 0) return;
@@ -2129,8 +2129,8 @@ struct PartitioningCtx {
               delta += sign * (d.nz_entropy(new_freq) - d.nz_entropy(old_freq));
               freq = new_freq;
             };
-            auto inc_bin = [&](DenseNHistogramSet& hist, uint32_t cl,
-                               uint32_t bin, int64_t sign) {
+            auto inc_bin_N = [&](DenseNHistogramSet& hist, uint32_t cl,
+                                 uint32_t bin, int64_t sign) {
               uint32_t& freq = hist[cl][bin];
               uint32_t old_freq = freq;
               uint32_t new_freq = old_freq + 1;
@@ -2161,8 +2161,8 @@ struct PartitioningCtx {
             inc_bin_h(hist_h, new_cl, h_bin, -1);
 
             // N-term: positive contribution to cost.
-            dec_bin(hist_N, old_cl, N_bin, +1);
-            inc_bin(hist_N, new_cl, N_bin, +1);
+            dec_bin_N(hist_N, old_cl, N_bin, +1);
+            inc_bin_N(hist_N, new_cl, N_bin, +1);
 
             return delta;
           };
@@ -2395,12 +2395,14 @@ struct PartitioningCtx {
 
     // Recompute `nz_cost` for return.
     int64_t final_nz_cost = 0;
-    for (const auto& cl_N : clustering.hist_nz_N)
+    for (const auto& cl_N : clustering.hist_nz_N) {
       for (uint32_t freq : cl_N)
         if (freq != 0) final_nz_cost += d.nz_entropy(freq);
-    for (const auto& cl_h : clustering.hist_nz_h)
+    }
+    for (const auto& cl_h : clustering.hist_nz_h) {
       for (uint32_t freq : cl_h)
         if (freq != 0) final_nz_cost -= d.nz_entropy(freq);
+    }
 
     return {cur_T, base_cost, final_nz_cost};
   }
@@ -2408,8 +2410,6 @@ struct PartitioningCtx {
 
 Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
                                   ThreadPool* pool) {
-  // Keep optimization axes in JPEG component order (Y, Cb, Cr).
-
   channels = static_cast<uint32_t>(jpeg_data.components.size());
   w_max = 0;
   h_max = 0;
