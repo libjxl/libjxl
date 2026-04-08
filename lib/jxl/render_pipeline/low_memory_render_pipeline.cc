@@ -358,16 +358,16 @@ Status LowMemoryRenderPipeline::Init() {
     int ypad = 0;
     int xpad = 0;
     for (size_t i = stages_.size(); i-- > 0;) {
+      size_t y_sampling = 1 << channel_shifts_[i][c].second;
+      size_t aligned_y_pad = RoundUpTo(ypad, y_sampling);
       if (stages_[i]->GetChannelMode(c) !=
           RenderPipelineChannelMode::kIgnored) {
         virtual_ypadding_for_output_[i] =
-            std::max(ypad, virtual_ypadding_for_output_[i]);
+            std::max<int>(virtual_ypadding_for_output_[i], aligned_y_pad);
         xpadding_for_output_[i] = std::max(xpad, xpadding_for_output_[i]);
       }
       if (stages_[i]->GetChannelMode(c) == RenderPipelineChannelMode::kInOut) {
-        ypad = (DivCeil(ypad, 1 << channel_shifts_[i][c].second) +
-                stages_[i]->settings_.border_y)
-               << channel_shifts_[i][c].second;
+        ypad = aligned_y_pad + stages_[i]->settings_.border_y * y_sampling;
         xpad = DivCeil(xpad, 1 << stages_[i]->settings_.shift_x) +
                stages_[i]->settings_.border_x;
       }
