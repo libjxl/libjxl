@@ -15,7 +15,8 @@ namespace jxl {
 class UpsampleXSlowStage : public RenderPipelineStage {
  public:
   UpsampleXSlowStage()
-      : RenderPipelineStage(RenderPipelineStage::Settings::ShiftX(1, 1)) {}
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::ShiftX(/*shift=*/1, /*border=*/1)) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,
@@ -46,7 +47,8 @@ class UpsampleXSlowStage : public RenderPipelineStage {
 class UpsampleYSlowStage : public RenderPipelineStage {
  public:
   UpsampleYSlowStage()
-      : RenderPipelineStage(RenderPipelineStage::Settings::ShiftY(1, 1)) {}
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::ShiftY(/*shift=*/1, /*border=*/1)) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                     size_t xextra, size_t xsize, size_t xpos, size_t ypos,

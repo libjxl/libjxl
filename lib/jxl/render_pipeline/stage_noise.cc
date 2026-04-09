@@ -171,8 +171,7 @@ class AddNoiseStage : public RenderPipelineStage {
  public:
   AddNoiseStage(const NoiseParams& noise_params,
                 const ColorCorrelation& color_correlation, size_t first_c)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/0)),
+      : RenderPipelineStage(RenderPipelineStage::Settings()),
         noise_params_(noise_params),
         color_correlation_(color_correlation),
         first_c_(first_c) {}
@@ -255,8 +254,8 @@ std::unique_ptr<RenderPipelineStage> GetAddNoiseStage(
 class ConvolveNoiseStage : public RenderPipelineStage {
  public:
   explicit ConvolveNoiseStage(size_t first_c)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/2)),
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(2)),
         first_c_(first_c) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
