@@ -131,8 +131,10 @@ Factorizations MaximalFactorizations(const JPEGOptData& d) {
     }
   }
   if (d.channels == 1) {
-    // Cap Y-axis intervals at 15: one cluster slot is consumed by the empty
+    // Cap Y-axis intervals at 15: one cluster slot is consumed by the shared
     // Cb+Cr context required by the JPEG XL context map format.
+    // Applies to both true grayscale and formally 3-channel images whose
+    // chrominance was collapsed to `channels == 1` in `BuildFromJPEG`.
     std::get<0>(result[0]) = std::min(std::get<0>(result[0]), 15u);
   }
   return result;
@@ -385,6 +387,23 @@ Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
 
   {
     JXL_ASSIGN_OR_RETURN(auto ac_cnt, CountDCAC(jpeg_data, pool));
+
+    // Formally 3-channel JPEGs with constant Cb/Cr and no nonzero AC
+    // in chrominance channels are treated as effectively monochrome:
+    // reducing `channels` to 1 causes all downstream passes to take the
+    // grayscale fast path, keeping Cb/Cr zero-event blocks out of Y's
+    // histograms and capping Y at 15 cluster slots (one is reserved for
+    // the shared Cb/Cr "all-zeros" context).
+    auto ChromaIsEmpty = [&](uint32_t c) {
+      if (DC_vals[c].size() > 1) return false;
+      for (uint32_t p = 0; p < kNumPos; ++p) {
+        for (int di = 0; di < kDCTRange; ++di) {
+          if (di != kDCTOff && (*ac_cnt)[c][p][di]) return false;
+        }
+      }
+      return true;
+    };
+    if (channels > 1 && ChromaIsEmpty(1) && ChromaIsEmpty(2)) channels = 1;
 
     JXL_RETURN_IF_ERROR(BuildBlockOptData(jpeg_data, pool, *ac_cnt));
   }

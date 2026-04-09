@@ -113,7 +113,7 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
         JXL_ASSIGN_OR_RETURN(
             Clustering cl_result,
             Clustering::Build(*opt_data, opt_thr,
-                              kMaxClusters - (jpeg_data.components.size() == 1),
+                              kMaxClusters - (opt_data->channels == 1),
                               effort.overhead_aware_tail, nullptr));
         ContextMap& cluster_map = cl_result.ctx_map;
 
@@ -179,14 +179,16 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
   for (int16_t t : best_thr.TCb()) ctx_map.dc_thresholds[0].push_back(t - 1);
   for (int16_t t : best_thr.TCr()) ctx_map.dc_thresholds[2].push_back(t - 1);
 
+  uint32_t effective_channels = opt_data->channels;
+
   // `dc_thresholds` is indexed in JXL XYB order (X=0, Y=1, B=2), which maps
   // JPEG components as Cb→[0], Y→[1], Cr→[2]. `best_ctx` and `ctx_map` remain
   // in JPEG component order (Y=0, Cb=1, Cr=2) as produced by the optimizer.
   ctx_map.ctx_map.assign(3 * kNumOrders * num_dc_ctxs, 0);
-  for (size_t c = 0; c < opt_data->channels; ++c) {
+  for (size_t c = 0; c < effective_channels; ++c) {
     for (size_t cell = 0; cell < num_dc_ctxs; ++cell) {
       ctx_map.ctx_map[c * kNumOrders * num_dc_ctxs + cell] =
-          best_ctx[c * num_dc_ctxs + cell] + (opt_data->channels == 1);
+          best_ctx[c * num_dc_ctxs + cell] + (effective_channels == 1);
     }
   }
   size_t num_ctxs =
