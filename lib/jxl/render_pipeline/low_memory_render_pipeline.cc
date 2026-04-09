@@ -16,6 +16,7 @@
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/image.h"
@@ -540,9 +541,11 @@ class Rows {
     for (size_t i = 0; i < num_stages; i++) {
       for (size_t c = 0; c < input_data.size(); c++) {
         if (stages[i]->GetChannelMode(c) == RenderPipelineChannelMode::kInOut) {
-          rows[i + 1][c].ymod_minus_1 = thread_data[c][i].ysize() - 1;
-          rows[i + 1][c].base_ptr = thread_data[c][i].Row(0);
-          rows[i + 1][c].stride = thread_data[c][i].PixelsPerRow();
+          ImageF& buffer = thread_data[c][i];
+          msan::PoisonImage(buffer);
+          rows[i + 1][c].ymod_minus_1 = buffer.ysize() - 1;
+          rows[i + 1][c].base_ptr = buffer.Row(0);
+          rows[i + 1][c].stride = buffer.PixelsPerRow();
         }
       }
     }
