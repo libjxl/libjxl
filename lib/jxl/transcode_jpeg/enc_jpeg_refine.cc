@@ -3,16 +3,33 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_ENC_JPEG_REFINE_H_
-#define LIB_JXL_ENC_JPEG_REFINE_H_
+// Implementation of threshold refinement for JPEG lossless recompression.
+// See `enc_jpeg_refine.h` for the public interface and pass overview.
+//
+// This file contains two internal types kept out of the header:
+//
+//   `RefineScratch`
+//     Holds the temporary histograms and threshold-boundary views reused while
+//     probing candidate threshold moves.
+//
+//   `RefineCtx`
+//     Implements the per-axis local search, including block projection,
+//     incremental histogram updates, and committing the best move for one
+//     threshold.
 
-#include "lib/jxl/enc_jpeg_cluster.h"
-#include "lib/jxl/enc_jpeg_histogram.h"
-#include "lib/jxl/enc_jpeg_opt_data.h"
-#include "lib/jxl/enc_jpeg_threshold.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_refine.h"
+
+#include <utility>
+
+#include "lib/jxl/transcode_jpeg/enc_jpeg_axis_maps.h"
 
 namespace jxl {
 
+namespace {
+
+// Scratch buffers reused while probing threshold moves during refinement.
+// They mirror the clustered histograms plus the prebuilt threshold-boundary
+// view.
 struct RefineScratch {
   CompactHistogramSet hist_h;
   DenseNHistogramSet hist_N;
@@ -49,6 +66,8 @@ struct RefineCtx {
   uint32_t num_rows;
   RefineScratch& scratch;
 
+  // Builds the per-axis refinement view and the bucket maps for the current
+  // thresholds.
   RefineCtx(const JPEGOptData& d, uint32_t axis, const ThresholdSet& thresholds,
             RefineScratch& scratch, ptrdiff_t search_radius)
       : axis_maps(d),
@@ -67,6 +86,8 @@ struct RefineCtx {
                      thresholds.T[ax2]);
   }
 
+  // Moves one histogram bin between clusters and returns the induced cost
+  // delta.
   template <typename HistogramSet>
   int64_t MoveHistogramBin(HistogramSet* hist, uint32_t old_cl, uint32_t new_cl,
                            uint32_t bin, int64_t sign) const {
@@ -86,6 +107,7 @@ struct RefineCtx {
     return delta;
   }
 
+  // Applies the paired `h`/`N` histogram update for one moved coding event.
   template <typename HistogramHSet, typename HistogramNSet>
   int64_t MoveHistogramEvent(uint32_t old_cl, uint32_t new_cl,
                              HistogramHSet* hist_h, HistogramNSet* hist_N,
@@ -94,6 +116,7 @@ struct RefineCtx {
            MoveHistogramBin(hist_N, old_cl, new_cl, N_bin, +1);
   }
 
+  // Returns the cluster ids on the two sides of one threshold boundary.
   std::pair<uint32_t, uint32_t> BoundaryClusters(uint32_t thr_ind,
                                                  uint32_t channel, uint32_t ci,
                                                  bool upward) const {
@@ -104,14 +127,12 @@ struct RefineCtx {
                   : std::pair<uint32_t, uint32_t>{boundary.lo, boundary.hi};
   }
 
+  // Maps the two perpendicular-axis DC ranks to the local row index.
   uint32_t CellIndex(uint32_t dc_ax1_ind, uint32_t dc_ax2_ind) const {
     return axis_maps.ax1_row[dc_ax1_ind] + axis_maps.ax2_col[dc_ax2_ind];
   }
 
-  static uint32_t DivCeilU32(uint32_t num, uint32_t den) {
-    return (num + den - 1) / den;
-  }
-
+  // Converts `(y, x)` in one component grid into the flat block index.
   uint32_t BlockIndex(uint32_t channel, uint32_t y, uint32_t x) const {
     return y * axis_maps.image.block_grid_w[channel] + x;
   }
@@ -122,31 +143,30 @@ struct RefineCtx {
   // already using 2*32-bits per single AC coefficient in `block_bins` and
   // `AC_stream`.
   //
-  // Match `PopulateClusterHistograms`: cross-component block references are
+  // Match `PopulateHistograms`: cross-component block references are
   // chosen from the block's top-left coordinate in the common plane.
   // `ref_block` is that direct top-left-mapped block in `dst_axis`.
   // `[y_begin, y_end) x [x_begin, x_end)` enumerates `dst_axis` blocks
   // whose own top-left anchors fall inside the moved `src_axis` block, so
   // these ranges may legitimately be empty under subsampling.
+  // Returns both the direct reference block and the affected projected range.
   ProjectedBlocks ProjectBlock(uint32_t src_axis, uint32_t dst_axis, uint32_t y,
                                uint32_t x) const {
     const JPEGOptData& d = axis_maps.image;
-
-    uint32_t scaled_y = y * d.ss_y[src_axis];
-    uint32_t scaled_x = x * d.ss_x[src_axis];
-    return {BlockIndex(dst_axis, scaled_y / d.ss_y[dst_axis],
-                       scaled_x / d.ss_x[dst_axis]),
-            DivCeilU32(scaled_y, d.ss_y[dst_axis]),
-            DivCeilU32(scaled_x, d.ss_x[dst_axis]),
-            DivCeilU32((y + 1) * d.ss_y[src_axis], d.ss_y[dst_axis]),
-            DivCeilU32((x + 1) * d.ss_x[src_axis], d.ss_x[dst_axis])};
+    return {MapTopLeftBlockIndex(d, src_axis, y, x, dst_axis),
+            RescaleCeilPow2(y, d.vshift[src_axis], d.vshift[dst_axis]),
+            RescaleCeilPow2(x, d.hshift[src_axis], d.hshift[dst_axis]),
+            RescaleCeilPow2(y + 1, d.vshift[src_axis], d.vshift[dst_axis]),
+            RescaleCeilPow2(x + 1, d.hshift[src_axis], d.hshift[dst_axis])};
   }
 
+  // Computes the local row index for a pair of cross-component block ids.
   uint32_t CellIndexFromBlocks(uint32_t b1, uint32_t b2) const {
     const JPEGOptData& d = axis_maps.image;
     return CellIndex(d.block_DC_idx[ax1][b1], d.block_DC_idx[ax2][b2]);
   }
 
+  // Reassigns one block's histogram contributions across a threshold boundary.
   int64_t ApplyBlockMove(uint32_t channel, uint32_t block, uint32_t thr_ind,
                          uint32_t ci, bool upward) {
     const JPEGOptData& d = axis_maps.image;
@@ -171,6 +191,8 @@ struct RefineCtx {
     return delta;
   }
 
+  // Applies all histogram updates caused by moving one DC slice across a
+  // threshold.
   int64_t ApplySlice(uint32_t thr_ind, ptrdiff_t slice, bool upward) {
     const JPEGOptData& d = axis_maps.image;
 
@@ -201,9 +223,7 @@ struct RefineCtx {
       for (uint32_t y1 = b1_area.y_begin; y1 < b1_area.y_end; ++y1) {
         for (uint32_t x1 = b1_area.x_begin; x1 < b1_area.x_end; ++x1) {
           uint32_t b1 = BlockIndex(ax1, y1, x1);
-          uint32_t y2 = y1 * d.ss_y[ax1] / d.ss_y[ax2];
-          uint32_t x2 = x1 * d.ss_x[ax1] / d.ss_x[ax2];
-          uint32_t b2 = BlockIndex(ax2, y2, x2);
+          uint32_t b2 = MapTopLeftBlockIndex(d, ax1, y1, x1, ax2);
           cost_change += ApplyBlockMove(ax1, b1, thr_ind,
                                         CellIndexFromBlocks(b1, b2), upward);
         }
@@ -212,9 +232,7 @@ struct RefineCtx {
       for (uint32_t y2 = b2_area.y_begin; y2 < b2_area.y_end; ++y2) {
         for (uint32_t x2 = b2_area.x_begin; x2 < b2_area.x_end; ++x2) {
           uint32_t b2 = BlockIndex(ax2, y2, x2);
-          uint32_t y1 = y2 * d.ss_y[ax2] / d.ss_y[ax1];
-          uint32_t x1 = x2 * d.ss_x[ax2] / d.ss_x[ax1];
-          uint32_t b1 = BlockIndex(ax1, y1, x1);
+          uint32_t b1 = MapTopLeftBlockIndex(d, ax2, y2, x2, ax1);
           cost_change += ApplyBlockMove(ax2, b2, thr_ind,
                                         CellIndexFromBlocks(b1, b2), upward);
         }
@@ -223,6 +241,8 @@ struct RefineCtx {
     return cost_change;
   }
 
+  // Searches locally for the best placement of one threshold and commits the
+  // winning move.
   int16_t RefineThreshold(uint32_t thr_ind, const Thresholds& thresholds,
                           Clustering& clustering, int64_t* base_cost) {
     ptrdiff_t cur_idx = AxisMaps::Bkt(thresholds[thr_ind] - 1, dc_axis);
@@ -280,20 +300,23 @@ struct RefineCtx {
   }
 };
 
-// Return value of `RefineClustered`: the threshold set and entropy costs
-// after coordinate-descent refinement. `cost` is the combined AC + nz entropy
-// cost used by the outer optimizer to compare configurations. `nz_cost` (the
-// nonzero-count entropy portion) is broken out separately for logging.
-struct RefineResult {
-  ThresholdSet thresholds;
-  int64_t cost;
-  int64_t nz_cost;
-};
+}  // namespace
 
+// Refines the threshold set by iteratively optimizing each threshold in place.
+//
+// The refinement proceeds axis by axis, and within each axis, threshold by
+// threshold. Each threshold is moved up and down by `search_radius` steps,
+// and the best move is accepted if it reduces the total cost. The process
+// repeats until no threshold can be improved further or `max_iters` is
+// reached.
+//
+// The cost is tracked in `base_cost` and updated incrementally using the
+// `MoveHistogramBin` and `MoveHistogramEvent` helpers, which exploit the
+// precomputed `ftab` and `NZFTab` helper for fast cost deltas.
 RefineResult RefineClustered(const JPEGOptData& d,
                              const ThresholdSet& thresholds,
-                             Clustering& clustering, uint32_t max_iters = 5,
-                             ptrdiff_t search_radius = 2048) {
+                             Clustering& clustering, uint32_t max_iters,
+                             ptrdiff_t search_radius) {
   RefineScratch scratch;
   ThresholdSet cur_T = clustering.PruneDeadThresholds(thresholds);
   scratch.local_cluster_boundary =
@@ -322,5 +345,3 @@ RefineResult RefineClustered(const JPEGOptData& d,
 }
 
 }  // namespace jxl
-
-#endif  // LIB_JXL_ENC_JPEG_REFINE_H_

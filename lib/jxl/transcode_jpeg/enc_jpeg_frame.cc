@@ -17,12 +17,13 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/enc_jpeg_cluster.h"
-#include "lib/jxl/enc_jpeg_opt_data.h"
-#include "lib/jxl/enc_jpeg_refine.h"
-#include "lib/jxl/enc_jpeg_search.h"
-#include "lib/jxl/enc_jpeg_threshold.h"
+#include "lib/jxl/enc_jpeg_frame.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_cluster.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_opt_data.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_refine.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_search.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_threshold.h"
 
 namespace jxl {
 
@@ -41,7 +42,7 @@ namespace jxl {
 //   3. For every candidate factorisation (optionally pre-filtered by a cheap
 //      ranking pass), `PartitioningCtx::OptimizeThresholds` refines the DC
 //      thresholds via iterative greedy descent, then
-//      `PartitioningCtx::ClusterContexts` merges similar contexts using
+//      `ClusterContexts` merges similar contexts using
 //      entropy-cost-guided agglomerative clustering.
 //   4. The candidate with the lowest total cost (entropy + histogram signalling
 //      overhead) is selected and written into the BlockCtxMap consumed by the
@@ -111,9 +112,9 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
 
         JXL_ASSIGN_OR_RETURN(
             Clustering cl_result,
-            ClusterContexts(ctx, opt_thr,
-                            kMaxClusters - (jpeg_data.components.size() == 1),
-                            effort.overhead_aware_tail, nullptr));
+            Clustering::Build(*opt_data, opt_thr,
+                              kMaxClusters - (jpeg_data.components.size() == 1),
+                              effort.overhead_aware_tail, nullptr));
         ContextMap& cluster_map = cl_result.ctx_map;
 
         ThresholdSet refined_thr;
@@ -178,7 +179,9 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
   for (int16_t t : best_thr.TCb()) ctx_map.dc_thresholds[0].push_back(t - 1);
   for (int16_t t : best_thr.TCr()) ctx_map.dc_thresholds[2].push_back(t - 1);
 
-  // Note: `best_ctx` and `ctx_map` are in JPEG order (Y, Cb, Cr)
+  // `dc_thresholds` is indexed in JXL XYB order (X=0, Y=1, B=2), which maps
+  // JPEG components as Cb→[0], Y→[1], Cr→[2]. `best_ctx` and `ctx_map` remain
+  // in JPEG component order (Y=0, Cb=1, Cr=2) as produced by the optimizer.
   ctx_map.ctx_map.assign(3 * kNumOrders * num_dc_ctxs, 0);
   for (size_t c = 0; c < opt_data->channels; ++c) {
     for (size_t cell = 0; cell < num_dc_ctxs; ++cell) {

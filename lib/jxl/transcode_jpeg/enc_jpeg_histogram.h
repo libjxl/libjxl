@@ -3,11 +3,33 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_ENC_JPEG_HISTOGRAM_H_
-#define LIB_JXL_ENC_JPEG_HISTOGRAM_H_
+// Histogram containers used by JPEG lossless recompression.
+//
+// The threshold optimizer, clustering pass, and refinement pass all manipulate
+// per-context histograms of AC symbols, zero-density contexts, and nonzero
+// counts. This file provides the small set of histogram types they share.
+//
+// `CompactHistogram`
+//   Sparse histogram for large alphabets where only a few bins are usually
+//   active, most notably the `(zdc, ai)` AC symbol histograms.
+//
+// `DenseHistogram<Size>`
+//   Fixed-size histogram with the same small update API, used for bounded
+//   alphabets such as `zdc`, nz predictor buckets, and `(pb, nz_count)` bins.
+//
+// The common `Get/Add/Subtract/AddFrom/Clear` interface lets clustering and
+// refinement code update dense and sparse histograms in the same style.
+
+#ifndef LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_HISTOGRAM_H_
+#define LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_HISTOGRAM_H_
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 #include "lib/jxl/ac_context.h"
-#include "lib/jxl/enc_jpeg_opt_data.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_opt_data.h"
 
 namespace jxl {
 // Compact histogram for efficient incremental updates.
@@ -55,7 +77,6 @@ struct CompactHistogram {
 
   bool empty() const { return used_ids.empty(); }
 
-  uint32_t at(uint32_t id) const { return counts[id]; }
   uint32_t Get(uint32_t id) const { return counts[id]; }
 
   void Add(uint32_t id, uint32_t value = 1) {
@@ -83,7 +104,7 @@ struct CompactHistogram {
     pos_in_used[id] = kInvalidCompactH;
   }
 
-  void AddFrom(const CompactHistogram& other) {
+  void AddHistogram(const CompactHistogram& other) {
     for (uint32_t id : other.used_ids) Add(id, other.counts[id]);
   }
 
@@ -139,7 +160,7 @@ struct DenseHistogram {
     freq -= value;
   }
 
-  void AddFrom(const DenseHistogram& other) {
+  void AddHistogram(const DenseHistogram& other) {
     for (size_t i = 0; i < Size; ++i) counts[i] += other.counts[i];
   }
 
@@ -161,6 +182,10 @@ struct DenseHistogram {
   void swap(DenseHistogram& other) { counts.swap(other.counts); }
 };
 
+// Concrete histogram aliases used by clustering and refinement:
+// `N` histograms track zero-density-context totals, `NZPred` tracks predictor
+// bucket totals, `NZ` tracks `(predictor bucket, nonzero count)` bins, and
+// `CompactHistogramSet` stores the sparse AC-symbol histograms per cluster.
 using DenseNHistogram = DenseHistogram<kZeroDensityContextCount>;
 using DenseNHistogramSet = std::vector<DenseNHistogram>;
 using DenseNZPredHistogram = DenseHistogram<kJPEGNonZeroBuckets>;
@@ -169,6 +194,8 @@ using DenseNZHistogram = DenseHistogram<kNZHistogramsSize>;
 using DenseNZHistogramSet = std::vector<DenseNZHistogram>;
 using CompactHistogramSet = std::vector<CompactHistogram>;
 
+// Flattens the 2D `(predictor bucket, nonzero count)` space into the linear
+// storage layout used by `DenseNZHistogram`.
 JXL_INLINE uint32_t NZHistogramIndex(uint32_t pb, uint32_t nz_count) {
   JXL_DASSERT(pb < kJPEGNonZeroBuckets);
   JXL_DASSERT(nz_count < kJPEGNonZeroRange);
@@ -177,4 +204,4 @@ JXL_INLINE uint32_t NZHistogramIndex(uint32_t pb, uint32_t nz_count) {
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_ENC_JPEG_HISTOGRAM_H_
+#endif  // LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_HISTOGRAM_H_

@@ -3,15 +3,37 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_ENC_JPEG_SEARCH_H_
-#define LIB_JXL_ENC_JPEG_SEARCH_H_
+// Search configuration and candidate ranking for JPEG lossless recompression.
+//
+// After `JPEGOptData` has been built, the outer optimizer enumerates candidate
+// DC-threshold factorizations, optionally ranks them with a cheaper threshold
+// optimization pass, and keeps only the most promising ones for the full
+// threshold / clustering / refinement pipeline. This file exposes the public
+// types used by that search step.
+//
+// `JPEGCtxEffortParams`
+//   Speed-tier-dependent knobs controlling how many factorizations are kept
+//   and how much work is spent on ranking, final optimization, and refinement.
+//
+// `FactorizationCandidate`
+//   One candidate `(a, b, c)` factorization together with its initialized
+//   threshold set and optional ranking cost.
+//
+// `RankAndTrimFactorizations`
+//   Builds the maximal-factorization candidate list and, when enabled, ranks
+//   and trims it to the best `keep_top_k` entries.
+
+#ifndef LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_SEARCH_H_
+#define LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_SEARCH_H_
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <memory>
+#include <tuple>
 
 #include "lib/jxl/common.h"
-#include "lib/jxl/enc_jpeg_opt_data.h"
-#include "lib/jxl/enc_jpeg_threshold.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_opt_data.h"
 
 namespace jxl {
 
@@ -62,7 +84,7 @@ struct JPEGCtxEffortParams {
         return {/*keep_top_k=*/0,
                 /*rank_m_target=*/0,
                 /*rank_iters=*/0,
-                /*final_m_target=*/kDCTRange,
+                /*final_m_target=kDCTRange*/ kMTarget,
                 /*final_iters=*/20,
                 /*overhead_aware_tail=*/true,
                 /*refine_iters=*/5,
@@ -90,57 +112,8 @@ struct FactorizationCandidate {
 
 StatusOr<std::vector<FactorizationCandidate>> RankAndTrimFactorizations(
     std::shared_ptr<const JPEGOptData> opt_data,
-    const JPEGCtxEffortParams& effort, ThreadPool* pool) {
-  const auto factorizations = opt_data->MaximalFactorizations();
-  if (!factorizations.empty()) {
-    JXL_DEBUG_V(2, "Searching %i maximal factorizations\n",
-                static_cast<int>(factorizations.size()));
-  }
-
-  std::vector<FactorizationCandidate> candidates;
-  candidates.reserve(factorizations.size());
-  for (const auto& factorization : factorizations) {
-    FactorizationCandidate candidate;
-    candidate.a = std::get<0>(factorization);
-    candidate.b = std::get<1>(factorization);
-    candidate.c = std::get<2>(factorization);
-    candidate.init.T[0] = opt_data->InitThresh(0, candidate.a);
-    candidate.init.T[1] = opt_data->InitThresh(1, candidate.b);
-    candidate.init.T[2] = opt_data->InitThresh(2, candidate.c);
-    candidates.push_back(std::move(candidate));
-  }
-  if (effort.keep_top_k == 0 || candidates.size() <= effort.keep_top_k) {
-    return candidates;
-  }
-
-  std::vector<PartitioningCtx> rank_ctx_pool;
-  JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, static_cast<uint32_t>(candidates.size()),
-      [&](size_t num_threads) -> Status {
-        rank_ctx_pool.reserve(num_threads);
-        for (size_t i = 0; i < num_threads; ++i) {
-          rank_ctx_pool.emplace_back(opt_data);
-        }
-        return true;
-      },
-      [&](uint32_t idx, size_t thread_id) -> Status {
-        FactorizationCandidate& candidate = candidates[idx];
-        PartitioningCtx& ctx = rank_ctx_pool[thread_id];
-        candidate.rank_cost =
-            (effort.rank_iters == 0)
-                ? ctx.TotalCost(candidate.init)
-                : ctx.OptimizeThresholds(candidate.init, effort.rank_m_target,
-                                         effort.rank_iters)
-                      .first;
-        return true;
-      },
-      "JpegCtxRank"));
-
-  std::stable_sort(candidates.begin(), candidates.end());
-  candidates.resize(effort.keep_top_k);
-  return candidates;
-}
+    const JPEGCtxEffortParams& effort, ThreadPool* pool);
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_ENC_JPEG_SEARCH_H_
+#endif  // LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_SEARCH_H_

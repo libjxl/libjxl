@@ -3,10 +3,35 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_ENC_JPEG_INTERNAL_H_
-#define LIB_JXL_ENC_JPEG_INTERNAL_H_
+// Precomputed data model for JPEG lossless recompression.
+//
+// The JPEG transcode pipeline first converts `jpeg::JPEGData` into a compact
+// representation that the threshold optimizer, clustering pass, and refinement
+// pass can all share. This file defines that representation and the constants
+// used throughout the subsystem.
+//
+// `JPEGOptData`
+//   Owns precomputed DC statistics, compacted AC-symbol ids, per-block side
+//   data, and the run-length-encoded AC stream used by the hot optimization
+//   passes.
+//
+// The main build steps are:
+//   - `CountDCAC`: collect raw DC and AC occurrence counts from the JPEG input
+//   - `BuildBlockOptData`: build per-block DC / nz / AC-bin side tables
+//   - `FinalizeSpatialIndexing`: sort blocks by DC value and build rank ranges
+//   - `BuildACStream`: emit the packed AC stream consumed by stream walks
+//
+// All later optimization stages operate on `JPEGOptData` rather than the
+// original JPEG structures.
+
+#ifndef LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_OPT_DATA_H_
+#define LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_OPT_DATA_H_
 
 #include <array>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <tuple>
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
@@ -59,23 +84,14 @@ constexpr uint32_t kNZHistogramsSize = kJPEGNonZeroBuckets * kJPEGNonZeroRange;
 // Invalid position in `pos_in_used`.
 constexpr uint32_t kInvalidCompactH = std::numeric_limits<uint32_t>::max();
 
+// AC coefficient entry in the packed event stream.
+using ACEntry = uint32_t;
 // Vector of DC thresholds for a channel.
 using Thresholds = std::vector<int16_t>;
-// AC coefficient entry in the event stream.
-using ACEntry = uint32_t;
 // Context map.
 using ContextMap = std::vector<uint8_t>;
 // Factorizations of DC thresholds into number of intervals per channel.
 using Factorizations = std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>;
-
-JXL_INLINE int CountrZero64(uint64_t x) {
-#if JXL_COMPILER_MSVC
-  unsigned long idx;
-  return _BitScanForward64(&idx, x) ? static_cast<int>(idx) : 64;
-#else
-  return x ? __builtin_ctzll(x) : 64;
-#endif
-}
 
 JXL_INLINE double bit_cost(int64_t cost) {
   return static_cast<double>(cost) / kFScale;
@@ -109,9 +125,10 @@ struct JPEGOptData {
   // Max width and height of the block grid.
   uint32_t w_max;
   uint32_t h_max;
-  // Vertical and horizontal subsampling factors.
-  uint32_t ss_y[kNumCh];
-  uint32_t ss_x[kNumCh];
+  // Vertical and horizontal subsampling shifts. The actual factor is
+  // `1 << vshift[c]` / `1 << hshift[c]`.
+  uint8_t vshift[kNumCh];
+  uint8_t hshift[kNumCh];
   // DC values active in image for each component.
   std::vector<int16_t> DC_vals[kNumCh];
   // Counts of each DC value.
@@ -127,7 +144,7 @@ struct JPEGOptData {
   std::vector<uint32_t> dense_to_zdcai;
 
   // Run-length-encoded AC data, sorted by `(bin, dc0, dc1, dc2)`.
-  // 32-bit packed format; see `GenerateRLEStream` for layout details.
+  // 32-bit packed format; see `BuildACStream` for layout details.
   std::vector<ACEntry> AC_stream;
 
   // AC events of consequitive blocks per component.
@@ -154,8 +171,6 @@ struct JPEGOptData {
 
   int64_t NZFTab(uint32_t n) const;
   uint32_t CompactHBin(uint32_t zdc_ai) const;
-  Thresholds InitThresh(int axis, uint32_t target_intervals) const;
-  Factorizations MaximalFactorizations() const;
 
  private:
   void InitFTab(size_t max_n);
@@ -164,9 +179,50 @@ struct JPEGOptData {
   Status BuildBlockOptData(const jpeg::JPEGData& jpeg_data, ThreadPool* pool,
                            const ACCounts& ac_cnt);
   Status FinalizeSpatialIndexing(ThreadPool* pool);
-  Status GenerateRLEStream(ThreadPool* pool);
 };
+
+// Computes initial DC thresholds for one axis via a 1D surrogate entropy cost.
+// Uses the same Knuth DP backend as the full AC-driven optimisation path.
+Thresholds InitThresh(const JPEGOptData& d, int axis,
+                      uint32_t target_intervals);
+
+// Enumerates maximal factorizations `(a, b, c)` of the DC threshold count.
+// Only maximal factorizations are returned: those where no factor can increase
+// without violating `kMaxCells` or `kMaxIntervals` or exceeding DC cardinality.
+// For grayscale images (`d.channels == 1`) the Y-axis factor is capped at 15
+// because one cluster slot is consumed by the empty Cb+Cr context required by
+// the JPEG XL context map format.
+Factorizations MaximalFactorizations(const JPEGOptData& d);
+
+// Rescales a block coordinate between component grids using floor semantics.
+// The actual per-channel scale is `1 << shift`, so the mapping is a shift.
+// Block coordinates stay small enough that the temporary left shift is safe.
+JXL_INLINE uint32_t RescaleFloorPow2(uint32_t v, uint32_t src_shift,
+                                     uint32_t dst_shift) {
+  return (v << src_shift) >> dst_shift;
+}
+
+// Rescales a block coordinate between component grids using ceil semantics.
+// Used when projecting a block footprint onto another subsampled grid.
+// JPEG lossless transcoding only uses 0/1 shifts here, so ceil division by the
+// destination scale is implemented by biasing with `dst_shift` before shifting.
+JXL_INLINE uint32_t RescaleCeilPow2(uint32_t v, uint32_t src_shift,
+                                    uint32_t dst_shift) {
+  JXL_DASSERT(src_shift <= 1 && dst_shift <= 1);
+  return ((v << src_shift) + dst_shift) >> dst_shift;
+}
+
+// Maps block `(y, x)` in `src_channel` to the block in `dst_channel` whose
+// top-left anchor is reached by projecting that source block into the common
+// plane and flooring back into the destination grid.
+JXL_INLINE uint32_t MapTopLeftBlockIndex(const JPEGOptData& d,
+                                         uint32_t src_channel, uint32_t y,
+                                         uint32_t x, uint32_t dst_channel) {
+  return RescaleFloorPow2(y, d.vshift[src_channel], d.vshift[dst_channel]) *
+             d.block_grid_w[dst_channel] +
+         RescaleFloorPow2(x, d.hshift[src_channel], d.hshift[dst_channel]);
+}
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_ENC_JPEG_INTERNAL_H_
+#endif  // LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_OPT_DATA_H_
