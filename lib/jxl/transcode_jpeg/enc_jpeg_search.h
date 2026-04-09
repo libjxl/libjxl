@@ -43,8 +43,8 @@ struct JPEGCtxEffortParams {
   uint32_t keep_top_k;
   uint32_t rank_m_target;
   uint32_t rank_iters;
-  uint32_t final_m_target;
-  uint32_t final_iters;
+  uint32_t main_m_target;
+  uint32_t main_iters;
   bool overhead_aware_tail;
   uint32_t refine_iters;
   ptrdiff_t refine_radius;
@@ -52,29 +52,29 @@ struct JPEGCtxEffortParams {
   static JPEGCtxEffortParams FromSpeedTier(SpeedTier speed_tier) {
     switch (speed_tier) {
       case SpeedTier::kSquirrel:
-        return {/*keep_top_k=*/4,
-                /*rank_m_target=*/0,
-                /*rank_iters=*/0,
-                /*final_m_target=*/64,
-                /*final_iters=*/2,
+        return {/*keep_top_k=*/8,
+                /*rank_m_target=*/32,
+                /*rank_iters=*/1,
+                /*main_m_target=*/64,
+                /*main_iters=*/2,
                 /*overhead_aware_tail=*/true,
                 /*refine_iters=*/0,
                 /*refine_radius=*/0};
       case SpeedTier::kKitten:
-        return {/*keep_top_k=*/6,
+        return {/*keep_top_k=*/16,
                 /*rank_m_target=*/64,
                 /*rank_iters=*/1,
-                /*final_m_target=*/128,
-                /*final_iters=*/4,
+                /*main_m_target=*/128,
+                /*main_iters=*/4,
                 /*overhead_aware_tail=*/true,
                 /*refine_iters=*/1,
                 /*refine_radius=*/4};
       case SpeedTier::kTortoise:
-        return {/*keep_top_k=*/12,
+        return {/*keep_top_k=*/24,
                 /*rank_m_target=*/128,
                 /*rank_iters=*/2,
-                /*final_m_target=*/256,
-                /*final_iters=*/8,
+                /*main_m_target=*/256,
+                /*main_iters=*/8,
                 /*overhead_aware_tail=*/true,
                 /*refine_iters=*/2,
                 /*refine_radius=*/8};
@@ -84,8 +84,8 @@ struct JPEGCtxEffortParams {
         return {/*keep_top_k=*/0,
                 /*rank_m_target=*/0,
                 /*rank_iters=*/0,
-                /*final_m_target=kDCTRange*/ kMTarget,
-                /*final_iters=*/20,
+                /*main_m_target=*/kMTarget,
+                /*main_iters=*/20,
                 /*overhead_aware_tail=*/true,
                 /*refine_iters=*/5,
                 /*refine_radius=*/16};

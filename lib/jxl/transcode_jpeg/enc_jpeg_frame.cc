@@ -107,7 +107,7 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
         PartitioningCtx& ctx = ctx_pool[thread_id];
 
         auto opt_result = ctx.OptimizeThresholds(
-            candidate.init, effort.final_m_target, effort.final_iters);
+            candidate.init, effort.main_m_target, effort.main_iters);
         ThresholdSet opt_thr = opt_result.second;
 
         JXL_ASSIGN_OR_RETURN(
