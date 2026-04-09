@@ -292,6 +292,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
 set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/butteraugli/butteraugli.cc
   jxl/butteraugli/butteraugli.h
+  jxl/enc_Knuth_partition.h
   jxl/enc_ac_strategy.cc
   jxl/enc_ac_strategy.h
   jxl/enc_adaptive_quantization.cc
@@ -336,8 +337,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_fields.h
   jxl/enc_frame.cc
   jxl/enc_frame.h
-  jxl/enc_jpeg_frame.cc
-  jxl/enc_jpeg_frame.h
   jxl/enc_gaborish.cc
   jxl/enc_gaborish.h
   jxl/enc_gamma_correct.h
@@ -353,6 +352,15 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_icc_codec.h
   jxl/enc_image_bundle.cc
   jxl/enc_image_bundle.h
+  jxl/enc_jpeg_cluster.h
+  jxl/enc_jpeg_frame.cc
+  jxl/enc_jpeg_frame.h
+  jxl/enc_jpeg_histogram.h
+  jxl/enc_jpeg_opt_data.cc
+  jxl/enc_jpeg_opt_data.h
+  jxl/enc_jpeg_refine.h
+  jxl/enc_jpeg_search.h
+  jxl/enc_jpeg_threshold.h
   jxl/enc_linalg.cc
   jxl/enc_linalg.h
   jxl/enc_lz77.cc
