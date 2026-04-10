@@ -353,23 +353,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_image_bundle.cc
   jxl/enc_image_bundle.h
   jxl/enc_jpeg_frame.h
-  jxl/transcode_jpeg/enc_jpeg_axis_maps.h
-  jxl/transcode_jpeg/enc_jpeg_cluster_build.cc
-  jxl/transcode_jpeg/enc_jpeg_cluster.h
-  jxl/transcode_jpeg/enc_jpeg_cluster_merge.cc
-  jxl/transcode_jpeg/enc_jpeg_cluster_state.cc
-  jxl/transcode_jpeg/enc_jpeg_frame.cc
-  jxl/transcode_jpeg/enc_jpeg_histogram.h
-  jxl/transcode_jpeg/enc_jpeg_opt_data.cc
-  jxl/transcode_jpeg/enc_jpeg_opt_data.h
-  jxl/transcode_jpeg/enc_jpeg_refine.cc
-  jxl/transcode_jpeg/enc_jpeg_refine.h
-  jxl/transcode_jpeg/enc_jpeg_search.cc
-  jxl/transcode_jpeg/enc_jpeg_search.h
-  jxl/transcode_jpeg/enc_jpeg_stream.cc
-  jxl/transcode_jpeg/enc_jpeg_stream.h
-  jxl/transcode_jpeg/enc_jpeg_threshold.cc
-  jxl/transcode_jpeg/enc_jpeg_threshold.h
   jxl/enc_linalg.cc
   jxl/enc_linalg.h
   jxl/enc_lz77.cc
@@ -421,6 +404,23 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/modular/transform/enc_squeeze.h
   jxl/modular/transform/enc_transform.cc
   jxl/modular/transform/enc_transform.h
+  jxl/transcode_jpeg/enc_jpeg_axis_maps.h
+  jxl/transcode_jpeg/enc_jpeg_cluster.h
+  jxl/transcode_jpeg/enc_jpeg_cluster_build.cc
+  jxl/transcode_jpeg/enc_jpeg_cluster_merge.cc
+  jxl/transcode_jpeg/enc_jpeg_cluster_state.cc
+  jxl/transcode_jpeg/enc_jpeg_frame.cc
+  jxl/transcode_jpeg/enc_jpeg_histogram.h
+  jxl/transcode_jpeg/enc_jpeg_opt_data.cc
+  jxl/transcode_jpeg/enc_jpeg_opt_data.h
+  jxl/transcode_jpeg/enc_jpeg_refine.cc
+  jxl/transcode_jpeg/enc_jpeg_refine.h
+  jxl/transcode_jpeg/enc_jpeg_search.cc
+  jxl/transcode_jpeg/enc_jpeg_search.h
+  jxl/transcode_jpeg/enc_jpeg_stream.cc
+  jxl/transcode_jpeg/enc_jpeg_stream.h
+  jxl/transcode_jpeg/enc_jpeg_threshold.cc
+  jxl/transcode_jpeg/enc_jpeg_threshold.h
 )
 
 set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES
