@@ -38,20 +38,20 @@ class XYBStage : public RenderPipelineStage {
                        ColorSpace::kXYB) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     const HWY_FULL(float) d;
-    JXL_ENSURE(xextra == 0);
-    const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
+    JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
+    size_t x_span_tail = RoundUpTo(xsize, Lanes(d)) - xsize;
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
     float* JXL_RESTRICT row2 = GetInputRow(input_rows, 2, 0);
     // All calculations are lane-wise, still some might require
     // value-dependent behaviour (e.g. NearestInt). Temporary unpoison last
     // vector tail.
-    msan::UnpoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
-    msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
-    msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::UnpoisonMemory(row0 + xsize, sizeof(float) * x_span_tail);
+    msan::UnpoisonMemory(row1 + xsize, sizeof(float) * x_span_tail);
+    msan::UnpoisonMemory(row2 + xsize, sizeof(float) * x_span_tail);
     // TODO(eustas): when using frame origin, addresses might be unaligned;
     //               making them aligned will void performance penalty.
     if (output_is_xyb_) {
@@ -61,8 +61,8 @@ class XYBStage : public RenderPipelineStage {
       const auto offset_x = Set(d, jxl::cms::kScaledXYBOffset[0]);
       const auto offset_y = Set(d, jxl::cms::kScaledXYBOffset[1]);
       const auto offset_bmy = Set(d, jxl::cms::kScaledXYBOffset[2]);
-      for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-           x += Lanes(d)) {
+      // TODO(eustas): why unaligned load/store?
+      for (size_t x = 0; x < xsize; x += Lanes(d)) {
         const auto in_x = LoadU(d, row0 + x);
         const auto in_y = LoadU(d, row1 + x);
         const auto in_b = LoadU(d, row2 + x);
@@ -74,8 +74,8 @@ class XYBStage : public RenderPipelineStage {
         StoreU(out_b, d, row2 + x);
       }
     } else {
-      for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-           x += Lanes(d)) {
+      // TODO(eustas): why unaligned load/store?
+      for (size_t x = 0; x < xsize; x += Lanes(d)) {
         const auto in_opsin_x = LoadU(d, row0 + x);
         const auto in_opsin_y = LoadU(d, row1 + x);
         const auto in_opsin_b = LoadU(d, row2 + x);
@@ -89,9 +89,9 @@ class XYBStage : public RenderPipelineStage {
         StoreU(b, d, row2 + x);
       }
     }
-    msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
-    msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
-    msan::PoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::PoisonMemory(row0 + xsize, sizeof(float) * x_span_tail);
+    msan::PoisonMemory(row1 + xsize, sizeof(float) * x_span_tail);
+    msan::PoisonMemory(row2 + xsize, sizeof(float) * x_span_tail);
     return true;
   }
 
@@ -143,17 +143,17 @@ class FastXYBStage : public RenderPipelineStage {
         alpha_c_(alpha_c) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     if (ypos >= height_) return true;
-    JXL_ENSURE(xextra == 0);
+    JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
     const float* xyba[4] = {
         GetInputRow(input_rows, 0, 0), GetInputRow(input_rows, 1, 0),
         GetInputRow(input_rows, 2, 0),
         has_alpha_ ? GetInputRow(input_rows, alpha_c_, 0) : nullptr};
     uint8_t* out_buf = rgb_ + stride_ * ypos + (rgba_ ? 4 : 3) * xpos;
-    return FastXYBTosRGB8(xyba, out_buf, rgba_,
-                          xsize + xpos <= width_ ? xsize : width_ - xpos);
+    size_t x_span = std::min<size_t>(xsize, width_ - xpos);
+    return FastXYBTosRGB8(xyba, out_buf, rgba_, x_span);
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
