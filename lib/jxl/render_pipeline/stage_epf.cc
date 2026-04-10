@@ -53,8 +53,8 @@ JXL_INLINE Vec<DF> Weight(Vec<DF> sad, Vec<DF> inv_sigma, Vec<DF> thres) {
 class EPF0Stage : public RenderPipelineStage {
  public:
   EPF0Stage(LoopFilter lf, const ImageF& sigma)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/3)),
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(3)),
         lf_(std::move(lf)),
         sigma_(&sigma) {}
 
@@ -192,8 +192,8 @@ class EPF0Stage : public RenderPipelineStage {
 class EPF1Stage : public RenderPipelineStage {
  public:
   EPF1Stage(LoopFilter lf, const ImageF& sigma)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/2)),
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(2)),
         lf_(std::move(lf)),
         sigma_(&sigma) {}
 
@@ -373,8 +373,8 @@ class EPF1Stage : public RenderPipelineStage {
 class EPF2Stage : public RenderPipelineStage {
  public:
   EPF2Stage(LoopFilter lf, const ImageF& sigma)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/1)),
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(1)),
         lf_(std::move(lf)),
         sigma_(&sigma) {}
 
