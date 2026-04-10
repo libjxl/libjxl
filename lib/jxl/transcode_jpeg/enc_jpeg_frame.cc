@@ -67,8 +67,6 @@ namespace jxl {
 // `czdc` - `(c,zdc)` = `(c<<9|zdc)`, [0,3*512)
 // `ai` - AC index = value of AC coefficient + `kDCTOff`
 
-namespace {}  // namespace
-
 Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
                               SpeedTier speed_tier, BlockCtxMap& ctx_map,
                               ThreadPool* pool) {
@@ -120,6 +118,7 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
         ThresholdSet refined_thr;
         int64_t entropy_cost = 0;
         int64_t nz_cost = 0;
+        (void)nz_cost;
         if (effort.refine_iters == 0) {
           refined_thr = cl_result.PruneDeadThresholds(opt_thr);
           entropy_cost = cl_result.clustered_cost;
