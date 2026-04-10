@@ -20,6 +20,7 @@
 //   `PruneDeadThresholds`
 //     Removes structurally inert thresholds and rebuilds `ctx_map`.
 
+#include "lib/jxl/pack_signed.h"
 #include "lib/jxl/transcode_jpeg/enc_jpeg_cluster.h"
 
 #include "lib/jxl/dec_ans.h"
@@ -34,7 +35,7 @@ StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
   JXL_DASSERT(cluster_id < hist_nz_h.size());
 
   // Default `HybridUintConfig` for AC coefficients: (split_exponent=4,
-  // msb_in_token=2, lsb_in_token=0)
+  // msb_in_token=2, lsb_in_token=0): single used up to `kTortoise`.
   const HybridUintConfig hybrid_uint_config(4, 2, 0);
   if (!signalling_token_hist_) {
     signalling_token_hist_ = jxl::make_unique<SignallingTokenHist>();
@@ -45,16 +46,16 @@ StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
   const auto& cluster = hist_h[cluster_id];
   if (!cluster.empty()) {
     // Group symbols by `zdc` value into the pre-allocated scratch buffer,
-    // applying `HybridUintConfig` to map `ai` to a token index.
+    // applying `HybridUintConfig` to map `PackSigned(coeff)` to a token index.
     signalling_token_hist = {};
     for (uint32_t id : cluster.used_ids) {
       uint32_t symbol = d.dense_to_zdcai[id];
       uint32_t zdc = symbol >> 11;
-      uint32_t ai = symbol & 0x7FFu;
+      int32_t ac = static_cast<int32_t>(symbol & 0x7FFu) - kDCTOff;
       uint32_t token;
       uint32_t nbits;
       uint32_t bits;
-      hybrid_uint_config.Encode(ai, &token, &nbits, &bits);
+      hybrid_uint_config.Encode(PackSigned(ac), &token, &nbits, &bits);
       JXL_DASSERT(zdc < kZeroDensityContextCount);
       JXL_DASSERT(token < kSignallingMaxToken);
       signalling_token_hist[zdc][token] += cluster.Get(id);

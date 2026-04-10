@@ -126,7 +126,7 @@ Factorizations MaximalFactorizations(const JPEGOptData& d) {
         bool can_inc_c =
             (c < cap2) && (c < kMaxIntervals) && (a * b * (c + 1) <= kMaxCells);
         if (!can_inc_a && !can_inc_b && !can_inc_c)
-          result.emplace_back(a, b, c);
+          result.push_back(Factorization{{a, b, c}});
       }
     }
   }
@@ -135,7 +135,7 @@ Factorizations MaximalFactorizations(const JPEGOptData& d) {
     // Cb+Cr context required by the JPEG XL context map format.
     // Applies to both true grayscale and formally 3-channel images whose
     // chrominance was collapsed to `channels == 1` in `BuildFromJPEG`.
-    std::get<0>(result[0]) = std::min(std::get<0>(result[0]), 15u);
+    result[0][0] = std::min(result[0][0], 15u);
   }
   return result;
 }
@@ -145,9 +145,9 @@ Factorizations MaximalFactorizations(const JPEGOptData& d) {
 // -------------------------------------------------------//
 
 using ACCounts = JPEGOptData::ACCounts;
-// ------------------------------------------------------//
-// Pass 1: Count DC + AC values (parallel by component). //
-// ------------------------------------------------------//
+// ----------------------------------------------------//
+// Pass: Count DC + AC values (parallel by component). //
+// ----------------------------------------------------//
 StatusOr<std::unique_ptr<ACCounts>> JPEGOptData::CountDCAC(
     const jpeg::JPEGData& jpeg_data, ThreadPool* pool) {
   auto ac_cnt = jxl::make_unique<ACCounts>();

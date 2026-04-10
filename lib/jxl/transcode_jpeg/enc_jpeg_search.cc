@@ -15,6 +15,9 @@
 
 #include "lib/jxl/transcode_jpeg/enc_jpeg_search.h"
 
+#include <array>
+#include <unordered_map>
+
 #include "lib/jxl/transcode_jpeg/enc_jpeg_threshold.h"
 
 namespace jxl {
@@ -28,16 +31,31 @@ StatusOr<std::vector<FactorizationCandidate>> RankAndTrimFactorizations(
                 static_cast<int>(factorizations.size()));
   }
 
+  // Compute only the initial thresholds that are actually used by the
+  // factorization list.
+  std::array<std::unordered_map<uint32_t, Thresholds>, kNumCh>
+      init_thresh_cache;
+  for (const auto& f : factorizations) {
+    for (uint32_t axis = 0; axis < kNumCh; ++axis) {
+      auto insert_result =
+              init_thresh_cache[axis].emplace(f[axis], Thresholds());
+      if (insert_result.second) { // Only compute if not already computed.
+        insert_result.first->second =
+            InitThresh(*opt_data, axis, f[axis]);
+      }
+    }
+  }
+
   std::vector<FactorizationCandidate> candidates;
   candidates.reserve(factorizations.size());
   for (const auto& factorization : factorizations) {
     FactorizationCandidate candidate;
-    candidate.a = std::get<0>(factorization);
-    candidate.b = std::get<1>(factorization);
-    candidate.c = std::get<2>(factorization);
-    candidate.init.T[0] = InitThresh(*opt_data, 0, candidate.a);
-    candidate.init.T[1] = InitThresh(*opt_data, 1, candidate.b);
-    candidate.init.T[2] = InitThresh(*opt_data, 2, candidate.c);
+    candidate.a = factorization[0];
+    candidate.b = factorization[1];
+    candidate.c = factorization[2];
+    candidate.init.T[0] = init_thresh_cache[0].at(candidate.a);
+    candidate.init.T[1] = init_thresh_cache[1].at(candidate.b);
+    candidate.init.T[2] = init_thresh_cache[2].at(candidate.c);
     candidates.push_back(std::move(candidate));
   }
   if (effort.keep_top_k == 0 || candidates.size() <= effort.keep_top_k) {

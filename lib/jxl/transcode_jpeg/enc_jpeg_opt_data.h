@@ -31,7 +31,6 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <tuple>
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
@@ -90,8 +89,10 @@ using ACEntry = uint32_t;
 using Thresholds = std::vector<int16_t>;
 // Context map.
 using ContextMap = std::vector<uint8_t>;
+// One `(a, b, c)` factorization of DC intervals across Y/Cb/Cr.
+using Factorization = std::array<uint32_t, kNumCh>;
 // Factorizations of DC thresholds into number of intervals per channel.
-using Factorizations = std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>;
+using Factorizations = std::vector<Factorization>;
 
 JXL_INLINE double bit_cost(int64_t cost) {
   return static_cast<double>(cost) / kFScale;
