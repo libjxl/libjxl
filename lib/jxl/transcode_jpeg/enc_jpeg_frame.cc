@@ -143,9 +143,8 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
         }
 
         std::lock_guard<std::mutex> lock(mu);
-        // JXL_DEBUG_V(
-        //     2,
-        printf(
+        JXL_DEBUG_V(
+            2,
             "(%u,%u,%u) cost: unclustered=%.2f clustered=%.2f "
             "refined=%.2f nz=%.2f overhead=%.2f total=%.2f\n",
             candidate.a, candidate.b, candidate.c, bit_cost(opt_result.first),
