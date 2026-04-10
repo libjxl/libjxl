@@ -81,9 +81,9 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
 
   JXL_DEBUG_V(2,
               "JPEG ctx effort at speed tier %i: %i candidates, rank_iters=%u "
-              "final_iters=%u refine_iters=%u\n",
+              "main_iters=%u refine_iters=%u\n",
               static_cast<int>(speed_tier), static_cast<int>(candidates.size()),
-              effort.rank_iters, effort.final_iters, effort.refine_iters);
+              effort.rank_iters, effort.main_iters, effort.refine_iters);
 
   int64_t best_cost = std::numeric_limits<int64_t>::max();
   ThresholdSet best_thr;
@@ -104,9 +104,9 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
         const FactorizationCandidate& candidate = candidates[idx];
         PartitioningCtx& ctx = ctx_pool[thread_id];
 
-        auto opt_result = ctx.OptimizeThresholds(
-            candidate.init, effort.main_m_target, effort.main_iters);
-        ThresholdSet opt_thr = opt_result.second;
+        ThresholdSet opt_thr =
+            ctx.OptimizeThresholds(candidate.init, effort.main_m_target,
+                                   effort.main_iters);
 
         JXL_ASSIGN_OR_RETURN(
             Clustering cl_result,
@@ -115,38 +115,26 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
                               effort.overhead_aware_tail, nullptr));
         ContextMap& cluster_map = cl_result.ctx_map;
 
-        ThresholdSet refined_thr;
-        int64_t entropy_cost = 0;
-        int64_t nz_cost = 0;
+        auto refine_result =
+            RefineClustered(*opt_data, opt_thr, cl_result, effort.refine_iters,
+                            effort.refine_radius);
+        ThresholdSet refined_thr = refine_result.thresholds;
+        int64_t entropy_cost = refine_result.cost;
+        int64_t nz_cost = refine_result.nz_cost;
         (void)nz_cost;
-        if (effort.refine_iters == 0) {
-          refined_thr = cl_result.PruneDeadThresholds(opt_thr);
-          entropy_cost = cl_result.clustered_cost;
-          nz_cost = cl_result.ComputeNZCost(*opt_data);
-        } else {
-          auto refine_result =
-              RefineClustered(*opt_data, opt_thr, cl_result,
-                              effort.refine_iters, effort.refine_radius);
-          refined_thr = refine_result.thresholds;
-          entropy_cost = refine_result.cost;
-          nz_cost = refine_result.nz_cost;
-        }
         int64_t total_cost = entropy_cost;
 
         // Add signalling overhead for histogram headers
-        int64_t overhead = 0;
-        auto overhead_or = cl_result.ComputeSignallingOverhead(*opt_data);
-        if (overhead_or.ok()) {
-          overhead = std::move(overhead_or).value_();
-          total_cost += overhead;
-        }
+        JXL_ASSIGN_OR_RETURN(int64_t overhead,
+                             cl_result.ComputeSignallingOverhead(*opt_data));
+        total_cost += overhead;
 
         std::lock_guard<std::mutex> lock(mu);
         JXL_DEBUG_V(
             2,
             "(%u,%u,%u) cost: unclustered=%.2f clustered=%.2f "
             "refined=%.2f nz=%.2f overhead=%.2f total=%.2f\n",
-            candidate.a, candidate.b, candidate.c, bit_cost(opt_result.first),
+            candidate.a, candidate.b, candidate.c, bit_cost(ctx.TotalCost(opt_thr)),
             bit_cost(cl_result.clustered_cost), bit_cost(entropy_cost),
             bit_cost(nz_cost), bit_cost(overhead), bit_cost(total_cost));
         if (total_cost < best_cost) {

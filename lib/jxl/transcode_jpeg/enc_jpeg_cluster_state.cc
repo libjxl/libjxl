@@ -22,57 +22,61 @@
 
 #include "lib/jxl/transcode_jpeg/enc_jpeg_cluster.h"
 
-#include <algorithm>
-#include <unordered_map>
-
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans_params.h"
 
 namespace jxl {
 
-StatusOr<int64_t> Clustering::ComputeSignallingOverhead(const JPEGOptData& d,
-                                                        int64_t cutoff) const {
+StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
+    const JPEGOptData& d, uint32_t cluster_id, int64_t cutoff) const {
   int64_t overhead = 0;
+  JXL_DASSERT(cluster_id < hist_h.size());
+  JXL_DASSERT(cluster_id < hist_nz_h.size());
 
   // Default `HybridUintConfig` for AC coefficients: (split_exponent=4,
   // msb_in_token=2, lsb_in_token=0)
   const HybridUintConfig hybrid_uint_config(4, 2, 0);
+  if (!signalling_token_hist_) {
+    signalling_token_hist_ = jxl::make_unique<SignallingTokenHist>();
+  }
+  SignallingTokenHist& signalling_token_hist = *signalling_token_hist_;
 
   // Process `hist_h`: split by `zdc` and compute overhead per histogram.
-  for (const auto& cluster : hist_h) {
-    if (cluster.empty()) continue;
-
-    // Group symbols by `zdc` value, applying `HybridUintConfig`.
-    std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint32_t>> by_zdc;
+  const auto& cluster = hist_h[cluster_id];
+  if (!cluster.empty()) {
+    // Group symbols by `zdc` value into the pre-allocated scratch buffer,
+    // applying `HybridUintConfig` to map `ai` to a token index.
+    signalling_token_hist = {};
     for (uint32_t id : cluster.used_ids) {
       uint32_t symbol = d.dense_to_zdcai[id];
       uint32_t zdc = symbol >> 11;
       uint32_t ai = symbol & 0x7FFu;
-      uint32_t token, nbits, bits;
+      uint32_t token;
+      uint32_t nbits;
+      uint32_t bits;
       hybrid_uint_config.Encode(ai, &token, &nbits, &bits);
-      by_zdc[zdc][token] += cluster.Get(id);
+      JXL_DASSERT(zdc < kZeroDensityContextCount);
+      JXL_DASSERT(token < kSignallingMaxToken);
+      signalling_token_hist[zdc][token] += cluster.Get(id);
     }
 
     // Compute overhead for each `zdc` histogram.
-    for (const auto& zdc_pair : by_zdc) {
-      const auto& token_hist = zdc_pair.second;
-      if (token_hist.empty()) continue;
-
+    for (uint32_t zdc = 0; zdc < kZeroDensityContextCount; ++zdc) {
+      const auto& th = signalling_token_hist[zdc];
       uint32_t max_token = 0;
       size_t total = 0;
-      for (const auto& kv : token_hist) {
-        max_token = std::max(max_token, kv.first);
-        total += kv.second;
+      for (uint32_t t = 0; t < kSignallingMaxToken; ++t) {
+        if (th[t] != 0) {
+          max_token = t;
+          total += th[t];
+        }
       }
       if (total == 0) continue;
 
-      JXL_ENSURE(max_token < ANS_MAX_ALPHABET_SIZE);
       size_t alphabet_size = max_token + 1;
-      if (alphabet_size == 0) continue;
-
       Histogram h(alphabet_size);
-      for (const auto& kv : token_hist) {
-        h.counts[kv.first] = static_cast<ANSHistBin>(kv.second);
+      for (uint32_t t = 0; t < alphabet_size; ++t) {
+        h.counts[t] = static_cast<ANSHistBin>(th[t]);
       }
       h.total_count = total;
 
@@ -90,14 +94,14 @@ StatusOr<int64_t> Clustering::ComputeSignallingOverhead(const JPEGOptData& d,
   }
 
   // Process `hist_nz_h`: split by predicted bucket `pb`.
-  for (const auto& cluster : hist_nz_h) {
-    if (cluster.empty()) continue;
+  const auto& nz_cluster = hist_nz_h[cluster_id];
+  if (!nz_cluster.empty()) {
     for (uint32_t pb = 0; pb < kJPEGNonZeroBuckets; ++pb) {
       uint32_t max_nz = 0;
       size_t total = 0;
       const uint32_t base = pb * kJPEGNonZeroRange;
       for (uint32_t nz_count = 0; nz_count < kJPEGNonZeroRange; ++nz_count) {
-        uint32_t freq = cluster[base + nz_count];
+        uint32_t freq = nz_cluster[base + nz_count];
         if (freq == 0) continue;
         max_nz = nz_count;
         total += freq;
@@ -107,7 +111,7 @@ StatusOr<int64_t> Clustering::ComputeSignallingOverhead(const JPEGOptData& d,
       size_t alphabet_size = max_nz + 1;
       Histogram h(alphabet_size);
       for (uint32_t nz_count = 0; nz_count <= max_nz; ++nz_count) {
-        h.counts[nz_count] = static_cast<ANSHistBin>(cluster[base + nz_count]);
+        h.counts[nz_count] = static_cast<ANSHistBin>(nz_cluster[base + nz_count]);
       }
       h.total_count = total;
 
@@ -121,6 +125,19 @@ StatusOr<int64_t> Clustering::ComputeSignallingOverhead(const JPEGOptData& d,
     }
   }
 
+  return overhead;
+}
+
+StatusOr<int64_t> Clustering::ComputeSignallingOverhead(const JPEGOptData& d,
+                                                        int64_t cutoff) const {
+  int64_t overhead = 0;
+  for (uint32_t cluster_id = 0; cluster_id < hist_h.size(); ++cluster_id) {
+    JXL_ASSIGN_OR_RETURN(
+        int64_t cluster_overhead,
+        ComputeClusterSignallingOverhead(d, cluster_id, cutoff - overhead));
+    overhead += cluster_overhead;
+    if (overhead >= cutoff) return overhead;
+  }
   return overhead;
 }
 

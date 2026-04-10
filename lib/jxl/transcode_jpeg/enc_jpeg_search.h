@@ -40,13 +40,27 @@ namespace jxl {
 // Effort-level knobs derived from the encoder speed tier (number of candidates,
 // refinement iterations, etc.).
 struct JPEGCtxEffortParams {
+  // Number of candidates kept after the ranking pass; 0 = keep all.
   uint32_t keep_top_k;
+  // `M_target` (bucket resolution) passed to `OptimizeThresholds` during
+  // ranking. When `rank_iters == 0`, ranking uses `TotalCost` directly and
+  // this value is ignored.
   uint32_t rank_m_target;
+  // Max coordinate-descent iterations for the cheap ranking pass.
+  // 0 = skip optimization, rank by initial `TotalCost` only.
   uint32_t rank_iters;
+  // `M_target` passed to `OptimizeThresholds` during the main pass.
   uint32_t main_m_target;
+  // Max coordinate-descent iterations for the main threshold optimization.
   uint32_t main_iters;
+  // Whether to continue merging past `num_clusters` in `AgglomerativeClustering`
+  // when each additional merge reduces `entropy + signalling_overhead`.
   bool overhead_aware_tail;
+  // Number of local-search rounds in `RefineClustered` after clustering.
+  // 0 = skip refinement.
   uint32_t refine_iters;
+  // Half-width of the threshold jitter window in `RefineClustered`
+  // (in DC-value units). 0 = no refinement.
   ptrdiff_t refine_radius;
 
   static JPEGCtxEffortParams FromSpeedTier(SpeedTier speed_tier) {

@@ -54,7 +54,6 @@
 
 #include "lib/jxl/enc_Knuth_partition.h"
 #include "lib/jxl/transcode_jpeg/enc_jpeg_axis_maps.h"
-#include "lib/jxl/transcode_jpeg/enc_jpeg_stream.h"
 
 namespace jxl {
 
@@ -104,13 +103,6 @@ struct PartitioningCtx {
   std::vector<uint64_t> touched_N;
   std::vector<uint64_t> group_touched_h;
   std::vector<uint64_t> group_touched_N;
-
-  // Per-axis cache for equal-population bucketing thresholds (`InitThresh`).
-  // `bkt_M_eff[c]` is the M_eff for which `bkt_thresh[c]` was last computed;
-  // 0 means uncached. M_eff is constant per axis within one optimization run,
-  // so each axis's O(M²) bucketing is computed at most once.
-  std::array<uint32_t, 3> bkt_M_eff = {0, 0, 0};
-  std::array<Thresholds, 3> bkt_thresh;
 
   // Number of `uint64_t` words in `touched_h`/`touched_N`: one bit per flat
   // index slot `ci * M_eff + n`, packed 64 per word.
@@ -194,11 +186,13 @@ struct PartitioningCtx {
                  std::vector<uint64_t>& touched, uint32_t M_eff) {
     const JPEGOptData& d = data();
     std::vector<int64_t>& costs = Knuth_solver.costs;
-    uint32_t cur_ci = UINT32_MAX;
     // With `idx = ci*M_eff + n` (`ci`-major), all ranks for a given `ci`
     // are contiguous in scan order, so a single history suffices.
     auto& history = h_history[0];
     history.clear();
+
+    // Track the current cell boundary incrementally.
+    uint32_t n_ci_start = 0;
 
     for (uint32_t hi_idx = 0; hi_idx < kGroupCount; ++hi_idx) {
       uint64_t group_mask = group_touched[hi_idx];
@@ -207,18 +201,28 @@ struct PartitioningCtx {
         uint32_t lo_idx = CountrZero64(group_mask);
         uint32_t group_idx = (hi_idx << 6) | lo_idx;
         uint64_t cell_mask = touched[group_idx];
+        uint32_t base_bit_idx = group_idx << 6;
+
+        // Fast-forward `n_ci_start` to the cell containing `base_bit_idx`.
+        // Amortised O(1): total advances are bounded by `kMaxCells / 2`.
+        while (base_bit_idx >= n_ci_start + M_eff) {
+          n_ci_start += M_eff;
+          history.clear();
+        }
 
         while (cell_mask) {
           uint32_t t = CountrZero64(cell_mask);
-          uint32_t bit_idx = (group_idx << 6) | t;
+          uint32_t bit_idx = base_bit_idx | t;
 
-          uint32_t ci = bit_idx / M_eff;
-          uint32_t n = bit_idx % M_eff;
-
-          if (ci != cur_ci) {
+          // Advance if this bit crossed into the next cell.
+          // A `while` handles the rare case where a single 64-bit word spans
+          // multiple cells (only possible when `M_eff < 64`).
+          while (bit_idx >= n_ci_start + M_eff) {
+            n_ci_start += M_eff;
             history.clear();
-            cur_ci = ci;
           }
+
+          uint32_t n = bit_idx - n_ci_start;
 
           // `costs[n * M_eff + l]` = diff contribution for interval `[l..n]`.
           int64_t* cost_row = &costs[n * M_eff];
@@ -266,14 +270,18 @@ struct PartitioningCtx {
 
   // Generic stream sweep used by coordinate-descent optimization.
   //
-  // `M_target`: bucketing resolution (default `kMTarget`).
-  // When `M > M_target`, `M_eff = min(M, M_target)` best-equal-population
-  // buckets are formed via `PrepareIdentityBuckets`/`PrepareBuckets`. This keeps each cell's
-  // distinct-rank count `D ≈ M_eff/ncells`. Pass `UINT32_MAX` or any value
-  // `>= M` for a full-resolution (unbucketed) sweep.
-  Thresholds OptimizeAxisSingleSweep(uint32_t axis, uint32_t num_intervals,
-                                     const Thresholds& T1, const Thresholds& T2,
-                                     uint32_t M_target = kMTarget);
+  // Optimizes `T->T[axis]` while keeping the other two axes fixed as specified
+  // by `*T`. The newly computed thresholds are written into `*scratch`, and
+  // swapped into `*T` only if they differ from the current axis thresholds.
+  // Returns whether the axis changed.
+  //
+  // `bucket_thresholds` provides the per-axis bucketing prepared by
+  // `InitThresh`. `PrepareBuckets` maps the swept axis onto `M_eff =
+  // bucket_thresholds.size() + 1` closest-to-equal-population buckets,
+  // with an internal identity fast path when `M_eff == M`.
+  bool OptimizeAxisSingleSweep(uint32_t axis, ThresholdSet* T,
+                               Thresholds* scratch,
+                               const Thresholds& bucket_thresholds);
 
   // Performs iterative coordinate descent to find optimal threshold vectors
   // `(TY, TCb, TCr)` for a given target factorization `(a, b, c)`.
@@ -285,8 +293,9 @@ struct PartitioningCtx {
   // The process continues until convergence (no changes in thresholds) or
   // until `max_iters` is reached. In practice no more than 5 iterations were
   // seen.
-  std::pair<int64_t, ThresholdSet> OptimizeThresholds(
-      ThresholdSet T, uint32_t M_target = UINT32_MAX, uint32_t max_iters = 20);
+  ThresholdSet OptimizeThresholds(ThresholdSet T,
+                                  uint32_t M_target = UINT32_MAX,
+                                  uint32_t max_iters = 20);
 
   // Compute total entropy cost for fixed thresholds over a stream.
   // Returns cost in fixed-point units, divide by `kFScale` for bits.

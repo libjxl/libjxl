@@ -57,12 +57,13 @@ StatusOr<std::vector<FactorizationCandidate>> RankAndTrimFactorizations(
       [&](uint32_t idx, size_t thread_id) -> Status {
         FactorizationCandidate& candidate = candidates[idx];
         PartitioningCtx& ctx = rank_ctx_pool[thread_id];
-        candidate.rank_cost =
-            (effort.rank_iters == 0)
-                ? ctx.TotalCost(candidate.init)
-                : ctx.OptimizeThresholds(candidate.init, effort.rank_m_target,
-                                         effort.rank_iters)
-                      .first;
+        if (effort.rank_iters == 0) {
+          candidate.rank_cost = ctx.TotalCost(candidate.init);
+        } else {
+          candidate.rank_cost =
+              ctx.TotalCost(ctx.OptimizeThresholds(
+                  candidate.init, effort.rank_m_target, effort.rank_iters));
+        }
         return true;
       },
       "JpegCtxRank"));

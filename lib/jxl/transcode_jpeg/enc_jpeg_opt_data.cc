@@ -52,7 +52,7 @@ uint32_t JPEGOptData::CompactHBin(uint32_t zdc_ai) const {
 // The interval-cost matrix is written in the same diff form consumed by the
 // shared Knuth solver, so this stage reuses the exact same partition backend
 // as the AC-driven optimization path.
-Thresholds InitThresh(const JPEGOptData& d, int axis,
+Thresholds InitThresh(const JPEGOptData& d, uint32_t axis,
                       uint32_t target_intervals) {
   if (target_intervals <= 1) return {};
   const Thresholds& dc_vals = d.DC_vals[axis];
@@ -69,7 +69,7 @@ Thresholds InitThresh(const JPEGOptData& d, int axis,
   std::vector<uint32_t> prefix(M + 1, 0);
   for (uint32_t i = 0; i < M; ++i) {
     prefix[i + 1] =
-        prefix[i] + d.DC_cnt[axis][static_cast<uint32_t>(dc_vals[i] + kDCTOff)];
+        prefix[i] + d.DC_cnt[axis][dc_vals[i] + kDCTOff];
   }
 
   KnuthPartitionSolver solver(M);

@@ -58,7 +58,12 @@ struct AgglomerativeCtx {
     DenseNZPredHistogram hist_nz_N_b;
     DenseNZHistogram hist_nz_h_a;
     DenseNZHistogram hist_nz_h_b;
-    CompactHistogram hist_h_a;
+    // `hist_h_a` is intentionally absent: `hist_h[a]` is recovered on rollback
+    // by subtracting `hist_h_b` from the merged result (see `RestoreRollback`).
+    // This avoids allocating and copying the two `num_zdcai`-sized vectors
+    // (`counts`, `pos_in_used`) on every accepted Phase-2 merge.
+    // The dense histograms above use fixed-size array copy (no allocation),
+    // so the trade-off does not apply to them.
     CompactHistogram hist_h_b;
     std::vector<uint32_t> active;
   };
@@ -271,13 +276,15 @@ struct AgglomerativeCtx {
   }
 
   // Snapshots `a_id`/`b_id` histograms and the active list into `rollback`.
-  // `b_id`'s histograms are moved (not copied) to avoid a redundant allocation.
+  // `b_id`'s histograms are moved (not copied) to avoid allocation.
+  // `hist_h[a_id]` is not saved; it is recovered in `RestoreRollback` by
+  // subtracting `hist_h_b` from the merged result.
   void SaveRollback(RollbackScratch* rollback, uint32_t a_id, uint32_t b_id) {
     rollback->active = active;
     rollback->hist_N_a = hist_N[a_id];
-    rollback->hist_h_a = hist_h[a_id];
     rollback->hist_nz_N_a = hist_nz_N[a_id];
     rollback->hist_nz_h_a = hist_nz_h[a_id];
+    // `hist_h_a` is not saved: recovered in `RestoreRollback` by subtraction.
     rollback->hist_N_b.Clear();
     rollback->hist_nz_N_b.Clear();
     rollback->hist_nz_h_b.Clear();
@@ -290,21 +297,24 @@ struct AgglomerativeCtx {
 
   // Reverts the merge of `a_id` ← `b_id` using the saved snapshot.
   void RestoreRollback(const RollbackScratch& rollback, uint32_t a_id,
-                       uint32_t b_id, int64_t old_Ea, uint32_t old_parent_b,
-                       int64_t best_delta) {
+                       uint32_t b_id, int64_t old_Ea,
+                       uint32_t old_parent_b) {
     active = rollback.active;
     ++active_clusters;
     E[a_id] = old_Ea;
     parent[b_id] = old_parent_b;
     hist_N[a_id] = rollback.hist_N_a;
-    hist_h[a_id] = rollback.hist_h_a;
     hist_nz_N[a_id] = rollback.hist_nz_N_a;
     hist_nz_h[a_id] = rollback.hist_nz_h_a;
+    // Recover `hist_h[a]`: `merged = original_a + b`, so `original_a = merged - b`.
+    // Iterates only `hist_h_b.used_ids` (the smaller absorbed cluster), which is
+    // far cheaper than copying the two `num_zdcai`-sized vectors of `hist_h_a`.
+    for (uint32_t id : rollback.hist_h_b.used_ids)
+      hist_h[a_id].Subtract(id, rollback.hist_h_b.counts[id]);
     hist_N[b_id] = rollback.hist_N_b;
     hist_h[b_id] = rollback.hist_h_b;
     hist_nz_N[b_id] = rollback.hist_nz_N_b;
     hist_nz_h[b_id] = rollback.hist_nz_h_b;
-    current_entropy_cost -= best_delta;
   }
 
   // Phase 1: greedy merge loop. Repeatedly finds and applies the minimum-cost
@@ -328,9 +338,17 @@ struct AgglomerativeCtx {
   // tentatively and rolled back if it does not improve the total cost.
   Status RunOverheadAwareTail() {
     auto rollback = jxl::make_unique<RollbackScratch>();
-    JXL_ASSIGN_OR_RETURN(int64_t initial_overhead,
-                         clustering.ComputeSignallingOverhead(d));
-    int64_t best_total_cost = current_entropy_cost + initial_overhead;
+    std::vector<int64_t> header_cost;
+    header_cost.reserve(active_clusters);
+    int64_t current_header_cost = 0;
+    for (uint32_t id : active) {
+      int64_t cluster_header_cost = 0;
+      JXL_ASSIGN_OR_RETURN(cluster_header_cost,
+                           clustering.ComputeClusterSignallingOverhead(d, id));
+      header_cost.push_back(cluster_header_cost);
+      current_header_cost += cluster_header_cost;
+    }
+    int64_t best_total_cost = current_entropy_cost + current_header_cost;
 
     while (active_clusters > 1) {
       size_t best_i = 0;
@@ -342,6 +360,8 @@ struct AgglomerativeCtx {
       uint32_t b_id = active[best_j];
       int64_t old_Ea = E[a_id];
       uint32_t old_parent_b = parent[b_id];
+      int64_t old_header_a = header_cost[best_i];
+      int64_t old_header_b = header_cost[best_j];
       SaveRollback(rollback.get(), a_id, b_id);
 
       E[a_id] += E[b_id] + best_delta;
@@ -352,23 +372,33 @@ struct AgglomerativeCtx {
       parent[b_id] = a_id;
       std::swap(active[best_j], active.back());
       active.pop_back();
+      std::swap(header_cost[best_j], header_cost.back());
+      header_cost.pop_back();
       --active_clusters;
-      current_entropy_cost += best_delta;
-      JXL_RETURN_IF_ERROR(UpdateDistances(a_id));
+      const int64_t base_without_merged =
+          current_entropy_cost + best_delta + current_header_cost -
+          old_header_a - old_header_b;
+      const int64_t merged_header_cutoff = best_total_cost - base_without_merged;
 
-      const int64_t overhead_cutoff = best_total_cost - current_entropy_cost;
-      if (overhead_cutoff > 0) {
+      if (merged_header_cutoff > 0) {
         JXL_ASSIGN_OR_RETURN(
-            int64_t overhead,
-            clustering.ComputeSignallingOverhead(d, overhead_cutoff));
-        if (overhead < overhead_cutoff) {
-          best_total_cost = current_entropy_cost + overhead;
+            int64_t merged_header_cost,
+            clustering.ComputeClusterSignallingOverhead(d, a_id,
+                                                        merged_header_cutoff));
+        if (merged_header_cost < merged_header_cutoff) {
+          current_entropy_cost += best_delta;
+          current_header_cost =
+              current_header_cost - old_header_a - old_header_b +
+              merged_header_cost;
+          best_total_cost = current_entropy_cost + current_header_cost;
+          header_cost[best_i] = merged_header_cost;
+          JXL_RETURN_IF_ERROR(UpdateDistances(a_id));
           continue;
         }
       }
 
       // Roll back the rejected merge and stop.
-      RestoreRollback(*rollback, a_id, b_id, old_Ea, old_parent_b, best_delta);
+      RestoreRollback(*rollback, a_id, b_id, old_Ea, old_parent_b);
       break;
     }
     return true;

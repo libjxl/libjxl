@@ -183,7 +183,7 @@ struct JPEGOptData {
 
 // Computes initial DC thresholds for one axis via a 1D surrogate entropy cost.
 // Uses the same Knuth DP backend as the full AC-driven optimisation path.
-Thresholds InitThresh(const JPEGOptData& d, int axis,
+Thresholds InitThresh(const JPEGOptData& d, uint32_t axis,
                       uint32_t target_intervals);
 
 // Enumerates maximal factorizations `(a, b, c)` of the DC threshold count.

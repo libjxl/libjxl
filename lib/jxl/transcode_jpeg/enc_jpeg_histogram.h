@@ -34,14 +34,24 @@
 namespace jxl {
 // Compact histogram for efficient incremental updates.
 // Used for AC coefficient histograms as they are large and sparse.
+// Unordered maps were tryed but they were slower and consumed more memory.
 struct CompactHistogram {
   std::vector<uint32_t> counts;
+  // IDs of non-zero bins, in insertion order. During the clustering phase
+  // (the primary consumer of this histogram) only `Add`/`AddHistogram` are
+  // called, so `used_ids` remains in roughly the order IDs were first
+  // encountered during the AC-stream sweep — effectively sorted by symbol ID.
+  // This makes iteration over `used_ids` with `counts[id]` lookups nearly
+  // sequential, keeping cache pressure low despite the indirect access.
+  // `Subtract` (used only in the post-clustering refinement pass) breaks this
+  // ordering via a swap-with-last deletion, but by then `MergeDelta` is no
+  // longer called.
   std::vector<uint32_t> used_ids;
   std::vector<uint32_t> pos_in_used;
 
   CompactHistogram() = default;
   explicit CompactHistogram(size_t size)
-      : counts(size, 0), used_ids(), pos_in_used(size, kInvalidCompactH) {}
+      : counts(size, 0), pos_in_used(size, kInvalidCompactH) {}
 
   CompactHistogram(const CompactHistogram& other)
       : counts(other.counts.size(), 0),

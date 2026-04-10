@@ -7,6 +7,8 @@
 
 #include <limits>
 
+#include "lib/jxl/transcode_jpeg/enc_jpeg_stream.h"
+
 namespace jxl {
 
 // Accumulates the K=2 score-diff curve for the sparse `axis == 0` path.
@@ -184,121 +186,127 @@ Thresholds PartitioningCtx::OptimizeAxisSingleSplit(uint32_t axis,
 
 // Optimizes one axis while keeping the other two threshold vectors fixed.
 // Uses the K=2 fast path for a single split and the Knuth-DP path otherwise.
-Thresholds PartitioningCtx::OptimizeAxisSingleSweep(uint32_t axis,
-                                                    uint32_t num_intervals,
-                                                    const Thresholds& T1,
-                                                    const Thresholds& T2,
-                                                    uint32_t M_target) {
+bool PartitioningCtx::OptimizeAxisSingleSweep(uint32_t axis, ThresholdSet* T,
+                                              Thresholds* scratch,
+                                              const Thresholds& bucket_thresholds) {
+  JXL_DASSERT(T != nullptr);
+  JXL_DASSERT(scratch != nullptr);
   const JPEGOptData& d = data();
-  if (num_intervals == 1) return {};
+  Thresholds& T0 = T->T[axis];
+  const Thresholds& T1 = T->T[(axis + 1) % 3];
+  const Thresholds& T2 = T->T[(axis + 2) % 3];
+  uint32_t num_intervals = static_cast<uint32_t>(T0.size() + 1);
+  if (num_intervals == 1) return false;
   uint32_t M = static_cast<uint32_t>(d.DC_vals[axis].size());
-  if (M <= num_intervals)  // exclude first DC value from thresholds
-    return Thresholds(d.DC_vals[axis].begin() + 1, d.DC_vals[axis].end());
-
-  uint32_t ax1 = (axis + 1) % 3;
-  uint32_t ax2 = (axis + 2) % 3;
-  uint32_t n1 = static_cast<uint32_t>(T1.size() + 1);
-  uint32_t n2 = static_cast<uint32_t>(T2.size() + 1);
-  uint32_t ncells = n1 * n2;
-  uint32_t M_eff;
-  if (M_target >= M) {
-    M_eff = axis_maps.PrepareIdentityBuckets(axis, T1, T2);
+  if (M <= num_intervals) { // exclude first DC value from thresholds
+    scratch->assign(d.DC_vals[axis].begin() + 1, d.DC_vals[axis].end());
   } else {
-    if (bkt_M_eff[axis] != M_target) {
-      bkt_thresh[axis] = InitThresh(d, static_cast<int>(axis), M_target);
-      bkt_M_eff[axis] = M_target;
+    uint32_t ax1 = (axis + 1) % 3;
+    uint32_t ax2 = (axis + 2) % 3;
+    uint32_t n1 = static_cast<uint32_t>(T1.size() + 1);
+    uint32_t n2 = static_cast<uint32_t>(T2.size() + 1);
+    uint32_t ncells = n1 * n2;
+    uint32_t M_eff = axis_maps.PrepareBuckets(axis, bucket_thresholds, T1, T2);
+
+    if (num_intervals == 2) {
+    // Fast path with `O(M_eff)` memory complexity
+      *scratch = OptimizeAxisSingleSplit(axis, ncells, M_eff);
+      // Extension of fast path above for `K=3` has proven disastrous
+      // for performance (it has the same `O(M_eff^2)` complexity as the general
+      // path) and is not implemented.
+      // Divide and Conquer approach was also tested with no avail.
+    } else {
+      // General path with `O(M_eff^2)` memory complexity
+      // Total number of cells probed is `n1 * n2 * M_eff`
+      size_t cnt_size = ncells * M_eff;
+      if (h_cnt.size() < cnt_size) h_cnt.assign(cnt_size, 0);
+      if (N_cnt.size() < cnt_size) N_cnt.assign(cnt_size, 0);
+
+      Knuth_solver.ResetCosts(M_eff * M_eff);
+
+      SweepACStream(
+          d.AC_stream,
+          [&]() { FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff); },
+          [&]() { FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff); },
+          [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx,
+              uint32_t run, uint32_t) {
+            uint32_t dc_arr[3] = {dc0_idx, dc1_idx, dc2_idx};
+            uint32_t dc_k_bkt = axis_maps.ax0_to_k[dc_arr[axis]];
+            uint32_t ci = static_cast<uint32_t>(axis_maps.ax1_row[dc_arr[ax1]] +
+                                                axis_maps.ax2_col[dc_arr[ax2]]);
+            uint32_t idx = ci * M_eff + dc_k_bkt;
+            if (h_cnt[idx] == 0) {
+              size_t gi = idx >> 6;
+              group_touched_h[gi >> 6] |= (1ULL << (gi & 63));
+              touched_h[gi] |= (1ULL << (idx & 63));
+            }
+            if (N_cnt[idx] == 0) {
+              size_t gi = idx >> 6;
+              group_touched_N[gi >> 6] |= (1ULL << (gi & 63));
+              touched_N[gi] |= (1ULL << (idx & 63));
+            }
+            h_cnt[idx] += run;
+            N_cnt[idx] += run;
+          });
+      FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff);
+      FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff);
+
+      std::vector<uint32_t> solution = Knuth_solver.Solve(num_intervals, M_eff);
+      scratch->clear();
+      for (auto t : solution) {
+        scratch->push_back(d.DC_vals[axis][axis_maps.k_to_dc0[t]]);
+      }
     }
-    M_eff = axis_maps.PrepareBuckets(axis, bkt_thresh[axis], T1, T2);
   }
 
-  // Fast path with `O(M_eff)` memory complexity
-  if (num_intervals == 2) return OptimizeAxisSingleSplit(axis, ncells, M_eff);
-  // Extension of fast path above for `K=3` has proven disastrous
-  // for performance (it has the same `O(M_eff^2)` complexity as the general
-  // path) and is not implemented.
-  // Divide and Conquer approach was also tested with no avail.
-
-  // General path with `O(M_eff^2)` memory complexity
-  // Total number of cells probed is `n1 * n2 * M_eff`
-  size_t cnt_size = ncells * M_eff;
-  if (h_cnt.size() < cnt_size) h_cnt.assign(cnt_size, 0);
-  if (N_cnt.size() < cnt_size) N_cnt.assign(cnt_size, 0);
-
-  Knuth_solver.ResetCosts(M_eff * M_eff);
-
-  SweepACStream(
-      d.AC_stream,
-      [&]() { FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff); },
-      [&]() { FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff); },
-      [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
-          uint32_t) {
-        uint32_t dc_arr[3] = {dc0_idx, dc1_idx, dc2_idx};
-        uint32_t dc_k_bkt = axis_maps.ax0_to_k[dc_arr[axis]];
-        uint32_t ci = static_cast<uint32_t>(axis_maps.ax1_row[dc_arr[ax1]] +
-                                            axis_maps.ax2_col[dc_arr[ax2]]);
-        uint32_t idx = ci * M_eff + dc_k_bkt;
-        if (h_cnt[idx] == 0) {
-          size_t gi = idx >> 6;
-          group_touched_h[gi >> 6] |= (1ULL << (gi & 63));
-          touched_h[gi] |= (1ULL << (idx & 63));
-        }
-        if (N_cnt[idx] == 0) {
-          size_t gi = idx >> 6;
-          group_touched_N[gi >> 6] |= (1ULL << (gi & 63));
-          touched_N[gi] |= (1ULL << (idx & 63));
-        }
-        h_cnt[idx] += run;
-        N_cnt[idx] += run;
-      });
-  FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff);
-  FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff);
-
-  std::vector<uint32_t> solution = Knuth_solver.Solve(num_intervals, M_eff);
-  Thresholds thresholds;
-  for (auto t : solution)
-    thresholds.push_back(d.DC_vals[axis][axis_maps.k_to_dc0[t]]);
-  return thresholds;
+  bool changed = (*scratch != T0);
+  if (changed) std::swap(T0, *scratch);
+  return changed;
 }
 
 // Runs coordinate descent over Y/Cb/Cr threshold vectors for one factorization.
 // Re-optimizes each axis until the thresholds stop changing or the iteration
 // cap is hit.
-std::pair<int64_t, ThresholdSet> PartitioningCtx::OptimizeThresholds(
-    ThresholdSet T, uint32_t M_target, uint32_t max_iters) {
+ThresholdSet PartitioningCtx::OptimizeThresholds(ThresholdSet T,
+                                                 uint32_t M_target,
+                                                 uint32_t max_iters) {
+  const JPEGOptData& d = data();
   uint32_t a = static_cast<uint32_t>(T.TY().size() + 1);
   uint32_t b = static_cast<uint32_t>(T.TCb().size() + 1);
   uint32_t c = static_cast<uint32_t>(T.TCr().size() + 1);
-  ThresholdSet newT;
-  for (size_t i = 0; i < kNumCh; ++i) newT.T[i].reserve(kMaxCells);
+  Thresholds scratch;
+  scratch.reserve(kMaxCells);
+  // Build per-axis bucketing for the coordinate-descent sweeps.
+  std::array<Thresholds, 3> bucket_thresholds;
+  if (a != 1) bucket_thresholds[0] = InitThresh(d, 0, M_target);
+  if (b != 1) bucket_thresholds[1] = InitThresh(d, 1, M_target);
+  if (c != 1) bucket_thresholds[2] = InitThresh(d, 2, M_target);
 
   bool TY_changed = (a != 1);
   bool TCb_changed = (b != 1);
   bool TCr_changed = (c != 1);
   for (uint32_t iter = 0; iter < max_iters; ++iter) {
     if ((a != 1) && (iter == 0 || TCb_changed || TCr_changed)) {
-      newT.TY() = OptimizeAxisSingleSweep(0, a, T.TCb(), T.TCr(), M_target);
-      TY_changed = (newT.TY() != T.TY());
-      std::swap(T.TY(), newT.TY());
+      TY_changed =
+          OptimizeAxisSingleSweep(0, &T, &scratch, bucket_thresholds[0]);
     } else {
       TY_changed = false;
     }
     if ((b != 1) && (iter == 0 || TY_changed || TCr_changed)) {
-      newT.TCb() = OptimizeAxisSingleSweep(1, b, T.TCr(), T.TY(), M_target);
-      TCb_changed = (newT.TCb() != T.TCb());
-      std::swap(T.TCb(), newT.TCb());
+      TCb_changed =
+          OptimizeAxisSingleSweep(1, &T, &scratch, bucket_thresholds[1]);
     } else {
       TCb_changed = false;
     }
     if ((c != 1) && (iter == 0 || TY_changed || TCb_changed)) {
-      newT.TCr() = OptimizeAxisSingleSweep(2, c, T.TY(), T.TCb(), M_target);
-      TCr_changed = (newT.TCr() != T.TCr());
-      std::swap(T.TCr(), newT.TCr());
+      TCr_changed =
+          OptimizeAxisSingleSweep(2, &T, &scratch, bucket_thresholds[2]);
     } else {
       TCr_changed = false;
     }
     if (!TY_changed && !TCb_changed && !TCr_changed) break;
   }
-  return {TotalCost(T), T};
+  return T;
 }
 
 // Computes the exact entropy objective for a fixed threshold set.

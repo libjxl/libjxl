@@ -81,15 +81,6 @@ struct AxisMaps {
     Update(0, thresholds.TY(), thresholds.TCb(), thresholds.TCr());
   }
 
-  // Identity bucketing: each distinct DC value on `axis` is its own bucket.
-  // Updates T1/T2 cell maps and sets `ax0_to_k`/`k_to_dc0` to identity.
-  // Returns M (= M_eff in the identity case).
-  uint32_t PrepareIdentityBuckets(uint32_t axis, const Thresholds& T1,
-                                  const Thresholds& T2) {
-    Update(axis, {}, T1, T2, /*ax0_identity=*/true);
-    return static_cast<uint32_t>(image.DC_vals[axis].size());
-  }
-
   // Equal-population bucketing: sets `ax0_to_k`/`k_to_dc0` from the
   // pre-computed `bkt_thresh_axis` (computed by `InitThresh` for this axis)
   // and updates T1/T2 cell maps. The caller owns the threshold cache.
@@ -98,6 +89,10 @@ struct AxisMaps {
                           const Thresholds& T1, const Thresholds& T2) {
     uint32_t M = static_cast<uint32_t>(image.DC_vals[axis].size());
     uint32_t M_eff = static_cast<uint32_t>(bkt_thresh_axis.size()) + 1;
+    if (M_eff == M) {
+      Update(axis, {}, T1, T2, /*ax0_identity=*/true);
+      return M;
+    }
     Update(axis, bkt_thresh_axis, T1, T2);
     uint32_t cur_k = 0;
     k_to_dc0[0] = 0;

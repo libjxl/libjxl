@@ -42,6 +42,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/transcode_jpeg/enc_jpeg_histogram.h"
@@ -66,6 +67,21 @@ struct Clustering {
   DenseNHistogramSet hist_N;
   DenseNZHistogramSet hist_nz_h;
   DenseNZPredHistogramSet hist_nz_N;
+
+  // Maximum token index produced by `HybridUintConfig(4, 2, 0)` for `ai ≤ 2047`:
+  //   `token = split_token + (n - split_exp) * 4 + top_2_bits`
+  //         `= 16 + (10 - 4) * 4 + 3 = 43   (n = FloorLog2(2047) = 10)`
+  // Array size = 43 + 1 = 44.
+  static constexpr uint32_t kSignallingMaxToken = 44;
+  using SignallingTokenHist =
+      std::array<std::array<uint32_t, kSignallingMaxToken>,
+                 kZeroDensityContextCount>;
+
+  // Scratch buffer for `ComputeSignallingOverhead`: maps `(zdc, token) → count`.
+  // Heap-backed to keep `Clustering` small enough for the stack budget enforced
+  // by `libjxl`. Declared `mutable` because the method is logically const; the
+  // buffer holds no observable state between calls and is allocated lazily.
+  mutable std::unique_ptr<SignallingTokenHist> signalling_token_hist_;
 
   Clustering() : clustered_cost(0), ctx_num(0) {}
   Clustering(Clustering&&) = default;
@@ -139,6 +155,13 @@ struct Clustering {
   // rejection test.
   StatusOr<int64_t> ComputeSignallingOverhead(
       const JPEGOptData& d,
+      int64_t cutoff = std::numeric_limits<int64_t>::max()) const;
+
+  // Computes the signalling overhead contribution of a single cluster.
+  // Used by the overhead-aware merge tail to update the running overhead
+  // incrementally after tentative merges.
+  StatusOr<int64_t> ComputeClusterSignallingOverhead(
+      const JPEGOptData& d, uint32_t cluster_id,
       int64_t cutoff = std::numeric_limits<int64_t>::max()) const;
 
   // Returns the nonzero-count entropy portion of the total cost:
