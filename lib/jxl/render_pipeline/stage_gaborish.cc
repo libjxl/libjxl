@@ -30,8 +30,8 @@ using hwy::HWY_NAMESPACE::MulAdd;
 class GaborishStage : public RenderPipelineStage {
  public:
   explicit GaborishStage(const LoopFilter& lf)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/1)) {
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(1)) {
     weights_[0] = 1;
     weights_[1] = lf.gab_x_weight1;
     weights_[2] = lf.gab_x_weight2;
