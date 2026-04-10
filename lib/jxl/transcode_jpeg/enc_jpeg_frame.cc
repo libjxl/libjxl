@@ -179,6 +179,7 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
   for (int16_t t : best_thr.TCb()) ctx_map.dc_thresholds[0].push_back(t - 1);
   for (int16_t t : best_thr.TCr()) ctx_map.dc_thresholds[2].push_back(t - 1);
 
+  // If the image is effectively grayscale, we use only one channel.
   uint32_t effective_channels = opt_data->channels;
 
   // `dc_thresholds` is indexed in JXL XYB order (X=0, Y=1, B=2), which maps

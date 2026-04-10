@@ -51,7 +51,8 @@ struct JPEGCtxEffortParams {
 
   static JPEGCtxEffortParams FromSpeedTier(SpeedTier speed_tier) {
     switch (speed_tier) {
-      case SpeedTier::kSquirrel:
+      //case SpeedTier::kSquirrel:
+      case SpeedTier::kKitten:
         return {/*keep_top_k=*/8,
                 /*rank_m_target=*/32,
                 /*rank_iters=*/1,
@@ -60,7 +61,7 @@ struct JPEGCtxEffortParams {
                 /*overhead_aware_tail=*/true,
                 /*refine_iters=*/0,
                 /*refine_radius=*/0};
-      case SpeedTier::kKitten:
+      case SpeedTier::kTortoise:
         return {/*keep_top_k=*/16,
                 /*rank_m_target=*/64,
                 /*rank_iters=*/1,
@@ -69,7 +70,7 @@ struct JPEGCtxEffortParams {
                 /*overhead_aware_tail=*/true,
                 /*refine_iters=*/1,
                 /*refine_radius=*/4};
-      case SpeedTier::kTortoise:
+      case SpeedTier::kGlacier:
         return {/*keep_top_k=*/24,
                 /*rank_m_target=*/128,
                 /*rank_iters=*/2,
@@ -79,7 +80,6 @@ struct JPEGCtxEffortParams {
                 /*refine_iters=*/2,
                 /*refine_radius=*/8};
       case SpeedTier::kTectonicPlate:
-      case SpeedTier::kGlacier:
       default:
         return {/*keep_top_k=*/0,
                 /*rank_m_target=*/0,
