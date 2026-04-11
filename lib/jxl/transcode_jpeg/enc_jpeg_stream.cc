@@ -260,15 +260,19 @@ ACStreamData EmitACStream(const ActiveBinLayout& layout,
         }
 
         // Normal frame: `Δdc0` in bits 30..27, `dc1` in bits 26..16,
-        // `dc2` in bits 15..5.
+        // `dc2` in bits 15..5, `run-1` in bits 4..0 (max run = 32 per frame).
+        // Long runs are split into consecutive normal frames with the same
+        // dc0/dc1/dc2; the reset-frame guard above fires only on the first.
         uint32_t delta_dc0 = dc0 - cur_dc0;
         uint32_t header = (delta_dc0 << 27) | (dc1 << 16) | (dc2 << 5);
-        if (run <= 31) {
-          out.stream.push_back(header | (run - 1));  // `run-1` fits in 5 bits
-        } else {
-          out.stream.push_back(header | 0x1Fu);  // escape: `run-1 == 31`
-          out.stream.push_back(run);  // long-run frame carries actual run
+        // Continuation header: Δdc0=0, same dc1/dc2 (both are absolute).
+        const uint32_t cont_header = (dc1 << 16) | (dc2 << 5);
+        while (run > 32) {
+          out.stream.push_back(header | 31u);  // run = 32, run-1 = 31
+          run -= 32;
+          header = cont_header;
         }
+        out.stream.push_back(header | (run - 1));
         cur_dc0 = dc0;
         first_in_bin = false;
         i = j;
@@ -285,7 +289,6 @@ ACStreamData EmitACStream(const ActiveBinLayout& layout,
   out.stream.shrink_to_fit();
   JXL_DEBUG_V(2, "JPEG transcode compact_map_h uses %u / %i keys\n",
               out.num_zdctok, static_cast<int>(out.compact_map_h.size()));
-
   // Clustering may merge contexts from different channels, so
   // `hist_N[merged][zdc]` can accumulate counts from all channels for the
   // same `zdc`. Use the actual per-`zdc` cross-channel total as the bound

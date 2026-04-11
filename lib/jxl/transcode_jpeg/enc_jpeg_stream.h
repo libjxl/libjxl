@@ -27,7 +27,6 @@
 #ifndef LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_STREAM_H_
 #define LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_STREAM_H_
 
-#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -51,17 +50,16 @@ StatusOr<ACStreamData> BuildACStream(const JPEGOptData& d, ThreadPool* pool);
 // - Reset frame:
 //   `(1<<31) | (ctx_change<<30) | (bin_change<<29) | (bin<<7) | (dc0>>4)`.
 // - Normal frame: `(delta_dc0<<27) | (dc1<<16) | (dc2<<5) | (run-1)`,
-//   `delta_dc0 <= 15`, so that bit 31 is 0.
-// - Long-run frame: `(delta_dc0<<27) | (dc1<<16) | (dc2<<5) | 0x1F` followed
-//   by `run`.
+//   `delta_dc0 <= 15`, so that bit 31 is 0. `run` is always in [1, 32].
+//   Runs longer than 32 are split into consecutive normal frames with
+//   `delta_dc0 = 0` and the same `dc1`/`dc2` on continuation frames.
 // Stays in the header as templated callbacks are used in multiple places.
 template <class FlushH, class FlushN, class OnRun>
 void SweepACStream(const std::vector<ACEntry>& stream, FlushH&& flush_h,
                    FlushN&& flush_N, OnRun&& on_run) {
   uint32_t dc0_idx = 0;
   uint32_t bin_state = 0;
-  for (size_t si = 0; si < stream.size(); ++si) {
-    const uint32_t frame = stream[si];
+  for (const uint32_t frame : stream) {
     if (frame >> 31) {
       dc0_idx = (frame & 0x7Fu) << 4;
       bin_state = (frame >> 7) & 0x3FFFFFu;
@@ -74,8 +72,7 @@ void SweepACStream(const std::vector<ACEntry>& stream, FlushH&& flush_h,
     dc0_idx += (frame >> 27) & 0xFu;
     const uint32_t dc1_idx = (frame >> 16) & 0x7FFu;
     const uint32_t dc2_idx = (frame >> 5) & 0x7FFu;
-    const uint32_t run_sym = frame & 0x1Fu;
-    const uint32_t run = (run_sym == 0x1Fu) ? stream[++si] : run_sym + 1;
+    const uint32_t run = (frame & 0x1Fu) + 1;
     on_run(dc0_idx, dc1_idx, dc2_idx, run, bin_state);
   }
 }

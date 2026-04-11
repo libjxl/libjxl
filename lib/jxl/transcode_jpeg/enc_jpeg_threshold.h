@@ -93,7 +93,7 @@ struct PartitioningCtx {
   CellHistory N_history;
 
   // Two-level bitmask for sparse dirty tracking over flat index space
-  // `idx = ci * M_eff + n` (up to 32768 slots).
+  // `idx = ci * M_eff + n` (up to 64ki slots for full `M_eff = kDCTRange`).
   // `touched[group]`       — one bit per idx within each 64-slot group.
   // `group_touched[tier]`  — one bit per group within each 64-group tier.
   // On write to `idx`: set bit in `touched[idx>>6]` and bit in
@@ -179,99 +179,19 @@ struct PartitioningCtx {
   // costs.
   //
   // The two-level bitmask pair (`group_touched`, `touched`) acts as a sparse
-  // index over the flat `cnt` array, so only dirty `(ci, n)` entries are
-  // visited instead of scanning all `ncells * M_eff` slots. Entries are visited
-  // in increasing `bit_idx = ci * M_eff + n` order, which guarantees that
-  // within each cell ranks are encountered in ascending order — a prerequisite
-  // for the history accumulation. `cnt`, `touched`, and `group_touched` are all
-  // reset to zero here so they are ready for the next stream segment.
+  // index over the flat `cnt` array, so only dirty `(n, ci)` entries are
+  // visited instead of scanning all `M_eff * ncells` slots. The flat index is
+  // `bit_idx = n * ncells + ci` (`n`-major / rank-major), so scanning in
+  // increasing `bit_idx` order visits all `ci` values for rank 0, then all
+  // `ci` values for rank 1, etc. Ranks for a given `ci` are therefore seen in
+  // ascending order across the scan — a prerequisite for per-cell history
+  // accumulation. `cnt`, `touched`, and `group_touched` are all reset to zero
+  // here so they are ready for the next stream segment.
   template <int sign>
   void FlushTerm(std::vector<uint32_t>& cnt,
                  std::vector<uint64_t>& group_touched,
-                 std::vector<uint64_t>& touched, uint32_t M_eff) {
-    const JPEGOptData& d = data();
-    std::vector<int64_t>& costs = Knuth_solver.costs;
-    // With `idx = ci*M_eff + n` (`ci`-major), all ranks for a given `ci`
-    // are contiguous in scan order, so a single history suffices.
-    auto& history = h_history[0];
-    history.clear();
-
-    // Track the current cell boundary incrementally.
-    uint32_t n_ci_start = 0;
-
-    for (uint32_t hi_idx = 0; hi_idx < kGroupCount; ++hi_idx) {
-      uint64_t group_mask = group_touched[hi_idx];
-
-      while (group_mask) {
-        uint32_t lo_idx = CountrZero64(group_mask);
-        uint32_t group_idx = (hi_idx << 6) | lo_idx;
-        uint64_t cell_mask = touched[group_idx];
-        uint32_t base_bit_idx = group_idx << 6;
-
-        // Fast-forward `n_ci_start` to the cell containing `base_bit_idx`.
-        // Amortised O(1): total advances are bounded by `kMaxCells / 2`.
-        while (base_bit_idx >= n_ci_start + M_eff) {
-          n_ci_start += M_eff;
-          history.clear();
-        }
-
-        while (cell_mask) {
-          uint32_t t = CountrZero64(cell_mask);
-          uint32_t bit_idx = base_bit_idx | t;
-
-          // Advance if this bit crossed into the next cell.
-          // A `while` handles the rare case where a single 64-bit word spans
-          // multiple cells (only possible when `M_eff < 64`).
-          while (bit_idx >= n_ci_start + M_eff) {
-            n_ci_start += M_eff;
-            history.clear();
-          }
-
-          uint32_t n = bit_idx - n_ci_start;
-
-          // `costs[n * M_eff + l]` = diff contribution for interval `[l..n]`.
-          int64_t* cost_row = &costs[n * M_eff];
-
-          uint32_t freq = cnt[bit_idx];
-          // `j_n` = cumulative count for ranks `[0..n]` in this `ci` group.
-          uint32_t j_n = freq;  // starts with just the current rank `n`
-          if (!history.empty()) {
-            // Carry forward the running cumulative from earlier ranks.
-            j_n += history.back().second;
-
-            // One-write diff trick for the cost matrix:
-            // adding `freq` at rank `n` changes `cost[l..n]` for all l ≤ n.
-            // The change is piecewise-constant between spotted ranks, so we
-            // only write at the boundaries (where the term changes).
-            uint32_t l = 0;
-            uint32_t j_before_l = 0;
-            int64_t prev_term = 0;
-            for (const Bin& h : history) {
-              // `j_ln` = counts in `[l..n]` before adding `freq`.
-              uint32_t j_ln = j_n - j_before_l;
-              // Entropy change for interval `[l..n]` from adding `freq`.
-              int64_t term = sign * (d.ftab[j_ln - freq] - d.ftab[j_ln]);
-              cost_row[l] += term - prev_term;
-              // Move to the next interval boundary.
-              l = h.first + 1;
-              j_before_l = h.second;
-              prev_term = term;
-            }
-            // Last segment: `j_before_l = j_n - freq`, so `j_ln = freq`,
-            // `j_ln - freq = 0`, `ftab[0] = 0` → `term = -sign * ftab[freq]`.
-            cost_row[l] -= sign * d.ftab[freq] + prev_term;
-          }
-          // Record this rank for future `n`.
-          history.emplace_back(static_cast<uint16_t>(n), j_n);
-          cnt[bit_idx] = 0;            // reset count to clean the histogram
-          cell_mask &= cell_mask - 1;  // clear processed mask bit
-        }
-        touched[group_idx] = 0;        // reset processed mask
-        group_mask &= group_mask - 1;  // clear processed mask bit
-      }
-      group_touched[hi_idx] = 0;  // reset processed mask
-    }
-  }
+                 std::vector<uint64_t>& touched, uint32_t M_eff,
+                 uint32_t ncells);
 
   // Generic stream sweep used by coordinate-descent optimization.
   //
@@ -289,7 +209,7 @@ struct PartitioningCtx {
                                const Thresholds& bucket_thresholds);
 
   template <uint32_t Axis>
-  void SweepGeneralAxis(uint32_t M_eff);
+  void SweepGeneralAxis(uint32_t M_eff, uint32_t ncells);
 
   // Performs iterative coordinate descent to find optimal threshold vectors
   // `(TY, TCb, TCr)` for a given target factorization `(a, b, c)`.
