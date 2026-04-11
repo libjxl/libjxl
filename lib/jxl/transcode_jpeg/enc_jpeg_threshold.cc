@@ -11,6 +11,54 @@
 
 namespace jxl {
 
+template <uint32_t I>
+static JXL_INLINE uint32_t SelectDC(uint32_t dc0, uint32_t dc1, uint32_t dc2) {
+  return I == 0 ? dc0 : (I == 1 ? dc1 : dc2);
+}
+
+template <uint32_t Axis>
+void PartitioningCtx::SweepGeneralAxis(uint32_t M_eff) {
+  constexpr uint32_t Ax1 = (Axis + 1) % 3;
+  constexpr uint32_t Ax2 = (Axis + 2) % 3;
+  const JPEGOptData& d = data();
+  // Hoist raw pointers so the compiler can keep them in registers across the
+  // hot loop body. Without this, every h_cnt/N_cnt write forces a reload of
+  // `this` to re-derive the vector data pointers (aliasing barrier).
+  const uint16_t* JXL_RESTRICT p_ax0 = axis_maps.ax0_to_k.data();
+  const uint16_t* JXL_RESTRICT p_ax1 = axis_maps.ax1_row.data();
+  const uint16_t* JXL_RESTRICT p_ax2 = axis_maps.ax2_col.data();
+  uint32_t* JXL_RESTRICT p_h = h_cnt.data();
+  uint32_t* JXL_RESTRICT p_N = N_cnt.data();
+  uint64_t* p_gh = group_touched_h.data();
+  uint64_t* p_th = touched_h.data();
+  uint64_t* p_gN = group_touched_N.data();
+  uint64_t* p_tN = touched_N.data();
+  SweepACStream(
+      d.AC_stream,
+      [&]() { FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff); },
+      [&]() { FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff); },
+      [p_ax0, p_ax1, p_ax2, p_h, p_N, p_gh, p_th, p_gN, p_tN,
+       M_eff](uint32_t dc0_idx, uint32_t dc1_idx,
+              uint32_t dc2_idx, uint32_t run, uint32_t) {
+        uint32_t dc_k_bkt = p_ax0[SelectDC<Axis>(dc0_idx, dc1_idx, dc2_idx)];
+        uint32_t ci = p_ax1[SelectDC<Ax1>(dc0_idx, dc1_idx, dc2_idx)] +
+                      p_ax2[SelectDC<Ax2>(dc0_idx, dc1_idx, dc2_idx)];
+        uint32_t idx = ci * M_eff + dc_k_bkt;
+        if (p_h[idx] == 0) {
+          size_t gi = idx >> 6;
+          size_t ggi = gi >> 6;
+          uint64_t bit = 1ULL << (idx & 63);
+          uint64_t gbit = 1ULL << (gi & 63);
+          p_gh[ggi] |= gbit;
+          p_th[gi] |= bit;
+          p_gN[ggi] |= gbit;
+          p_tN[gi] |= bit;
+        }
+        p_h[idx] += run;
+        p_N[idx] += run;
+      });
+}
+
 // Accumulates the K=2 score-diff curve for the sparse `axis == 0` path.
 void PartitioningCtx::AccumulateSingleSplitAxis0(
     std::vector<int64_t>& score_diff, uint32_t& bin_mask, uint32_t& ctx_mask) {
@@ -87,9 +135,12 @@ void PartitioningCtx::AccumulateSingleSplitAxis0(
 // bin/ctx flush sweeps `n=0..M_eff-1` per touched cell (O(M_eff)) and applies
 // the one-write diff to `score_diff`. Another approach is to use history like
 // in `AccumulateSingleSplitAxis0` but with sorting — it is slower.
-void PartitioningCtx::AccumulateSingleSplitOther(
-    uint32_t axis, uint32_t ncells, uint32_t M_eff,
-    std::vector<int64_t>& score_diff, uint32_t& bin_mask, uint32_t& ctx_mask) {
+template <uint32_t Axis>
+void PartitioningCtx::AccumulateSingleSplitOtherAxis(
+    uint32_t ncells, uint32_t M_eff, std::vector<int64_t>& score_diff,
+    uint32_t& bin_mask, uint32_t& ctx_mask) {
+  constexpr uint32_t Ax1 = (Axis + 1) % 3;
+  constexpr uint32_t Ax2 = (Axis + 2) % 3;
   const JPEGOptData& d = data();
   uint32_t cnt_size = M_eff * ncells;
   if (h_cnt.size() < cnt_size) h_cnt.assign(cnt_size, 0);
@@ -122,25 +173,40 @@ void PartitioningCtx::AccumulateSingleSplitOther(
     }
   };
 
-  uint32_t ax1 = (axis + 1) % 3;
-  uint32_t ax2 = (axis + 2) % 3;
+  const uint16_t* JXL_RESTRICT p_ax0 = axis_maps.ax0_to_k.data();
+  const uint16_t* JXL_RESTRICT p_ax1 = axis_maps.ax1_row.data();
+  const uint16_t* JXL_RESTRICT p_ax2 = axis_maps.ax2_col.data();
+  uint32_t* JXL_RESTRICT p_h = h_cnt.data();
+  uint32_t* JXL_RESTRICT p_N = N_cnt.data();
   SweepACStream(
       d.AC_stream, [&]() { flush_dense(h_cnt, bin_mask, -1); },
       [&]() { flush_dense(N_cnt, ctx_mask, +1); },
-      [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
-          uint32_t) {
-        uint32_t dc_arr[3] = {dc0_idx, dc1_idx, dc2_idx};
-        uint32_t dc_k_bkt = axis_maps.ax0_to_k[dc_arr[axis]];
-        uint32_t ci =
-            axis_maps.ax1_row[dc_arr[ax1]] + axis_maps.ax2_col[dc_arr[ax2]];
+      [p_ax0, p_ax1, p_ax2, p_h, p_N, M_eff,
+       &bin_mask, &ctx_mask](uint32_t dc0_idx, uint32_t dc1_idx,
+                             uint32_t dc2_idx, uint32_t run, uint32_t) {
+        uint32_t dc_k_bkt = p_ax0[SelectDC<Axis>(dc0_idx, dc1_idx, dc2_idx)];
+        uint32_t ci = p_ax1[SelectDC<Ax1>(dc0_idx, dc1_idx, dc2_idx)] +
+                      p_ax2[SelectDC<Ax2>(dc0_idx, dc1_idx, dc2_idx)];
         uint32_t idx = ci * M_eff + dc_k_bkt;
-        h_cnt[idx] += run;
+        p_h[idx] += run;
         bin_mask |= (1U << ci);
-        N_cnt[idx] += run;
+        p_N[idx] += run;
         ctx_mask |= (1U << ci);
       });
   flush_dense(h_cnt, bin_mask, -1);
   flush_dense(N_cnt, ctx_mask, +1);
+}
+
+void PartitioningCtx::AccumulateSingleSplitOther(
+    uint32_t axis, uint32_t ncells, uint32_t M_eff,
+    std::vector<int64_t>& score_diff, uint32_t& bin_mask, uint32_t& ctx_mask) {
+  if (axis == 1) {
+    AccumulateSingleSplitOtherAxis<1>(ncells, M_eff, score_diff, bin_mask,
+                                      ctx_mask);
+  } else {
+    AccumulateSingleSplitOtherAxis<2>(ncells, M_eff, score_diff, bin_mask,
+                                      ctx_mask);
+  }
 }
 
 // Evaluates the K=2 case for one axis in a single stream pass. It builds a
@@ -201,8 +267,6 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
   if (M <= num_intervals) {  // exclude first DC value from thresholds
     scratch->assign(d.DC_vals[axis].begin() + 1, d.DC_vals[axis].end());
   } else {
-    uint32_t ax1 = (axis + 1) % 3;
-    uint32_t ax2 = (axis + 2) % 3;
     uint32_t n1 = static_cast<uint32_t>(T1.size() + 1);
     uint32_t n2 = static_cast<uint32_t>(T2.size() + 1);
     uint32_t ncells = n1 * n2;
@@ -224,29 +288,9 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
 
       Knuth_solver.ResetCosts(M_eff * M_eff);
 
-      SweepACStream(
-          d.AC_stream,
-          [&]() { FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff); },
-          [&]() { FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff); },
-          [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx,
-              uint32_t run, uint32_t) {
-            uint32_t dc_arr[3] = {dc0_idx, dc1_idx, dc2_idx};
-            uint32_t dc_k_bkt = axis_maps.ax0_to_k[dc_arr[axis]];
-            uint32_t ci = axis_maps.ax1_row[dc_arr[ax1]] + axis_maps.ax2_col[dc_arr[ax2]];
-            uint32_t idx = ci * M_eff + dc_k_bkt;
-            if (h_cnt[idx] == 0) {
-              size_t gi = idx >> 6;
-              size_t ggi = gi >> 6;
-              uint64_t bit = 1ULL << (idx & 63);
-              uint64_t gbit = 1ULL << (gi & 63);
-              group_touched_h[ggi] |= gbit;
-              touched_h[gi] |= bit;
-              group_touched_N[ggi] |= gbit;
-              touched_N[gi] |= bit;
-            }
-            h_cnt[idx] += run;
-            N_cnt[idx] += run;
-          });
+      if (axis == 0) SweepGeneralAxis<0>(M_eff);
+      else if (axis == 1) SweepGeneralAxis<1>(M_eff);
+      else SweepGeneralAxis<2>(M_eff);
       FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff);
       FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff);
 

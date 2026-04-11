@@ -151,6 +151,11 @@ struct PartitioningCtx {
                                   std::vector<int64_t>& score_diff,
                                   uint32_t& bin_mask, uint32_t& ctx_mask);
 
+  template <uint32_t Axis>
+  void AccumulateSingleSplitOtherAxis(uint32_t ncells, uint32_t M_eff,
+                                      std::vector<int64_t>& score_diff,
+                                      uint32_t& bin_mask, uint32_t& ctx_mask);
+
   // Drains collected `cnt` entries into the `Knuth_solver.costs` `M_eff×M_eff`
   // matrix (used by `OptimizeAxisSingleSweep` for `K≥3` intervals).
   //
@@ -282,6 +287,9 @@ struct PartitioningCtx {
   bool OptimizeAxisSingleSweep(uint32_t axis, ThresholdSet* T,
                                Thresholds* scratch,
                                const Thresholds& bucket_thresholds);
+
+  template <uint32_t Axis>
+  void SweepGeneralAxis(uint32_t M_eff);
 
   // Performs iterative coordinate descent to find optimal threshold vectors
   // `(TY, TCb, TCr)` for a given target factorization `(a, b, c)`.
