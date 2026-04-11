@@ -186,9 +186,9 @@ Thresholds PartitioningCtx::OptimizeAxisSingleSplit(uint32_t axis,
 
 // Optimizes one axis while keeping the other two threshold vectors fixed.
 // Uses the K=2 fast path for a single split and the Knuth-DP path otherwise.
-bool PartitioningCtx::OptimizeAxisSingleSweep(uint32_t axis, ThresholdSet* T,
-                                              Thresholds* scratch,
-                                              const Thresholds& bucket_thresholds) {
+bool PartitioningCtx::OptimizeAxisSingleSweep(
+    uint32_t axis, ThresholdSet* T, Thresholds* scratch,
+    const Thresholds& bucket_thresholds) {
   JXL_DASSERT(T != nullptr);
   JXL_DASSERT(scratch != nullptr);
   const JPEGOptData& d = data();
@@ -198,7 +198,7 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(uint32_t axis, ThresholdSet* T,
   uint32_t num_intervals = static_cast<uint32_t>(T0.size() + 1);
   if (num_intervals == 1) return false;
   uint32_t M = static_cast<uint32_t>(d.DC_vals[axis].size());
-  if (M <= num_intervals) { // exclude first DC value from thresholds
+  if (M <= num_intervals) {  // exclude first DC value from thresholds
     scratch->assign(d.DC_vals[axis].begin() + 1, d.DC_vals[axis].end());
   } else {
     uint32_t ax1 = (axis + 1) % 3;
@@ -209,7 +209,7 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(uint32_t axis, ThresholdSet* T,
     uint32_t M_eff = axis_maps.PrepareBuckets(axis, bucket_thresholds, T1, T2);
 
     if (num_intervals == 2) {
-    // Fast path with `O(M_eff)` memory complexity
+      // Fast path with `O(M_eff)` memory complexity
       *scratch = OptimizeAxisSingleSplit(axis, ncells, M_eff);
       // Extension of fast path above for `K=3` has proven disastrous
       // for performance (it has the same `O(M_eff^2)` complexity as the general

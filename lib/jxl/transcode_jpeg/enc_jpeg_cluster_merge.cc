@@ -14,11 +14,11 @@
 //     vector `E`, the active-cluster list, the symmetric `deltas` cache, and
 //     the union-find `parent` array) and exposes one public entry point `Run`.
 
-#include "lib/jxl/transcode_jpeg/enc_jpeg_cluster.h"
-
 #include <algorithm>
 #include <mutex>
 #include <numeric>
+
+#include "lib/jxl/transcode_jpeg/enc_jpeg_cluster.h"
 
 namespace jxl {
 
@@ -60,8 +60,8 @@ struct AgglomerativeCtx {
     DenseNZHistogram hist_nz_h_b;
     // `hist_h_a` is intentionally absent: `hist_h[a]` is recovered on rollback
     // by subtracting `hist_h_b` from the merged result (see `RestoreRollback`).
-    // This avoids allocating and copying the two `num_zdcai`-sized vectors
-    // (`counts`, `pos_in_used`) on every accepted Phase-2 merge.
+    // This avoids allocating and copying the dense `counts` / touched-bitset
+    // storage of `hist_h_a` on every accepted Phase-2 merge.
     // The dense histograms above use fixed-size array copy (no allocation),
     // so the trade-off does not apply to them.
     CompactHistogram hist_h_b;
@@ -120,8 +120,8 @@ struct AgglomerativeCtx {
         pool, 0, total_ctxs, ThreadPool::NoInit,
         [&](uint32_t i, size_t) -> Status {
           int64_t local_E = 0;
-          for (uint32_t id : hist_h[i].used_ids)
-            local_E -= d.ftab[hist_h[i].Get(id)];
+          hist_h[i].ForEachNonZero(
+              [&](uint32_t, uint32_t freq) { local_E -= d.ftab[freq]; });
           for (uint32_t freq : hist_N[i]) local_E += d.ftab[freq];
           for (uint32_t freq : hist_nz_N[i]) local_E += d.NZFTab(freq);
           for (uint32_t freq : hist_nz_h[i]) local_E -= d.NZFTab(freq);
@@ -148,23 +148,17 @@ struct AgglomerativeCtx {
   }
 
   // Returns `E(merged) − E(a) − E(b)`: the entropy increase of merging `cl_a`
-  // and `cl_b`. Iterates over the smaller `used_ids` set for the `hist_h` term.
+  // and `cl_b`. The `hist_h` term iterates only the touched-bitset
+  // intersection.
   int64_t MergeDelta(uint32_t cl_a, uint32_t cl_b) const {
     int64_t delta = 0;
 
     const CompactHistogram& hist_h_a = hist_h[cl_a];
     const CompactHistogram& hist_h_b = hist_h[cl_b];
-    const CompactHistogram* iter_h = &hist_h_a;
-    if (hist_h_a.used_ids.size() > hist_h_b.used_ids.size()) {
-      iter_h = &hist_h_b;
-    }
-    for (uint32_t id : iter_h->used_ids) {
-      uint32_t freq_a = hist_h_a.Get(id);
-      uint32_t freq_b = hist_h_b.Get(id);
-      if (freq_a != 0 && freq_b != 0) {
-        delta -= MergeCost(d, freq_a, freq_b);
-      }
-    }
+    hist_h_a.ForEachIntersection(
+        hist_h_b, [&](uint32_t, uint32_t freq_a, uint32_t freq_b) {
+          delta -= MergeCost(d, freq_a, freq_b);
+        });
     for (size_t bin = 0; bin < hist_N[cl_a].size(); ++bin) {
       uint32_t freq_a = hist_N[cl_a][bin];
       uint32_t freq_b = hist_N[cl_b][bin];
@@ -297,8 +291,7 @@ struct AgglomerativeCtx {
 
   // Reverts the merge of `a_id` ← `b_id` using the saved snapshot.
   void RestoreRollback(const RollbackScratch& rollback, uint32_t a_id,
-                       uint32_t b_id, int64_t old_Ea,
-                       uint32_t old_parent_b) {
+                       uint32_t b_id, int64_t old_Ea, uint32_t old_parent_b) {
     active = rollback.active;
     ++active_clusters;
     E[a_id] = old_Ea;
@@ -306,11 +299,10 @@ struct AgglomerativeCtx {
     hist_N[a_id] = rollback.hist_N_a;
     hist_nz_N[a_id] = rollback.hist_nz_N_a;
     hist_nz_h[a_id] = rollback.hist_nz_h_a;
-    // Recover `hist_h[a]`: `merged = original_a + b`, so `original_a = merged - b`.
-    // Iterates only `hist_h_b.used_ids` (the smaller absorbed cluster), which is
-    // far cheaper than copying the two `num_zdcai`-sized vectors of `hist_h_a`.
-    for (uint32_t id : rollback.hist_h_b.used_ids)
-      hist_h[a_id].Subtract(id, rollback.hist_h_b.counts[id]);
+    // Recover `hist_h[a]`: `merged = original_a + b`, so `original_a = merged -
+    // b`. Iterates only the touched bins of `hist_h_b`, which is far cheaper
+    // than copying the full `hist_h_a` storage.
+    hist_h[a_id].SubtractHistogram(rollback.hist_h_b);
     hist_N[b_id] = rollback.hist_N_b;
     hist_h[b_id] = rollback.hist_h_b;
     hist_nz_N[b_id] = rollback.hist_nz_N_b;
@@ -375,21 +367,20 @@ struct AgglomerativeCtx {
       std::swap(header_cost[best_j], header_cost.back());
       header_cost.pop_back();
       --active_clusters;
-      const int64_t base_without_merged =
-          current_entropy_cost + best_delta + current_header_cost -
-          old_header_a - old_header_b;
-      const int64_t merged_header_cutoff = best_total_cost - base_without_merged;
+      const int64_t base_without_merged = current_entropy_cost + best_delta +
+                                          current_header_cost - old_header_a -
+                                          old_header_b;
+      const int64_t merged_header_cutoff =
+          best_total_cost - base_without_merged;
 
       if (merged_header_cutoff > 0) {
-        JXL_ASSIGN_OR_RETURN(
-            int64_t merged_header_cost,
-            clustering.ComputeClusterSignallingOverhead(d, a_id,
-                                                        merged_header_cutoff));
+        JXL_ASSIGN_OR_RETURN(int64_t merged_header_cost,
+                             clustering.ComputeClusterSignallingOverhead(
+                                 d, a_id, merged_header_cutoff));
         if (merged_header_cost < merged_header_cutoff) {
           current_entropy_cost += best_delta;
-          current_header_cost =
-              current_header_cost - old_header_a - old_header_b +
-              merged_header_cost;
+          current_header_cost = current_header_cost - old_header_a -
+                                old_header_b + merged_header_cost;
           best_total_cost = current_entropy_cost + current_header_cost;
           header_cost[best_i] = merged_header_cost;
           JXL_RETURN_IF_ERROR(UpdateDistances(a_id));

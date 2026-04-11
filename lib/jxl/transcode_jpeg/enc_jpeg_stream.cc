@@ -34,7 +34,7 @@ struct SortedBinHalves {
 // Counts the number of entries in each sparse AC bin and builds prefix sums
 // for the later scatter pass.
 ActiveBinLayout CountActiveBins(const JPEGOptData& d) {
-  const uint32_t BIN_N = d.channels << 20;
+  const uint32_t BIN_N = d.channels * kACSymbolCount;
   ActiveBinLayout layout;
   // Split on `dc0` bit 10 (the MSB of the 11-bit index):
   // `lo = dc0 < 1024`, `hi = dc0 >= 1024`.
@@ -181,7 +181,10 @@ ACStreamData EmitACStream(const ActiveBinLayout& layout,
   //     emitted for the first entry, bin change, `Δdc0 > 15`:
   //     30      `ctx_changed` (1b)
   //     29      `bin_changed` (1b)
-  //     28..7   `bin`      (22b = `c:2 + zdc:9 + ai:11`, used in clustering)
+  //     28..7   `bin`      (22b, can be `c:2 + zdc:9 + ai:11` to store all
+  //                         data, currently
+  //                         `c * kACSymbolCount + zdc * kACTokenCount + token`,
+  //                         used in clustering)
   //     6..0    `dc0 >> 4` (7b, coarse; fine bits recovered from next `Δdc0`)
   //
   // `dc0/dc1/dc2` are 11-bit indices into the active DC-coefficient tables.
@@ -193,21 +196,17 @@ ACStreamData EmitACStream(const ActiveBinLayout& layout,
   uint32_t prev_bin = UINT32_MAX;
   std::array<uint32_t, kZeroDensityContextCount> zdc_total = {};
 
-  // `compact_map_h` maps sparse `(zdc<<11|ai)` keys (20-bit, max ~1M) to a
-  // dense id `[0, num_unique_h)`. Only keys that appear in `active_bins`
-  // get assigned; the rest remain 0xFFFFFFFF (unused sentinel).
-  // Actual max number of active bins seen is ~35000.
-  const uint32_t max_key_h_sparse =
-      static_cast<uint32_t>(kZeroDensityContextCount * kDCTRange);
-  out.compact_map_h.assign(max_key_h_sparse, kInvalidCompactH);
-  out.dense_to_zdcai.reserve(layout.active_bins.size());
+  // `compact_map_h` maps sparse `(zdc, token)` keys to a dense id
+  // `[0, num_unique_h)`. Only keys that appear in `active_bins` get assigned;
+  // the rest remain 0xFFFFFFFF (unused sentinel).
+  out.compact_map_h.assign(kACSymbolCount, kInvalidCompactH);
+  out.dense_to_zdctok.reserve(layout.active_bins.size());
 
   for (uint32_t bin : layout.active_bins) {
-    uint32_t zdc_ai =
-        bin & 0xFFFFFu;  // strip channel bits (top 2 bits of `bin`)
-    if (out.compact_map_h[zdc_ai] == kInvalidCompactH) {
-      out.compact_map_h[zdc_ai] = out.num_zdcai++;
-      out.dense_to_zdcai.push_back(zdc_ai);
+    uint32_t zdc_token = JpegTranscodeACBinSymbol(bin);
+    if (out.compact_map_h[zdc_token] == kInvalidCompactH) {
+      out.compact_map_h[zdc_token] = out.num_zdctok++;
+      out.dense_to_zdctok.push_back(zdc_token);
     }
 
     uint32_t start_lo = layout.bin_end_lo[bin];
@@ -216,12 +215,12 @@ ACStreamData EmitACStream(const ActiveBinLayout& layout,
     uint32_t end_hi = layout.bin_end_hi[bin + 1];
 
     // Stats: track per-ctx entry counts.
-    // `bin >> 11` extracts `(c<<9|zdc)`, which identifies the context.
     bool new_ctx =
-        (prev_bin == UINT32_MAX) || ((bin >> 11) != (prev_bin >> 11));
+        (prev_bin == UINT32_MAX) ||
+        (JpegTranscodeACBinContext(bin) != JpegTranscodeACBinContext(prev_bin));
     if (new_ctx) {
       if (prev_bin != UINT32_MAX) {
-        zdc_total[(prev_bin >> 11) & 0x1FFu] += ctx_len;
+        zdc_total[JpegTranscodeACBinZDC(prev_bin)] += ctx_len;
       }
       ctx_len = 0;
     }
@@ -230,7 +229,8 @@ ACStreamData EmitACStream(const ActiveBinLayout& layout,
     // `bin_change` / `ctx_change` mark reset-frame flags (bits 29/30).
     // `bin_change` is false only for the very first bin in the entire stream.
     bool bin_change = (prev_bin != UINT32_MAX);
-    bool ctx_change = bin_change && ((bin >> 11) != (prev_bin >> 11));
+    bool ctx_change = bin_change && (JpegTranscodeACBinContext(bin) !=
+                                     JpegTranscodeACBinContext(prev_bin));
 
     // Emit one sorted half (lo or hi) into stream.
     // `dc0_base` is added back to recover the full 11-bit `dc0`.
@@ -280,10 +280,11 @@ ACStreamData EmitACStream(const ActiveBinLayout& layout,
     prev_bin = bin;
   }
 
-  if (prev_bin != UINT32_MAX) {
-    zdc_total[(prev_bin >> 11) & 0x1FFu] += ctx_len;
-  }
+  if (prev_bin != UINT32_MAX)
+    zdc_total[JpegTranscodeACBinZDC(prev_bin)] += ctx_len;
   out.stream.shrink_to_fit();
+  JXL_DEBUG_V(2, "JPEG transcode compact_map_h uses %u / %i keys\n",
+              out.num_zdctok, static_cast<int>(out.compact_map_h.size()));
 
   // Clustering may merge contexts from different channels, so
   // `hist_N[merged][zdc]` can accumulate counts from all channels for the

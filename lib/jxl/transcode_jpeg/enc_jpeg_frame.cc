@@ -104,9 +104,8 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
         const FactorizationCandidate& candidate = candidates[idx];
         PartitioningCtx& ctx = ctx_pool[thread_id];
 
-        ThresholdSet opt_thr =
-            ctx.OptimizeThresholds(candidate.init, effort.main_m_target,
-                                   effort.main_iters);
+        ThresholdSet opt_thr = ctx.OptimizeThresholds(
+            candidate.init, effort.main_m_target, effort.main_iters);
 
         JXL_ASSIGN_OR_RETURN(
             Clustering cl_result,
@@ -130,13 +129,14 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
         total_cost += overhead;
 
         std::lock_guard<std::mutex> lock(mu);
-        JXL_DEBUG_V(
-            2,
-            "(%u,%u,%u) cost: unclustered=%.2f clustered=%.2f "
-            "refined=%.2f nz=%.2f overhead=%.2f total=%.2f\n",
-            candidate.a, candidate.b, candidate.c, bit_cost(ctx.TotalCost(opt_thr)),
-            bit_cost(cl_result.clustered_cost), bit_cost(entropy_cost),
-            bit_cost(nz_cost), bit_cost(overhead), bit_cost(total_cost));
+        JXL_DEBUG_V(2,
+                    "(%u,%u,%u) cost: unclustered=%.2f clustered=%.2f "
+                    "refined=%.2f nz=%.2f overhead=%.2f total=%.2f\n",
+                    candidate.a, candidate.b, candidate.c,
+                    bit_cost(ctx.TotalCost(opt_thr)),
+                    bit_cost(cl_result.clustered_cost), bit_cost(entropy_cost),
+                    bit_cost(nz_cost), bit_cost(overhead),
+                    bit_cost(total_cost));
         if (total_cost < best_cost) {
           best_cost = total_cost;
           best_thr = refined_thr;

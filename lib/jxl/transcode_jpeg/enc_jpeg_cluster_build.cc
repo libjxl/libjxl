@@ -40,22 +40,26 @@ struct ClusteringBuildCtx {
                   static_cast<uint32_t>(thresholds.TCr().size() + 1)),
         total_ctxs(kNumCh * num_cells) {
     axis_maps.Update(thresholds);
+    // This build context only ever needs full 3D cell ids, so fold the final
+    // `* n0` into the two cross-axis lookup tables once up front. That turns
+    // the hot `cell` computation below into three table lookups and two adds.
+    for (uint16_t& row : axis_maps.ax1_row) row = row * n0;
+    for (uint16_t& col : axis_maps.ax2_col) col = col * n0;
   }
 
   // Fills all four histogram arrays in `cl` with counts derived from the image
   // data, ready for `AgglomerativeClustering`. Each array is indexed by:
   //   `ctx_id = c * num_cells + cell`
   // where `c` ∈ [0, kNumCh) is the channel and
-  //   `cell = (ax1_row[dc1] + ax2_col[dc2]) * n0 + ax0_to_k[dc0]`
-  // is the DC-threshold cell that the block belongs to.
+  //   `cell = ax1_row[dc1] + ax2_col[dc2] + ax0_to_k[dc0]`
+  // is the DC-threshold cell that the block belongs to; `ax1_row`/`ax2_col`
+  // are already premultiplied by `n0` in the constructor.
   //
   // **Pass 1 — AC coefficients (via `SweepACStream`)**
   // Each reset stream frame carries a packed `bin_state` word:
-  //   bits 21-20 : channel `c`
-  //   bits 19-11 : `zdc`  (`ZeroDensityContext`, the AC coding context)
-  //   bits  10-0 : `ai`   (AC coefficient value index)
+  //   `bin_state = channel * kACSymbolCount + zdc * kACTokenCount + token`
   //
-  // - `hist_h[ctx_id]` accumulates counts of `(zdc, ai)` bins (compacted via
+  // - `hist_h[ctx_id]` accumulates counts of `(zdc, token)` bins (compacted via
   //   `CompactHBin`); this is the AC-symbol histograms used in entropy coding.
   // - `hist_N[ctx_id]` accumulates counts in `zdc` contexts; this is the
   //   "context frequency" histogram `N` used in the entropy cost model.
@@ -74,13 +78,14 @@ struct ClusteringBuildCtx {
         d.AC_stream, []() {}, []() {},
         [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
             uint32_t bin_state) {
-          const uint32_t c = (bin_state >> 20) & 0x3u;
-          const uint32_t cell =
-              (axis_maps.ax1_row[dc1_idx] + axis_maps.ax2_col[dc2_idx]) * n0 +
-              axis_maps.ax0_to_k[dc0_idx];
+          const uint32_t c = JpegTranscodeACBinChannel(bin_state);
+          const uint32_t cell = axis_maps.ax1_row[dc1_idx] +
+                                axis_maps.ax2_col[dc2_idx] +
+                                axis_maps.ax0_to_k[dc0_idx];
           const uint32_t ctx_id = c * num_cells + cell;
-          cl->hist_h[ctx_id].Add(d.CompactHBin(bin_state & 0xFFFFFu), run);
-          const uint32_t zdc = (bin_state >> 11) & 0x1FFu;
+          cl->hist_h[ctx_id].Add(
+              d.CompactHBin(JpegTranscodeACBinSymbol(bin_state)), run);
+          const uint32_t zdc = JpegTranscodeACBinZDC(bin_state);
           cl->hist_N[ctx_id].Add(zdc, run);
         });
 
@@ -103,9 +108,8 @@ struct ClusteringBuildCtx {
           const uint32_t b0 = MapTopLeftBlockIndex(d, c, by, bx, 0);
           const uint32_t b1 = MapTopLeftBlockIndex(d, c, by, bx, 1);
           const uint32_t b2 = MapTopLeftBlockIndex(d, c, by, bx, 2);
-          const uint32_t cell = (axis_maps.ax1_row[d.block_DC_idx[1][b1]] +
-                                 axis_maps.ax2_col[d.block_DC_idx[2][b2]]) *
-                                    n0 +
+          const uint32_t cell = axis_maps.ax1_row[d.block_DC_idx[1][b1]] +
+                                axis_maps.ax2_col[d.block_DC_idx[2][b2]] +
                                 axis_maps.ax0_to_k[d.block_DC_idx[0][b0]];
           const uint32_t ctx_id = c * num_cells + cell;
 
@@ -123,7 +127,7 @@ struct ClusteringBuildCtx {
   StatusOr<Clustering> Build(uint32_t num_clusters, bool overhead_aware_tail,
                              ThreadPool* pool) {
     Clustering cl;
-    cl.hist_h.assign(total_ctxs, CompactHistogram(d.num_zdcai));
+    cl.hist_h.assign(total_ctxs, CompactHistogram(d.num_zdctok));
     cl.hist_N.resize(total_ctxs);
     cl.hist_nz_h.resize(total_ctxs);
     cl.hist_nz_N.resize(total_ctxs);

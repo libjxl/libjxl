@@ -20,11 +20,8 @@
 //   `PruneDeadThresholds`
 //     Removes structurally inert thresholds and rebuilds `ctx_map`.
 
-#include "lib/jxl/pack_signed.h"
-#include "lib/jxl/transcode_jpeg/enc_jpeg_cluster.h"
-
-#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans_params.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_cluster.h"
 
 namespace jxl {
 
@@ -34,9 +31,6 @@ StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
   JXL_DASSERT(cluster_id < hist_h.size());
   JXL_DASSERT(cluster_id < hist_nz_h.size());
 
-  // Default `HybridUintConfig` for AC coefficients: (split_exponent=4,
-  // msb_in_token=2, lsb_in_token=0): single used up to `kTortoise`.
-  const HybridUintConfig hybrid_uint_config(4, 2, 0);
   if (!signalling_token_hist_) {
     signalling_token_hist_ = jxl::make_unique<SignallingTokenHist>();
   }
@@ -45,21 +39,17 @@ StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
   // Process `hist_h`: split by `zdc` and compute overhead per histogram.
   const auto& cluster = hist_h[cluster_id];
   if (!cluster.empty()) {
-    // Group symbols by `zdc` value into the pre-allocated scratch buffer,
-    // applying `HybridUintConfig` to map `PackSigned(coeff)` to a token index.
+    // Group compact `(zdc, token)` symbols by `zdc` into the pre-allocated
+    // scratch buffer.
     signalling_token_hist = {};
-    for (uint32_t id : cluster.used_ids) {
-      uint32_t symbol = d.dense_to_zdcai[id];
-      uint32_t zdc = symbol >> 11;
-      int32_t ac = static_cast<int32_t>(symbol & 0x7FFu) - kDCTOff;
-      uint32_t token;
-      uint32_t nbits;
-      uint32_t bits;
-      hybrid_uint_config.Encode(PackSigned(ac), &token, &nbits, &bits);
+    cluster.ForEachNonZero([&](uint32_t id, uint32_t freq) {
+      uint32_t symbol = d.dense_to_zdctok[id];
+      uint32_t zdc = JpegTranscodeACSymbolZDC(symbol);
+      uint32_t token = JpegTranscodeACSymbolToken(symbol);
       JXL_DASSERT(zdc < kZeroDensityContextCount);
       JXL_DASSERT(token < kSignallingMaxToken);
-      signalling_token_hist[zdc][token] += cluster.Get(id);
-    }
+      signalling_token_hist[zdc][token] += freq;
+    });
 
     // Compute overhead for each `zdc` histogram.
     for (uint32_t zdc = 0; zdc < kZeroDensityContextCount; ++zdc) {
@@ -112,7 +102,8 @@ StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
       size_t alphabet_size = max_nz + 1;
       Histogram h(alphabet_size);
       for (uint32_t nz_count = 0; nz_count <= max_nz; ++nz_count) {
-        h.counts[nz_count] = static_cast<ANSHistBin>(nz_cluster[base + nz_count]);
+        h.counts[nz_count] =
+            static_cast<ANSHistBin>(nz_cluster[base + nz_count]);
       }
       h.total_count = total;
 

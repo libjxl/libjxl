@@ -15,10 +15,27 @@
 #include <cmath>
 
 #include "lib/jxl/ac_context.h"
+#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_Knuth_partition.h"
+#include "lib/jxl/pack_signed.h"
 #include "lib/jxl/transcode_jpeg/enc_jpeg_stream.h"
 
 namespace jxl {
+
+namespace {
+
+uint32_t EncodeJpegTranscodeACToken(int16_t coeff) {
+  static const HybridUintConfig cfg(4, 2, 0);
+  uint32_t token;
+  uint32_t nbits;
+  uint32_t bits;
+  cfg.Encode(PackSigned(coeff), &token, &nbits, &bits);
+  JXL_DASSERT(token < kACTokenCount);
+  return token;
+}
+
+}  // namespace
+
 // Precomputed values of `n*log2(n)*kFScale` for `n` up to `max_n`.
 void JPEGOptData::InitFTab(size_t max_n) {
   const size_t old_size = ftab.size();
@@ -37,11 +54,11 @@ int64_t JPEGOptData::NZFTab(uint32_t n) const {
   return static_cast<int64_t>(std::llround(nd * std::log2(nd) * kFScale));
 }
 
-// Map sparse `zdc_ai` to dense index `[0, num_zdcai)`.
-uint32_t JPEGOptData::CompactHBin(uint32_t zdc_ai) const {
-  JXL_DASSERT(zdc_ai < compact_map_h.size());
-  if (zdc_ai >= compact_map_h.size()) return kInvalidCompactH;
-  uint32_t dense = compact_map_h[zdc_ai];
+// Map sparse `zdc_token` to dense index `[0, num_zdctok)`.
+uint32_t JPEGOptData::CompactHBin(uint32_t zdc_token) const {
+  JXL_DASSERT(zdc_token < compact_map_h.size());
+  if (zdc_token >= compact_map_h.size()) return kInvalidCompactH;
+  uint32_t dense = compact_map_h[zdc_token];
   JXL_DASSERT(dense != kInvalidCompactH);
   return dense;
 }
@@ -68,8 +85,7 @@ Thresholds InitThresh(const JPEGOptData& d, uint32_t axis,
 
   std::vector<uint32_t> prefix(M + 1, 0);
   for (uint32_t i = 0; i < M; ++i) {
-    prefix[i + 1] =
-        prefix[i] + d.DC_cnt[axis][dc_vals[i] + kDCTOff];
+    prefix[i + 1] = prefix[i] + d.DC_cnt[axis][dc_vals[i] + kDCTOff];
   }
 
   KnuthPartitionSolver solver(M);
@@ -266,8 +282,8 @@ Status JPEGOptData::BuildBlockOptData(const jpeg::JPEGData& jpeg_data,
                              (s == 0 && nonzeros_left > 4);
               uint32_t zdc = static_cast<uint32_t>(
                   ZeroDensityContext(nonzeros_left, s + 1, 1, 0, nz_prev));
-              uint32_t ai = static_cast<uint32_t>(coeff + kDCTOff);
-              block_bins[c].push_back((c << 20) | (zdc << 11) | ai);
+              uint32_t token = EncodeJpegTranscodeACToken(coeff);
+              block_bins[c].push_back(MakeJpegTranscodeACBin(c, zdc, token));
               nonzeros_left -= (coeff != 0);
             }
           }
@@ -300,9 +316,12 @@ Status JPEGOptData::FinalizeSpatialIndexing(ThreadPool* pool) {
     for (uint32_t c = 0; c < kNumCh; ++c) {
       for (uint32_t y = 0; y < block_grid_h[c]; ++y) {
         for (uint32_t x = 0; x < block_grid_w[c]; ++x) {
-          uint16_t dc0 = block_DC_idx[0][MapTopLeftBlockIndex(*this, c, y, x, 0)];
-          uint16_t dc1 = block_DC_idx[1][MapTopLeftBlockIndex(*this, c, y, x, 1)];
-          uint16_t dc2 = block_DC_idx[2][MapTopLeftBlockIndex(*this, c, y, x, 2)];
+          uint16_t dc0 =
+              block_DC_idx[0][MapTopLeftBlockIndex(*this, c, y, x, 0)];
+          uint16_t dc1 =
+              block_DC_idx[1][MapTopLeftBlockIndex(*this, c, y, x, 1)];
+          uint16_t dc2 =
+              block_DC_idx[2][MapTopLeftBlockIndex(*this, c, y, x, 2)];
 
           ++DC_cnt[0][DC_vals[0][dc0] + kDCTOff];
           ++DC_cnt[1][DC_vals[1][dc1] + kDCTOff];
@@ -413,8 +432,8 @@ Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
   JXL_ASSIGN_OR_RETURN(ACStreamData stream_data, BuildACStream(*this, pool));
   AC_stream = std::move(stream_data.stream);
   compact_map_h = std::move(stream_data.compact_map_h);
-  dense_to_zdcai = std::move(stream_data.dense_to_zdcai);
-  num_zdcai = stream_data.num_zdcai;
+  dense_to_zdctok = std::move(stream_data.dense_to_zdctok);
+  num_zdctok = stream_data.num_zdctok;
   InitFTab(stream_data.max_zdc_total + 1);
 
   return true;

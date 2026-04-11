@@ -8,7 +8,7 @@
 // The transcode pipeline converts per-block AC data into a packed event stream
 // that is then scanned repeatedly by threshold optimization and clustering.
 // This file defines both sides of that format: the builder that produces the
-// packed stream and its derived `(zdc, ai)` indexing tables, and the walker
+// packed stream and its derived `(zdc, token)` indexing tables, and the walker
 // that decodes the stream for repeated hot scans.
 //
 // `ACStreamData`
@@ -38,8 +38,8 @@ namespace jxl {
 struct ACStreamData {
   std::vector<ACEntry> stream;
   std::vector<uint32_t> compact_map_h;
-  std::vector<uint32_t> dense_to_zdcai;
-  uint32_t num_zdcai = 0;
+  std::vector<uint32_t> dense_to_zdctok;
+  uint32_t num_zdctok = 0;
   uint32_t max_zdc_total = 0;
 };
 

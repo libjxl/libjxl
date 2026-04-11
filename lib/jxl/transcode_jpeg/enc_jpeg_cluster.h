@@ -68,19 +68,16 @@ struct Clustering {
   DenseNZHistogramSet hist_nz_h;
   DenseNZPredHistogramSet hist_nz_N;
 
-  // Maximum token index produced by `HybridUintConfig(4, 2, 0)` for `ai ≤ 2047`:
-  //   `token = split_token + (n - split_exp) * 4 + top_2_bits`
-  //         `= 16 + (10 - 4) * 4 + 3 = 43   (n = FloorLog2(2047) = 10)`
-  // Array size = 43 + 1 = 44.
-  static constexpr uint32_t kSignallingMaxToken = 44;
+  static constexpr uint32_t kSignallingMaxToken = kACTokenCount;
   using SignallingTokenHist =
       std::array<std::array<uint32_t, kSignallingMaxToken>,
                  kZeroDensityContextCount>;
 
-  // Scratch buffer for `ComputeSignallingOverhead`: maps `(zdc, token) → count`.
-  // Heap-backed to keep `Clustering` small enough for the stack budget enforced
-  // by `libjxl`. Declared `mutable` because the method is logically const; the
-  // buffer holds no observable state between calls and is allocated lazily.
+  // Scratch buffer for `ComputeSignallingOverhead`: maps `(zdc, token) ->
+  // count`. Heap-backed to keep `Clustering` small enough for the stack budget
+  // enforced by `libjxl`. Declared `mutable` because the method is logically
+  // const; the buffer holds no observable state between calls and is allocated
+  // lazily.
   mutable std::unique_ptr<SignallingTokenHist> signalling_token_hist_;
 
   Clustering() : clustered_cost(0), ctx_num(0) {}
@@ -95,10 +92,10 @@ struct Clustering {
   //
   // **Entropy cost model**
   // For each cluster `i`:
-  //   `E[i] = sum_zdc ftab[N[zdc]] - sum_id ftab[h[zdc][ai]]`
+  //   `E[i] = sum_zdc ftab[N[zdc]] - sum_id ftab[h[zdc][token]]`
   //           + NZ analogues (`hist_nz_N / hist_nz_h`)
   // where `N[zdc]` is the count of all AC values in `zdc` context,
-  // `h[zdc][ai]` is the count of AC coefficient value `ai` in that context.
+  // `h[zdc][token]` is the count of AC-token value `token` in that context.
   // Since entropy is convex, merging two clusters always increases `E` by
   // a non-negative amount.
   //
@@ -106,7 +103,8 @@ struct Clustering {
   // `merge_delta(a, b)` computes:
   //   `Δ = E(merged) − E(a) − E(b)`
   //     `= Σ_zdc [ftab[N_a+N_b] − ftab[N_a] − ftab[N_b]]`  (N-term, ≥0)
-  //       `− Σ_zdc Σ_ai [ftab[h_a+h_b] − ftab[h_a] − ftab[h_b]]`  (h-term, ≥0)
+  //       `− Σ_zdc Σ_token [ftab[h_a+h_b] − ftab[h_a] − ftab[h_b]]`
+  //         (h-term, ≥0)
   //       `+ NZ analogues`
   //
   // **Main greedy loop (phase 1)**

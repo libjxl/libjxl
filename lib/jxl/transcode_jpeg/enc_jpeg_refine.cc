@@ -140,8 +140,8 @@ struct RefineCtx {
   // The scheme used here is different with respect to other parts of the
   // library, where usually iterations are over common plane and just skip
   // subsampled blocks. This is done to avoid memory bloat, since we are
-  // already using 2*32-bits per single AC coefficient in `block_bins` and
-  // `AC_stream`.
+  // already using 16 bits in `block_bins` plus 32 bits in `AC_stream`
+  // per AC coefficient.
   //
   // Match `PopulateHistograms`: cross-component block references are
   // chosen from the block's top-left coordinate in the common plane.
@@ -183,10 +183,11 @@ struct RefineCtx {
                                        &scratch.hist_nz_N, h_bin, N_bin);
     for (uint32_t pi = d.block_offsets[channel][block];
          pi < d.block_offsets[channel][block + 1]; ++pi) {
-      uint32_t bin = d.block_bins[channel][pi] & 0xFFFFF;
-      uint32_t zdc = bin >> 11;
-      delta += MoveHistogramEvent(old_cl, new_cl, &scratch.hist_h,
-                                  &scratch.hist_N, d.CompactHBin(bin), zdc);
+      uint32_t bin = d.block_bins[channel][pi];
+      uint32_t zdc = JpegTranscodeACBinZDC(bin);
+      delta +=
+          MoveHistogramEvent(old_cl, new_cl, &scratch.hist_h, &scratch.hist_N,
+                             d.CompactHBin(JpegTranscodeACBinSymbol(bin)), zdc);
     }
     return delta;
   }

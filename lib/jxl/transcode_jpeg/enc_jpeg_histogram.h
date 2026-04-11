@@ -10,8 +10,8 @@
 // counts. This file provides the small set of histogram types they share.
 //
 // `CompactHistogram`
-//   Sparse histogram for large alphabets where only a few bins are usually
-//   active, most notably the `(zdc, ai)` AC symbol histograms.
+//   Runtime-sized AC histogram with dense counts plus a touched-bitset for
+//   sparse iteration over nonzero bins and intersections.
 //
 // `DenseHistogram<Size>`
 //   Fixed-size histogram with the same small update API, used for bounded
@@ -23,113 +23,141 @@
 #ifndef LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_HISTOGRAM_H_
 #define LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_HISTOGRAM_H_
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
 #include "lib/jxl/ac_context.h"
+#include "lib/jxl/base/bits.h"
 #include "lib/jxl/transcode_jpeg/enc_jpeg_opt_data.h"
 
 namespace jxl {
-// Compact histogram for efficient incremental updates.
-// Used for AC coefficient histograms as they are large and sparse.
-// Unordered maps were tryed but they were slower and consumed more memory.
+// Runtime-sized histogram for AC symbols. It keeps direct dense counts for
+// cheap point updates plus a touched-bitset for sparse iteration over nonzero
+// bins and intersections.
 struct CompactHistogram {
+  using Word = uint64_t;
   std::vector<uint32_t> counts;
-  // IDs of non-zero bins, in insertion order. During the clustering phase
-  // (the primary consumer of this histogram) only `Add`/`AddHistogram` are
-  // called, so `used_ids` remains in roughly the order IDs were first
-  // encountered during the AC-stream sweep — effectively sorted by symbol ID.
-  // This makes iteration over `used_ids` with `counts[id]` lookups nearly
-  // sequential, keeping cache pressure low despite the indirect access.
-  // `Subtract` (used only in the post-clustering refinement pass) breaks this
-  // ordering via a swap-with-last deletion, but by then `MergeDelta` is no
-  // longer called.
-  std::vector<uint32_t> used_ids;
-  std::vector<uint32_t> pos_in_used;
+  std::vector<Word> touched_words;
+  uint32_t nonzero_count = 0;
 
   CompactHistogram() = default;
   explicit CompactHistogram(size_t size)
-      : counts(size, 0), pos_in_used(size, kInvalidCompactH) {}
+      : counts(size, 0), touched_words((size + 63) / 64, 0) {}
 
   CompactHistogram(const CompactHistogram& other)
       : counts(other.counts.size(), 0),
-        used_ids(other.used_ids),
-        pos_in_used(other.pos_in_used.size(), kInvalidCompactH) {
-    for (uint32_t i = 0; i < used_ids.size(); ++i) {
-      uint32_t id = used_ids[i];
-      counts[id] = other.counts[id];
-      pos_in_used[id] = i;
-    }
+        touched_words(other.touched_words),
+        nonzero_count(other.nonzero_count) {
+    other.ForEachNonZero(
+        [&](uint32_t id, uint32_t freq) { counts[id] = freq; });
   }
 
   CompactHistogram& operator=(const CompactHistogram& other) {
     if (this == &other) return *this;
     if (counts.size() != other.counts.size()) {
       counts.assign(other.counts.size(), 0);
-      pos_in_used.assign(other.pos_in_used.size(), kInvalidCompactH);
-      used_ids.clear();
+      touched_words.assign(other.touched_words.size(), 0);
     } else {
       Clear();
     }
-    used_ids = other.used_ids;
-    for (uint32_t i = 0; i < used_ids.size(); ++i) {
-      uint32_t id = used_ids[i];
-      counts[id] = other.counts[id];
-      pos_in_used[id] = i;
-    }
+    touched_words = other.touched_words;
+    nonzero_count = other.nonzero_count;
+    other.ForEachNonZero(
+        [&](uint32_t id, uint32_t freq) { counts[id] = freq; });
     return *this;
   }
-
   CompactHistogram(CompactHistogram&&) = default;
   CompactHistogram& operator=(CompactHistogram&&) = default;
 
-  bool empty() const { return used_ids.empty(); }
+  bool empty() const { return nonzero_count == 0; }
+  size_t nonzeros() const { return nonzero_count; }
 
-  uint32_t Get(uint32_t id) const { return counts[id]; }
+  uint32_t Get(uint32_t id) const {
+    JXL_DASSERT(id < counts.size());
+    return counts[id];
+  }
+
+  template <typename Func>
+  void ForEachNonZero(Func&& fn) const {
+    for (size_t word_idx = 0; word_idx < touched_words.size(); ++word_idx) {
+      Word word = touched_words[word_idx];
+      while (word != 0) {
+        uint32_t bit = static_cast<uint32_t>(Num0BitsBelowLS1Bit_Nonzero(word));
+        uint32_t id = static_cast<uint32_t>(word_idx * 64 + bit);
+        fn(id, counts[id]);
+        word &= word - 1;
+      }
+    }
+  }
+
+  template <typename Func>
+  void ForEachIntersection(const CompactHistogram& other, Func&& fn) const {
+    JXL_DASSERT(touched_words.size() == other.touched_words.size());
+    const size_t word_count =
+        std::min(touched_words.size(), other.touched_words.size());
+    for (size_t word_idx = 0; word_idx < word_count; ++word_idx) {
+      Word word = touched_words[word_idx] & other.touched_words[word_idx];
+      while (word != 0) {
+        uint32_t bit = static_cast<uint32_t>(Num0BitsBelowLS1Bit_Nonzero(word));
+        uint32_t id = static_cast<uint32_t>(word_idx * 64 + bit);
+        fn(id, counts[id], other.counts[id]);
+        word &= word - 1;
+      }
+    }
+  }
 
   void Add(uint32_t id, uint32_t value = 1) {
+    JXL_DASSERT(id < counts.size());
+    if (value == 0) return;
     uint32_t& freq = counts[id];
     if (freq == 0) {
-      pos_in_used[id] = static_cast<uint32_t>(used_ids.size());
-      used_ids.push_back(id);
+      touched_words[id / 64] |= Word{1} << (id & 63);
+      ++nonzero_count;
     }
     freq += value;
   }
 
   void Subtract(uint32_t id, uint32_t value = 1) {
+    JXL_DASSERT(id < counts.size());
     uint32_t& freq = counts[id];
     JXL_DASSERT(freq >= value);
     if (freq < value) return;
     freq -= value;
     if (freq != 0) return;
-    uint32_t pos = pos_in_used[id];
-    JXL_DASSERT(pos != kInvalidCompactH);
-    if (pos == kInvalidCompactH) return;
-    uint32_t last = used_ids.back();
-    used_ids[pos] = last;
-    pos_in_used[last] = pos;
-    used_ids.pop_back();
-    pos_in_used[id] = kInvalidCompactH;
+    touched_words[id / 64] &= ~(Word{1} << (id & 63));
+    JXL_DASSERT(nonzero_count > 0);
+    --nonzero_count;
   }
 
   void AddHistogram(const CompactHistogram& other) {
-    for (uint32_t id : other.used_ids) Add(id, other.counts[id]);
+    other.ForEachNonZero([&](uint32_t id, uint32_t freq) { Add(id, freq); });
+  }
+
+  void SubtractHistogram(const CompactHistogram& other) {
+    other.ForEachNonZero(
+        [&](uint32_t id, uint32_t freq) { Subtract(id, freq); });
   }
 
   void Clear() {
-    for (uint32_t id : used_ids) {
-      counts[id] = 0;
-      pos_in_used[id] = kInvalidCompactH;
+    for (size_t word_idx = 0; word_idx < touched_words.size(); ++word_idx) {
+      Word word = touched_words[word_idx];
+      while (word != 0) {
+        uint32_t bit = static_cast<uint32_t>(Num0BitsBelowLS1Bit_Nonzero(word));
+        counts[word_idx * 64 + bit] = 0;
+        word &= word - 1;
+      }
+      touched_words[word_idx] = 0;
     }
-    used_ids.clear();
+    nonzero_count = 0;
   }
 
   void swap(CompactHistogram& other) {
     counts.swap(other.counts);
-    used_ids.swap(other.used_ids);
-    pos_in_used.swap(other.pos_in_used);
+    touched_words.swap(other.touched_words);
+    std::swap(nonzero_count, other.nonzero_count);
   }
 };
 
@@ -174,6 +202,14 @@ struct DenseHistogram {
     for (size_t i = 0; i < Size; ++i) counts[i] += other.counts[i];
   }
 
+  void SubtractHistogram(const DenseHistogram& other) {
+    for (size_t i = 0; i < Size; ++i) {
+      JXL_DASSERT(counts[i] >= other.counts[i]);
+      if (counts[i] < other.counts[i]) continue;
+      counts[i] -= other.counts[i];
+    }
+  }
+
   void Clear() { counts.fill(0); }
 
   void fill(uint32_t value) { counts.fill(value); }
@@ -195,7 +231,8 @@ struct DenseHistogram {
 // Concrete histogram aliases used by clustering and refinement:
 // `N` histograms track zero-density-context totals, `NZPred` tracks predictor
 // bucket totals, `NZ` tracks `(predictor bucket, nonzero count)` bins, and
-// `CompactHistogramSet` stores the sparse AC-symbol histograms per cluster.
+// `CompactHistogramSet` stores the touched-bitset AC-symbol histograms per
+// cluster.
 using DenseNHistogram = DenseHistogram<kZeroDensityContextCount>;
 using DenseNHistogramSet = std::vector<DenseNHistogram>;
 using DenseNZPredHistogram = DenseHistogram<kJPEGNonZeroBuckets>;

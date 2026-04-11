@@ -38,10 +38,9 @@ StatusOr<std::vector<FactorizationCandidate>> RankAndTrimFactorizations(
   for (const auto& f : factorizations) {
     for (uint32_t axis = 0; axis < kNumCh; ++axis) {
       auto insert_result =
-              init_thresh_cache[axis].emplace(f[axis], Thresholds());
-      if (insert_result.second) { // Only compute if not already computed.
-        insert_result.first->second =
-            InitThresh(*opt_data, axis, f[axis]);
+          init_thresh_cache[axis].emplace(f[axis], Thresholds());
+      if (insert_result.second) {  // Only compute if not already computed.
+        insert_result.first->second = InitThresh(*opt_data, axis, f[axis]);
       }
     }
   }
@@ -78,9 +77,8 @@ StatusOr<std::vector<FactorizationCandidate>> RankAndTrimFactorizations(
         if (effort.rank_iters == 0) {
           candidate.rank_cost = ctx.TotalCost(candidate.init);
         } else {
-          candidate.rank_cost =
-              ctx.TotalCost(ctx.OptimizeThresholds(
-                  candidate.init, effort.rank_m_target, effort.rank_iters));
+          candidate.rank_cost = ctx.TotalCost(ctx.OptimizeThresholds(
+              candidate.init, effort.rank_m_target, effort.rank_iters));
         }
         return true;
       },

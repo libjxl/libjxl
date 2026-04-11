@@ -53,8 +53,9 @@ struct JPEGCtxEffortParams {
   uint32_t main_m_target;
   // Max coordinate-descent iterations for the main threshold optimization.
   uint32_t main_iters;
-  // Whether to continue merging past `num_clusters` in `AgglomerativeClustering`
-  // when each additional merge reduces `entropy + signalling_overhead`.
+  // Whether to continue merging past `num_clusters` in
+  // `AgglomerativeClustering` when each additional merge reduces `entropy +
+  // signalling_overhead`.
   bool overhead_aware_tail;
   // Number of local-search rounds in `RefineClustered` after clustering.
   // 0 = skip refinement.

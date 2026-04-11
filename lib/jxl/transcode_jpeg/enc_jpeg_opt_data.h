@@ -33,6 +33,7 @@
 #include <memory>
 #include <vector>
 
+#include "lib/jxl/ac_context.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
@@ -80,11 +81,25 @@ constexpr uint32_t kJPEGNonZeroRange = 64;
 // Number of bins in all histograms for `nz` per context.
 constexpr uint32_t kNZHistogramsSize = kJPEGNonZeroBuckets * kJPEGNonZeroRange;
 
-// Invalid position in `pos_in_used`.
+// Invalid entry in sparse-to-dense AC-symbol maps.
 constexpr uint32_t kInvalidCompactH = std::numeric_limits<uint32_t>::max();
+
+// Fixed `HybridUintConfig(4, 2, 0)` used by the JPEG-transcode optimizer.
+// The maximum token for AC values in `[-1024, 1023]` is 43, so the token
+// alphabet has 44 entries.
+constexpr uint32_t kACTokenCount = 44;
+// Number of AC symbols per histogram: one token alphabet per `zdc`.
+constexpr uint32_t kACSymbolCount = kZeroDensityContextCount * kACTokenCount;
+// Number of distinct `(channel, zdc, token)` bins stored in `block_bins`.
+constexpr uint32_t kACBinCount = kNumCh * kACSymbolCount;
 
 // AC coefficient entry in the packed event stream.
 using ACEntry = uint32_t;
+// Compact per-coefficient bin id stored in `block_bins`.
+using ACBin = uint16_t;
+static_assert(kACBinCount <=
+                  static_cast<size_t>(std::numeric_limits<ACBin>::max()) + 1,
+              "JPEG transcode AC bins must fit in ACBin");
 // Vector of DC thresholds for a channel.
 using Thresholds = std::vector<int16_t>;
 // Context map.
@@ -96,6 +111,45 @@ using Factorizations = std::vector<Factorization>;
 
 JXL_INLINE double bit_cost(int64_t cost) {
   return static_cast<double>(cost) / kFScale;
+}
+
+JXL_INLINE uint32_t MakeJpegTranscodeACSymbol(uint32_t zdc, uint32_t token) {
+  JXL_DASSERT(zdc < kZeroDensityContextCount);
+  JXL_DASSERT(token < kACTokenCount);
+  return zdc * kACTokenCount + token;
+}
+
+JXL_INLINE uint32_t JpegTranscodeACSymbolZDC(uint32_t symbol) {
+  JXL_DASSERT(symbol < kACSymbolCount);
+  return symbol / kACTokenCount;
+}
+
+JXL_INLINE uint32_t JpegTranscodeACSymbolToken(uint32_t symbol) {
+  JXL_DASSERT(symbol < kACSymbolCount);
+  return symbol % kACTokenCount;
+}
+
+JXL_INLINE ACBin MakeJpegTranscodeACBin(uint32_t channel, uint32_t zdc,
+                                        uint32_t token) {
+  JXL_DASSERT(channel < kNumCh);
+  return static_cast<ACBin>(channel * kACSymbolCount +
+                            MakeJpegTranscodeACSymbol(zdc, token));
+}
+
+JXL_INLINE uint32_t JpegTranscodeACBinChannel(uint32_t bin) {
+  return bin / kACSymbolCount;
+}
+
+JXL_INLINE uint32_t JpegTranscodeACBinSymbol(uint32_t bin) {
+  return bin % kACSymbolCount;
+}
+
+JXL_INLINE uint32_t JpegTranscodeACBinContext(uint32_t bin) {
+  return bin / kACTokenCount;
+}
+
+JXL_INLINE uint32_t JpegTranscodeACBinZDC(uint32_t bin) {
+  return JpegTranscodeACSymbolZDC(JpegTranscodeACBinSymbol(bin));
 }
 
 // Set of DC thresholds for each channel.
@@ -137,19 +191,19 @@ struct JPEGOptData {
   // Index of each DC value in `DC_vals`.
   uint16_t DC_idx_LUT[kNumCh][kDCTRange];
 
-  // Number of `(zdc,ai)` bins active in image - `CompactHistogram` size.
-  uint32_t num_zdcai;
-  // Map from `(zdc,ai)` to compact index.
+  // Number of `(zdc, token)` bins active in image - `CompactHistogram` size.
+  uint32_t num_zdctok;
+  // Map from `(zdc, token)` to compact index.
   std::vector<uint32_t> compact_map_h;
-  // Map from compact index to `(zdc,ai)`.
-  std::vector<uint32_t> dense_to_zdcai;
+  // Map from compact index to `(zdc, token)`.
+  std::vector<uint32_t> dense_to_zdctok;
 
   // Run-length-encoded AC data, sorted by `(bin, dc0, dc1, dc2)`.
   // 32-bit packed format; see `BuildACStream` for layout details.
   std::vector<ACEntry> AC_stream;
 
   // AC events of consequitive blocks per component.
-  std::vector<uint32_t> block_bins[kNumCh];
+  std::vector<ACBin> block_bins[kNumCh];
   // Indices into `block_bins`, separating consequent blocks data,
   // size `block_grid_h[c] * block_grid_w[c]`.
   std::vector<uint32_t> block_offsets[kNumCh];
@@ -171,7 +225,7 @@ struct JPEGOptData {
   Status BuildFromJPEG(const jpeg::JPEGData& jpeg_data, ThreadPool* pool);
 
   int64_t NZFTab(uint32_t n) const;
-  uint32_t CompactHBin(uint32_t zdc_ai) const;
+  uint32_t CompactHBin(uint32_t zdc_token) const;
 
  private:
   void InitFTab(size_t max_n);
