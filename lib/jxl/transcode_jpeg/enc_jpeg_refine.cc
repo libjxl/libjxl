@@ -140,7 +140,7 @@ struct RefineCtx {
   // The scheme used here is different with respect to other parts of the
   // library, where usually iterations are over common plane and just skip
   // subsampled blocks. This is done to avoid memory bloat, since we are
-  // already using 16 bits in `block_bins` plus 32 bits in `AC_stream`
+  // already using 32 bits in `block_bins` plus 32 bits in `AC_stream`
   // per AC coefficient.
   //
   // Match `PopulateHistograms`: cross-component block references are

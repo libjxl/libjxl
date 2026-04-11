@@ -69,8 +69,8 @@ struct JPEGCtxEffortParams {
       //case SpeedTier::kSquirrel:
       case SpeedTier::kKitten:
         return {/*keep_top_k=*/8,
-                /*rank_m_target=*/32,
-                /*rank_iters=*/1,
+                /*rank_m_target=*/0,
+                /*rank_iters=*/0,
                 /*main_m_target=*/64,
                 /*main_iters=*/2,
                 /*overhead_aware_tail=*/true,

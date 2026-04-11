@@ -232,18 +232,17 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
               uint32_t run, uint32_t) {
             uint32_t dc_arr[3] = {dc0_idx, dc1_idx, dc2_idx};
             uint32_t dc_k_bkt = axis_maps.ax0_to_k[dc_arr[axis]];
-            uint32_t ci = static_cast<uint32_t>(axis_maps.ax1_row[dc_arr[ax1]] +
-                                                axis_maps.ax2_col[dc_arr[ax2]]);
+            uint32_t ci = axis_maps.ax1_row[dc_arr[ax1]] + axis_maps.ax2_col[dc_arr[ax2]];
             uint32_t idx = ci * M_eff + dc_k_bkt;
             if (h_cnt[idx] == 0) {
               size_t gi = idx >> 6;
-              group_touched_h[gi >> 6] |= (1ULL << (gi & 63));
-              touched_h[gi] |= (1ULL << (idx & 63));
-            }
-            if (N_cnt[idx] == 0) {
-              size_t gi = idx >> 6;
-              group_touched_N[gi >> 6] |= (1ULL << (gi & 63));
-              touched_N[gi] |= (1ULL << (idx & 63));
+              size_t ggi = gi >> 6;
+              uint64_t bit = 1ULL << (idx & 63);
+              uint64_t gbit = 1ULL << (gi & 63);
+              group_touched_h[ggi] |= gbit;
+              touched_h[gi] |= bit;
+              group_touched_N[ggi] |= gbit;
+              touched_N[gi] |= bit;
             }
             h_cnt[idx] += run;
             N_cnt[idx] += run;

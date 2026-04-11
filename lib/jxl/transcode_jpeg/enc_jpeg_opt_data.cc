@@ -25,7 +25,7 @@ namespace jxl {
 namespace {
 
 uint32_t EncodeJpegTranscodeACToken(int16_t coeff) {
-  static const HybridUintConfig cfg(4, 2, 0);
+  static const HybridUintConfig cfg(4, 2, 1);
   uint32_t token;
   uint32_t nbits;
   uint32_t bits;

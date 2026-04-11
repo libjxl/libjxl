@@ -84,10 +84,10 @@ constexpr uint32_t kNZHistogramsSize = kJPEGNonZeroBuckets * kJPEGNonZeroRange;
 // Invalid entry in sparse-to-dense AC-symbol maps.
 constexpr uint32_t kInvalidCompactH = std::numeric_limits<uint32_t>::max();
 
-// Fixed `HybridUintConfig(4, 2, 0)` used by the JPEG-transcode optimizer.
-// The maximum token for AC values in `[-1024, 1023]` is 43, so the token
-// alphabet has 44 entries.
-constexpr uint32_t kACTokenCount = 44;
+// Fixed `HybridUintConfig(4, 2, 1)` used by the JPEG-transcode optimizer.
+// The maximum token for AC values in `[-1024, 1023]` is 71, so the token
+// alphabet has 72 entries.
+constexpr uint32_t kACTokenCount = 72;
 // Number of AC symbols per histogram: one token alphabet per `zdc`.
 constexpr uint32_t kACSymbolCount = kZeroDensityContextCount * kACTokenCount;
 // Number of distinct `(channel, zdc, token)` bins stored in `block_bins`.
@@ -96,7 +96,7 @@ constexpr uint32_t kACBinCount = kNumCh * kACSymbolCount;
 // AC coefficient entry in the packed event stream.
 using ACEntry = uint32_t;
 // Compact per-coefficient bin id stored in `block_bins`.
-using ACBin = uint16_t;
+using ACBin = uint32_t;
 static_assert(kACBinCount <=
                   static_cast<size_t>(std::numeric_limits<ACBin>::max()) + 1,
               "JPEG transcode AC bins must fit in ACBin");
