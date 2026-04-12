@@ -46,8 +46,8 @@ struct JPEGCtxEffortParams {
   // Number of candidates kept after the ranking pass; 0 = keep all.
   uint32_t keep_top_k;
   // `M_target` (bucket resolution) passed to `OptimizeThresholds` during
-  // ranking. When `rank_iters == 0`, ranking uses `TotalCost` directly and
-  // this value is ignored.
+  // ranking. When `rank_iters == 0`, ranking falls back to the initial
+  // `TotalCost` and this value is ignored.
   uint32_t rank_m_target;
   // Max coordinate-descent iterations for the cheap ranking pass.
   // 0 = skip optimization, rank by initial `TotalCost` only.

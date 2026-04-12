@@ -139,8 +139,10 @@ struct PartitioningCtx {
   // write only `(term - prev_term)`, so the close of one segment and the
   // open of the next collapse into a single addition. A prefix-sum over
   // `s=1..M-1` then recovers the full cost curve in `O(M)`.
+  // When `best_cost != nullptr`, stores the exact cost of the returned split.
   Thresholds OptimizeAxisSingleSplit(uint32_t axis, uint32_t ncells,
-                                     uint32_t M_eff);
+                                     uint32_t M_eff,
+                                     int64_t* best_cost = nullptr);
   // `axis==0`: sparse-hist path (bins already sorted by DC0 rank, no sort
   //            needed; uses `h_history`/`N_history`).
   void AccumulateSingleSplitAxis0(std::vector<int64_t>& score_diff,
@@ -203,10 +205,13 @@ struct PartitioningCtx {
   // `bucket_thresholds` provides the per-axis bucketing prepared by
   // `InitThresh`. `PrepareBuckets` maps the swept axis onto `M_eff =
   // bucket_thresholds.size() + 1` closest-to-equal-population buckets,
-  // with an internal identity fast path when `M_eff == M`.
+  // with an internal identity fast path when `M_eff == M`. When
+  // `best_cost != nullptr`, stores the exact cost of the threshold set after
+  // the sweep.
   bool OptimizeAxisSingleSweep(uint32_t axis, ThresholdSet* T,
                                Thresholds* scratch,
-                               const Thresholds& bucket_thresholds);
+                               const Thresholds& bucket_thresholds,
+                               int64_t* best_cost = nullptr);
 
   template <uint32_t Axis>
   void SweepGeneralAxis(uint32_t M_eff, uint32_t ncells);
@@ -220,10 +225,12 @@ struct PartitioningCtx {
   //
   // The process continues until convergence (no changes in thresholds) or
   // until `max_iters` is reached. In practice no more than 5 iterations were
-  // seen.
+  // seen. When `best_cost != nullptr`, stores the exact cost of the returned
+  // threshold set, falling back to `TotalCost` only if no sweep runs.
   ThresholdSet OptimizeThresholds(ThresholdSet T,
                                   uint32_t M_target = UINT32_MAX,
-                                  uint32_t max_iters = 20);
+                                  uint32_t max_iters = 20,
+                                  int64_t* best_cost = nullptr);
 
   // Compute total entropy cost for fixed thresholds over a stream.
   // Returns cost in fixed-point units, divide by `kFScale` for bits.

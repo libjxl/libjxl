@@ -90,8 +90,16 @@ struct KnuthPartitionSolver {
   // `O(K × M)` using both monotonicity bounds via right-to-left `n`
   // traversal. Works on diff-form `costs` and lazily materialises
   // `cost[l..n]` entries on demand while DP requests them.
-  std::vector<uint32_t> Solve(uint32_t K, uint32_t M_eff) {
-    if (M_eff <= 1 || K <= 1) return {};
+  std::vector<uint32_t> Solve(uint32_t K, uint32_t M_eff,
+                              int64_t* best_cost = nullptr) {
+    if (M_eff == 0) {
+      if (best_cost != nullptr) *best_cost = 0;
+      return {};
+    }
+    if (M_eff <= 1 || K <= 1) {
+      if (best_cost != nullptr) *best_cost = GetDiffCost(M_eff, 0, M_eff - 1);
+      return {};
+    }
 
     split_table.assign(K * M_eff, 0);
     if (row_done.size() < M_eff) row_done.resize(M_eff);
@@ -138,6 +146,7 @@ struct KnuthPartitionSolver {
       v = s - 1;
     }
     std::reverse(thresholds.begin(), thresholds.end());
+    if (best_cost != nullptr) *best_cost = DP_prev[M_eff - 1];
     return thresholds;
   }
 };

@@ -330,12 +330,13 @@ void PartitioningCtx::AccumulateSingleSplitOther(
 // diff-form score curve over split positions and returns the best cut.
 Thresholds PartitioningCtx::OptimizeAxisSingleSplit(uint32_t axis,
                                                     uint32_t ncells,
-                                                    uint32_t M_eff) {
+                                                    uint32_t M_eff,
+                                                    int64_t* best_cost) {
   const JPEGOptData& d = data();
   // Reuse `costs` as a 1D diff buffer (indices `1..M_eff-1`).
   // `score_diff[s]` holds the delta `E(s) - E(s-1)` in bucket space.
-  // After the stream pass, prefix-summing gives `E(s) - E(0)` up to a
-  // constant — argmin is unchanged by the constant.
+  // After the stream pass, prefix-summing recovers the exact score `E(s)` for
+  // each valid split `s`.
   auto& score_diff = Knuth_solver.costs;
   Knuth_solver.ResetCosts(M_eff + 1);
 
@@ -352,8 +353,8 @@ Thresholds PartitioningCtx::OptimizeAxisSingleSplit(uint32_t axis,
                                ctx_mask);
   }
 
-  // Prefix-sum `score_diff[1..M_eff-1]` recovers `E(s) - E(0)` up to a
-  // global constant; we only need the argmin, so the constant cancels.
+  // Prefix-sum `score_diff[1..M_eff-1]` recovers the exact score `E(s)` for
+  // each valid split `s`.
   int64_t cur = 0;
   int64_t best = std::numeric_limits<int64_t>::max();
   uint32_t best_s = 1;
@@ -364,6 +365,7 @@ Thresholds PartitioningCtx::OptimizeAxisSingleSplit(uint32_t axis,
       best_s = s;
     }
   }
+  if (best_cost != nullptr) *best_cost = best;
   return {d.DC_vals[axis][axis_maps.k_to_dc0[best_s]]};
 }
 
@@ -371,7 +373,7 @@ Thresholds PartitioningCtx::OptimizeAxisSingleSplit(uint32_t axis,
 // Uses the K=2 fast path for a single split and the Knuth-DP path otherwise.
 bool PartitioningCtx::OptimizeAxisSingleSweep(
     uint32_t axis, ThresholdSet* T, Thresholds* scratch,
-    const Thresholds& bucket_thresholds) {
+    const Thresholds& bucket_thresholds, int64_t* best_cost) {
   JXL_DASSERT(T != nullptr);
   JXL_DASSERT(scratch != nullptr);
   const JPEGOptData& d = data();
@@ -391,7 +393,7 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
 
     if (num_intervals == 2) {
       // Fast path with `O(M_eff)` memory complexity
-      *scratch = OptimizeAxisSingleSplit(axis, ncells, M_eff);
+      *scratch = OptimizeAxisSingleSplit(axis, ncells, M_eff, best_cost);
       // Extension of fast path above for `K=3` has proven disastrous
       // for performance (it has the same `O(M_eff^2)` complexity as the general
       // path) and is not implemented.
@@ -413,7 +415,8 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
         SweepGeneralAxis<2>(M_eff, ncells);
       }
 
-      std::vector<uint32_t> solution = Knuth_solver.Solve(num_intervals, M_eff);
+      std::vector<uint32_t> solution =
+          Knuth_solver.Solve(num_intervals, M_eff, best_cost);
       scratch->clear();
       for (auto t : solution) {
         scratch->push_back(d.DC_vals[axis][axis_maps.k_to_dc0[t]]);
@@ -423,6 +426,7 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
 
   bool changed = (*scratch != T0);
   if (changed) std::swap(T0, *scratch);
+  if (best_cost != nullptr && M <= num_intervals) *best_cost = TotalCost(*T);
   return changed;
 }
 
@@ -431,7 +435,8 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
 // cap is hit.
 ThresholdSet PartitioningCtx::OptimizeThresholds(ThresholdSet T,
                                                  uint32_t M_target,
-                                                 uint32_t max_iters) {
+                                                 uint32_t max_iters,
+                                                 int64_t* best_cost) {
   const JPEGOptData& d = data();
   uint32_t a = static_cast<uint32_t>(T.TY().size() + 1);
   uint32_t b = static_cast<uint32_t>(T.TCb().size() + 1);
@@ -447,27 +452,32 @@ ThresholdSet PartitioningCtx::OptimizeThresholds(ThresholdSet T,
   bool TY_changed = (a != 1);
   bool TCb_changed = (b != 1);
   bool TCr_changed = (c != 1);
+  bool have_cost = false;
   for (uint32_t iter = 0; iter < max_iters; ++iter) {
     if ((a != 1) && (iter == 0 || TCb_changed || TCr_changed)) {
-      TY_changed =
-          OptimizeAxisSingleSweep(0, &T, &scratch, bucket_thresholds[0]);
+      TY_changed = OptimizeAxisSingleSweep(0, &T, &scratch,
+                                           bucket_thresholds[0], best_cost);
+      have_cost = true;
     } else {
       TY_changed = false;
     }
     if ((b != 1) && (iter == 0 || TY_changed || TCr_changed)) {
-      TCb_changed =
-          OptimizeAxisSingleSweep(1, &T, &scratch, bucket_thresholds[1]);
+      TCb_changed = OptimizeAxisSingleSweep(1, &T, &scratch,
+                                            bucket_thresholds[1], best_cost);
+      have_cost = true;
     } else {
       TCb_changed = false;
     }
     if ((c != 1) && (iter == 0 || TY_changed || TCb_changed)) {
-      TCr_changed =
-          OptimizeAxisSingleSweep(2, &T, &scratch, bucket_thresholds[2]);
+      TCr_changed = OptimizeAxisSingleSweep(2, &T, &scratch,
+                                            bucket_thresholds[2], best_cost);
+      have_cost = true;
     } else {
       TCr_changed = false;
     }
     if (!TY_changed && !TCb_changed && !TCr_changed) break;
   }
+  if (best_cost != nullptr && !have_cost) *best_cost = TotalCost(T);
   return T;
 }
 
