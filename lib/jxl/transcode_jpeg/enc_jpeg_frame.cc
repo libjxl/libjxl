@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include "lib/jxl/enc_jpeg_frame.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -17,7 +19,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/enc_jpeg_frame.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/transcode_jpeg/enc_jpeg_cluster.h"
 #include "lib/jxl/transcode_jpeg/enc_jpeg_opt_data.h"
@@ -70,10 +71,11 @@ namespace jxl {
 Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
                               SpeedTier speed_tier, BlockCtxMap& ctx_map,
                               ThreadPool* pool) {
-  auto opt_data = std::make_shared<JPEGOptData>();
-  JXL_RETURN_IF_ERROR(opt_data->BuildFromJPEG(jpeg_data, pool));
   const JPEGCtxEffortParams effort =
       JPEGCtxEffortParams::FromSpeedTier(speed_tier);
+  auto opt_data = std::make_shared<JPEGOptData>();
+  JXL_RETURN_IF_ERROR(
+      opt_data->BuildFromJPEG(jpeg_data, effort.ac_hist_model, pool));
 
   JXL_ASSIGN_OR_RETURN(std::vector<FactorizationCandidate> candidates,
                        RankAndTrimFactorizations(opt_data, effort, pool));

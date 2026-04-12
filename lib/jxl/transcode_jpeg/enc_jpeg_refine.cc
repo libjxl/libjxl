@@ -184,10 +184,10 @@ struct RefineCtx {
     for (uint32_t pi = d.block_offsets[channel][block];
          pi < d.block_offsets[channel][block + 1]; ++pi) {
       uint32_t bin = d.block_bins[channel][pi];
-      uint32_t zdc = JpegTranscodeACBinZDC(bin);
+      const CompactACEvent ac_event = d.FromBin(bin);
       delta +=
           MoveHistogramEvent(old_cl, new_cl, &scratch.hist_h, &scratch.hist_N,
-                             d.CompactHBin(JpegTranscodeACBinSymbol(bin)), zdc);
+                             ac_event.hist_bin, ac_event.zdc);
     }
     return delta;
   }

@@ -22,20 +22,6 @@
 
 namespace jxl {
 
-namespace {
-
-uint32_t EncodeJpegTranscodeACToken(int16_t coeff) {
-  static const HybridUintConfig cfg(4, 2, 1);
-  uint32_t token;
-  uint32_t nbits;
-  uint32_t bits;
-  cfg.Encode(PackSigned(coeff), &token, &nbits, &bits);
-  JXL_DASSERT(token < kACTokenCount);
-  return token;
-}
-
-}  // namespace
-
 // Precomputed values of `n*log2(n)*kFScale` for `n` up to `max_n`.
 void JPEGOptData::InitFTab(size_t max_n) {
   const size_t old_size = ftab.size();
@@ -54,13 +40,15 @@ int64_t JPEGOptData::NZFTab(uint32_t n) const {
   return static_cast<int64_t>(std::llround(nd * std::log2(nd) * kFScale));
 }
 
-// Map sparse `zdc_token` to dense index `[0, num_zdctok)`.
-uint32_t JPEGOptData::CompactHBin(uint32_t zdc_token) const {
-  JXL_DASSERT(zdc_token < compact_map_h.size());
-  if (zdc_token >= compact_map_h.size()) return kInvalidCompactH;
-  uint32_t dense = compact_map_h[zdc_token];
-  JXL_DASSERT(dense != kInvalidCompactH);
-  return dense;
+uint32_t JPEGOptData::Token420FromAI(uint32_t ai) {
+  JXL_DASSERT(ai < kDCTRange);
+  int32_t coeff = static_cast<int32_t>(ai) - kDCTOff;
+  uint32_t token;
+  uint32_t nbits;
+  uint32_t bits;
+  HybridUintConfig(4, 2, 0).Encode(PackSigned(coeff), &token, &nbits, &bits);
+  JXL_DASSERT(token < kACTokenCount);
+  return token;
 }
 
 // Threshold initialization for one axis via the same contiguous-partition DP
@@ -282,8 +270,8 @@ Status JPEGOptData::BuildBlockOptData(const jpeg::JPEGData& jpeg_data,
                              (s == 0 && nonzeros_left > 4);
               uint32_t zdc = static_cast<uint32_t>(
                   ZeroDensityContext(nonzeros_left, s + 1, 1, 0, nz_prev));
-              uint32_t token = EncodeJpegTranscodeACToken(coeff);
-              block_bins[c].push_back(MakeJpegTranscodeACBin(c, zdc, token));
+              uint32_t ai = static_cast<uint32_t>(coeff + kDCTOff);
+              block_bins[c].push_back(MakeACBin(c, zdc, ai));
               nonzeros_left -= (coeff != 0);
             }
           }
@@ -375,7 +363,9 @@ Status JPEGOptData::FinalizeSpatialIndexing(ThreadPool* pool) {
 
 // Orchestrates the JPEG data extraction pipeline.
 Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
+                                  JPEGTranscodeACModel hist_model,
                                   ThreadPool* pool) {
+  ac_hist_model = hist_model;
   channels = static_cast<uint32_t>(jpeg_data.components.size());
   w_max = 0;
   h_max = 0;
@@ -431,9 +421,7 @@ Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
 
   JXL_ASSIGN_OR_RETURN(ACStreamData stream_data, BuildACStream(*this, pool));
   AC_stream = std::move(stream_data.stream);
-  compact_map_h = std::move(stream_data.compact_map_h);
-  dense_to_zdctok = std::move(stream_data.dense_to_zdctok);
-  num_zdctok = stream_data.num_zdctok;
+  ac_histogram = std::move(stream_data.ac_histogram);
   InitFTab(stream_data.max_zdc_total + 1);
 
   return true;

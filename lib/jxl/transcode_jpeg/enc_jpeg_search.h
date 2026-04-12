@@ -40,6 +40,9 @@ namespace jxl {
 // Effort-level knobs derived from the encoder speed tier (number of candidates,
 // refinement iterations, etc.).
 struct JPEGCtxEffortParams {
+  // AC histogram model used by clustering / refinement over the canonical
+  // raw-`ai` AC stream.
+  JPEGTranscodeACModel ac_hist_model;
   // Number of candidates kept after the ranking pass; 0 = keep all.
   uint32_t keep_top_k;
   // `M_target` (bucket resolution) passed to `OptimizeThresholds` during
@@ -66,9 +69,10 @@ struct JPEGCtxEffortParams {
 
   static JPEGCtxEffortParams FromSpeedTier(SpeedTier speed_tier) {
     switch (speed_tier) {
-      //case SpeedTier::kSquirrel:
+      // case SpeedTier::kSquirrel:
       case SpeedTier::kKitten:
-        return {/*keep_top_k=*/8,
+        return {/*ac_hist_model=*/JPEGTranscodeACModel::kToken420,
+                /*keep_top_k=*/8,
                 /*rank_m_target=*/0,
                 /*rank_iters=*/0,
                 /*main_m_target=*/64,
@@ -77,7 +81,8 @@ struct JPEGCtxEffortParams {
                 /*refine_iters=*/0,
                 /*refine_radius=*/0};
       case SpeedTier::kTortoise:
-        return {/*keep_top_k=*/16,
+        return {/*ac_hist_model=*/JPEGTranscodeACModel::kToken420,
+                /*keep_top_k=*/16,
                 /*rank_m_target=*/64,
                 /*rank_iters=*/1,
                 /*main_m_target=*/128,
@@ -86,9 +91,10 @@ struct JPEGCtxEffortParams {
                 /*refine_iters=*/1,
                 /*refine_radius=*/4};
       case SpeedTier::kGlacier:
-        return {/*keep_top_k=*/24,
-                /*rank_m_target=*/128,
-                /*rank_iters=*/2,
+        return {/*ac_hist_model=*/JPEGTranscodeACModel::kRawAI,
+                /*keep_top_k=24*/ 0,
+                /*rank_m_target=128*/ 0,
+                /*rank_iters=2*/ 0,
                 /*main_m_target=*/256,
                 /*main_iters=*/8,
                 /*overhead_aware_tail=*/true,
@@ -96,7 +102,8 @@ struct JPEGCtxEffortParams {
                 /*refine_radius=*/8};
       case SpeedTier::kTectonicPlate:
       default:
-        return {/*keep_top_k=*/0,
+        return {/*ac_hist_model=*/JPEGTranscodeACModel::kRawAI,
+                /*keep_top_k=*/0,
                 /*rank_m_target=*/0,
                 /*rank_iters=*/0,
                 /*main_m_target=*/kMTarget,

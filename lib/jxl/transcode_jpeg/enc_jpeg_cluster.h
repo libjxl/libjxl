@@ -92,10 +92,11 @@ struct Clustering {
   //
   // **Entropy cost model**
   // For each cluster `i`:
-  //   `E[i] = sum_zdc ftab[N[zdc]] - sum_id ftab[h[zdc][token]]`
+  //   `E[i] = sum_zdc ftab[N[zdc]] - sum_id ftab[h[zdc][value]]`
   //           + NZ analogues (`hist_nz_N / hist_nz_h`)
   // where `N[zdc]` is the count of all AC values in `zdc` context,
-  // `h[zdc][token]` is the count of AC-token value `token` in that context.
+  // `h[zdc][value]` is the count of the modeled AC value in that context:
+  // fixed `(4,2,0)` tokens at efforts 8/9 and raw `ai` at effort 10+.
   // Since entropy is convex, merging two clusters always increases `E` by
   // a non-negative amount.
   //
@@ -103,7 +104,7 @@ struct Clustering {
   // `merge_delta(a, b)` computes:
   //   `Δ = E(merged) − E(a) − E(b)`
   //     `= Σ_zdc [ftab[N_a+N_b] − ftab[N_a] − ftab[N_b]]`  (N-term, ≥0)
-  //       `− Σ_zdc Σ_token [ftab[h_a+h_b] − ftab[h_a] − ftab[h_b]]`
+  //       `− Σ_zdc Σ_value [ftab[h_a+h_b] − ftab[h_a] − ftab[h_b]]`
   //         (h-term, ≥0)
   //       `+ NZ analogues`
   //

@@ -25,6 +25,56 @@
 
 namespace jxl {
 
+namespace {
+
+StatusOr<int64_t> ClusterSignallingOverhead(
+    const JPEGOptData& d, const CompactHistogram& cluster, int64_t cutoff,
+    Clustering::SignallingTokenHist* signalling_token_hist_ptr) {
+  int64_t overhead = 0;
+  auto& signalling_token_hist = *signalling_token_hist_ptr;
+  signalling_token_hist = {};
+  const auto& dense_to_zdcvalue = d.ACHistogram().dense_to_zdcvalue;
+  cluster.ForEachNonZero([&](uint32_t id, uint32_t freq) {
+    const SignallingHistSymbol hist_symbol =
+        d.SignallingHistSymbolFromSymbol(dense_to_zdcvalue[id]);
+    JXL_DASSERT(hist_symbol.zdc < kZeroDensityContextCount);
+    JXL_DASSERT(hist_symbol.token < Clustering::kSignallingMaxToken);
+    signalling_token_hist[hist_symbol.zdc][hist_symbol.token] += freq;
+  });
+
+  for (uint32_t zdc = 0; zdc < kZeroDensityContextCount; ++zdc) {
+    const auto& th = signalling_token_hist[zdc];
+    uint32_t max_token = 0;
+    size_t total = 0;
+    for (uint32_t t = 0; t < Clustering::kSignallingMaxToken; ++t) {
+      if (th[t] != 0) {
+        max_token = t;
+        total += th[t];
+      }
+    }
+    if (total == 0) continue;
+
+    size_t alphabet_size = max_token + 1;
+    Histogram h(alphabet_size);
+    for (uint32_t t = 0; t < alphabet_size; ++t) {
+      h.counts[t] = static_cast<ANSHistBin>(th[t]);
+    }
+    h.total_count = total;
+
+    JXL_ASSIGN_OR_RETURN(float ans_cost, h.ANSPopulationCost());
+    float shannon = h.ShannonEntropy();
+    float header_cost = ans_cost - shannon;
+    if (header_cost > 0) {
+      overhead += static_cast<int64_t>(header_cost * kFScale);
+      if (overhead >= cutoff) return overhead;
+    }
+  }
+
+  return overhead;
+}
+
+}  // namespace
+
 StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
     const JPEGOptData& d, uint32_t cluster_id, int64_t cutoff) const {
   int64_t overhead = 0;
@@ -39,49 +89,10 @@ StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
   // Process `hist_h`: split by `zdc` and compute overhead per histogram.
   const auto& cluster = hist_h[cluster_id];
   if (!cluster.empty()) {
-    // Group compact `(zdc, token)` symbols by `zdc` into the pre-allocated
-    // scratch buffer.
-    signalling_token_hist = {};
-    cluster.ForEachNonZero([&](uint32_t id, uint32_t freq) {
-      uint32_t symbol = d.dense_to_zdctok[id];
-      uint32_t zdc = JpegTranscodeACSymbolZDC(symbol);
-      uint32_t token = JpegTranscodeACSymbolToken(symbol);
-      JXL_DASSERT(zdc < kZeroDensityContextCount);
-      JXL_DASSERT(token < kSignallingMaxToken);
-      signalling_token_hist[zdc][token] += freq;
-    });
-
-    // Compute overhead for each `zdc` histogram.
-    for (uint32_t zdc = 0; zdc < kZeroDensityContextCount; ++zdc) {
-      const auto& th = signalling_token_hist[zdc];
-      uint32_t max_token = 0;
-      size_t total = 0;
-      for (uint32_t t = 0; t < kSignallingMaxToken; ++t) {
-        if (th[t] != 0) {
-          max_token = t;
-          total += th[t];
-        }
-      }
-      if (total == 0) continue;
-
-      size_t alphabet_size = max_token + 1;
-      Histogram h(alphabet_size);
-      for (uint32_t t = 0; t < alphabet_size; ++t) {
-        h.counts[t] = static_cast<ANSHistBin>(th[t]);
-      }
-      h.total_count = total;
-
-      // `ANSPopulationCost()` includes header + data cost.
-      JXL_ASSIGN_OR_RETURN(float ans_cost, h.ANSPopulationCost());
-      // Shannon entropy is the ideal data cost.
-      float shannon = h.ShannonEntropy();
-      // Overhead = total cost - data cost.
-      float header_cost = ans_cost - shannon;
-      if (header_cost > 0) {
-        overhead += static_cast<int64_t>(header_cost * kFScale);
-        if (overhead >= cutoff) return overhead;
-      }
-    }
+    JXL_ASSIGN_OR_RETURN(
+        overhead,
+        ClusterSignallingOverhead(d, cluster, cutoff, &signalling_token_hist));
+    if (overhead >= cutoff) return overhead;
   }
 
   // Process `hist_nz_h`: split by predicted bucket `pb`.

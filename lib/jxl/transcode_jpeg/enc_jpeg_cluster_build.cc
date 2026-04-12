@@ -54,41 +54,42 @@ struct ClusteringBuildCtx {
   //   `cell = ax1_row[dc1] + ax2_col[dc2] + ax0_to_k[dc0]`
   // is the DC-threshold cell that the block belongs to; `ax1_row`/`ax2_col`
   // are already premultiplied by `n0` in the constructor.
-  //
-  // **Pass 1 — AC coefficients (via `SweepACStream`)**
-  // Each reset stream frame carries a packed `bin_state` word:
-  //   `bin_state = channel * kACSymbolCount + zdc * kACTokenCount + token`
-  //
-  // - `hist_h[ctx_id]` accumulates counts of `(zdc, token)` bins (compacted via
-  //   `CompactHBin`); this is the AC-symbol histograms used in entropy coding.
-  // - `hist_N[ctx_id]` accumulates counts in `zdc` contexts; this is the
-  //   "context frequency" histogram `N` used in the entropy cost model.
-  //
-  // **Pass 2 — nonzero-count histograms (block iteration)**
-  // For each block, its nonzero AC count and predictor bucket `pb` are added:
-  // - `hist_nz_h[ctx_id]` counts `(pb, nz_count)` bins (via
-  //   `NZHistogramIndex`); used as the histogram for nz-count coding.
-  // - `hist_nz_N[ctx_id]` counts events in predictor bucket `pb`; the
-  //   corresponding N.
-  // Grayscale (`d.channels == 1`) takes a fast path: there is only one
-  // channel and the cell index collapses to `ax0_to_k[dc0_bucket]`, so the
-  // multichannel subsampling coordinate mapping is skipped entirely.
   void PopulateHistograms(Clustering* cl) {
+    // **Pass 1 — AC coefficients (via `SweepACStream`)**
+    // `SweepACStream` walks the shared packed AC stream. Each run arrives with
+    // a raw `bin_state` payload encoding `(channel, zdc, ai)` in
+    // `JPEGOptData`'s raw-bin layout; the stream order / reset-frame
+    // boundaries may depend on `d.ac_hist_model`, but the payload itself is
+    // always raw.
+    //
+    // - `hist_h[ctx_id]` accumulates the selected AC histogram symbol for that
+    //   raw event, compacted via `CompactACEventFromBin()`: raw `(zdc, ai)` at
+    //   `kRawAI`, or `(zdc, HybridUint(4,2,0) token)` at `kToken420`.
+    // - `hist_N[ctx_id]` accumulates counts in `zdc` contexts; this is the
+    //   accompanying `N` histogram used in the entropy cost model.
     SweepACStream(
         d.AC_stream, []() {}, []() {},
         [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
             uint32_t bin_state) {
-          const uint32_t c = JpegTranscodeACBinChannel(bin_state);
+          const uint32_t c = d.ACBinChannel(bin_state);
           const uint32_t cell = axis_maps.ax1_row[dc1_idx] +
                                 axis_maps.ax2_col[dc2_idx] +
                                 axis_maps.ax0_to_k[dc0_idx];
           const uint32_t ctx_id = c * num_cells + cell;
-          cl->hist_h[ctx_id].Add(
-              d.CompactHBin(JpegTranscodeACBinSymbol(bin_state)), run);
-          const uint32_t zdc = JpegTranscodeACBinZDC(bin_state);
-          cl->hist_N[ctx_id].Add(zdc, run);
+          const CompactACEvent ac_event = d.FromBin(bin_state);
+          cl->hist_h[ctx_id].Add(ac_event.hist_bin, run);
+          cl->hist_N[ctx_id].Add(ac_event.zdc, run);
         });
 
+    // **Pass 2 — nonzero-count histograms (block iteration)**
+    // For each block, its nonzero AC count and predictor bucket `pb` are added:
+    // - `hist_nz_h[ctx_id]` counts `(pb, nz_count)` bins (via
+    //   `NZHistogramIndex`); used as the histogram for nz-count coding.
+    // - `hist_nz_N[ctx_id]` counts events in predictor bucket `pb`; the
+    //   corresponding N.
+    // Grayscale (`d.channels == 1`) takes a fast path: there is only one
+    // channel and the cell index collapses to `ax0_to_k[dc0_bucket]`, so the
+    // multichannel subsampling coordinate mapping is skipped entirely.
     if (d.channels == 1) {
       for (uint32_t b = 0; b < d.num_blocks[0]; ++b) {
         const uint32_t ctx_id = axis_maps.ax0_to_k[d.block_DC_idx[0][b]];
@@ -127,7 +128,7 @@ struct ClusteringBuildCtx {
   StatusOr<Clustering> Build(uint32_t num_clusters, bool overhead_aware_tail,
                              ThreadPool* pool) {
     Clustering cl;
-    cl.hist_h.assign(total_ctxs, CompactHistogram(d.num_zdctok));
+    cl.hist_h.assign(total_ctxs, CompactHistogram(d.ACHistogramSize()));
     cl.hist_N.resize(total_ctxs);
     cl.hist_nz_h.resize(total_ctxs);
     cl.hist_nz_N.resize(total_ctxs);

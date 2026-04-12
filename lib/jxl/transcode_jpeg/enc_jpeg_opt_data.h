@@ -84,22 +84,69 @@ constexpr uint32_t kNZHistogramsSize = kJPEGNonZeroBuckets * kJPEGNonZeroRange;
 // Invalid entry in sparse-to-dense AC-symbol maps.
 constexpr uint32_t kInvalidCompactH = std::numeric_limits<uint32_t>::max();
 
-// Fixed `HybridUintConfig(4, 2, 1)` used by the JPEG-transcode optimizer.
-// The maximum token for AC values in `[-1024, 1023]` is 71, so the token
-// alphabet has 72 entries.
-constexpr uint32_t kACTokenCount = 72;
-// Number of AC symbols per histogram: one token alphabet per `zdc`.
-constexpr uint32_t kACSymbolCount = kZeroDensityContextCount * kACTokenCount;
-// Number of distinct `(channel, zdc, token)` bins stored in `block_bins`.
-constexpr uint32_t kACBinCount = kNumCh * kACSymbolCount;
+// Fixed `HybridUintConfig(4, 2, 0)` token alphabet used by the JPEG-transcode
+// optimizer at efforts 8 and 9. The maximum token for AC values in
+// `[-1024, 1023]` is 43, so the token alphabet has 44 entries.
+constexpr uint32_t kACTokenCount = 44;
+// Worst-case number of AC symbols and `(channel, zdc, value)` bins stored in
+// `block_bins`.
+constexpr uint32_t kMaxACSymbolCount = kZeroDensityContextCount * kDCTRange;
+constexpr uint32_t kMaxACBinCount = kNumCh * kMaxACSymbolCount;
+
+// Layout conventions used by the JPEG-transcode optimizer:
+// - raw symbol `(zdc, ai)` = `zdc * kDCTRange + ai`
+// - token symbol `(zdc, token)` = `zdc * kACTokenCount + token`
+// - raw bin `(channel, zdc, ai)` =
+//   `channel * kMaxACSymbolCount + zdc * kDCTRange + ai`
+// - `czdc = (channel, zdc)` = `channel * kZeroDensityContextCount + zdc`
+
+// AC histogram model optimized by the JPEG-transcode search.
+enum class JPEGTranscodeACModel : uint8_t {
+  // Cluster/refine on `(zdc, HybridUint(4,2,0) token)`.
+  kToken420,
+  // Cluster/refine on raw `(zdc, ai)` values.
+  kRawAI,
+};
+
+// Sparse-to-dense symbol map for one AC histogram model.
+struct CompactACHistogramData {
+  // Number of active `(zdc, value)` symbols in dense histogram space.
+  uint32_t num_zdcvalue = 0;
+  // Sparse map: model symbol -> dense histogram id, or `kInvalidCompactH`.
+  std::vector<uint32_t> compact_map_h;
+  // Inverse map: dense histogram id -> original model symbol.
+  std::vector<uint32_t> dense_to_zdcvalue;
+
+  // Inserts `symbol` on first use and keeps both maps in sync.
+  void AddUniqueSymbol(uint32_t symbol) {
+    if (compact_map_h[symbol] == kInvalidCompactH) {
+      compact_map_h[symbol] = num_zdcvalue++;
+      dense_to_zdcvalue.push_back(symbol);
+    }
+  }
+};
 
 // AC coefficient entry in the packed event stream.
 using ACEntry = uint32_t;
 // Compact per-coefficient bin id stored in `block_bins`.
 using ACBin = uint32_t;
-static_assert(kACBinCount <=
+static_assert(kMaxACBinCount <=
                   static_cast<size_t>(std::numeric_limits<ACBin>::max()) + 1,
               "JPEG transcode AC bins must fit in ACBin");
+
+struct CompactACEvent {
+  // Dense `hist_h` id for the selected AC histogram model.
+  uint32_t hist_bin;
+  // Accompanying zero-density context for `hist_N`.
+  uint32_t zdc;
+};
+
+struct SignallingHistSymbol {
+  // Zero-density context of one clustered AC histogram symbol.
+  uint32_t zdc;
+  // Signalling token used when estimating histogram-header overhead.
+  uint32_t token;
+};
 // Vector of DC thresholds for a channel.
 using Thresholds = std::vector<int16_t>;
 // Context map.
@@ -111,45 +158,6 @@ using Factorizations = std::vector<Factorization>;
 
 JXL_INLINE double bit_cost(int64_t cost) {
   return static_cast<double>(cost) / kFScale;
-}
-
-JXL_INLINE uint32_t MakeJpegTranscodeACSymbol(uint32_t zdc, uint32_t token) {
-  JXL_DASSERT(zdc < kZeroDensityContextCount);
-  JXL_DASSERT(token < kACTokenCount);
-  return zdc * kACTokenCount + token;
-}
-
-JXL_INLINE uint32_t JpegTranscodeACSymbolZDC(uint32_t symbol) {
-  JXL_DASSERT(symbol < kACSymbolCount);
-  return symbol / kACTokenCount;
-}
-
-JXL_INLINE uint32_t JpegTranscodeACSymbolToken(uint32_t symbol) {
-  JXL_DASSERT(symbol < kACSymbolCount);
-  return symbol % kACTokenCount;
-}
-
-JXL_INLINE ACBin MakeJpegTranscodeACBin(uint32_t channel, uint32_t zdc,
-                                        uint32_t token) {
-  JXL_DASSERT(channel < kNumCh);
-  return static_cast<ACBin>(channel * kACSymbolCount +
-                            MakeJpegTranscodeACSymbol(zdc, token));
-}
-
-JXL_INLINE uint32_t JpegTranscodeACBinChannel(uint32_t bin) {
-  return bin / kACSymbolCount;
-}
-
-JXL_INLINE uint32_t JpegTranscodeACBinSymbol(uint32_t bin) {
-  return bin % kACSymbolCount;
-}
-
-JXL_INLINE uint32_t JpegTranscodeACBinContext(uint32_t bin) {
-  return bin / kACTokenCount;
-}
-
-JXL_INLINE uint32_t JpegTranscodeACBinZDC(uint32_t bin) {
-  return JpegTranscodeACSymbolZDC(JpegTranscodeACBinSymbol(bin));
 }
 
 // Set of DC thresholds for each channel.
@@ -191,15 +199,14 @@ struct JPEGOptData {
   // Index of each DC value in `DC_vals`.
   uint16_t DC_idx_LUT[kNumCh][kDCTRange];
 
-  // Number of `(zdc, token)` bins active in image - `CompactHistogram` size.
-  uint32_t num_zdctok;
-  // Map from `(zdc, token)` to compact index.
-  std::vector<uint32_t> compact_map_h;
-  // Map from compact index to `(zdc, token)`.
-  std::vector<uint32_t> dense_to_zdctok;
+  // AC histogram model chosen for this optimizer instance and the matching
+  // compact map used by clustering / refinement over the shared raw stream.
+  JPEGTranscodeACModel ac_hist_model = JPEGTranscodeACModel::kToken420;
+  CompactACHistogramData ac_histogram;
 
-  // Run-length-encoded AC data, sorted by `(bin, dc0, dc1, dc2)`.
-  // 32-bit packed format; see `BuildACStream` for layout details.
+  // Run-length-encoded AC data, sorted by the selected histogram model and
+  // then by raw `(channel, zdc, ai)` bin. 32-bit packed format; see
+  // `BuildACStream` for layout details.
   std::vector<ACEntry> AC_stream;
 
   // AC events of consequitive blocks per component.
@@ -222,10 +229,80 @@ struct JPEGOptData {
   // size - number of active DC values `M_comp`.
   std::vector<uint32_t> DC_block_offsets[kNumCh];
 
-  Status BuildFromJPEG(const jpeg::JPEGData& jpeg_data, ThreadPool* pool);
+  uint32_t MakeRawSymbol(uint32_t zdc, uint32_t ai) const {
+    JXL_DASSERT(zdc < kZeroDensityContextCount);
+    JXL_DASSERT(ai < kDCTRange);
+    return zdc * kDCTRange + ai;
+  }
+  uint32_t RawSymbolZDC(uint32_t symbol) const {
+    JXL_DASSERT(symbol < kMaxACSymbolCount);
+    return symbol / kDCTRange;
+  }
+  uint32_t RawSymbolAI(uint32_t symbol) const {
+    JXL_DASSERT(symbol < kMaxACSymbolCount);
+    return symbol % kDCTRange;
+  }
+  ACBin MakeACBin(uint32_t channel, uint32_t zdc, uint32_t ai) const {
+    JXL_DASSERT(channel < kNumCh);
+    return static_cast<ACBin>(channel * kMaxACSymbolCount +
+                              MakeRawSymbol(zdc, ai));
+  }
+  uint32_t ACBinChannel(ACBin bin) const { return bin / kMaxACSymbolCount; }
+  uint32_t ACBinRawSymbol(ACBin bin) const { return bin % kMaxACSymbolCount; }
+  uint32_t ACBinCZDC(ACBin bin) const { return bin / kDCTRange; }
+  uint32_t ACBinZDC(ACBin bin) const { return ACBinRawSymbol(bin) / kDCTRange; }
+  uint32_t ACBinAI(ACBin bin) const { return bin % kDCTRange; }
+
+  static uint32_t Token420FromAI(uint32_t ai);
+  uint32_t Token420SymbolFromRawSymbol(uint32_t raw_symbol) const {
+    JXL_DASSERT(raw_symbol < kMaxACSymbolCount);
+    return RawSymbolZDC(raw_symbol) * kACTokenCount +
+           Token420FromAI(RawSymbolAI(raw_symbol));
+  }
+  uint32_t ACBinToken420HistKey(ACBin bin) const {
+    return ACBinCZDC(bin) * kACTokenCount + Token420FromAI(ACBinAI(bin));
+  }
+  uint32_t ACHistogramSymbol(ACBin bin) const {
+    const uint32_t raw_symbol = ACBinRawSymbol(bin);
+    return ac_hist_model == JPEGTranscodeACModel::kRawAI
+               ? raw_symbol
+               : Token420SymbolFromRawSymbol(raw_symbol);
+  }
+  uint32_t ACHistogramKey(ACBin bin) const {
+    return ac_hist_model == JPEGTranscodeACModel::kRawAI
+               ? bin
+               : ACBinToken420HistKey(bin);
+  }
+
+  const CompactACHistogramData& ACHistogram() const { return ac_histogram; }
+  uint32_t ACHistogramSize() const { return ac_histogram.num_zdcvalue; }
+  CompactACEvent FromBin(ACBin bin) const {
+    uint32_t raw_symbol = ACBinRawSymbol(bin);
+    uint32_t zdc = raw_symbol / kDCTRange;
+    uint32_t symbol =
+        ac_hist_model == JPEGTranscodeACModel::kRawAI
+            ? raw_symbol
+            : zdc * kACTokenCount + Token420FromAI(raw_symbol % kDCTRange);
+    JXL_DASSERT(symbol < ac_histogram.compact_map_h.size());
+    if (symbol >= ac_histogram.compact_map_h.size()) {
+      return {kInvalidCompactH, zdc};
+    }
+    uint32_t hist_bin = ac_histogram.compact_map_h[symbol];
+    JXL_DASSERT(hist_bin != kInvalidCompactH);
+    return {hist_bin, zdc};
+  }
+  SignallingHistSymbol SignallingHistSymbolFromSymbol(uint32_t symbol) const {
+    return ac_hist_model == JPEGTranscodeACModel::kRawAI
+               ? SignallingHistSymbol{symbol / kDCTRange,
+                                      Token420FromAI(symbol % kDCTRange)}
+               : SignallingHistSymbol{symbol / kACTokenCount,
+                                      symbol % kACTokenCount};
+  }
+
+  Status BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
+                       JPEGTranscodeACModel hist_model, ThreadPool* pool);
 
   int64_t NZFTab(uint32_t n) const;
-  uint32_t CompactHBin(uint32_t zdc_token) const;
 
  private:
   void InitFTab(size_t max_n);

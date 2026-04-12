@@ -8,12 +8,12 @@
 // The transcode pipeline converts per-block AC data into a packed event stream
 // that is then scanned repeatedly by threshold optimization and clustering.
 // This file defines both sides of that format: the builder that produces the
-// packed stream and its derived `(zdc, token)` indexing tables, and the walker
+// packed stream and its derived `(zdc, value)` indexing tables, and the walker
 // that decodes the stream for repeated hot scans.
 //
 // `ACStreamData`
 //   Output of the stream-building pass: packed AC stream, sparse-to-dense AC
-//   symbol maps, and the maximum per-`zdc` total needed to size `ftab`.
+//   symbol map, and the maximum per-`zdc` total needed to size `ftab`.
 //
 // `BuildACStream`
 //   Builds `ACStreamData` from the precomputed per-block data in
@@ -36,23 +36,25 @@ namespace jxl {
 
 struct ACStreamData {
   std::vector<ACEntry> stream;
-  std::vector<uint32_t> compact_map_h;
-  std::vector<uint32_t> dense_to_zdctok;
-  uint32_t num_zdctok = 0;
+  CompactACHistogramData ac_histogram;
   uint32_t max_zdc_total = 0;
 };
 
 StatusOr<ACStreamData> BuildACStream(const JPEGOptData& d, ThreadPool* pool);
 
 // Stateless decoder over the packed AC stream shared by threshold
-// optimization and clustering. The stream is sorted by bin index and
-// consists of:
+// optimization and clustering. The stream is sorted by the histogram model
+// selected at build time, with raw bins kept contiguous inside each histogram
+// bin, and consists of two frame types:
 // - Reset frame:
 //   `(1<<31) | (ctx_change<<30) | (bin_change<<29) | (bin<<7) | (dc0>>4)`.
 // - Normal frame: `(delta_dc0<<27) | (dc1<<16) | (dc2<<5) | (run-1)`,
 //   `delta_dc0 <= 15`, so that bit 31 is 0. `run` is always in [1, 32].
 //   Runs longer than 32 are split into consecutive normal frames with
 //   `delta_dc0 = 0` and the same `dc1`/`dc2` on continuation frames.
+// `bin` always stores the raw `(channel, zdc, ai)` bin; `bin_change` tracks
+// changes of the selected AC histogram symbol, which can be coarser than the
+// raw bin, so a reset frame may update `bin` while leaving `bin_change = 0`.
 // Stays in the header as templated callbacks are used in multiple places.
 template <class FlushH, class FlushN, class OnRun>
 void SweepACStream(const std::vector<ACEntry>& stream, FlushH&& flush_h,

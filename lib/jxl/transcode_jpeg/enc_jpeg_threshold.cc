@@ -97,12 +97,12 @@ void PartitioningCtx::FlushTerm(std::vector<uint32_t>& cnt,
 }
 template void PartitioningCtx::FlushTerm<+1>(std::vector<uint32_t>&,
                                              std::vector<uint64_t>&,
-                                             std::vector<uint64_t>&,
-                                             uint32_t, uint32_t);
+                                             std::vector<uint64_t>&, uint32_t,
+                                             uint32_t);
 template void PartitioningCtx::FlushTerm<-1>(std::vector<uint32_t>&,
                                              std::vector<uint64_t>&,
-                                             std::vector<uint64_t>&,
-                                             uint32_t, uint32_t);
+                                             std::vector<uint64_t>&, uint32_t,
+                                             uint32_t);
 
 // Callable passed to `SweepACStream` as the `on_run` callback.
 // Captures hoisted pointers by value to avoid reloading `this` on each call.
@@ -165,8 +165,12 @@ void PartitioningCtx::SweepGeneralAxis(uint32_t M_eff, uint32_t ncells) {
   const JPEGOptData& d = data();
   SweepACStream(
       d.AC_stream,
-      [&]() { FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff, ncells); },
-      [&]() { FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff, ncells); },
+      [&]() {
+        FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff, ncells);
+      },
+      [&]() {
+        FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff, ncells);
+      },
       MakeOnRun<Axis>(*this, ncells));
   FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff, ncells);
   FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff, ncells);
@@ -294,9 +298,9 @@ void PartitioningCtx::AccumulateSingleSplitOtherAxis(
   SweepACStream(
       d.AC_stream, [&]() { flush_dense(h_cnt, bin_mask, -1); },
       [&]() { flush_dense(N_cnt, ctx_mask, +1); },
-      [p_ax0, p_ax1, p_ax2, p_h, p_N, M_eff,
-       &bin_mask, &ctx_mask](uint32_t dc0_idx, uint32_t dc1_idx,
-                             uint32_t dc2_idx, uint32_t run, uint32_t) {
+      [p_ax0, p_ax1, p_ax2, p_h, p_N, M_eff, &bin_mask, &ctx_mask](
+          uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
+          uint32_t) {
         uint32_t dc_k_bkt = p_ax0[SelectDC<Axis>(dc0_idx, dc1_idx, dc2_idx)];
         uint32_t ci = p_ax1[SelectDC<Ax1>(dc0_idx, dc1_idx, dc2_idx)] +
                       p_ax2[SelectDC<Ax2>(dc0_idx, dc1_idx, dc2_idx)];
@@ -401,9 +405,13 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
 
       Knuth_solver.ResetCosts(M_eff * M_eff);
 
-      if (axis == 0) { SweepGeneralAxis<0>(M_eff, ncells); }
-      else if (axis == 1) { SweepGeneralAxis<1>(M_eff, ncells); }
-      else { SweepGeneralAxis<2>(M_eff, ncells); }
+      if (axis == 0) {
+        SweepGeneralAxis<0>(M_eff, ncells);
+      } else if (axis == 1) {
+        SweepGeneralAxis<1>(M_eff, ncells);
+      } else {
+        SweepGeneralAxis<2>(M_eff, ncells);
+      }
 
       std::vector<uint32_t> solution = Knuth_solver.Solve(num_intervals, M_eff);
       scratch->clear();
@@ -514,7 +522,7 @@ int64_t PartitioningCtx::TotalCost(const ThresholdSet& T) {
   };
 
   uint32_t ncells_per_ax0 = static_cast<uint32_t>(T.TCb().size() + 1) *
-                             static_cast<uint32_t>(T.TCr().size() + 1);
+                            static_cast<uint32_t>(T.TCr().size() + 1);
   SweepACStream(d.AC_stream, flush_h, flush_N,
                 MakeOnRun<0>(*this, ncells_per_ax0));
   flush_h();
