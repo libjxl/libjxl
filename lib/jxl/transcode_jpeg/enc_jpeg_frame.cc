@@ -13,7 +13,6 @@
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
@@ -69,13 +68,14 @@ namespace jxl {
 // `ai` - AC index = value of AC coefficient + `kDCTOff`
 
 Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
-                              SpeedTier speed_tier, BlockCtxMap& ctx_map,
-                              ThreadPool* pool) {
+                              SpeedTier speed_tier,
+                              const JpegCflContext& cfl_ctx,
+                              BlockCtxMap& ctx_map, ThreadPool* pool) {
   const JPEGCtxEffortParams effort =
       JPEGCtxEffortParams::FromSpeedTier(speed_tier);
   auto opt_data = std::make_shared<JPEGOptData>();
   JXL_RETURN_IF_ERROR(
-      opt_data->BuildFromJPEG(jpeg_data, effort.ac_hist_model, pool));
+      opt_data->BuildFromJPEG(jpeg_data, effort.ac_hist_model, cfl_ctx, pool));
 
   JXL_ASSIGN_OR_RETURN(std::vector<FactorizationCandidate> candidates,
                        RankAndTrimFactorizations(opt_data, effort, pool));
@@ -163,21 +163,36 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
   ctx_map.dc_thresholds[0].clear();
   ctx_map.dc_thresholds[2].clear();
 
-  for (int16_t t : best_thr.TY()) ctx_map.dc_thresholds[1].push_back(t - 1);
-  for (int16_t t : best_thr.TCb()) ctx_map.dc_thresholds[0].push_back(t - 1);
-  for (int16_t t : best_thr.TCr()) ctx_map.dc_thresholds[2].push_back(t - 1);
-
   // If the image is effectively grayscale, we use only one channel.
   uint32_t effective_channels = opt_data->channels;
-
-  // `dc_thresholds` is indexed in JXL XYB order (X=0, Y=1, B=2), which maps
-  // JPEG components as Cb→[0], Y→[1], Cr→[2]. `best_ctx` and `ctx_map` remain
-  // in JPEG component order (Y=0, Cb=1, Cr=2) as produced by the optimizer.
   ctx_map.ctx_map.assign(3 * kNumOrders * num_dc_ctxs, 0);
-  for (size_t c = 0; c < effective_channels; ++c) {
+  if (effective_channels == 1) {
+    JXL_DASSERT(best_thr.TCb().empty());
+    JXL_DASSERT(best_thr.TCr().empty());
+    const size_t active_plane = opt_data->jpeg_to_plane[0];
+    for (int16_t t : best_thr.TY()) {
+      ctx_map.dc_thresholds[active_plane].push_back(t - 1);
+    }
+    const size_t slot = active_plane < 2 ? active_plane ^ 1 : 2;
     for (size_t cell = 0; cell < num_dc_ctxs; ++cell) {
-      ctx_map.ctx_map[c * kNumOrders * num_dc_ctxs + cell] =
-          best_ctx[c * num_dc_ctxs + cell] + (effective_channels == 1);
+      ctx_map.ctx_map[slot * kNumOrders * num_dc_ctxs + cell] =
+          best_ctx[cell] + 1;
+    }
+  } else {
+    // `dc_thresholds` is indexed by JXL plane (0, 1, 2). `ctx_map` uses the
+    // same planes but with the historical 0/1 swap applied by
+    // `BlockCtxMap::Context`.
+    for (size_t plane = 0; plane < 3; ++plane) {
+      const uint32_t jpeg_c =
+          static_cast<uint32_t>(cfl_ctx.plane_to_jpeg[plane]);
+      for (int16_t t : best_thr.T[jpeg_c]) {
+        ctx_map.dc_thresholds[plane].push_back(t - 1);
+      }
+      const size_t slot = plane < 2 ? plane ^ 1 : 2;
+      for (size_t cell = 0; cell < num_dc_ctxs; ++cell) {
+        ctx_map.ctx_map[slot * kNumOrders * num_dc_ctxs + cell] =
+            best_ctx[jpeg_c * num_dc_ctxs + cell];
+      }
     }
   }
   size_t num_ctxs =

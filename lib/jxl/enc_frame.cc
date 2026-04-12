@@ -886,14 +886,14 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
                                1.0f / dcquantization[2]};
 
   // not transposed
-  std::vector<int32_t> scaled_qtable(kDCTBlockSize * 3);
+  int32_t scaled_qtable[3][kDCTBlockSize];
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < 8; y++) {
       for (size_t x = 0; x < 8; x++) {
         int coeffpos = y * 8 + x;
-        scaled_qtable[kDCTBlockSize * c + 8 * x + y] =
-            (1 << kCFLFixedPointPrecision) * qt[kDCTBlockSize + coeffpos] /
-            qt[kDCTBlockSize * c + coeffpos];
+        scaled_qtable[c][8 * x + y] = (1 << kCFLFixedPointPrecision) *
+                                      qt[kDCTBlockSize + coeffpos] /
+                                      qt[kDCTBlockSize * c + coeffpos];
       }
     }
   }
@@ -920,9 +920,10 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
 
   bool DCzero = (frame_header.color_transform == ColorTransform::kYCbCr);
   // Compute chroma-from-luma for AC (doesn't seem to be useful for DC)
-  if (frame_header.chroma_subsampling.Is444() &&
-      enc_state->cparams.force_cfl_jpeg_recompression &&
-      jpeg_data.components.size() == 3) {
+  bool cfl_enabled = enc_state->cparams.force_cfl_jpeg_recompression &&
+                     frame_header.chroma_subsampling.Is444() &&
+                     jpeg_data.components.size() == 3;
+  if (cfl_enabled) {
     for (size_t c : {0, 2}) {
       ImageSB* map = (c == 0 ? &shared.cmap.ytox_map : &shared.cmap.ytob_map);
       const float kScale = kDefaultColorFactor;
@@ -953,7 +954,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
             for (size_t x = x0; x < x1; ++x) {
               for (size_t coeffpos = 1; coeffpos < kDCTBlockSize; coeffpos++) {
                 const float scaled_m = row_m[x * kDCTBlockSize + coeffpos] *
-                                       scaled_qtable[64 * c + coeffpos] *
+                                       scaled_qtable[c][coeffpos] *
                                        (1.0f / (1 << kCFLFixedPointPrecision));
                 const float scaled_s =
                     kScale * row_s[x * kDCTBlockSize + coeffpos] +
@@ -1063,8 +1064,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
           }
           total_dc[c]++;
           fdc[bx >> hshift] = idc * dcquantization_r[c];
-          if (c == 1 || !enc_state->cparams.force_cfl_jpeg_recompression ||
-              !frame_header.chroma_subsampling.Is444()) {
+          if (c == 1 || !cfl_enabled) {
             for (size_t y = 0; y < 8; y++) {
               for (size_t x = 0; x < 8; x++) {
                 block[x * 8 + y] = inputjpeg[base + y * 8 + x];
@@ -1081,10 +1081,9 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
                 int QChroma = inputjpeg[kDCTBlockSize * bx + coeffpos];
                 // Fixed-point multiply of CfL scale with quant table ratio
                 // first, and Y value second.
-                int coeff_scale =
-                    (scale * scaled_qtable[kDCTBlockSize * c + coeffpos] +
-                     (1 << (kCFLFixedPointPrecision - 1))) >>
-                    kCFLFixedPointPrecision;
+                int coeff_scale = (scale * scaled_qtable[c][coeffpos] +
+                                   (1 << (kCFLFixedPointPrecision - 1))) >>
+                                  kCFLFixedPointPrecision;
                 int cfl_factor =
                     (Y * coeff_scale + (1 << (kCFLFixedPointPrecision - 1))) >>
                     kCFLFixedPointPrecision;
@@ -1104,13 +1103,18 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
     }
   }
 
-  if (enc_state->cparams.speed_tier < SpeedTier::kSquirrel) {
-    JXL_RETURN_IF_ERROR(OptimizeJPEGContextMap(
-        jpeg_data, enc_state->cparams.speed_tier,
-        enc_state->shared.block_ctx_map, pool));
-  } else {
+  if (enc_state->cparams.speed_tier >= SpeedTier::kSquirrel) {
     JXL_RETURN_IF_ERROR(
-      ComputeJPEGContextMap(jpeg_data, enc_state, total_dc, dc_counts, qt));
+        ComputeJPEGContextMap(jpeg_data, enc_state, total_dc, dc_counts, qt));
+  } else {
+    JpegCflContext cfl_ctx = {jpeg_c_map,
+                              cfl_enabled,
+                              {&shared.cmap.ytox_map, &shared.cmap.ytob_map},
+                              {scaled_qtable[0], scaled_qtable[2]}};
+
+    JXL_RETURN_IF_ERROR(
+        OptimizeJPEGContextMap(jpeg_data, enc_state->cparams.speed_tier,
+                               cfl_ctx, enc_state->shared.block_ctx_map, pool));
   }
 
   // disable DC frame for now

@@ -105,16 +105,19 @@ Thresholds InitThresh(const JPEGOptData& d, uint32_t axis,
 // or exceeding the number of distinct DC values on that axis. Lower
 // factorizations are dominated: coarser partitioning can only increase entropy.
 //
-// Grayscale note: in a grayscale image `d.channels == 1`, so Cb and Cb are
+// Grayscale note: in a grayscale image `d.channels == 1`, so Cb and Cr are
 // absent. The JPEG XL context map format still requires three sets of contexts
 // (one per component). The two absent components each contribute one empty
 // context, consuming one of the 16 available cluster slots. This leaves at most
 // 15 clusters for the Y-channel DC partitioning, so the Y-axis factor `a` is
 // capped at 15. Only the single factorization `(min(a,15), 1, 1)` is returned:
-// the general enumeration always produces exactly `(a, 1, 1)` for grayscale
-// since `cap1 == cap2 == 1`.
+// chroma DC cardinality is intentionally ignored after the optimizer collapses
+// to the effective-grayscale path.
 Factorizations MaximalFactorizations(const JPEGOptData& d) {
   uint32_t cap0 = std::max(1u, static_cast<uint32_t>(d.DC_vals[0].size()));
+  if (d.channels == 1) {
+    return {Factorization{{std::min(cap0, 15u), 1, 1}}};
+  }
   uint32_t cap1 = std::max(1u, static_cast<uint32_t>(d.DC_vals[1].size()));
   uint32_t cap2 = std::max(1u, static_cast<uint32_t>(d.DC_vals[2].size()));
   Factorizations result;
@@ -134,13 +137,6 @@ Factorizations MaximalFactorizations(const JPEGOptData& d) {
       }
     }
   }
-  if (d.channels == 1) {
-    // Cap Y-axis intervals at 15: one cluster slot is consumed by the shared
-    // Cb+Cr context required by the JPEG XL context map format.
-    // Applies to both true grayscale and formally 3-channel images whose
-    // chrominance was collapsed to `channels == 1` in `BuildFromJPEG`.
-    result[0][0] = std::min(result[0][0], 15u);
-  }
   return result;
 }
 
@@ -157,18 +153,30 @@ StatusOr<std::unique_ptr<ACCounts>> JPEGOptData::CountDCAC(
   auto ac_cnt = jxl::make_unique<ACCounts>();
   memset(DC_cnt, 0, sizeof(DC_cnt));
   memset(ac_cnt->data(), 0, sizeof(*ac_cnt));
+  JXL_DASSERT(cfl_ != nullptr);
+  const uint32_t source_c = static_cast<uint32_t>(cfl_->plane_to_jpeg[1]);
+  const uint32_t source_wb = jpeg_data.components[source_c].width_in_blocks;
+  const int16_t* source_q_base = jpeg_data.components[source_c].coeffs.data();
+
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, channels, ThreadPool::NoInit,
       [&](uint32_t c, size_t) -> Status {
         const auto& comp = jpeg_data.components[c];
         uint32_t wb = comp.width_in_blocks;
         uint32_t hb = comp.height_in_blocks;
+
         for (uint32_t by = 0; by < hb; ++by) {
           for (uint32_t bx = 0; bx < wb; ++bx) {
             const int16_t* q = comp.coeffs.data() + (by * wb + bx) * 64;
             ++DC_cnt[c][q[0] + kDCTOff];
+
+            const int16_t* source_q =
+                source_q_base + (by * source_wb + bx) * kDCTBlockSize;
             for (uint8_t p = 0; p < kNumPos; ++p) {
-              ++(*ac_cnt)[c][p][q[jpeg::kJPEGNaturalOrder[p + 1]] + kDCTOff];
+              const uint32_t coeffpos = jpeg::kJPEGNaturalOrder[p + 1];
+              int16_t cfl_coeff =
+                  ApplyCfL(c, q[coeffpos], coeffpos, by, bx, source_q);
+              ++(*ac_cnt)[c][p][cfl_coeff + kDCTOff];
             }
           }
         }
@@ -220,6 +228,10 @@ Status JPEGOptData::BuildBlockOptData(const jpeg::JPEGData& jpeg_data,
                                       ThreadPool* pool,
                                       const ACCounts& ac_cnt) {
   ScanOrder scan_order = BuildACScanOrder(ac_cnt);
+  JXL_DASSERT(cfl_ != nullptr);
+  const uint32_t source_c = static_cast<uint32_t>(cfl_->plane_to_jpeg[1]);
+  const uint32_t source_wb = jpeg_data.components[source_c].width_in_blocks;
+  const int16_t* source_q_base = jpeg_data.components[source_c].coeffs.data();
 
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, channels, ThreadPool::NoInit,
@@ -246,9 +258,21 @@ Status JPEGOptData::BuildBlockOptData(const jpeg::JPEGData& jpeg_data,
                 static_cast<uint16_t>(DC_idx_LUT[c][q[0] + kDCTOff]);
             block_DC_idx[c][bc] = DC_idx;
 
+            // Apply CfL to all AC positions at once, cache results.
+            int16_t block[64];
+            if (cfl_->enabled && c != source_c) {
+              const int16_t* source_q =
+                  source_q_base + (by * source_wb + bx) * kDCTBlockSize;
+              for (uint32_t s = 1; s <= kNumPos; ++s) {
+                block[s] = ApplyCfL(c, q[s], s, by, bx, source_q);
+              }
+            } else {
+              memcpy(block, q, kDCTBlockSize * sizeof(int16_t));
+            }
+
             uint32_t nonzeros_left = 0;
             for (uint32_t s = 1; s <= kNumPos; ++s)
-              if (q[s] != 0) ++nonzeros_left;
+              if (block[s] != 0) ++nonzeros_left;
             block_nonzeros[c][bc] = static_cast<uint8_t>(nonzeros_left);
 
             uint32_t predicted_nz;
@@ -265,8 +289,8 @@ Status JPEGOptData::BuildBlockOptData(const jpeg::JPEGData& jpeg_data,
 
             for (uint32_t s = 0; s < kNumPos; ++s) {
               if (nonzeros_left == 0) break;
-              int16_t coeff = q[scan_order[c][s]];
-              bool nz_prev = (s > 0 && q[scan_order[c][s - 1]] != 0) ||
+              int16_t coeff = block[scan_order[c][s]];
+              bool nz_prev = (s > 0 && block[scan_order[c][s - 1]] != 0) ||
                              (s == 0 && nonzeros_left > 4);
               uint32_t zdc = static_cast<uint32_t>(
                   ZeroDensityContext(nonzeros_left, s + 1, 1, 0, nz_prev));
@@ -364,9 +388,22 @@ Status JPEGOptData::FinalizeSpatialIndexing(ThreadPool* pool) {
 // Orchestrates the JPEG data extraction pipeline.
 Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
                                   JPEGTranscodeACModel hist_model,
+                                  const JpegCflContext& cfl_ctx,
                                   ThreadPool* pool) {
   ac_hist_model = hist_model;
+  cfl_ = &cfl_ctx;
   channels = static_cast<uint32_t>(jpeg_data.components.size());
+  if (channels == 1) {
+    // Grayscale still uses logical plane 1 as the active source plane so the
+    // optimizer/export path matches the encoder's existing grayscale handling.
+    jpeg_to_plane[0] = 1;
+    jpeg_to_plane[1] = 0;
+    jpeg_to_plane[2] = 2;
+  } else {
+    for (uint32_t plane = 0; plane < channels; ++plane) {
+      jpeg_to_plane[cfl_ctx.plane_to_jpeg[plane]] = static_cast<uint8_t>(plane);
+    }
+  }
   w_max = 0;
   h_max = 0;
   for (uint32_t c = 0; c < channels; ++c) {
@@ -412,7 +449,12 @@ Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
       }
       return true;
     };
-    if (channels > 1 && ChromaIsEmpty(1) && ChromaIsEmpty(2)) channels = 1;
+    // The grayscale fast path retains optimizer component 0 and exports it to
+    // plane 1, so it is only valid when JPEG component 0 maps to plane 1.
+    if (channels > 1 && jpeg_to_plane[0] == 1 && ChromaIsEmpty(1) &&
+        ChromaIsEmpty(2)) {
+      channels = 1;
+    }
 
     JXL_RETURN_IF_ERROR(BuildBlockOptData(jpeg_data, pool, *ac_cnt));
   }

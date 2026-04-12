@@ -36,6 +36,8 @@
 #include "lib/jxl/ac_context.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/enc_jpeg_frame.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
@@ -204,6 +206,14 @@ struct JPEGOptData {
   JPEGTranscodeACModel ac_hist_model = JPEGTranscodeACModel::kToken420;
   CompactACHistogramData ac_histogram;
 
+  // Optimizer CfL context with explicit JPEG component mapping.
+  // Non-null after `BuildFromJPEG` starts; used by CountDCAC and
+  // BuildBlockOptData.
+  const JpegCflContext* cfl_ = nullptr;
+  // JPEG component -> JXL plane mapping. For true grayscale, component 0 maps
+  // to plane 1 to match the encoder's grayscale fast path.
+  uint8_t jpeg_to_plane[kNumCh] = {};
+
   // Run-length-encoded AC data, sorted by the selected histogram model and
   // then by raw `(channel, zdc, ai)` bin. 32-bit packed format; see
   // `BuildACStream` for layout details.
@@ -229,37 +239,39 @@ struct JPEGOptData {
   // size - number of active DC values `M_comp`.
   std::vector<uint32_t> DC_block_offsets[kNumCh];
 
-  uint32_t MakeRawSymbol(uint32_t zdc, uint32_t ai) const {
+  static uint32_t MakeRawSymbol(uint32_t zdc, uint32_t ai) {
     JXL_DASSERT(zdc < kZeroDensityContextCount);
     JXL_DASSERT(ai < kDCTRange);
     return zdc * kDCTRange + ai;
   }
-  uint32_t RawSymbolZDC(uint32_t symbol) const {
+  static uint32_t RawSymbolZDC(uint32_t symbol) {
     JXL_DASSERT(symbol < kMaxACSymbolCount);
     return symbol / kDCTRange;
   }
-  uint32_t RawSymbolAI(uint32_t symbol) const {
+  static uint32_t RawSymbolAI(uint32_t symbol) {
     JXL_DASSERT(symbol < kMaxACSymbolCount);
     return symbol % kDCTRange;
   }
-  ACBin MakeACBin(uint32_t channel, uint32_t zdc, uint32_t ai) const {
+  static ACBin MakeACBin(uint32_t channel, uint32_t zdc, uint32_t ai) {
     JXL_DASSERT(channel < kNumCh);
     return static_cast<ACBin>(channel * kMaxACSymbolCount +
                               MakeRawSymbol(zdc, ai));
   }
-  uint32_t ACBinChannel(ACBin bin) const { return bin / kMaxACSymbolCount; }
-  uint32_t ACBinRawSymbol(ACBin bin) const { return bin % kMaxACSymbolCount; }
-  uint32_t ACBinCZDC(ACBin bin) const { return bin / kDCTRange; }
-  uint32_t ACBinZDC(ACBin bin) const { return ACBinRawSymbol(bin) / kDCTRange; }
-  uint32_t ACBinAI(ACBin bin) const { return bin % kDCTRange; }
+  static uint32_t ACBinChannel(ACBin bin) { return bin / kMaxACSymbolCount; }
+  static uint32_t ACBinRawSymbol(ACBin bin) { return bin % kMaxACSymbolCount; }
+  static uint32_t ACBinCZDC(ACBin bin) { return bin / kDCTRange; }
+  static uint32_t ACBinZDC(ACBin bin) {
+    return ACBinRawSymbol(bin) / kDCTRange;
+  }
+  static uint32_t ACBinAI(ACBin bin) { return bin % kDCTRange; }
 
   static uint32_t Token420FromAI(uint32_t ai);
-  uint32_t Token420SymbolFromRawSymbol(uint32_t raw_symbol) const {
+  static uint32_t Token420SymbolFromRawSymbol(uint32_t raw_symbol) {
     JXL_DASSERT(raw_symbol < kMaxACSymbolCount);
     return RawSymbolZDC(raw_symbol) * kACTokenCount +
            Token420FromAI(RawSymbolAI(raw_symbol));
   }
-  uint32_t ACBinToken420HistKey(ACBin bin) const {
+  static uint32_t ACBinToken420HistKey(ACBin bin) {
     return ACBinCZDC(bin) * kACTokenCount + Token420FromAI(ACBinAI(bin));
   }
   uint32_t ACHistogramSymbol(ACBin bin) const {
@@ -299,8 +311,43 @@ struct JPEGOptData {
                                       symbol % kACTokenCount};
   }
 
+  // Apply CfL to a single transformed-target AC coefficient.
+  // Returns the raw coefficient unchanged when CfL is disabled or when
+  // processing the predictor source component.
+  // `c` is a JPEG component index.
+  // `coeff` is the raw AC value, `coeffpos` is the coefficient's natural-order
+  // index within the 8x8 block (1..63 for AC).
+  // `block_by`, `block_bx` are the block's position in the component grid.
+  // `source_q` points to the 64-coefficient block of the corresponding source
+  // component block (Y/G), only used for transformed targets.
+  // The result is clamped to [-1024, 1023] to fit in the optimizer's
+  // `kDCTRange`-sized histogram tables.
+  JXL_INLINE int ApplyCfL(uint32_t c, int16_t coeff, uint32_t coeffpos,
+                          uint32_t block_by, uint32_t block_bx,
+                          const int16_t* source_q) const {
+    JXL_DASSERT(cfl_ != nullptr);
+    uint32_t plane = jpeg_to_plane[c];
+    if (!cfl_->enabled || plane == 1) {
+      return coeff;
+    }
+    JXL_DASSERT(plane == 0 || plane == 2);
+    uint32_t target = plane >> 1;
+    int32_t scale = ColorCorrelation::RatioJPEG(cfl_->cfl_map[target]->ConstRow(
+        block_by / kColorTileDimInBlocks)[block_bx / kColorTileDimInBlocks]);
+    int32_t coeff_scale = (scale * cfl_->scaled_qtable[target][coeffpos] +
+                           (1 << (kCFLFixedPointPrecision - 1))) >>
+                          kCFLFixedPointPrecision;
+    int32_t Y = source_q[coeffpos];
+    int32_t cfl_factor =
+        (Y * coeff_scale + (1 << (kCFLFixedPointPrecision - 1))) >>
+        kCFLFixedPointPrecision;
+    int32_t residual = static_cast<int32_t>(coeff) - cfl_factor;
+    return Clamp1(residual, -1024, 1023);
+  }
+
   Status BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
-                       JPEGTranscodeACModel hist_model, ThreadPool* pool);
+                       JPEGTranscodeACModel hist_model,
+                       const JpegCflContext& cfl_ctx, ThreadPool* pool);
 
   int64_t NZFTab(uint32_t n) const;
 
