@@ -63,8 +63,8 @@ struct ClusteringBuildCtx {
     // always raw.
     //
     // - `hist_h[ctx_id]` accumulates the selected AC histogram symbol for that
-    //   raw event, compacted via `CompactACEventFromBin()`: raw `(zdc, ai)` at
-    //   `kRawAI`, or `(zdc, HybridUint(4,2,0) token)` at `kToken420`.
+    //   raw event, compacted via `FromBin()`: raw `(zdc, ai)` at `kRawAI`,
+    //   or `(zdc, HybridUint(4,2,0) token)` at `kToken420`.
     // - `hist_N[ctx_id]` accumulates counts in `zdc` contexts; this is the
     //   accompanying `N` histogram used in the entropy cost model.
     SweepACStream(

@@ -92,9 +92,9 @@ struct JPEGCtxEffortParams {
                 /*refine_radius=*/4};
       case SpeedTier::kGlacier:
         return {/*ac_hist_model=*/JPEGTranscodeACModel::kRawAI,
-                /*keep_top_k=24*/ 0,
-                /*rank_m_target=128*/ 0,
-                /*rank_iters=2*/ 0,
+                /*keep_top_k=*/0,
+                /*rank_m_target=*/0,
+                /*rank_iters=*/0,
                 /*main_m_target=*/256,
                 /*main_iters=*/8,
                 /*overhead_aware_tail=*/true,

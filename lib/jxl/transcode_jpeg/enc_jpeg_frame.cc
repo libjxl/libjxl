@@ -41,12 +41,13 @@ namespace jxl {
 //      is split into.
 //   3. For every candidate factorisation (optionally pre-filtered by a cheap
 //      ranking pass), `PartitioningCtx::OptimizeThresholds` refines the DC
-//      thresholds via iterative greedy descent, then
-//      `ClusterContexts` merges similar contexts using
-//      entropy-cost-guided agglomerative clustering.
+//      thresholds via iterative greedy descent, `Clustering::Build` merges
+//      similar contexts using entropy-cost-guided agglomerative clustering,
+//      and `RefineClustered` performs a final local threshold search on the
+//      clustered solution.
 //   4. The candidate with the lowest total cost (entropy + histogram signalling
-//      overhead) is selected and written into the BlockCtxMap consumed by the
-//      rest of the encoder.
+//      overhead) is selected and written into the `BlockCtxMap` consumed by
+//      the rest of the encoder.
 //
 // All calculations (besides formation of `f(n) = n*log2(n)` lookup) are done in
 // integer arithmetic to avoid floating point inaccuracies. Counters are
@@ -64,7 +65,7 @@ namespace jxl {
 // `n` - right bound of interval (inclusive)
 // `c` - component (axis) index, [0,3)
 // `zdc` - `jxl::ZeroDensityContext` of an AC coefficient in a block
-// `czdc` - `(c,zdc)` = `(c<<9|zdc)`, [0,3*512)
+// `czdc` - `(c,zdc)` = `channel * kZeroDensityContextCount + zdc`, [0,3*458)
 // `ai` - AC index = value of AC coefficient + `kDCTOff`
 
 Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,

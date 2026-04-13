@@ -47,7 +47,7 @@ namespace jxl {
 ///////////////
 
 // ---------- `f(n) = n*log2(n)` lookup, fixed-point ----------
-// Scale is choosen to keep `f(freq) * kFScale` in `int64_t`.
+// Scale is chosen to keep `f(freq) * kFScale` in `int64_t`.
 // Overflow bound: max number of blocks `N = 2^26` for max JPEG image,
 // max 4 AC positions in bin (see `kCoeffFreqContext`), then max bin `freq` is
 // 2^28 and max `f(freq) = 2^28 * 28`, fixed point `f(freq) * kFScale = 2^53 *
@@ -219,10 +219,10 @@ struct JPEGOptData {
   // `BuildACStream` for layout details.
   std::vector<ACEntry> AC_stream;
 
-  // AC events of consequitive blocks per component.
+  // AC events of consecutive blocks per component.
   std::vector<ACBin> block_bins[kNumCh];
-  // Indices into `block_bins`, separating consequent blocks data,
-  // size `block_grid_h[c] * block_grid_w[c]`.
+  // Indices into `block_bins`, separating consecutive blocks data,
+  // size `num_blocks[c] + 1`.
   std::vector<uint32_t> block_offsets[kNumCh];
   // Block nonzero number and nonzero prediction context,
   // size `block_grid_h[c] * block_grid_w[c]`.
@@ -235,8 +235,8 @@ struct JPEGOptData {
   // size `block_grid_h[c] * block_grid_w[c]`.
   // `y` in 16 MSB, `x` in 16 LSB.
   std::vector<uint32_t> DC_sorted_blocks[kNumCh];
-  // Indices into `dc_sorted_blocks, separating different DC indices,
-  // size - number of active DC values `M_comp`.
+  // Indices into `dc_sorted_blocks`, separating different DC indices,
+  // size - size `M + 1`, where `M` is the number of distinct DC values.
   std::vector<uint32_t> DC_block_offsets[kNumCh];
 
   static uint32_t MakeRawSymbol(uint32_t zdc, uint32_t ai) {

@@ -8,8 +8,8 @@
 // `AxisMaps` translates per-component DC value indices into partition-cell
 // indices and axis-bucket indices under a given threshold set. It is shared
 // between the threshold optimizer (`enc_jpeg_threshold.h`) and the histogram
-// populator in `enc_jpeg_cluster.cc`, so it lives in its own header to avoid
-// pulling the full `PartitioningCtx` machinery into the clustering code.
+// populator in `enc_jpeg_cluster_build.cc`, so it lives in its own header to
+// avoid pulling the full `PartitioningCtx` machinery into the clustering code.
 
 #ifndef LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_AXIS_MAPS_H_
 #define LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_AXIS_MAPS_H_
@@ -34,7 +34,7 @@ struct AxisMaps {
   std::vector<uint16_t> ax0_to_k;
   std::vector<uint16_t> k_to_dc0;
   // Maps a DC value index on `ax0/ax1/ax2` to its partition-cell offset.
-  // `ax0_cell[i] = bkt(dc_vals[ax0][i], T0) * n1 * n2`,
+  // `ax0_cell[i] = bkt(dc_vals[ax0][i], T0) * n1 * n2` - omitted now,
   // `ax1_row[i] = bkt(dc_vals[ax1][i], T1) * n2`,
   // `ax2_col[i] = bkt(dc_vals[ax2][i], T2)`.
   // Cell index in the 2D grid:
@@ -81,10 +81,9 @@ struct AxisMaps {
     Update(0, thresholds.TY(), thresholds.TCb(), thresholds.TCr());
   }
 
-  // Equal-population bucketing: sets `ax0_to_k`/`k_to_dc0` from the
-  // pre-computed `bkt_thresh_axis` (computed by `InitThresh` for this axis)
-  // and updates T1/T2 cell maps. The caller owns the threshold cache.
-  // Returns M_eff = `bkt_thresh_axis.size() + 1`.
+  // Bucketing: sets `ax0_to_k`/`k_to_dc0` from the pre-computed
+  // `bkt_thresh_axis` (computed by `InitThresh` for this axis) and updates
+  // T1/T2 cell maps. Returns `M_eff = bkt_thresh_axis.size() + 1`.
   uint32_t PrepareBuckets(uint32_t axis, const Thresholds& bkt_thresh_axis,
                           const Thresholds& T1, const Thresholds& T2) {
     uint32_t M = static_cast<uint32_t>(image.DC_vals[axis].size());

@@ -235,7 +235,7 @@ ThresholdSet Clustering::PruneDeadThresholds(const ThresholdSet& thresholds) {
   // Stride when stepping from cell `t` to `t+1` along each axis.
   // Cell layout: `index = (b[1]*sizes[2] + b[2])*sizes[0] + b[0]`
   // where b[0]=Y, b[1]=Cb, b[2]=Cr (Y is innermost/stride-1, matching
-  // the `dc_idx` formula in `compressed_dc.cc` and the `UpdateMaps`
+  // the `dc_idx` formula in `compressed_dc.cc` and the `AxisMaps::Update`
   // bucket maps).
   const uint32_t axis_stride[3] = {1, sizes[0] * sizes[2], sizes[0]};
 

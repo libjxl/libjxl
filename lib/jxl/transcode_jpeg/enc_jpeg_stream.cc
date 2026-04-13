@@ -199,9 +199,8 @@ ACStreamData EmitACStream(const ActiveBinLayout& layout,
   //     30..27  `Δdc0`   (4b, 0..15)
   //     26..16  `dc1`    (11b, absolute)
   //     15..5   `dc2`    (11b, absolute)
-  //     4..0    `run-1`  (5b; 0..30 = run 1..31; 31 = long-run escape)
-  //   Long-run frame (follows regular frame with `run-1 = 31`):
-  //     31..0   `run`    (32b, 2^26 >= actual run >= 32)
+  //     4..0    `run-1`  (5b; 0..31 = run 1..32,
+  //                       longer runs are encoded by extra frames)
   //   Reset frame (bit 31 = 1),
   //     emitted for the first raw-bin entry, histogram-bin change, or
   //     `Δdc0 > 15`:

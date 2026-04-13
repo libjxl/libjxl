@@ -17,8 +17,8 @@
 // via `kDCThresholdDist` (6 bits for |packed| ≤ 15, 10 bits for |packed| ≤ 271,
 // 18 bits for |packed| ≤ 65807; typical JPEG DC thresholds cost 10–18 bits),
 // plus some bits for encoding extended context map - worst case of no
-// compression at all gives
-// (4 bits per added context id) * (3 components) * (32 added cells) = 384 bits
+// compression at all gives for maximum 32 new cells added
+// (4 bits per added context id) * (3 components) * (32 cells) = 384 bits
 // (ANS histogram header overhead is near zero as it depends primarily on the
 // number of clusters and not on the number of cells).
 //
