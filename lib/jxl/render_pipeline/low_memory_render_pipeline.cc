@@ -744,9 +744,15 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
 
       // Produce output rows.
       if (span[i].xsize() == 0) continue;
+      size_t xpos = span[i].x0();
+      size_t xsize = span[i].xsize();
+      size_t xdata_right = image_rect_[i].xsize() - xpos - xsize;
+      size_t xextra_left = std::min<size_t>(xpos, xpadding_for_output_[i]);
+      size_t xextra_right =
+          std::min<size_t>(xdata_right, xpadding_for_output_[i]);
       JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
-          input_rows[i], output_rows, xpadding_for_output_[i], span[i].xsize(),
-          span[i].x0(), image_y, thread_id));
+          input_rows[i], output_rows, xextra_left, xextra_right, xsize, xpos,
+          image_y, thread_id));
     }
 
     // Process trailing stages, i.e. the final set of non-kInOut stages; they
@@ -771,8 +777,8 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
       size_t y0 = image_area_rect.y0() + y;
       if (y0 >= span[i].y1()) continue;
       JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
-          input_rows[first_trailing_stage_], output_rows,
-          /*xextra=*/0, span[i].xsize(), span[i].x0(), y0, thread_id));
+          input_rows[first_trailing_stage_], output_rows, /*xextra_left=*/0,
+          /*xextra_right=*/0, span[i].xsize(), span[i].x0(), y0, thread_id));
     }
 
     if (first_image_dim_stage_ == stages_.size()) continue;
@@ -791,10 +797,10 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
       if (span[i].xsize() == 0) continue;
       if (full_image_y >= static_cast<ptrdiff_t>(span[i].y1())) continue;
-      JXL_RETURN_IF_ERROR(
-          stages_[i]->ProcessRow(input_rows[first_trailing_stage_], output_rows,
-                                 /*xextra=*/0, span[i].xsize(), span[i].x0(),
-                                 full_image_y, thread_id));
+      JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
+          input_rows[first_trailing_stage_], output_rows, /*xextra_left=*/0,
+          /*xextra_right=*/0, span[i].xsize(), span[i].x0(), full_image_y,
+          thread_id));
     }
   }
   return true;
@@ -815,8 +821,8 @@ Status LowMemoryRenderPipeline::RenderPadding(size_t thread_id, Rect rect) {
         input_rows, rect.xsize(), rect.x0(), rect.y0() + y);
     for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
       JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
-          input_rows, output_rows,
-          /*xextra=*/0, rect.xsize(), rect.x0(), rect.y0() + y, thread_id));
+          input_rows, output_rows, /*xextra_left=*/0, /*xextra_right=*/0,
+          rect.xsize(), rect.x0(), rect.y0() + y, thread_id));
     }
   }
   return true;
