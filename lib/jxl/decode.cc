@@ -2375,22 +2375,28 @@ static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
     GetCurrentDimensions(dec, xsize, ysize);
   }
   if (num_channels == 0) num_channels = format->num_channels;
-  size_t row_size =
-      jxl::DivCeil(xsize * num_channels * bits, jxl::kBitsPerByte);
-  size_t last_row_size = row_size;
+  size_t row_bits;
+  if (!jxl::SafeMul<size_t>(xsize, num_channels, row_bits) ||
+      !jxl::SafeMul<size_t>(row_bits, bits, row_bits)) {
+    return JXL_API_ERROR("Image too large for output buffer size calculation");
+  }
+  size_t row_size = jxl::DivCeil(row_bits, jxl::kBitsPerByte);
+  const size_t last_row_size = row_size;
   if (format->align > 1) {
-    row_size = jxl::DivCeil(row_size, format->align) * format->align;
+    size_t aligned_rows = jxl::DivCeil(row_size, format->align);
+    if (!jxl::SafeMul<size_t>(aligned_rows, format->align, row_size)) {
+      return JXL_API_ERROR(
+          "Image too large for output buffer size calculation");
+    }
   }
 
-  const size_t max_size = std::numeric_limits<size_t>::max();
-  if (ysize > 1 && row_size > max_size / (ysize - 1)) {
+  size_t total = 0;
+  if (ysize > 1 && !jxl::SafeMul<size_t>(row_size, ysize - 1, total)) {
     return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
-  size_t total = row_size * (ysize - 1);
-  if (last_row_size > max_size - total) {
+  if (!jxl::SafeAdd<size_t>(total, last_row_size, *min_size)) {
     return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
-  *min_size = total + last_row_size;
   return JXL_DEC_SUCCESS;
 }
 
