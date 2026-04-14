@@ -68,8 +68,16 @@ struct AxisMaps {
     uint16_t M0 = static_cast<uint16_t>(image.DC_vals[ax0].size());
     size_t M1 = image.DC_vals[ax1].size();
     size_t M2 = image.DC_vals[ax2].size();
+    uint16_t k0 = 0;
     for (uint16_t i = 0; i < M0; ++i) {
-      ax0_to_k[i] = ax0_identity ? i : Bkt(image.DC_vals[ax0][i], T0);
+      if (ax0_identity) {
+        ax0_to_k[i] = i;
+      } else {
+        // Not using `Bkt` here as it is the only place where the length of
+        // the thresholds vector `T0` can be larger than 15.
+        while (k0 < T0.size() && T0[k0] <= image.DC_vals[ax0][i]) ++k0;
+        ax0_to_k[i] = k0;
+      }
       if (ax0_identity) k_to_dc0[i] = i;
     }
     size_t n2 = T2.size() + 1;

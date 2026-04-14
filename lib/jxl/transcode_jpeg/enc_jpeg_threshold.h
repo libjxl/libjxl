@@ -142,20 +142,20 @@ struct PartitioningCtx {
   // When `best_cost != nullptr`, stores the exact cost of the returned split.
   Thresholds OptimizeAxisSingleSplit(uint32_t axis, uint32_t ncells,
                                      uint32_t M_eff,
-                                     int64_t* best_cost = nullptr);
+                                     FixedPointCost* best_cost = nullptr);
   // `axis==0`: sparse-hist path (bins already sorted by DC0 rank, no sort
   //            needed; uses `h_history`/`N_history`).
-  void AccumulateSingleSplitAxis0(std::vector<int64_t>& score_diff,
+  void AccumulateSingleSplitAxis0(std::vector<FixedPointCost>& score_diff,
                                   uint32_t& bin_mask, uint32_t& ctx_mask);
   // `axis!=0`: dense-cnt path (uses `h_cnt`/`N_cnt`, sweeps ranks linearly).
   void AccumulateSingleSplitOther(uint32_t axis, uint32_t ncells,
                                   uint32_t M_eff,
-                                  std::vector<int64_t>& score_diff,
+                                  std::vector<FixedPointCost>& score_diff,
                                   uint32_t& bin_mask, uint32_t& ctx_mask);
 
   template <uint32_t Axis>
   void AccumulateSingleSplitOtherAxis(uint32_t ncells, uint32_t M_eff,
-                                      std::vector<int64_t>& score_diff,
+                                      std::vector<FixedPointCost>& score_diff,
                                       uint32_t& bin_mask, uint32_t& ctx_mask);
 
   // Drains collected `cnt` entries into the `Knuth_solver.costs` `M_eff×M_eff`
@@ -211,10 +211,12 @@ struct PartitioningCtx {
   bool OptimizeAxisSingleSweep(uint32_t axis, ThresholdSet* T,
                                Thresholds* scratch,
                                const Thresholds& bucket_thresholds,
-                               int64_t* best_cost = nullptr);
+                               const std::vector<ACEntry>& stream,
+                               FixedPointCost* best_cost = nullptr);
 
   template <uint32_t Axis>
-  void SweepGeneralAxis(uint32_t M_eff, uint32_t ncells);
+  void SweepGeneralAxis(uint32_t M_eff, uint32_t ncells,
+                        const std::vector<ACEntry>& stream);
 
   // Performs iterative coordinate descent to find optimal threshold vectors
   // `(TY, TCb, TCr)` for a given target factorization `(a, b, c)`.
@@ -230,11 +232,18 @@ struct PartitioningCtx {
   ThresholdSet OptimizeThresholds(ThresholdSet T,
                                   uint32_t M_target = UINT32_MAX,
                                   uint32_t max_iters = 20,
-                                  int64_t* best_cost = nullptr);
+                                  FixedPointCost* best_cost = nullptr);
+  ThresholdSet OptimizeThresholds(ThresholdSet T,
+                                  const std::vector<ACEntry>& stream,
+                                  uint32_t M_target = UINT32_MAX,
+                                  uint32_t max_iters = 20,
+                                  FixedPointCost* best_cost = nullptr);
 
   // Compute total entropy cost for fixed thresholds over a stream.
   // Returns cost in fixed-point units, divide by `kFScale` for bits.
-  int64_t TotalCost(const ThresholdSet& T);
+  FixedPointCost TotalCost(const ThresholdSet& T);
+  FixedPointCost TotalCost(const ThresholdSet& T,
+                           const std::vector<ACEntry>& stream);
 };
 
 }  // namespace jxl

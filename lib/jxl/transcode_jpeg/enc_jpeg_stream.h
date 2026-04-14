@@ -28,6 +28,7 @@
 #define LIB_JXL_TRANSCODE_JPEG_ENC_JPEG_STREAM_H_
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/transcode_jpeg/enc_jpeg_opt_data.h"
@@ -56,12 +57,13 @@ StatusOr<ACStreamData> BuildACStream(const JPEGOptData& d, ThreadPool* pool);
 // changes of the selected AC histogram symbol, which can be coarser than the
 // raw bin, so a reset frame may update `bin` while leaving `bin_change = 0`.
 // Stays in the header as templated callbacks are used in multiple places.
-template <class FlushH, class FlushN, class OnRun>
-void SweepACStream(const std::vector<ACEntry>& stream, FlushH&& flush_h,
-                   FlushN&& flush_N, OnRun&& on_run) {
+template <class It, class FlushH, class FlushN, class OnRun>
+void SweepACStreamRange(It begin, It end, FlushH&& flush_h, FlushN&& flush_N,
+                        OnRun&& on_run) {
   uint32_t dc0_idx = 0;
   uint32_t bin_state = 0;
-  for (const uint32_t frame : stream) {
+  for (It it = begin; it != end; ++it) {
+    const uint32_t frame = *it;
     if (frame >> 31) {
       dc0_idx = (frame & 0x7Fu) << 4;
       bin_state = (frame >> 7) & 0x3FFFFFu;
@@ -77,6 +79,14 @@ void SweepACStream(const std::vector<ACEntry>& stream, FlushH&& flush_h,
     const uint32_t run = (frame & 0x1Fu) + 1;
     on_run(dc0_idx, dc1_idx, dc2_idx, run, bin_state);
   }
+}
+
+template <class FlushH, class FlushN, class OnRun>
+void SweepACStream(const std::vector<ACEntry>& stream, FlushH&& flush_h,
+                   FlushN&& flush_N, OnRun&& on_run) {
+  SweepACStreamRange(
+      stream.begin(), stream.end(), std::forward<FlushH>(flush_h),
+      std::forward<FlushN>(flush_N), std::forward<OnRun>(on_run));
 }
 
 }  // namespace jxl

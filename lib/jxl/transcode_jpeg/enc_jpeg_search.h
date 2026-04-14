@@ -81,6 +81,7 @@ struct JPEGCtxEffortParams {
                 /*refine_iters=*/0,
                 /*refine_radius=*/0};
       case SpeedTier::kTortoise:
+        // `kRawAI` is marginally slower here but did not give better results.
         return {/*ac_hist_model=*/JPEGTranscodeACModel::kToken420,
                 /*keep_top_k=*/16,
                 /*rank_m_target=*/64,
@@ -120,7 +121,7 @@ struct FactorizationCandidate {
   uint32_t b;
   uint32_t c;
   ThresholdSet init;
-  int64_t rank_cost = std::numeric_limits<int64_t>::max();
+  FixedPointCost rank_cost = std::numeric_limits<FixedPointCost>::max();
 
   bool operator<(const FactorizationCandidate& rhs) const {
     if (rank_cost != rhs.rank_cost) return rank_cost < rhs.rank_cost;

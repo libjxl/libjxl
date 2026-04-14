@@ -88,7 +88,7 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
               static_cast<int>(speed_tier), static_cast<int>(candidates.size()),
               effort.rank_iters, effort.main_iters, effort.refine_iters);
 
-  int64_t best_cost = std::numeric_limits<int64_t>::max();
+  FixedPointCost best_cost = std::numeric_limits<FixedPointCost>::max();
   ThresholdSet best_thr;
   ContextMap best_ctx;
   std::mutex mu;
@@ -107,7 +107,7 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
         const FactorizationCandidate& candidate = candidates[idx];
         PartitioningCtx& ctx = ctx_pool[thread_id];
 
-        int64_t opt_cost = 0;
+        FixedPointCost opt_cost = 0;
         ThresholdSet opt_thr = ctx.OptimizeThresholds(
             candidate.init, effort.main_m_target, effort.main_iters, &opt_cost);
 
@@ -122,13 +122,13 @@ Status OptimizeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
             RefineClustered(*opt_data, opt_thr, cl_result, effort.refine_iters,
                             effort.refine_radius);
         ThresholdSet refined_thr = refine_result.thresholds;
-        int64_t entropy_cost = refine_result.cost;
-        int64_t nz_cost = refine_result.nz_cost;
+        FixedPointCost entropy_cost = refine_result.cost;
+        FixedPointCost nz_cost = refine_result.nz_cost;
         (void)nz_cost;
-        int64_t total_cost = entropy_cost;
+        FixedPointCost total_cost = entropy_cost;
 
         // Add signalling overhead for histogram headers
-        JXL_ASSIGN_OR_RETURN(int64_t overhead,
+        JXL_ASSIGN_OR_RETURN(FixedPointCost overhead,
                              cl_result.ComputeSignallingOverhead(*opt_data));
         total_cost += overhead;
 

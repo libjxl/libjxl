@@ -22,7 +22,7 @@ void PartitioningCtx::FlushTerm(std::vector<uint32_t>& cnt,
                                 std::vector<uint64_t>& touched, uint32_t M_eff,
                                 uint32_t ncells) {
   const JPEGOptData& d = data();
-  std::vector<int64_t>& costs = Knuth_solver.costs;
+  std::vector<FixedPointCost>& costs = Knuth_solver.costs;
   // Track which `ci` slots were touched so we can clear their histories.
   uint32_t touched_ci = 0;
 
@@ -44,7 +44,7 @@ void PartitioningCtx::FlushTerm(std::vector<uint32_t>& cnt,
         uint32_t ci = bit_idx % ncells;  // cell index
 
         // `costs[n * M_eff + l]` = diff contribution for interval `[l..n]`.
-        int64_t* cost_row = &costs[n * M_eff];
+        FixedPointCost* cost_row = &costs[n * M_eff];
 
         uint32_t freq = cnt[bit_idx];
         auto& history = h_history[ci];
@@ -62,12 +62,12 @@ void PartitioningCtx::FlushTerm(std::vector<uint32_t>& cnt,
           // only write at the boundaries (where the term changes).
           uint32_t l = 0;
           uint32_t j_before_l = 0;
-          int64_t prev_term = 0;
+          FixedPointCost prev_term = 0;
           for (const Bin& h : history) {
             // `j_ln` = counts in `[l..n]` before adding `freq`.
             uint32_t j_ln = j_n - j_before_l;
             // Entropy change for interval `[l..n]` from adding `freq`.
-            int64_t term = sign * (d.ftab[j_ln - freq] - d.ftab[j_ln]);
+            FixedPointCost term = sign * (d.ftab[j_ln - freq] - d.ftab[j_ln]);
             cost_row[l] += term - prev_term;
             // Move to the next interval boundary.
             l = h.first + 1;
@@ -161,10 +161,10 @@ static OnRunCallback<Axis> MakeOnRun(PartitioningCtx& ctx, uint32_t ncells) {
 }
 
 template <uint32_t Axis>
-void PartitioningCtx::SweepGeneralAxis(uint32_t M_eff, uint32_t ncells) {
-  const JPEGOptData& d = data();
+void PartitioningCtx::SweepGeneralAxis(uint32_t M_eff, uint32_t ncells,
+                                       const std::vector<ACEntry>& stream) {
   SweepACStream(
-      d.AC_stream,
+      stream,
       [&]() {
         FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff, ncells);
       },
@@ -178,7 +178,8 @@ void PartitioningCtx::SweepGeneralAxis(uint32_t M_eff, uint32_t ncells) {
 
 // Accumulates the K=2 score-diff curve for the sparse `axis == 0` path.
 void PartitioningCtx::AccumulateSingleSplitAxis0(
-    std::vector<int64_t>& score_diff, uint32_t& bin_mask, uint32_t& ctx_mask) {
+    std::vector<FixedPointCost>& score_diff, uint32_t& bin_mask,
+    uint32_t& ctx_mask) {
   const JPEGOptData& d = data();
   // Converts the sparse `(rank, count)` list accumulated in `ch[ci]` for
   // each touched cell into additive contributions to `score_diff`.
@@ -208,9 +209,10 @@ void PartitioningCtx::AccumulateSingleSplitAxis0(
       for (const auto& hi : hist) total += hi.second;
       uint32_t j_before_l = 0;
       uint32_t l = 1;
-      int64_t prev_term = 0;
+      FixedPointCost prev_term = 0;
       for (const auto& h : hist) {
-        int64_t term = sign * (d.ftab[j_before_l] + d.ftab[total - j_before_l]);
+        FixedPointCost term =
+            sign * (d.ftab[j_before_l] + d.ftab[total - j_before_l]);
         score_diff[l] += term - prev_term;
         j_before_l += h.second;
         l = static_cast<uint32_t>(h.first) + 1;
@@ -254,7 +256,7 @@ void PartitioningCtx::AccumulateSingleSplitAxis0(
 // in `AccumulateSingleSplitAxis0` but with sorting — it is slower.
 template <uint32_t Axis>
 void PartitioningCtx::AccumulateSingleSplitOtherAxis(
-    uint32_t ncells, uint32_t M_eff, std::vector<int64_t>& score_diff,
+    uint32_t ncells, uint32_t M_eff, std::vector<FixedPointCost>& score_diff,
     uint32_t& bin_mask, uint32_t& ctx_mask) {
   constexpr uint32_t Ax1 = (Axis + 1) % 3;
   constexpr uint32_t Ax2 = (Axis + 2) % 3;
@@ -275,12 +277,13 @@ void PartitioningCtx::AccumulateSingleSplitOtherAxis(
       // Pass 2: one-write diff over ranks `0..M_eff-1`, reset entries.
       uint32_t j_before_l = 0;
       uint32_t l = 1;
-      int64_t prev_term = 0;
+      FixedPointCost prev_term = 0;
       for (uint32_t n = 0; n < M_eff; ++n) {
         uint32_t f = cnt[ci * M_eff + n];
         cnt[ci * M_eff + n] = 0;
         if (f == 0) continue;
-        int64_t term = sign * (d.ftab[j_before_l] + d.ftab[total - j_before_l]);
+        FixedPointCost term =
+            sign * (d.ftab[j_before_l] + d.ftab[total - j_before_l]);
         score_diff[l] += term - prev_term;
         prev_term = term;
         j_before_l += f;
@@ -316,7 +319,8 @@ void PartitioningCtx::AccumulateSingleSplitOtherAxis(
 
 void PartitioningCtx::AccumulateSingleSplitOther(
     uint32_t axis, uint32_t ncells, uint32_t M_eff,
-    std::vector<int64_t>& score_diff, uint32_t& bin_mask, uint32_t& ctx_mask) {
+    std::vector<FixedPointCost>& score_diff, uint32_t& bin_mask,
+    uint32_t& ctx_mask) {
   if (axis == 1) {
     AccumulateSingleSplitOtherAxis<1>(ncells, M_eff, score_diff, bin_mask,
                                       ctx_mask);
@@ -331,7 +335,7 @@ void PartitioningCtx::AccumulateSingleSplitOther(
 Thresholds PartitioningCtx::OptimizeAxisSingleSplit(uint32_t axis,
                                                     uint32_t ncells,
                                                     uint32_t M_eff,
-                                                    int64_t* best_cost) {
+                                                    FixedPointCost* best_cost) {
   const JPEGOptData& d = data();
   // Reuse `costs` as a 1D diff buffer (indices `1..M_eff-1`).
   // `score_diff[s]` holds the delta `E(s) - E(s-1)` in bucket space.
@@ -355,8 +359,8 @@ Thresholds PartitioningCtx::OptimizeAxisSingleSplit(uint32_t axis,
 
   // Prefix-sum `score_diff[1..M_eff-1]` recovers the exact score `E(s)` for
   // each valid split `s`.
-  int64_t cur = 0;
-  int64_t best = std::numeric_limits<int64_t>::max();
+  FixedPointCost cur = 0;
+  FixedPointCost best = std::numeric_limits<FixedPointCost>::max();
   uint32_t best_s = 1;
   for (uint32_t s = 1; s < M_eff; ++s) {
     cur += score_diff[s];
@@ -373,7 +377,8 @@ Thresholds PartitioningCtx::OptimizeAxisSingleSplit(uint32_t axis,
 // Uses the K=2 fast path for a single split and the Knuth-DP path otherwise.
 bool PartitioningCtx::OptimizeAxisSingleSweep(
     uint32_t axis, ThresholdSet* T, Thresholds* scratch,
-    const Thresholds& bucket_thresholds, int64_t* best_cost) {
+    const Thresholds& bucket_thresholds, const std::vector<ACEntry>& stream,
+    FixedPointCost* best_cost) {
   JXL_DASSERT(T != nullptr);
   JXL_DASSERT(scratch != nullptr);
   const JPEGOptData& d = data();
@@ -408,11 +413,12 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
       Knuth_solver.ResetCosts(M_eff * M_eff);
 
       if (axis == 0) {
-        SweepGeneralAxis<0>(M_eff, ncells);
+        SweepGeneralAxis<0>(M_eff, ncells, stream);
       } else if (axis == 1) {
-        SweepGeneralAxis<1>(M_eff, ncells);
+        SweepGeneralAxis<1>(M_eff, ncells, stream);
       } else {
-        SweepGeneralAxis<2>(M_eff, ncells);
+        JXL_DASSERT(axis == 2);
+        SweepGeneralAxis<2>(M_eff, ncells, stream);
       }
 
       std::vector<uint32_t> solution =
@@ -426,7 +432,10 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
 
   bool changed = (*scratch != T0);
   if (changed) std::swap(T0, *scratch);
-  if (best_cost != nullptr && M <= num_intervals) *best_cost = TotalCost(*T);
+
+  if (best_cost != nullptr && M <= num_intervals) {
+    *best_cost = TotalCost(*T, stream);
+  }
   return changed;
 }
 
@@ -436,7 +445,14 @@ bool PartitioningCtx::OptimizeAxisSingleSweep(
 ThresholdSet PartitioningCtx::OptimizeThresholds(ThresholdSet T,
                                                  uint32_t M_target,
                                                  uint32_t max_iters,
-                                                 int64_t* best_cost) {
+                                                 FixedPointCost* best_cost) {
+  return OptimizeThresholds(std::move(T), data().AC_stream, M_target, max_iters,
+                            best_cost);
+}
+
+ThresholdSet PartitioningCtx::OptimizeThresholds(
+    ThresholdSet T, const std::vector<ACEntry>& stream, uint32_t M_target,
+    uint32_t max_iters, FixedPointCost* best_cost) {
   const JPEGOptData& d = data();
   uint32_t a = static_cast<uint32_t>(T.TY().size() + 1);
   uint32_t b = static_cast<uint32_t>(T.TCb().size() + 1);
@@ -455,36 +471,41 @@ ThresholdSet PartitioningCtx::OptimizeThresholds(ThresholdSet T,
   bool have_cost = false;
   for (uint32_t iter = 0; iter < max_iters; ++iter) {
     if ((a != 1) && (iter == 0 || TCb_changed || TCr_changed)) {
-      TY_changed = OptimizeAxisSingleSweep(0, &T, &scratch,
-                                           bucket_thresholds[0], best_cost);
+      TY_changed = OptimizeAxisSingleSweep(
+          0, &T, &scratch, bucket_thresholds[0], stream, best_cost);
       have_cost = true;
     } else {
       TY_changed = false;
     }
     if ((b != 1) && (iter == 0 || TY_changed || TCr_changed)) {
-      TCb_changed = OptimizeAxisSingleSweep(1, &T, &scratch,
-                                            bucket_thresholds[1], best_cost);
+      TCb_changed = OptimizeAxisSingleSweep(
+          1, &T, &scratch, bucket_thresholds[1], stream, best_cost);
       have_cost = true;
     } else {
       TCb_changed = false;
     }
     if ((c != 1) && (iter == 0 || TY_changed || TCb_changed)) {
-      TCr_changed = OptimizeAxisSingleSweep(2, &T, &scratch,
-                                            bucket_thresholds[2], best_cost);
+      TCr_changed = OptimizeAxisSingleSweep(
+          2, &T, &scratch, bucket_thresholds[2], stream, best_cost);
       have_cost = true;
     } else {
       TCr_changed = false;
     }
     if (!TY_changed && !TCb_changed && !TCr_changed) break;
   }
-  if (best_cost != nullptr && !have_cost) *best_cost = TotalCost(T);
+  if (best_cost != nullptr && !have_cost) *best_cost = TotalCost(T, stream);
   return T;
 }
 
 // Computes the exact entropy objective for a fixed threshold set.
 // It streams AC events once, accumulates per-cell histograms, and flushes them
 // sparsely.
-int64_t PartitioningCtx::TotalCost(const ThresholdSet& T) {
+FixedPointCost PartitioningCtx::TotalCost(const ThresholdSet& T) {
+  return TotalCost(T, data().AC_stream);
+}
+
+FixedPointCost PartitioningCtx::TotalCost(const ThresholdSet& T,
+                                          const std::vector<ACEntry>& stream) {
   const JPEGOptData& d = data();
   uint32_t na = static_cast<uint32_t>(T.TY().size() + 1);
   uint32_t num_cells = na * static_cast<uint32_t>(T.TCb().size() + 1) *
@@ -492,7 +513,7 @@ int64_t PartitioningCtx::TotalCost(const ThresholdSet& T) {
   axis_maps.Update(T);
   if (h_cnt.size() < num_cells) h_cnt.assign(num_cells, 0);
   if (N_cnt.size() < num_cells) N_cnt.assign(num_cells, 0);
-  int64_t cost = 0;
+  FixedPointCost cost = 0;
 
   auto flush_h = [&]() {
     for (size_t gi = 0; gi < kGroupCount; ++gi) {
@@ -533,8 +554,7 @@ int64_t PartitioningCtx::TotalCost(const ThresholdSet& T) {
 
   uint32_t ncells_per_ax0 = static_cast<uint32_t>(T.TCb().size() + 1) *
                             static_cast<uint32_t>(T.TCr().size() + 1);
-  SweepACStream(d.AC_stream, flush_h, flush_N,
-                MakeOnRun<0>(*this, ncells_per_ax0));
+  SweepACStream(stream, flush_h, flush_N, MakeOnRun<0>(*this, ncells_per_ax0));
   flush_h();
   flush_N();
   return cost;

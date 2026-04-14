@@ -29,15 +29,17 @@ void JPEGOptData::InitFTab(size_t max_n) {
   ftab.resize(max_n + 1, 0);
   for (size_t i = std::max<size_t>(1, old_size); i <= max_n; ++i) {
     double n = static_cast<double>(i);
-    ftab[i] = static_cast<int64_t>(std::llround(n * std::log2(n) * kFScale));
+    ftab[i] =
+        static_cast<FixedPointCost>(std::llround(n * std::log2(n) * kFScale));
   }
 }
 // `ftab` may not cover counts as large as `num_blocks`; fall back to
 // direct calculation for large values.
-int64_t JPEGOptData::NZFTab(uint32_t n) const {
+FixedPointCost JPEGOptData::NZFTab(uint32_t n) const {
   if (n < ftab.size()) return ftab[n];
   const double nd = static_cast<double>(n);
-  return static_cast<int64_t>(std::llround(nd * std::log2(nd) * kFScale));
+  return static_cast<FixedPointCost>(
+      std::llround(nd * std::log2(nd) * kFScale));
 }
 
 uint32_t JPEGOptData::Token420FromAI(uint32_t ai) {
@@ -79,10 +81,10 @@ Thresholds InitThresh(const JPEGOptData& d, uint32_t axis,
   KnuthPartitionSolver solver(M);
   solver.ResetCosts(static_cast<size_t>(M) * M);
   for (uint32_t n = 0; n < M; ++n) {
-    int64_t prev_base = 0;
+    FixedPointCost prev_base = 0;
     for (uint32_t l = 0; l <= n; ++l) {
       uint32_t total = prefix[n + 1] - prefix[l];
-      int64_t base = d.NZFTab(total);
+      FixedPointCost base = d.NZFTab(total);
       if (n > 0 && l < n) {
         base -= d.NZFTab(prefix[n] - prefix[l]);
       }
@@ -104,6 +106,7 @@ Thresholds InitThresh(const JPEGOptData& d, uint32_t axis,
 // violating `kMaxCells` (`a*b*c <= 64`), `kMaxIntervals` (each factor <= 16),
 // or exceeding the number of distinct DC values on that axis. Lower
 // factorizations are dominated: coarser partitioning can only increase entropy.
+// For images large enough this produces 58 factorizations.
 //
 // Grayscale note: in a grayscale image `d.channels == 1`, so Cb and Cr are
 // absent. The JPEG XL context map format still requires three sets of contexts

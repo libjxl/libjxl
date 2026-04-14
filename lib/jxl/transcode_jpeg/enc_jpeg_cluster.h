@@ -59,7 +59,7 @@ struct ClusterBoundary {
 
 // Clustering of DC cells into `ctx_map`.
 struct Clustering {
-  int64_t clustered_cost;
+  FixedPointCost clustered_cost;
   uint32_t ctx_num;
   ContextMap ctx_map;
 
@@ -68,10 +68,14 @@ struct Clustering {
   DenseNZHistogramSet hist_nz_h;
   DenseNZPredHistogramSet hist_nz_N;
 
-  static constexpr uint32_t kSignallingMaxToken = kACTokenCount;
-  using SignallingTokenHist =
-      std::array<std::array<uint32_t, kSignallingMaxToken>,
-                 kZeroDensityContextCount>;
+  struct SignallingTokenHist {
+    std::array<std::array<uint32_t, kACTokenCount>, kZeroDensityContextCount>
+        hist;
+
+    StatusOr<FixedPointCost> ClusterSignallingOverhead(
+        const JPEGOptData& d, const CompactHistogram& cluster,
+        FixedPointCost cutoff);
+  };
 
   // Scratch buffer for `ComputeSignallingOverhead`: maps `(zdc, token) ->
   // count`. Heap-backed to keep `Clustering` small enough for the stack budget
@@ -86,53 +90,10 @@ struct Clustering {
   Clustering(const Clustering&) = delete;
   Clustering& operator=(const Clustering&) = delete;
 
-  // Greedily merges contexts into at most `num_clusters` clusters to minimise
-  // total entropy cost, then optionally continues merging while the sum of
-  // entropy and signalling overhead keeps decreasing.
-  //
-  // **Entropy cost model**
-  // For each cluster `i`:
-  //   `E[i] = sum_zdc ftab[N[zdc]] - sum_id ftab[h[zdc][value]]`
-  //           + NZ analogues (`hist_nz_N / hist_nz_h`)
-  // where `N[zdc]` is the count of all AC values in `zdc` context,
-  // `h[zdc][value]` is the count of the modeled AC value in that context:
-  // fixed `(4,2,0)` tokens at efforts 8/9 and raw `ai` at effort 10+.
-  // Since entropy is convex, merging two clusters always increases `E` by
-  // a non-negative amount.
-  //
-  // **Merge delta**
-  // `merge_delta(a, b)` computes:
-  //   `Δ = E(merged) − E(a) − E(b)`
-  //     `= Σ_zdc [ftab[N_a+N_b] − ftab[N_a] − ftab[N_b]]`  (N-term, ≥0)
-  //       `− Σ_zdc Σ_value [ftab[h_a+h_b] − ftab[h_a] − ftab[h_b]]`
-  //         (h-term, ≥0)
-  //       `+ NZ analogues`
-  //
-  // **Main greedy loop (phase 1)**
-  // Keeps a symmetric `deltas[total_ctxs × total_ctxs]` cache. Each
-  // iteration:
-  //   1. Scan all `active^2/2` pairs in parallel to find the minimum-Δ merge.
-  //   2. Apply the merge: combine histograms into the surviving cluster (lower
-  //      id wins), set `parent[b] = a`, remove `b` from the active list.
-  //   3. Recompute distances from the new merged cluster `a` to all survivors.
-  // Repeats until `active_clusters == num_clusters`.
-  //
-  // **Overhead-aware tail (phase 2, if `overhead_aware_tail`)**
-  // On small images the signalling overhead (histogram headers) can outweigh
-  // entropy savings, so `num_clusters` may be too large. Phase 2 continues
-  // greedy merging past `num_clusters`, each time comparing
-  //   `(entropy + signalling_overhead)`
-  // before and after the tentative merge. If the merge improves the total,
-  // it is committed; otherwise it is rolled back via `RollbackScratch` and
-  // the loop stops.
-  //
-  // **Finalisation**
-  // `parent[]` forms a forest; path-compressed `find_cluster()` maps every
-  // original context to its surviving root. `ctx_map[i]` is then the index
-  // of that root within `active`, giving each context its cluster id.
-  // The histogram arrays are compacted in-place to contain only the
-  // `active_clusters` surviving cluster histograms, that are then used for
-  // refinement.
+  // Builds a fresh clustering for one threshold set: populates the per-cell
+  // AC and nonzero-count histograms from `JPEGOptData`, then runs
+  // `AgglomerativeClustering` to merge them down to the requested cluster
+  // budget.
   static StatusOr<Clustering> Build(const JPEGOptData& d,
                                     const ThresholdSet& thresholds,
                                     uint32_t num_clusters,
@@ -152,20 +113,20 @@ struct Clustering {
   // When `cutoff` is finite, returns early once the accumulated positive
   // overhead reaches that value, which is sufficient for the greedy tail merge
   // rejection test.
-  StatusOr<int64_t> ComputeSignallingOverhead(
+  StatusOr<FixedPointCost> ComputeSignallingOverhead(
       const JPEGOptData& d,
-      int64_t cutoff = std::numeric_limits<int64_t>::max()) const;
+      FixedPointCost cutoff = std::numeric_limits<FixedPointCost>::max()) const;
 
   // Computes the signalling overhead contribution of a single cluster.
   // Used by the overhead-aware merge tail to update the running overhead
   // incrementally after tentative merges.
-  StatusOr<int64_t> ComputeClusterSignallingOverhead(
+  StatusOr<FixedPointCost> ComputeClusterSignallingOverhead(
       const JPEGOptData& d, uint32_t cluster_id,
-      int64_t cutoff = std::numeric_limits<int64_t>::max()) const;
+      FixedPointCost cutoff = std::numeric_limits<FixedPointCost>::max()) const;
 
   // Returns the nonzero-count entropy portion of the total cost:
   // `Σ NZFTab[N_nz] − Σ NZFTab[h_nz]` summed over all clusters and histograms.
-  int64_t ComputeNZCost(const JPEGOptData& d) const;
+  FixedPointCost ComputeNZCost(const JPEGOptData& d) const;
 
   // Build threshold-major boundary views for axis-local cluster lookups:
   // `(channel, thr_ind, ci) -> {cluster_left, cluster_right}`. `ci` enumerates

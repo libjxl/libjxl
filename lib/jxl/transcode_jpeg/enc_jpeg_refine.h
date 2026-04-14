@@ -36,8 +36,8 @@ namespace jxl {
 // nonzero-count entropy portion) is broken out separately for logging.
 struct RefineResult {
   ThresholdSet thresholds;
-  int64_t cost;
-  int64_t nz_cost;
+  FixedPointCost cost;
+  FixedPointCost nz_cost;
 };
 
 // Performs the local refinement pass on an already clustered threshold set.

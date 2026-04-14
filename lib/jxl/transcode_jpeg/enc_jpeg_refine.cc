@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "lib/jxl/transcode_jpeg/enc_jpeg_axis_maps.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_opt_data.h"
 
 namespace jxl {
 
@@ -88,16 +89,16 @@ struct RefineCtx {
 
   // Moves one histogram bin between clusters and returns the induced cost
   // delta.
-  template <typename HistogramSet>
-  int64_t MoveHistogramBin(HistogramSet* hist, uint32_t old_cl, uint32_t new_cl,
-                           uint32_t bin, int64_t sign) const {
+  template <FixedPointCost sign, typename HistogramSet>
+  FixedPointCost MoveHistogramBin(HistogramSet* hist, uint32_t old_cl,
+                                  uint32_t new_cl, uint32_t bin) const {
     const JPEGOptData& d = axis_maps.image;
     auto& from = (*hist)[old_cl];
     uint32_t old_freq = from.Get(bin);
     JXL_DASSERT(old_freq > 0);
     if (old_freq == 0) return 0;
 
-    int64_t delta = sign * (d.NZFTab(old_freq - 1) - d.NZFTab(old_freq));
+    FixedPointCost delta = sign * (d.NZFTab(old_freq - 1) - d.NZFTab(old_freq));
     from.Subtract(bin, 1);
 
     auto& to = (*hist)[new_cl];
@@ -109,11 +110,12 @@ struct RefineCtx {
 
   // Applies the paired `h`/`N` histogram update for one moved coding event.
   template <typename HistogramHSet, typename HistogramNSet>
-  int64_t MoveHistogramEvent(uint32_t old_cl, uint32_t new_cl,
-                             HistogramHSet* hist_h, HistogramNSet* hist_N,
-                             uint32_t h_bin, uint32_t N_bin) const {
-    return MoveHistogramBin(hist_h, old_cl, new_cl, h_bin, -1) +
-           MoveHistogramBin(hist_N, old_cl, new_cl, N_bin, +1);
+  FixedPointCost MoveHistogramEvent(uint32_t old_cl, uint32_t new_cl,
+                                    HistogramHSet* hist_h,
+                                    HistogramNSet* hist_N, uint32_t h_bin,
+                                    uint32_t N_bin) const {
+    return MoveHistogramBin<-1>(hist_h, old_cl, new_cl, h_bin) +
+           MoveHistogramBin<+1>(hist_N, old_cl, new_cl, N_bin);
   }
 
   // Returns the cluster ids on the two sides of one threshold boundary.
@@ -167,8 +169,8 @@ struct RefineCtx {
   }
 
   // Reassigns one block's histogram contributions across a threshold boundary.
-  int64_t ApplyBlockMove(uint32_t channel, uint32_t block, uint32_t thr_ind,
-                         uint32_t ci, bool upward) {
+  FixedPointCost ApplyBlockMove(uint32_t channel, uint32_t block,
+                                uint32_t thr_ind, uint32_t ci, bool upward) {
     const JPEGOptData& d = axis_maps.image;
 
     std::pair<uint32_t, uint32_t> boundary =
@@ -179,8 +181,8 @@ struct RefineCtx {
 
     uint32_t N_bin = d.block_nz_pred_bucket[channel][block];
     uint32_t h_bin = NZHistogramIndex(N_bin, d.block_nonzeros[channel][block]);
-    int64_t delta = MoveHistogramEvent(old_cl, new_cl, &scratch.hist_nz_h,
-                                       &scratch.hist_nz_N, h_bin, N_bin);
+    FixedPointCost delta = MoveHistogramEvent(
+        old_cl, new_cl, &scratch.hist_nz_h, &scratch.hist_nz_N, h_bin, N_bin);
     for (uint32_t pi = d.block_offsets[channel][block];
          pi < d.block_offsets[channel][block + 1]; ++pi) {
       uint32_t bin = d.block_bins[channel][pi];
@@ -194,13 +196,13 @@ struct RefineCtx {
 
   // Applies all histogram updates caused by moving one DC slice across a
   // threshold.
-  int64_t ApplySlice(uint32_t thr_ind, ptrdiff_t slice, bool upward) {
+  FixedPointCost ApplySlice(uint32_t thr_ind, ptrdiff_t slice, bool upward) {
     const JPEGOptData& d = axis_maps.image;
 
     const auto& sorted_blocks = d.DC_sorted_blocks[axis];
     const auto& block_off = d.DC_block_offsets[axis];
 
-    int64_t cost_change = 0;
+    FixedPointCost cost_change = 0;
     uint32_t blk_lo = block_off[static_cast<size_t>(slice)];
     uint32_t blk_hi = block_off[static_cast<size_t>(slice + 1)];
     for (uint32_t bi = blk_lo; bi < blk_hi; ++bi) {
@@ -245,7 +247,7 @@ struct RefineCtx {
   // Searches locally for the best placement of one threshold and commits the
   // winning move.
   int16_t RefineThreshold(uint32_t thr_ind, const Thresholds& thresholds,
-                          Clustering& clustering, int64_t* base_cost) {
+                          Clustering& clustering, FixedPointCost* base_cost) {
     ptrdiff_t cur_idx = AxisMaps::Bkt(thresholds[thr_ind] - 1, dc_axis);
     ptrdiff_t lo_edge = std::max(
         {cur_idx - search_radius,
@@ -258,10 +260,10 @@ struct RefineCtx {
                       : AxisMaps::Bkt(thresholds[thr_ind + 1] - 1, dc_axis)});
 
     ptrdiff_t best_idx = cur_idx;
-    int64_t best_cost = *base_cost;
+    FixedPointCost best_cost = *base_cost;
 
     scratch.Reset(clustering);
-    int64_t current_cost = *base_cost;
+    FixedPointCost current_cost = *base_cost;
     for (ptrdiff_t idx = cur_idx - 1; idx > lo_edge; --idx) {
       current_cost += ApplySlice(thr_ind, idx, false);
       if (current_cost < best_cost) {
@@ -323,7 +325,7 @@ RefineResult RefineClustered(const JPEGOptData& d,
   scratch.local_cluster_boundary =
       clustering.BuildLocalClusterBoundaries(cur_T, d.channels);
 
-  int64_t base_cost = clustering.clustered_cost;
+  FixedPointCost base_cost = clustering.clustered_cost;
   bool changed = true;
   for (uint32_t iter = 0; iter < max_iters && changed; ++iter) {
     changed = false;

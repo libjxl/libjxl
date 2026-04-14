@@ -52,8 +52,10 @@ namespace jxl {
 // max 4 AC positions in bin (see `kCoeffFreqContext`), then max bin `freq` is
 // 2^28 and max `f(freq) = 2^28 * 28`, fixed point `f(freq) * kFScale = 2^53 *
 // 28` fits in `int64_t` (and there is still room for clustering that can
-// increase `n` three-fold).
-constexpr int64_t kFScale = 1LL << 25;
+// increase `n` three-fold). Signed `int64_t` is used to allow simpler
+// comparisons.
+using FixedPointCost = int64_t;
+constexpr FixedPointCost kFScale = 1LL << 25;
 
 // Partitioning limits are defined by the JPEG XL standard I.2.2.
 // Max number of DC cells in 3D DC space.
@@ -158,7 +160,7 @@ using Factorization = std::array<uint32_t, kNumCh>;
 // Factorizations of DC thresholds into number of intervals per channel.
 using Factorizations = std::vector<Factorization>;
 
-JXL_INLINE double bit_cost(int64_t cost) {
+JXL_INLINE double bit_cost(FixedPointCost cost) {
   return static_cast<double>(cost) / kFScale;
 }
 
@@ -179,7 +181,7 @@ struct JPEGOptData {
       std::array<std::array<std::array<uint32_t, kDCTRange>, kNumPos>, kNumCh>;
 
   // Fixed-point entropy table: `f(n) = n*log2(n)*kFScale`.
-  std::vector<int64_t> ftab;
+  std::vector<FixedPointCost> ftab;
 
   uint32_t channels;
   // Number of 8x8 blocks in image for each component.
@@ -349,7 +351,7 @@ struct JPEGOptData {
                        JPEGTranscodeACModel hist_model,
                        const JpegCflContext& cfl_ctx, ThreadPool* pool);
 
-  int64_t NZFTab(uint32_t n) const;
+  FixedPointCost NZFTab(uint32_t n) const;
 
  private:
   void InitFTab(size_t max_n);

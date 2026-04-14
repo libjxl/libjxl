@@ -19,17 +19,20 @@
 #include <numeric>
 
 #include "lib/jxl/transcode_jpeg/enc_jpeg_cluster.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_opt_data.h"
 
 namespace jxl {
 
 // Entropy increase of merging two histogram bins with counts `a` and `b`.
 // Uses the bounded `ftab` table; only valid when `a + b < ftab.size()`.
-JXL_INLINE int64_t MergeCost(const JPEGOptData& d, uint32_t a, uint32_t b) {
+JXL_INLINE FixedPointCost MergeCost(const JPEGOptData& d, uint32_t a,
+                                    uint32_t b) {
   return d.ftab[a + b] - d.ftab[a] - d.ftab[b];
 }
 
 // NZ-histogram variant: falls back to direct computation for large counts.
-JXL_INLINE int64_t NZMergeCost(const JPEGOptData& d, uint32_t a, uint32_t b) {
+JXL_INLINE FixedPointCost NZMergeCost(const JPEGOptData& d, uint32_t a,
+                                      uint32_t b) {
   return d.NZFTab(a + b) - d.NZFTab(a) - d.NZFTab(b);
 }
 
@@ -48,6 +51,50 @@ namespace {
 //     `RestoreRollback` undo it if rejected. An early-exit `cutoff` passed
 //     to `ComputeSignallingOverhead` avoids full overhead recomputation when
 //     it cannot improve.
+//
+// **Entropy cost model**
+// For each cluster `i`:
+//   `E[i] = sum_zdc ftab[N[zdc]] - sum_id ftab[h[zdc][value]]`
+//           + NZ analogues (`hist_nz_N / hist_nz_h`)
+// where `N[zdc]` is the count of all AC values in `zdc` context,
+// `h[zdc][value]` is the count of the modeled AC value in that context:
+// fixed `(4,2,0)` tokens at efforts 8/9 and raw `ai` at effort 10+.
+// Since entropy is convex, merging two clusters always increases `E` by
+// a non-negative amount.
+//
+// **Merge delta**
+// `merge_delta(a, b)` computes:
+//   `Δ = E(merged) − E(a) − E(b)`
+//     `= Σ_zdc [ftab[N_a+N_b] − ftab[N_a] − ftab[N_b]]`  (N-term, ≥0)
+//       `− Σ_zdc Σ_value [ftab[h_a+h_b] − ftab[h_a] − ftab[h_b]]`
+//         (h-term, ≥0)
+//       `+ NZ analogues`
+//
+// **Main greedy loop (phase 1)**
+// Keeps a symmetric `deltas[total_ctxs × total_ctxs]` cache. Each
+// iteration:
+//   1. Scan all `active^2/2` pairs in parallel to find the minimum-Δ merge.
+//   2. Apply the merge: combine histograms into the surviving cluster (lower
+//      id wins), set `parent[b] = a`, remove `b` from the active list.
+//   3. Recompute distances from the new merged cluster `a` to all survivors.
+// Repeats until `active_clusters == num_clusters`.
+//
+// **Overhead-aware tail (phase 2, if `overhead_aware_tail`)**
+// On small images the signalling overhead (histogram headers) can outweigh
+// entropy savings, so `num_clusters` may be too large. Phase 2 continues
+// greedy merging past `num_clusters`, each time comparing
+//   `(entropy + signalling_overhead)`
+// before and after the tentative merge. If the merge improves the total,
+// it is committed; otherwise it is rolled back via `RollbackScratch` and
+// the loop stops.
+//
+// **Finalisation**
+// `parent[]` forms a forest; path-compressed `find_cluster()` maps every
+// original context to its surviving root. `ctx_map[i]` is then the index
+// of that root within `active`, giving each context its cluster id.
+// The histogram arrays are compacted in-place to contain only the
+// `active_clusters` surviving cluster histograms, that are then used for
+// refinement.
 struct AgglomerativeCtx {
   // Snapshot of the two cluster histograms involved in a candidate phase-2
   // merge, plus the active list, sufficient to fully undo the merge.
@@ -80,7 +127,7 @@ struct AgglomerativeCtx {
   // Total number of initial contexts (`kNumCh * num_cells`).
   const uint32_t total_ctxs;
   // Per-context entropy `E[i] = Σ ftab[N] − Σ ftab[h]`.
-  std::vector<int64_t> E;
+  std::vector<FixedPointCost> E;
   // Indices of currently live (not yet merged) cluster roots.
   std::vector<uint32_t> active;
   // Snapshot of `active` before any merges; used in `Finalize` to walk all
@@ -91,8 +138,8 @@ struct AgglomerativeCtx {
   std::vector<uint32_t> parent;
   // Symmetric pairwise merge-cost cache: `deltas[min(a,b)*total_ctxs+max(a,b)]`
   // holds `MergeDelta(a, b)`. Indexed via `Delta(a, b)`.
-  std::vector<int64_t> deltas;
-  int64_t current_entropy_cost = 0;
+  std::vector<FixedPointCost> deltas;
+  FixedPointCost current_entropy_cost = 0;
 
   AgglomerativeCtx(Clustering& clustering, const JPEGOptData& d,
                    ThreadPool* pool)
@@ -109,7 +156,7 @@ struct AgglomerativeCtx {
         parent(total_ctxs) {}
 
   // Accessor for the symmetric delta cache.
-  int64_t& Delta(uint32_t cl_a, uint32_t cl_b) {
+  FixedPointCost& Delta(uint32_t cl_a, uint32_t cl_b) {
     return deltas[std::min(cl_a, cl_b) * total_ctxs + std::max(cl_a, cl_b)];
   }
 
@@ -119,7 +166,7 @@ struct AgglomerativeCtx {
     JXL_RETURN_IF_ERROR(RunOnPool(
         pool, 0, total_ctxs, ThreadPool::NoInit,
         [&](uint32_t i, size_t) -> Status {
-          int64_t local_E = 0;
+          FixedPointCost local_E = 0;
           hist_h[i].ForEachNonZero(
               [&](uint32_t, uint32_t freq) { local_E -= d.ftab[freq]; });
           for (uint32_t freq : hist_N[i]) local_E += d.ftab[freq];
@@ -150,8 +197,8 @@ struct AgglomerativeCtx {
   // Returns `E(merged) − E(a) − E(b)`: the entropy increase of merging `cl_a`
   // and `cl_b`. The `hist_h` term iterates only the touched-bitset
   // intersection.
-  int64_t MergeDelta(uint32_t cl_a, uint32_t cl_b) const {
-    int64_t delta = 0;
+  FixedPointCost MergeDelta(uint32_t cl_a, uint32_t cl_b) const {
+    FixedPointCost delta = 0;
 
     const CompactHistogram& hist_h_a = hist_h[cl_a];
     const CompactHistogram& hist_h_b = hist_h[cl_b];
@@ -202,8 +249,9 @@ struct AgglomerativeCtx {
 
   // Scans the delta cache in parallel to find the pair `(best_i, best_j)`
   // with the smallest merge cost, reducing per-thread bests under a mutex.
-  Status FindBestMerge(size_t* best_i, size_t* best_j, int64_t* best_delta) {
-    *best_delta = std::numeric_limits<int64_t>::max();
+  Status FindBestMerge(size_t* best_i, size_t* best_j,
+                       FixedPointCost* best_delta) {
+    *best_delta = std::numeric_limits<FixedPointCost>::max();
     *best_i = 0;
     *best_j = 1;
     std::mutex best_mtx;
@@ -213,9 +261,9 @@ struct AgglomerativeCtx {
         [&](uint32_t i, size_t) -> Status {
           uint32_t id_i = active[i];
           size_t local_best_j = i + 1;
-          int64_t local_best_diff = Delta(id_i, active[local_best_j]);
+          FixedPointCost local_best_diff = Delta(id_i, active[local_best_j]);
           for (size_t j = i + 2; j < active_clusters; ++j) {
-            int64_t diff = Delta(id_i, active[j]);
+            FixedPointCost diff = Delta(id_i, active[j]);
             if (diff < local_best_diff) {
               local_best_diff = diff;
               local_best_j = j;
@@ -236,7 +284,7 @@ struct AgglomerativeCtx {
   // Commits the merge: adds `b`'s histograms into `a`, clears `b`, sets
   // `parent[b] = a`, and removes `b` from `active`. Returns `{a_id, b_id}`.
   std::pair<uint32_t, uint32_t> ApplyMerge(size_t best_i, size_t best_j,
-                                           int64_t best_delta) {
+                                           FixedPointCost best_delta) {
     uint32_t a_id = active[best_i];
     uint32_t b_id = active[best_j];
     E[a_id] += E[b_id] + best_delta;
@@ -291,7 +339,8 @@ struct AgglomerativeCtx {
 
   // Reverts the merge of `a_id` ← `b_id` using the saved snapshot.
   void RestoreRollback(const RollbackScratch& rollback, uint32_t a_id,
-                       uint32_t b_id, int64_t old_Ea, uint32_t old_parent_b) {
+                       uint32_t b_id, FixedPointCost old_Ea,
+                       uint32_t old_parent_b) {
     active = rollback.active;
     ++active_clusters;
     E[a_id] = old_Ea;
@@ -315,7 +364,7 @@ struct AgglomerativeCtx {
     while (active_clusters > num_clusters) {
       size_t best_i = 0;
       size_t best_j = 1;
-      int64_t best_delta = 0;
+      FixedPointCost best_delta = 0;
       JXL_RETURN_IF_ERROR(FindBestMerge(&best_i, &best_j, &best_delta));
       std::pair<uint32_t, uint32_t> merged =
           ApplyMerge(best_i, best_j, best_delta);
@@ -330,30 +379,30 @@ struct AgglomerativeCtx {
   // tentatively and rolled back if it does not improve the total cost.
   Status RunOverheadAwareTail() {
     auto rollback = jxl::make_unique<RollbackScratch>();
-    std::vector<int64_t> header_cost;
+    std::vector<FixedPointCost> header_cost;
     header_cost.reserve(active_clusters);
-    int64_t current_header_cost = 0;
+    FixedPointCost current_header_cost = 0;
     for (uint32_t id : active) {
-      int64_t cluster_header_cost = 0;
+      FixedPointCost cluster_header_cost = 0;
       JXL_ASSIGN_OR_RETURN(cluster_header_cost,
                            clustering.ComputeClusterSignallingOverhead(d, id));
       header_cost.push_back(cluster_header_cost);
       current_header_cost += cluster_header_cost;
     }
-    int64_t best_total_cost = current_entropy_cost + current_header_cost;
+    FixedPointCost best_total_cost = current_entropy_cost + current_header_cost;
 
     while (active_clusters > 1) {
       size_t best_i = 0;
       size_t best_j = 1;
-      int64_t best_delta = 0;
+      FixedPointCost best_delta = 0;
       JXL_RETURN_IF_ERROR(FindBestMerge(&best_i, &best_j, &best_delta));
 
       uint32_t a_id = active[best_i];
       uint32_t b_id = active[best_j];
-      int64_t old_Ea = E[a_id];
+      FixedPointCost old_Ea = E[a_id];
       uint32_t old_parent_b = parent[b_id];
-      int64_t old_header_a = header_cost[best_i];
-      int64_t old_header_b = header_cost[best_j];
+      FixedPointCost old_header_a = header_cost[best_i];
+      FixedPointCost old_header_b = header_cost[best_j];
       SaveRollback(rollback.get(), a_id, b_id);
 
       E[a_id] += E[b_id] + best_delta;
@@ -367,14 +416,14 @@ struct AgglomerativeCtx {
       std::swap(header_cost[best_j], header_cost.back());
       header_cost.pop_back();
       --active_clusters;
-      const int64_t base_without_merged = current_entropy_cost + best_delta +
-                                          current_header_cost - old_header_a -
-                                          old_header_b;
-      const int64_t merged_header_cutoff =
+      const FixedPointCost base_without_merged =
+          current_entropy_cost + best_delta + current_header_cost -
+          old_header_a - old_header_b;
+      const FixedPointCost merged_header_cutoff =
           best_total_cost - base_without_merged;
 
       if (merged_header_cutoff > 0) {
-        JXL_ASSIGN_OR_RETURN(int64_t merged_header_cost,
+        JXL_ASSIGN_OR_RETURN(FixedPointCost merged_header_cost,
                              clustering.ComputeClusterSignallingOverhead(
                                  d, a_id, merged_header_cutoff));
         if (merged_header_cost < merged_header_cutoff) {
@@ -449,7 +498,7 @@ struct AgglomerativeCtx {
 
     JXL_RETURN_IF_ERROR(InitEntropy());
     current_entropy_cost = 0;
-    for (int64_t e : E) current_entropy_cost += e;
+    for (FixedPointCost e : E) current_entropy_cost += e;
 
     InitActiveClusters();
     JXL_RETURN_IF_ERROR(InitDeltas());

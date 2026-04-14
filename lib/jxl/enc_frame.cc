@@ -785,7 +785,6 @@ Status ComputeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
                        CeilLog2Nonzero(static_cast<unsigned>(
                            qt[1] + qt[2] + qt[3] + qt[4] + qt[5])) -
                        7;
-  // printf("intervals: %d\n", num_thresholds + 1);
   //  up to 8 buckets, based on luma only
   num_thresholds = jxl::Clamp1(num_thresholds, 1, 7);
   size_t cumsum = 0;
@@ -1107,6 +1106,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
     JXL_RETURN_IF_ERROR(
         ComputeJPEGContextMap(jpeg_data, enc_state, total_dc, dc_counts, qt));
   } else {
+    // For slower speed tiers, use sophisticated context modeling.
     JpegCflContext cfl_ctx = {jpeg_c_map,
                               cfl_enabled,
                               {&shared.cmap.ytox_map, &shared.cmap.ytob_map},

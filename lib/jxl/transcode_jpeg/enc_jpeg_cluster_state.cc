@@ -3,50 +3,56 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// State-side operations on clustered JPEG contexts.
-// See `enc_jpeg_cluster.h` for the public interface and role of `Clustering`.
+// Cluster-state helpers for JPEG lossless recompression.
 //
-// This file implements methods that operate on an already-built clustering:
+// Once `Clustering::Build` has produced a clustering, the optimizer needs a
+// few read / update operations on that state: estimate histogram signalling
+// overhead, recompute the nonzero-count entropy term, expose threshold-local
+// cluster boundaries for refinement, and prune thresholds that no longer
+// separate distinct clusters. This file implements those state-side helpers;
+// see `enc_jpeg_cluster.h` for the public `Clustering` interface and the
+// overall clustering pipeline.
 //
-//   `ComputeSignallingOverhead`
-//     Estimates histogram header cost for the current clustered state.
+// `ComputeSignallingOverhead`
+//   Estimates ANS histogram header cost for the current clustered state.
 //
-//   `ComputeNZCost`
-//     Computes the nonzero-count entropy portion of the clustered cost.
+// `ComputeNZCost`
+//   Computes the nonzero-count entropy portion of the clustered cost.
 //
-//   `BuildLocalClusterBoundaries`
-//     Builds threshold-major `{lo, hi}` boundary views for refinement.
+// `BuildLocalClusterBoundaries`
+//   Builds threshold-major `{lo, hi}` boundary views for refinement.
 //
-//   `PruneDeadThresholds`
-//     Removes structurally inert thresholds and rebuilds `ctx_map`.
+// `PruneDeadThresholds`
+//   Removes structurally inert thresholds and rebuilds `ctx_map`.
 
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/transcode_jpeg/enc_jpeg_cluster.h"
+#include "lib/jxl/transcode_jpeg/enc_jpeg_opt_data.h"
 
 namespace jxl {
 
-namespace {
-
-StatusOr<int64_t> ClusterSignallingOverhead(
-    const JPEGOptData& d, const CompactHistogram& cluster, int64_t cutoff,
-    Clustering::SignallingTokenHist* signalling_token_hist_ptr) {
-  int64_t overhead = 0;
-  auto& signalling_token_hist = *signalling_token_hist_ptr;
-  signalling_token_hist = {};
+// Estimates ANS histogram header cost for one AC cluster after regrouping its
+// symbols by signalling context (`zdc`) and token.
+StatusOr<FixedPointCost>
+Clustering::SignallingTokenHist::ClusterSignallingOverhead(
+    const JPEGOptData& d, const CompactHistogram& cluster,
+    FixedPointCost cutoff) {
+  FixedPointCost overhead = 0;
+  hist = {};
   const auto& dense_to_zdcvalue = d.ACHistogram().dense_to_zdcvalue;
   cluster.ForEachNonZero([&](uint32_t id, uint32_t freq) {
     const SignallingHistSymbol hist_symbol =
         d.SignallingHistSymbolFromSymbol(dense_to_zdcvalue[id]);
     JXL_DASSERT(hist_symbol.zdc < kZeroDensityContextCount);
-    JXL_DASSERT(hist_symbol.token < Clustering::kSignallingMaxToken);
-    signalling_token_hist[hist_symbol.zdc][hist_symbol.token] += freq;
+    JXL_DASSERT(hist_symbol.token < kACTokenCount);
+    hist[hist_symbol.zdc][hist_symbol.token] += freq;
   });
 
   for (uint32_t zdc = 0; zdc < kZeroDensityContextCount; ++zdc) {
-    const auto& th = signalling_token_hist[zdc];
+    const auto& th = hist[zdc];
     uint32_t max_token = 0;
     size_t total = 0;
-    for (uint32_t t = 0; t < Clustering::kSignallingMaxToken; ++t) {
+    for (uint32_t t = 0; t < kACTokenCount; ++t) {
       if (th[t] != 0) {
         max_token = t;
         total += th[t];
@@ -65,7 +71,7 @@ StatusOr<int64_t> ClusterSignallingOverhead(
     float shannon = h.ShannonEntropy();
     float header_cost = ans_cost - shannon;
     if (header_cost > 0) {
-      overhead += static_cast<int64_t>(header_cost * kFScale);
+      overhead += static_cast<FixedPointCost>(header_cost * kFScale);
       if (overhead >= cutoff) return overhead;
     }
   }
@@ -73,11 +79,11 @@ StatusOr<int64_t> ClusterSignallingOverhead(
   return overhead;
 }
 
-}  // namespace
-
-StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
-    const JPEGOptData& d, uint32_t cluster_id, int64_t cutoff) const {
-  int64_t overhead = 0;
+// Computes signalling overhead for one cluster by combining the AC-token
+// signalling cost with the per-predicted-bucket nonzero-count histograms.
+StatusOr<FixedPointCost> Clustering::ComputeClusterSignallingOverhead(
+    const JPEGOptData& d, uint32_t cluster_id, FixedPointCost cutoff) const {
+  FixedPointCost overhead = 0;
   JXL_DASSERT(cluster_id < hist_h.size());
   JXL_DASSERT(cluster_id < hist_nz_h.size());
 
@@ -91,7 +97,7 @@ StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
   if (!cluster.empty()) {
     JXL_ASSIGN_OR_RETURN(
         overhead,
-        ClusterSignallingOverhead(d, cluster, cutoff, &signalling_token_hist));
+        signalling_token_hist.ClusterSignallingOverhead(d, cluster, cutoff));
     if (overhead >= cutoff) return overhead;
   }
 
@@ -122,7 +128,7 @@ StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
       float shannon = h.ShannonEntropy();
       float header_cost = ans_cost - shannon;
       if (header_cost > 0) {
-        overhead += static_cast<int64_t>(header_cost * kFScale);
+        overhead += static_cast<FixedPointCost>(header_cost * kFScale);
         if (overhead >= cutoff) return overhead;
       }
     }
@@ -131,12 +137,12 @@ StatusOr<int64_t> Clustering::ComputeClusterSignallingOverhead(
   return overhead;
 }
 
-StatusOr<int64_t> Clustering::ComputeSignallingOverhead(const JPEGOptData& d,
-                                                        int64_t cutoff) const {
-  int64_t overhead = 0;
+StatusOr<FixedPointCost> Clustering::ComputeSignallingOverhead(
+    const JPEGOptData& d, FixedPointCost cutoff) const {
+  FixedPointCost overhead = 0;
   for (uint32_t cluster_id = 0; cluster_id < hist_h.size(); ++cluster_id) {
     JXL_ASSIGN_OR_RETURN(
-        int64_t cluster_overhead,
+        FixedPointCost cluster_overhead,
         ComputeClusterSignallingOverhead(d, cluster_id, cutoff - overhead));
     overhead += cluster_overhead;
     if (overhead >= cutoff) return overhead;
@@ -144,8 +150,8 @@ StatusOr<int64_t> Clustering::ComputeSignallingOverhead(const JPEGOptData& d,
   return overhead;
 }
 
-int64_t Clustering::ComputeNZCost(const JPEGOptData& d) const {
-  int64_t nz_cost = 0;
+FixedPointCost Clustering::ComputeNZCost(const JPEGOptData& d) const {
+  FixedPointCost nz_cost = 0;
   for (const auto& cl_N : hist_nz_N) {
     for (uint32_t freq : cl_N) {
       if (freq != 0) nz_cost += d.NZFTab(freq);
@@ -207,7 +213,7 @@ Clustering::BuildLocalClusterBoundaries(const ThresholdSet& thresholds,
 
 ThresholdSet Clustering::PruneDeadThresholds(const ThresholdSet& thresholds) {
   ThresholdSet T = thresholds;
-  // Greyscale: the grid is Y axis only, `ctx_map` is flat per channel.
+  // Grayscale: the grid is Y axis only, `ctx_map` is flat per channel.
   if (T.TCb().empty() && T.TCr().empty()) {
     Thresholds new_thr;
     new_thr.reserve(T.TY().size());
