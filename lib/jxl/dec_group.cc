@@ -51,6 +51,7 @@
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer-inl.h"
 #include "lib/jxl/quantizer.h"
+#include "lib/jxl/simd_util-inl.h"
 
 #ifndef LIB_JXL_DEC_GROUP_CC
 #define LIB_JXL_DEC_GROUP_CC
@@ -91,6 +92,7 @@ using hwy::HWY_NAMESPACE::MaskFromVec;
 using hwy::HWY_NAMESPACE::Or;
 using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::ShiftRight;
+using hwy::HWY_NAMESPACE::Repartition;
 
 using D = HWY_FULL(float);
 using DU = HWY_FULL(uint32_t);
@@ -102,13 +104,16 @@ constexpr DI di;
 constexpr DI16 di16;
 constexpr DI16_FULL di16_full;
 
-// TODO(veluca): consider SIMDfying.
-void Transpose8x8InPlace(int32_t* JXL_RESTRICT block) {
+JXL_INLINE void Transpose8x8InPlace(int32_t* JXL_RESTRICT block) {
+#if HWY_TARGET != HWY_SCALAR
+  Transpose8x8BlockInPlace(block);
+#else
   for (size_t x = 0; x < 8; x++) {
     for (size_t y = x + 1; y < 8; y++) {
       std::swap(block[y * 8 + x], block[x * 8 + y]);
     }
   }
+#endif
 }
 
 template <ACType ac_type>
