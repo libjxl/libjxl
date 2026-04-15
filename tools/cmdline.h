@@ -378,20 +378,15 @@ static inline bool ParseSigned(const char* arg, int* out) {
 }
 
 static inline bool ParseUnsigned(const char* arg, size_t* out) {
-  const char* printable_arg = (arg != nullptr) ? arg : "(null)";
-  if (arg == nullptr) {
-    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n",
-            printable_arg);
-    return false;
-  }
+  // Parse() only passes argv entries while i < argc, so arg is non-null.
   const char* p = arg;
   while (*p != '\0' &&
          std::isspace(static_cast<unsigned char>(*p)) != 0) {
     ++p;
   }
-  if (*p == '\0' || *p == '-') {
-    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n",
-            printable_arg);
+  // Reject explicit negative values (strtoull accepts an optional sign).
+  if (*p == '-') {
+    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n", arg);
     return false;
   }
   char* end;
@@ -399,8 +394,7 @@ static inline bool ParseUnsigned(const char* arg, size_t* out) {
   const unsigned long long value = strtoull(arg, &end, 0);
   if (errno == ERANGE || end == arg || end[0] != '\0' ||
       value > std::numeric_limits<size_t>::max()) {
-    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n",
-            printable_arg);
+    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n", arg);
     return false;
   }
   *out = static_cast<size_t>(value);
