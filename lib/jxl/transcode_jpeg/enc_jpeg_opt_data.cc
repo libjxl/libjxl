@@ -393,7 +393,7 @@ Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
                                   JPEGTranscodeACModel hist_model,
                                   const JpegCflContext& cfl_ctx,
                                   ThreadPool* pool) {
-  ac_hist_model = hist_model;
+  AC_hist_model = hist_model;
   cfl_ = &cfl_ctx;
   channels = static_cast<uint32_t>(jpeg_data.components.size());
   if (channels == 1) {
@@ -466,7 +466,7 @@ Status JPEGOptData::BuildFromJPEG(const jpeg::JPEGData& jpeg_data,
 
   JXL_ASSIGN_OR_RETURN(ACStreamData stream_data, BuildACStream(*this, pool));
   AC_stream = std::move(stream_data.stream);
-  ac_histogram = std::move(stream_data.ac_histogram);
+  AC_histogram = std::move(stream_data.AC_histogram);
   InitFTab(stream_data.max_zdc_total + 1);
 
   return true;

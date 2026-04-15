@@ -46,7 +46,7 @@ std::vector<EmitBin> BuildEmitBins(const ActiveBinLayout& layout,
   for (uint32_t raw_bin : layout.active_bins) {
     emit_bins.push_back({raw_bin, d.ACHistogramKey(raw_bin)});
   }
-  if (d.ac_hist_model == JPEGTranscodeACModel::kToken420) {
+  if (d.AC_hist_model == JPEGTranscodeACModel::kToken420) {
     std::sort(emit_bins.begin(), emit_bins.end(),
               [](const EmitBin& a, const EmitBin& b) {
                 if (a.hist_key != b.hist_key) return a.hist_key < b.hist_key;
@@ -221,9 +221,9 @@ ACStreamData EmitACStream(const ActiveBinLayout& layout,
   uint32_t prev_ctx_key = UINT32_MAX;
   std::array<uint32_t, kZeroDensityContextCount> zdc_len = {};
 
-  auto& hist = out.ac_histogram;
+  auto& hist = out.AC_histogram;
   const uint32_t hist_symbol_count =
-      d.ac_hist_model == JPEGTranscodeACModel::kRawAI
+      d.AC_hist_model == JPEGTranscodeACModel::kRawAI
           ? kMaxACSymbolCount
           : kZeroDensityContextCount * kACTokenCount;
   hist.compact_map_h.assign(hist_symbol_count, kInvalidCompactH);

@@ -11,6 +11,18 @@
 // packed stream and its derived `(zdc, value)` indexing tables, and the walker
 // that decodes the stream for repeated hot scans.
 //
+// Why this stream needed: the histograms used on DC thresholds optimization
+// path can be enormous in size, worst case is
+//     `(2048 DC values over current axis) x (32 cells over other axes) x`
+//     `(3 x 458 x 2048 of (c,zdc,ai))`,
+// and if collect them in parallel in thread pool, the memory pressure is too
+// high, and performance drops down as all it gets out of any cache. So
+// "bin-by-bin" approach appears to be the best here, we collect histograms per
+// each bin in a context by h-terms and per each context by N-terms in sequence,
+// tracking just two numbers per histogram and flushing costs as they are ready.
+// Cache locality pays off very well: `perf` shows limitation only by memory
+// bandwidth of stream reading and lookups.
+//
 // `ACStreamData`
 //   Output of the stream-building pass: packed AC stream, sparse-to-dense AC
 //   symbol map, and the maximum per-`zdc` total needed to size `ftab`.
@@ -37,7 +49,7 @@ namespace jxl {
 
 struct ACStreamData {
   std::vector<ACEntry> stream;
-  CompactACHistogramData ac_histogram;
+  CompactACHistogramData AC_histogram;
   uint32_t max_zdc_total = 0;
 };
 

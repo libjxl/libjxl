@@ -100,8 +100,8 @@ struct Clustering {
                                     bool overhead_aware_tail, ThreadPool* pool);
 
   // Runs agglomerative clustering on the histograms already stored in `this`
-  // (populated externally, e.g. after a threshold change). Updates `ctx_map`,
-  // `ctx_num`, and `clustered_cost` in place.
+  // (populated externally).
+  // Updates `ctx_map`, `ctx_num`, and `clustered_cost` in place.
   Status AgglomerativeClustering(const JPEGOptData& d, uint32_t num_clusters,
                                  bool overhead_aware_tail, ThreadPool* pool);
 

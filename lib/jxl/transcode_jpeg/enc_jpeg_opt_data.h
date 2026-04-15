@@ -205,8 +205,8 @@ struct JPEGOptData {
 
   // AC histogram model chosen for this optimizer instance and the matching
   // compact map used by clustering / refinement over the shared raw stream.
-  JPEGTranscodeACModel ac_hist_model = JPEGTranscodeACModel::kToken420;
-  CompactACHistogramData ac_histogram;
+  JPEGTranscodeACModel AC_hist_model = JPEGTranscodeACModel::kToken420;
+  CompactACHistogramData AC_histogram;
 
   // Optimizer CfL context with explicit JPEG component mapping.
   // Non-null after `BuildFromJPEG` starts; used by CountDCAC and
@@ -278,35 +278,35 @@ struct JPEGOptData {
   }
   uint32_t ACHistogramSymbol(ACBin bin) const {
     const uint32_t raw_symbol = ACBinRawSymbol(bin);
-    return ac_hist_model == JPEGTranscodeACModel::kRawAI
+    return AC_hist_model == JPEGTranscodeACModel::kRawAI
                ? raw_symbol
                : Token420SymbolFromRawSymbol(raw_symbol);
   }
   uint32_t ACHistogramKey(ACBin bin) const {
-    return ac_hist_model == JPEGTranscodeACModel::kRawAI
+    return AC_hist_model == JPEGTranscodeACModel::kRawAI
                ? bin
                : ACBinToken420HistKey(bin);
   }
 
-  const CompactACHistogramData& ACHistogram() const { return ac_histogram; }
-  uint32_t ACHistogramSize() const { return ac_histogram.num_zdcvalue; }
+  const CompactACHistogramData& ACHistogram() const { return AC_histogram; }
+  uint32_t ACHistogramSize() const { return AC_histogram.num_zdcvalue; }
   CompactACEvent FromBin(ACBin bin) const {
     uint32_t raw_symbol = ACBinRawSymbol(bin);
     uint32_t zdc = raw_symbol / kDCTRange;
     uint32_t symbol =
-        ac_hist_model == JPEGTranscodeACModel::kRawAI
+        AC_hist_model == JPEGTranscodeACModel::kRawAI
             ? raw_symbol
             : zdc * kACTokenCount + Token420FromAI(raw_symbol % kDCTRange);
     JXL_DASSERT(symbol < ac_histogram.compact_map_h.size());
-    if (symbol >= ac_histogram.compact_map_h.size()) {
+    if (symbol >= AC_histogram.compact_map_h.size()) {
       return {kInvalidCompactH, zdc};
     }
-    uint32_t hist_bin = ac_histogram.compact_map_h[symbol];
+    uint32_t hist_bin = AC_histogram.compact_map_h[symbol];
     JXL_DASSERT(hist_bin != kInvalidCompactH);
     return {hist_bin, zdc};
   }
   SignallingHistSymbol SignallingHistSymbolFromSymbol(uint32_t symbol) const {
-    return ac_hist_model == JPEGTranscodeACModel::kRawAI
+    return AC_hist_model == JPEGTranscodeACModel::kRawAI
                ? SignallingHistSymbol{symbol / kDCTRange,
                                       Token420FromAI(symbol % kDCTRange)}
                : SignallingHistSymbol{symbol / kACTokenCount,
