@@ -4,8 +4,6 @@
 # license that can be found in the LICENSE file.
 
 find_package(PkgConfig)
-# Animations have been deprecated in 2.44; not yet removed, so we are almost
-# fine (at least with 2.44.5).
 pkg_check_modules(Gdk-Pixbuf IMPORTED_TARGET gdk-pixbuf-2.0>=2.36)
 
 include(GNUInstallDirs)

@@ -13,32 +13,16 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #undef GDK_PIXBUF_ENABLE_BACKEND
 
-G_BEGIN_DECLS
-G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-
-// Information about a single frame.
+// Decoder state for loading a single static JPEG XL image.
 typedef struct {
-  uint64_t duration_ms;
-  GdkPixbuf *data;
-  gboolean decoded;
-} GdkPixbufJxlAnimationFrame;
-
-// Represent a whole JPEG XL animation; all its fields are owned; as a GObject,
-// the Animation struct itself is reference counted (as are the GdkPixbufs for
-// individual frames).
-struct _GdkPixbufJxlAnimation {
-  GdkPixbufAnimation parent_instance;
-
   // GDK interface implementation callbacks.
   GdkPixbufModuleSizeFunc image_size_callback;
   GdkPixbufModulePreparedFunc pixbuf_prepared_callback;
   GdkPixbufModuleUpdatedFunc area_updated_callback;
   gpointer user_data;
 
-  // All frames known so far; a frame is added when the JXL_DEC_FRAME event is
-  // received from the decoder; initially frame.decoded is FALSE, until
-  // the JXL_DEC_IMAGE event is received.
-  GArray *frames;
+  // Output pixbuf for the decoded image.
+  GdkPixbuf *pixbuf;
 
   // JPEG XL decoder and related structures.
   JxlParallelRunner *parallel_runner;
@@ -52,231 +36,36 @@ struct _GdkPixbufJxlAnimation {
   // Image information.
   size_t xsize;
   size_t ysize;
-  gboolean alpha_premultiplied;
-  gboolean has_animation;
   gboolean has_alpha;
-  uint64_t total_duration_ms;
-  uint64_t tick_duration_us;
-  uint64_t repetition_count;  // 0 = loop forever
 
   gchar *icc_base64;
-};
+} JxlDecoderState;
 
-#define GDK_TYPE_PIXBUF_JXL_ANIMATION (gdk_pixbuf_jxl_animation_get_type())
-G_DECLARE_FINAL_TYPE(GdkPixbufJxlAnimation, gdk_pixbuf_jxl_animation, GDK,
-                     JXL_ANIMATION, GdkPixbufAnimation);
-
-G_DEFINE_TYPE(GdkPixbufJxlAnimation, gdk_pixbuf_jxl_animation,
-              GDK_TYPE_PIXBUF_ANIMATION);
-
-// Iterator to a given point in time in the animation; contains a pointer to the
-// full animation.
-struct _GdkPixbufJxlAnimationIter {
-  GdkPixbufAnimationIter parent_instance;
-  GdkPixbufJxlAnimation *animation;
-  size_t current_frame;
-  uint64_t time_offset;
-};
-
-#define GDK_TYPE_PIXBUF_JXL_ANIMATION_ITER \
-  (gdk_pixbuf_jxl_animation_iter_get_type())
-G_DECLARE_FINAL_TYPE(GdkPixbufJxlAnimationIter, gdk_pixbuf_jxl_animation_iter,
-                     GDK, JXL_ANIMATION_ITER, GdkPixbufAnimationIter);
-G_DEFINE_TYPE(GdkPixbufJxlAnimationIter, gdk_pixbuf_jxl_animation_iter,
-              GDK_TYPE_PIXBUF_ANIMATION_ITER);
-
-static void gdk_pixbuf_jxl_animation_init(GdkPixbufJxlAnimation *obj) {
-  // Suppress "unused function" warnings.
-  (void)glib_autoptr_cleanup_GdkPixbufJxlAnimation;
-  (void)GDK_JXL_ANIMATION;
-  (void)GDK_IS_JXL_ANIMATION;
-}
-
-static gboolean gdk_pixbuf_jxl_animation_is_static_image(
-    GdkPixbufAnimation *anim) {
-  GdkPixbufJxlAnimation *jxl_anim = (GdkPixbufJxlAnimation *)anim;
-  return !jxl_anim->has_animation;
-}
-
-static GdkPixbuf *gdk_pixbuf_jxl_animation_get_static_image(
-    GdkPixbufAnimation *anim) {
-  GdkPixbufJxlAnimation *jxl_anim = (GdkPixbufJxlAnimation *)anim;
-  if (jxl_anim->frames == NULL || jxl_anim->frames->len == 0) return NULL;
-  GdkPixbufJxlAnimationFrame *frame =
-      &g_array_index(jxl_anim->frames, GdkPixbufJxlAnimationFrame, 0);
-  return frame->decoded ? frame->data : NULL;
-}
-
-static void gdk_pixbuf_jxl_animation_get_size(GdkPixbufAnimation *anim,
-                                              int *width, int *height) {
-  GdkPixbufJxlAnimation *jxl_anim = (GdkPixbufJxlAnimation *)anim;
-  if (width) *width = jxl_anim->xsize;
-  if (height) *height = jxl_anim->ysize;
-}
-
-static gboolean gdk_pixbuf_jxl_animation_iter_advance(
-    GdkPixbufAnimationIter *iter, const GTimeVal *current_time);
-
-static GdkPixbufAnimationIter *gdk_pixbuf_jxl_animation_get_iter(
-    GdkPixbufAnimation *anim, const GTimeVal *start_time) {
-  GdkPixbufJxlAnimationIter *iter =
-      g_object_new(GDK_TYPE_PIXBUF_JXL_ANIMATION_ITER, NULL);
-  iter->animation = (GdkPixbufJxlAnimation *)anim;
-  iter->time_offset = start_time->tv_sec * 1000ULL + start_time->tv_usec / 1000;
-  g_object_ref(iter->animation);
-  gdk_pixbuf_jxl_animation_iter_advance((GdkPixbufAnimationIter *)iter,
-                                        start_time);
-  return (GdkPixbufAnimationIter *)iter;
-}
-
-static void gdk_pixbuf_jxl_animation_finalize(GObject *obj) {
-  GdkPixbufJxlAnimation *decoder_state = (GdkPixbufJxlAnimation *)obj;
-  if (decoder_state->frames != NULL) {
-    for (size_t i = 0; i < decoder_state->frames->len; i++) {
-      g_object_unref(
-          g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame, i)
-              .data);
-    }
-    g_array_free(decoder_state->frames, /*free_segment=*/TRUE);
+static void jxl_decoder_state_free(JxlDecoderState *state) {
+  if (state == NULL) return;
+  if (state->pixbuf != NULL) {
+    g_object_unref(state->pixbuf);
   }
-  JxlResizableParallelRunnerDestroy(decoder_state->parallel_runner);
-  JxlDecoderDestroy(decoder_state->decoder);
-  g_free(decoder_state->icc_base64);
+  JxlResizableParallelRunnerDestroy(state->parallel_runner);
+  JxlDecoderDestroy(state->decoder);
+  g_free(state->icc_base64);
+  g_free(state);
 }
-
-static void gdk_pixbuf_jxl_animation_class_init(
-    GdkPixbufJxlAnimationClass *klass) {
-  G_OBJECT_CLASS(klass)->finalize = gdk_pixbuf_jxl_animation_finalize;
-  klass->parent_class.is_static_image =
-      gdk_pixbuf_jxl_animation_is_static_image;
-  klass->parent_class.get_static_image =
-      gdk_pixbuf_jxl_animation_get_static_image;
-  klass->parent_class.get_size = gdk_pixbuf_jxl_animation_get_size;
-  klass->parent_class.get_iter = gdk_pixbuf_jxl_animation_get_iter;
-}
-
-static void gdk_pixbuf_jxl_animation_iter_init(GdkPixbufJxlAnimationIter *obj) {
-  (void)glib_autoptr_cleanup_GdkPixbufJxlAnimationIter;
-  (void)GDK_JXL_ANIMATION_ITER;
-  (void)GDK_IS_JXL_ANIMATION_ITER;
-}
-
-static int gdk_pixbuf_jxl_animation_iter_get_delay_time(
-    GdkPixbufAnimationIter *iter) {
-  GdkPixbufJxlAnimationIter *jxl_iter = (GdkPixbufJxlAnimationIter *)iter;
-  if (jxl_iter->animation->frames->len <= jxl_iter->current_frame) {
-    return 0;
-  }
-  return g_array_index(jxl_iter->animation->frames, GdkPixbufJxlAnimationFrame,
-                       jxl_iter->current_frame)
-      .duration_ms;
-}
-
-static GdkPixbuf *gdk_pixbuf_jxl_animation_iter_get_pixbuf(
-    GdkPixbufAnimationIter *iter) {
-  GdkPixbufJxlAnimationIter *jxl_iter = (GdkPixbufJxlAnimationIter *)iter;
-  if (jxl_iter->animation->frames->len <= jxl_iter->current_frame) {
-    return NULL;
-  }
-  return g_array_index(jxl_iter->animation->frames, GdkPixbufJxlAnimationFrame,
-                       jxl_iter->current_frame)
-      .data;
-}
-
-static gboolean gdk_pixbuf_jxl_animation_iter_on_currently_loading_frame(
-    GdkPixbufAnimationIter *iter) {
-  GdkPixbufJxlAnimationIter *jxl_iter = (GdkPixbufJxlAnimationIter *)iter;
-  if (jxl_iter->animation->frames->len <= jxl_iter->current_frame) {
-    return TRUE;
-  }
-  return !g_array_index(jxl_iter->animation->frames, GdkPixbufJxlAnimationFrame,
-                        jxl_iter->current_frame)
-              .decoded;
-}
-
-static gboolean gdk_pixbuf_jxl_animation_iter_advance(
-    GdkPixbufAnimationIter *iter, const GTimeVal *current_time) {
-  GdkPixbufJxlAnimationIter *jxl_iter = (GdkPixbufJxlAnimationIter *)iter;
-  size_t old_frame = jxl_iter->current_frame;
-
-  uint64_t current_time_ms = current_time->tv_sec * 1000ULL +
-                             current_time->tv_usec / 1000 -
-                             jxl_iter->time_offset;
-
-  if (jxl_iter->animation->frames->len == 0) {
-    jxl_iter->current_frame = 0;
-  } else if (!jxl_iter->animation->done &&
-             current_time_ms >= jxl_iter->animation->total_duration_ms) {
-    jxl_iter->current_frame = jxl_iter->animation->frames->len - 1;
-  } else if (jxl_iter->animation->repetition_count != 0 &&
-             current_time_ms > jxl_iter->animation->repetition_count *
-                                   jxl_iter->animation->total_duration_ms) {
-    jxl_iter->current_frame = jxl_iter->animation->frames->len - 1;
-  } else {
-    uint64_t total_duration_ms = jxl_iter->animation->total_duration_ms;
-    // Guard against divide-by-0 in malicious files.
-    if (total_duration_ms == 0) total_duration_ms = 1;
-    uint64_t loop_offset = current_time_ms % total_duration_ms;
-    jxl_iter->current_frame = 0;
-    while (TRUE) {
-      uint64_t duration =
-          g_array_index(jxl_iter->animation->frames, GdkPixbufJxlAnimationFrame,
-                        jxl_iter->current_frame)
-              .duration_ms;
-      if (duration >= loop_offset) {
-        break;
-      }
-      loop_offset -= duration;
-      jxl_iter->current_frame++;
-    }
-  }
-
-  return old_frame != jxl_iter->current_frame;
-}
-
-static void gdk_pixbuf_jxl_animation_iter_finalize(GObject *obj) {
-  GdkPixbufJxlAnimationIter *iter = (GdkPixbufJxlAnimationIter *)obj;
-  g_object_unref(iter->animation);
-}
-
-static void gdk_pixbuf_jxl_animation_iter_class_init(
-    GdkPixbufJxlAnimationIterClass *klass) {
-  G_OBJECT_CLASS(klass)->finalize = gdk_pixbuf_jxl_animation_iter_finalize;
-  klass->parent_class.get_delay_time =
-      gdk_pixbuf_jxl_animation_iter_get_delay_time;
-  klass->parent_class.get_pixbuf = gdk_pixbuf_jxl_animation_iter_get_pixbuf;
-  klass->parent_class.on_currently_loading_frame =
-      gdk_pixbuf_jxl_animation_iter_on_currently_loading_frame;
-  klass->parent_class.advance = gdk_pixbuf_jxl_animation_iter_advance;
-}
-
-G_GNUC_END_IGNORE_DEPRECATIONS
-G_END_DECLS
 
 static gpointer begin_load(GdkPixbufModuleSizeFunc size_func,
-                           GdkPixbufModulePreparedFunc prepare_func,
-                           GdkPixbufModuleUpdatedFunc update_func,
-                           gpointer user_data, GError **error) {
-  GdkPixbufJxlAnimation *decoder_state =
-      g_object_new(GDK_TYPE_PIXBUF_JXL_ANIMATION, NULL);
+                            GdkPixbufModulePreparedFunc prepare_func,
+                            GdkPixbufModuleUpdatedFunc update_func,
+                            gpointer user_data, GError **error) {
+  JxlDecoderState *decoder_state = g_new0(JxlDecoderState, 1);
   if (decoder_state == NULL) {
     g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                "Creation of the animation state failed");
+                "Creation of the decoder state failed");
     return NULL;
   }
   decoder_state->image_size_callback = size_func;
   decoder_state->pixbuf_prepared_callback = prepare_func;
   decoder_state->area_updated_callback = update_func;
   decoder_state->user_data = user_data;
-  decoder_state->frames =
-      g_array_new(/*zero_terminated=*/FALSE, /*clear_=*/TRUE,
-                  sizeof(GdkPixbufJxlAnimationFrame));
-
-  if (decoder_state->frames == NULL) {
-    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                "Creation of the frame array failed");
-    goto cleanup;
-  }
 
   if (!(decoder_state->parallel_runner =
             JxlResizableParallelRunnerCreate(NULL))) {
@@ -302,7 +91,7 @@ static gpointer begin_load(GdkPixbufModuleSizeFunc size_func,
   }
   if ((status = JxlDecoderSubscribeEvents(
            decoder_state->decoder, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
-                                       JXL_DEC_FULL_IMAGE | JXL_DEC_FRAME)) !=
+                                       JXL_DEC_FULL_IMAGE)) !=
       JXL_DEC_SUCCESS) {
     g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
                 "JxlDecoderSubscribeEvents failed: %x", status);
@@ -314,20 +103,19 @@ static gpointer begin_load(GdkPixbufModuleSizeFunc size_func,
 
   return decoder_state;
 cleanup:
-  JxlResizableParallelRunnerDestroy(decoder_state->parallel_runner);
-  JxlDecoderDestroy(decoder_state->decoder);
-  g_object_unref(decoder_state);
+  jxl_decoder_state_free(decoder_state);
   return NULL;
 }
 
 static gboolean stop_load(gpointer context, GError **error) {
-  g_object_unref(context);
+  JxlDecoderState *decoder_state = context;
+  jxl_decoder_state_free(decoder_state);
   return TRUE;
 }
 
 static gboolean load_increment(gpointer context, const guchar *buf, guint size,
-                               GError **error) {
-  GdkPixbufJxlAnimation *decoder_state = context;
+                                GError **error) {
+  JxlDecoderState *decoder_state = context;
   if (decoder_state->done == TRUE) {
     g_warning_once("Trailing data found at end of JXL file");
     return TRUE;
@@ -360,17 +148,9 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
           return FALSE;
         }
         decoder_state->pixel_format.num_channels = info.alpha_bits > 0 ? 4 : 3;
-        decoder_state->alpha_premultiplied = info.alpha_premultiplied;
         decoder_state->xsize = info.xsize;
         decoder_state->ysize = info.ysize;
-        decoder_state->has_animation = info.have_animation;
         decoder_state->has_alpha = info.alpha_bits > 0;
-        if (info.have_animation) {
-          decoder_state->repetition_count = info.animation.num_loops;
-          decoder_state->tick_duration_us = 1000000ULL *
-                                            info.animation.tps_denominator /
-                                            info.animation.tps_numerator;
-        }
         gint width = info.xsize;
         gint height = info.ysize;
         if (decoder_state->image_size_callback) {
@@ -434,65 +214,39 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
           return FALSE;
         }
 
-        break;
-      }
-
-      case JXL_DEC_FRAME: {
-        // TODO(veluca): support rescaling.
-        JxlFrameHeader frame_header;
-        if (JxlDecoderGetFrameHeader(decoder_state->decoder, &frame_header) !=
-            JXL_DEC_SUCCESS) {
+        // Allocate the output pixbuf after color info is known.
+        decoder_state->pixbuf =
+            gdk_pixbuf_new(GDK_COLORSPACE_RGB, decoder_state->has_alpha,
+                           /*bits_per_sample=*/8, decoder_state->xsize,
+                           decoder_state->ysize);
+        if (decoder_state->pixbuf == NULL) {
           g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "Failed to retrieve frame info");
+                      "Failed to allocate output pixel buffer");
           return FALSE;
         }
+        gdk_pixbuf_set_option(decoder_state->pixbuf, "icc-profile",
+                              decoder_state->icc_base64);
+        decoder_state->pixel_format.align =
+            gdk_pixbuf_get_rowstride(decoder_state->pixbuf);
+        decoder_state->pixel_format.data_type = JXL_TYPE_UINT8;
 
-        {
-          GdkPixbufJxlAnimationFrame frame;
-          frame.decoded = FALSE;
-          frame.duration_ms =
-              frame_header.duration * decoder_state->tick_duration_us / 1000;
-          decoder_state->total_duration_ms += frame.duration_ms;
-          frame.data =
-              gdk_pixbuf_new(GDK_COLORSPACE_RGB, decoder_state->has_alpha,
-                             /*bits_per_sample=*/8, decoder_state->xsize,
-                             decoder_state->ysize);
-          if (frame.data == NULL) {
-            g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                        "Failed to allocate output pixel buffer");
-            return FALSE;
-          }
-          gdk_pixbuf_set_option(frame.data, "icc-profile",
-                                decoder_state->icc_base64);
-          decoder_state->pixel_format.align =
-              gdk_pixbuf_get_rowstride(frame.data);
-          decoder_state->pixel_format.data_type = JXL_TYPE_UINT8;
-          g_array_append_val(decoder_state->frames, frame);
-        }
-        if (decoder_state->pixbuf_prepared_callback &&
-            decoder_state->frames->len == 1) {
+        if (decoder_state->pixbuf_prepared_callback) {
           decoder_state->pixbuf_prepared_callback(
-              g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame,
-                            0)
-                  .data,
-              decoder_state->has_animation ? (GdkPixbufAnimation *)decoder_state
-                                           : NULL,
-              decoder_state->user_data);
+              decoder_state->pixbuf, NULL, decoder_state->user_data);
         }
         break;
       }
 
       case JXL_DEC_NEED_IMAGE_OUT_BUFFER: {
-        GdkPixbuf *output =
-            g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame,
-                          decoder_state->frames->len - 1)
-                .data;
-        decoder_state->pixel_format.align = gdk_pixbuf_get_rowstride(output);
-        guint size;
-        guchar *dst = gdk_pixbuf_get_pixels_with_length(output, &size);
-        if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(
-                                   decoder_state->decoder,
-                                   &decoder_state->pixel_format, dst, size)) {
+        decoder_state->pixel_format.align =
+            gdk_pixbuf_get_rowstride(decoder_state->pixbuf);
+        guint buf_size;
+        guchar *dst =
+            gdk_pixbuf_get_pixels_with_length(decoder_state->pixbuf, &buf_size);
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetImageOutBuffer(decoder_state->decoder,
+                                        &decoder_state->pixel_format, dst,
+                                        buf_size)) {
           g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
                       "JxlDecoderSetImageOutBuffer failed");
           return FALSE;
@@ -501,18 +255,13 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
       }
 
       case JXL_DEC_FULL_IMAGE: {
-        // TODO(veluca): consider doing partial updates.
         if (decoder_state->area_updated_callback) {
-          GdkPixbuf *output = g_array_index(decoder_state->frames,
-                                            GdkPixbufJxlAnimationFrame, 0)
-                                  .data;
           decoder_state->area_updated_callback(
-              output, 0, 0, gdk_pixbuf_get_width(output),
-              gdk_pixbuf_get_height(output), decoder_state->user_data);
+              decoder_state->pixbuf, 0, 0,
+              gdk_pixbuf_get_width(decoder_state->pixbuf),
+              gdk_pixbuf_get_height(decoder_state->pixbuf),
+              decoder_state->user_data);
         }
-        g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame,
-                      decoder_state->frames->len - 1)
-            .decoded = TRUE;
         break;
       }
 
