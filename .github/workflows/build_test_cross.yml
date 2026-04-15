@@ -62,7 +62,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
       with:
         egress-policy: audit
 
@@ -101,7 +101,7 @@ jobs:
         find ./build -regextype egrep -type f -regex '.*\.(a|h|jar|json|log|o)' -delete
         find ./build -type f -executable > executable.lst
 
-    - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       if: env.WILL_RUN_TESTS == 'true'
       with:
         name: cross_binary-${{ matrix.identifier }}
@@ -118,7 +118,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard_number: [0, 1, 2, 3, 5, 6, 7, 8]
+        shard_number: [1, 2, 3, 4, 5, 6, 7, 8]
         identifier: [armhf, i386, x64]
         include:
           - arch: armhf
@@ -145,7 +145,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
       with:
         egress-policy: audit
 
@@ -178,7 +178,7 @@ jobs:
 
     - name: Cache SDE
       if: ${{ matrix.arch == 'i686' }}
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: ${{ github.workspace }}/sde
         key: sde-${{ env.SDE_ID }}
@@ -209,7 +209,7 @@ jobs:
           -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
           -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper)'
 
-    - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       name: Upload test cost
       if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
       with:

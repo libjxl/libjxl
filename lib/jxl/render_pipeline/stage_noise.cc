@@ -171,16 +171,17 @@ class AddNoiseStage : public RenderPipelineStage {
  public:
   AddNoiseStage(const NoiseParams& noise_params,
                 const ColorCorrelation& color_correlation, size_t first_c)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/0)),
+      : RenderPipelineStage(RenderPipelineStage::Settings()),
         noise_params_(noise_params),
         color_correlation_(color_correlation),
         first_c_(first_c) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     if (!noise_params_.HasAny()) return true;
+    JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
+
     const StrengthEvalLut noise_model(noise_params_);
     D d;
     const auto half = Set(d, 0.5f);
@@ -193,7 +194,7 @@ class AddNoiseStage : public RenderPipelineStage {
     float ytox = color_correlation_.YtoXRatio(0);
     float ytob = color_correlation_.YtoBRatio(0);
 
-    const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
+    size_t x_span_tail = RoundUpTo(xsize, Lanes(d)) - xsize;
 
     float* JXL_RESTRICT row_x = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row_y = GetInputRow(input_rows, 1, 0);
@@ -206,9 +207,10 @@ class AddNoiseStage : public RenderPipelineStage {
         GetInputRow(input_rows, first_c_ + 2, 0);
     // Needed by the calls to Floor() in StrengthEvalLut. Only arithmetic and
     // shuffles are otherwise done on the data, so this is safe.
-    msan::UnpoisonMemory(row_x + xsize, (xsize_v - xsize) * sizeof(float));
-    msan::UnpoisonMemory(row_y + xsize, (xsize_v - xsize) * sizeof(float));
-    for (size_t x = 0; x < xsize_v; x += Lanes(d)) {
+    msan::UnpoisonMemory(row_x + xsize, sizeof(float) * x_span_tail);
+    msan::UnpoisonMemory(row_y + xsize, sizeof(float) * x_span_tail);
+    // TODO(eustas): why unaligned load/store?
+    for (size_t x = 0; x < xsize; x += Lanes(d)) {
       const auto vx = LoadU(d, row_x + x);
       const auto vy = LoadU(d, row_y + x);
       const auto in_g = Sub(vy, vx);
@@ -225,9 +227,9 @@ class AddNoiseStage : public RenderPipelineStage {
                     noise_strength_r, ytox, ytob, row_x + x, row_y + x,
                     row_b + x);
     }
-    msan::PoisonMemory(row_x + xsize, (xsize_v - xsize) * sizeof(float));
-    msan::PoisonMemory(row_y + xsize, (xsize_v - xsize) * sizeof(float));
-    msan::PoisonMemory(row_b + xsize, (xsize_v - xsize) * sizeof(float));
+    msan::PoisonMemory(row_x + xsize, sizeof(float) * x_span_tail);
+    msan::PoisonMemory(row_y + xsize, sizeof(float) * x_span_tail);
+    msan::PoisonMemory(row_b + xsize, sizeof(float) * x_span_tail);
     return true;
   }
 
@@ -255,22 +257,26 @@ std::unique_ptr<RenderPipelineStage> GetAddNoiseStage(
 class ConvolveNoiseStage : public RenderPipelineStage {
  public:
   explicit ConvolveNoiseStage(size_t first_c)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/2)),
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(2)),
         first_c_(first_c) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     const HWY_FULL(float) d;
+
+    // TODO(eustas): check if aligning is useful.
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(xextra_left);
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra_right);
+
     for (size_t c = first_c_; c < first_c_ + 3; c++) {
       float* JXL_RESTRICT rows[5];
       for (size_t i = 0; i < 5; i++) {
         rows[i] = GetInputRow(input_rows, c, i - 2);
       }
       float* JXL_RESTRICT row_out = GetOutputRow(output_rows, c, 0);
-      for (ptrdiff_t x = -RoundUpTo(xextra, Lanes(d));
-           x < static_cast<ptrdiff_t>(xsize + xextra); x += Lanes(d)) {
+      for (ptrdiff_t x = x_start; x < x_end; x += Lanes(d)) {
         const auto p00 = LoadU(d, rows[2] + x);
         auto others = Zero(d);
         // TODO(eustas): sum loaded values to reduce the calculation chain
