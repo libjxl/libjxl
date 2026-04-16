@@ -47,24 +47,33 @@ using hwy::HWY_NAMESPACE::Max;
 
 const HWY_FULL(float) df;
 const HWY_FULL(int32_t) di;
-size_t Padded(size_t x) { return RoundUpTo(x, Lanes(df)); }
+// Pad array size for use in EstimateBits.
+size_t Padded(size_t x) {
+  static_assert(Lanes(df) == Lanes(di));
+  return RoundUpTo(x, Lanes(df));
+}
 
 // Compute entropy of the histogram, taking into account the minimum probability
 // for symbols with non-zero counts.
 float EstimateBits(const int32_t *counts, size_t num_symbols) {
-  int32_t total = std::accumulate(counts, counts + num_symbols, 0);
-  const auto zero = Zero(df);
+  JXL_DASSERT(num_symbols == Padded(num_symbols));
+  auto total_v = Zero(di);
+  for (size_t i = 0; i < num_symbols; i += Lanes(di)) {
+    const auto counts_iv = LoadU(di, &counts[i]);
+    total_v = Add(total_v, counts_iv);
+  }
+  total_v = SumOfLanes(di, total_v);
+
   const auto minprob = Set(df, 1.0f / ANS_TAB_SIZE);
-  const auto inv_total = Set(df, 1.0f / total);
+  const auto inv_total = Set(df, 1.0f / GetLane(total_v));
   auto bits_lanes = Zero(df);
-  auto total_v = Set(di, total);
   for (size_t i = 0; i < num_symbols; i += Lanes(df)) {
     const auto counts_iv = LoadU(di, &counts[i]);
     const auto counts_fv = ConvertTo(df, counts_iv);
     const auto probs = Mul(counts_fv, inv_total);
     const auto mprobs = Max(probs, minprob);
-    const auto nbps = IfThenElse(Eq(counts_iv, total_v), BitCast(di, zero),
-                                 BitCast(di, FastLog2f(df, mprobs)));
+    const auto nbps = IfThenZeroElse(Eq(counts_iv, total_v),
+                                     BitCast(di, FastLog2f(df, mprobs)));
     bits_lanes = Sub(bits_lanes, Mul(counts_fv, BitCast(df, nbps)));
   }
   return GetLane(SumOfLanes(df, bits_lanes));
