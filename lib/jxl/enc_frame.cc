@@ -2115,6 +2115,8 @@ JXL_NOINLINE Status EncodeFrameStreaming(
               JXL_RETURN_IF_ERROR(EncodePermutation(
                   permutation.data(), /*skip=*/0, permutation.size(), &writer,
                   LayerType::Header, aux_out));
+            } else {
+              writer.Write(1, 0); // no permutation
             }
             writer.ZeroPadToByte();
             return true;
