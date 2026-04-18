@@ -63,6 +63,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/box_content_decoder.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/padded_bytes.h"
@@ -2215,6 +2216,28 @@ TEST(DecodeTest, ExtraBytesAfterCompressedStream) {
     EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
     JxlDecoderDestroy(dec);
   }
+}
+
+TEST(DecodeTest, BrobBoxInputIsRestrictedToBoxSize) {
+  const uint8_t box_contents[] = {
+      'o', 'r', 'i', 'g',
+      0x0f, 0x05, 0x80, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
+      0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x03};
+  const uint8_t extra_bytes[] = {0xAA, 0xBB, 0xCC};
+  std::vector<uint8_t> input;
+  input.insert(input.end(), std::begin(box_contents), std::end(box_contents));
+  input.insert(input.end(), std::begin(extra_bytes), std::end(extra_bytes));
+  uint8_t out[32] = {};
+  JxlBoxContentDecoder decoder;
+  decoder.StartBox(true, false, sizeof(box_contents));
+  uint8_t* next_out = out;
+  size_t avail_out = sizeof(out);
+  JxlDecoderStatus status = decoder.Process(
+      input.data(), input.size(), 0, &next_out, &avail_out);
+  EXPECT_EQ(JXL_DEC_BOX_COMPLETE, status);
+  size_t output_size = next_out - out;
+  EXPECT_EQ(11u, output_size);
+  EXPECT_EQ(std::string("hello world"), std::string(reinterpret_cast<char*>(out), output_size));
 }
 
 TEST(DecodeTest, ExtraBytesAfterCompressedStreamRequireBoxes) {
