@@ -114,7 +114,7 @@ std::string FileBaseName(const std::string& fname) {
 
 std::string FileDirName(const std::string& fname) {
   size_t pos = fname.rfind('/');
-  if (pos == std::string::npos) return "";
+  if (pos == std::string::npos) return ".";
   return fname.substr(0, pos);
 }
 
