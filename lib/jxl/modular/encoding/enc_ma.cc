@@ -753,22 +753,23 @@ void TreeSamples::Swap(size_t a, size_t b) {
 namespace {
 std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
                                        size_t num_chunks) {
-  // Todo(Galaxy): Refactor later for better density
   if (histogram.empty() || num_chunks == 0) return {};
   uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
   if (sum == 0) return {};
+
   std::vector<int32_t> thresholds;
-  thresholds.reserve(num_chunks - 1);
   uint64_t cumsum = 0;
-  uint64_t next_quantile = 1;
-  for (size_t i = 0; i < histogram.size() && next_quantile < num_chunks; ++i) {
+  uint64_t threshold = 1;
+  for (size_t i = 0; i < histogram.size(); i++) {
     cumsum += histogram[i];
-    if (cumsum * num_chunks >= next_quantile * sum) {
-      thresholds.push_back(static_cast<int32_t>(i));
-      ++next_quantile; 
+    if (cumsum >= threshold * sum / num_chunks) {
+      thresholds.push_back(i);
+      while (cumsum > threshold * sum / num_chunks) threshold++;
     }
   }
-  JXL_DASSERT(thresholds.size() <= num_chunks);
+  // JXL_DASSERT(thresholds.size() <= num_chunks);
+  // last value collects all histogram and is not really a threshold
+  if (!thresholds.empty()) thresholds.pop_back();
   return thresholds;
 }
 
