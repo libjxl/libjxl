@@ -2375,13 +2375,28 @@ static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
     GetCurrentDimensions(dec, xsize, ysize);
   }
   if (num_channels == 0) num_channels = format->num_channels;
-  size_t row_size =
-      jxl::DivCeil(xsize * num_channels * bits, jxl::kBitsPerByte);
-  size_t last_row_size = row_size;
-  if (format->align > 1) {
-    row_size = jxl::DivCeil(row_size, format->align) * format->align;
+  size_t row_bits;
+  if (!jxl::SafeMul<size_t>(xsize, num_channels, row_bits) ||
+      !jxl::SafeMul<size_t>(row_bits, bits, row_bits)) {
+    return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
-  *min_size = row_size * (ysize - 1) + last_row_size;
+  size_t row_size = jxl::DivCeil(row_bits, jxl::kBitsPerByte);
+  const size_t last_row_size = row_size;
+  if (format->align > 1) {
+    size_t aligned_rows = jxl::DivCeil(row_size, format->align);
+    if (!jxl::SafeMul<size_t>(aligned_rows, format->align, row_size)) {
+      return JXL_API_ERROR(
+          "Image too large for output buffer size calculation");
+    }
+  }
+
+  size_t total = 0;
+  if (ysize > 1 && !jxl::SafeMul<size_t>(row_size, ysize - 1, total)) {
+    return JXL_API_ERROR("Image too large for output buffer size calculation");
+  }
+  if (!jxl::SafeAdd<size_t>(total, last_row_size, *min_size)) {
+    return JXL_API_ERROR("Image too large for output buffer size calculation");
+  }
   return JXL_DEC_SUCCESS;
 }
 
@@ -2397,7 +2412,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
     JxlDecoder* dec, const JxlPixelFormat* format, void* buffer, size_t size) {
   if (!dec->got_basic_info || !dec->metadata.m.have_preview ||
-      !(dec->orig_events_wanted & JXL_DEC_PREVIEW_IMAGE)) {
+      !(dec->orig_events_wanted & JXL_DEC_PREVIEW_IMAGE) ||
+      dec->got_preview_image || !dec->preview_frame) {
     return JXL_API_ERROR("No preview out buffer needed at this time");
   }
   if (format->num_channels < 3 &&
@@ -2435,7 +2451,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
 JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
                                              const JxlPixelFormat* format,
                                              void* buffer, size_t size) {
-  if (!dec->got_basic_info || !(dec->orig_events_wanted & JXL_DEC_FULL_IMAGE)) {
+  if (!dec->got_basic_info || !(dec->orig_events_wanted & JXL_DEC_FULL_IMAGE) ||
+      dec->preview_frame) {
     return JXL_API_ERROR("No image out buffer needed at this time");
   }
   if (dec->image_out_buffer_set && !!dec->image_out_run_callback) {

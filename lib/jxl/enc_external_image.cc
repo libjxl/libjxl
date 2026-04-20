@@ -146,13 +146,26 @@ Status ConvertFromExternal(const uint8_t* data, size_t size, size_t xsize,
                            JxlPixelFormat format, size_t c, ThreadPool* pool,
                            ImageF* channel) {
   size_t bytes_per_channel = JxlDataTypeBytes(format.data_type);
-  size_t bytes_per_pixel = format.num_channels * bytes_per_channel;
-  const size_t last_row_size = xsize * bytes_per_pixel;
+  size_t bytes_per_pixel;
+  if (!SafeMul(static_cast<size_t>(format.num_channels), bytes_per_channel,
+               bytes_per_pixel)) {
+    return JXL_FAILURE("Invalid format");
+  }
+  size_t last_row_size;
+  if (!SafeMul(xsize, bytes_per_pixel, last_row_size)) {
+    return JXL_FAILURE("Image dimensions are too large");
+  }
   const size_t align = format.align;
-  const size_t row_size =
-      (align > 1 ? jxl::DivCeil(last_row_size, align) * align : last_row_size);
-  const size_t bytes_to_read = row_size * (ysize - 1) + last_row_size;
+  size_t row_size = last_row_size;
+  if (align > 1) {
+    row_size = jxl::DivCeil(last_row_size, align) * align;
+  }
   if (xsize == 0 || ysize == 0) return JXL_FAILURE("Empty image");
+  size_t bytes_to_read;
+  if (!SafeMul(row_size, ysize - 1, bytes_to_read) ||
+      !SafeAdd(bytes_to_read, last_row_size, bytes_to_read)) {
+    return JXL_FAILURE("Image dimensions are too large");
+  }
   if (size > 0 && size < bytes_to_read) {
     return JXL_FAILURE("Buffer size is too small, expected: %" PRIuS
                        " got: %" PRIuS " (Image: %" PRIuS "x%" PRIuS
