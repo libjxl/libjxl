@@ -92,17 +92,11 @@ struct JPEGCtxEffortParams {
                 /*refine_iters=*/1,
                 /*refine_radius=*/4};
       case SpeedTier::kGlacier:
-        return {/*ac_hist_model=*/JPEGTranscodeACModel::kRawAI,
-                /*keep_top_k=*/0,
-                /*rank_m_target=*/0,
-                /*rank_iters=*/0,
-                /*main_m_target=*/256,
-                /*main_iters=*/8,
-                /*overhead_aware_tail=*/true,
-                /*refine_iters=*/2,
-                /*refine_radius=*/8};
       case SpeedTier::kTectonicPlate:
       default:
+        // Non-modular effort 11 is clamped to `kGlacier` in `EncodeFrame()`, so
+        // JPEG lossless recompression's highest reachable search lives here.
+        // Full search space is 58 factorizations.
         return {/*ac_hist_model=*/JPEGTranscodeACModel::kRawAI,
                 /*keep_top_k=*/0,
                 /*rank_m_target=*/0,
