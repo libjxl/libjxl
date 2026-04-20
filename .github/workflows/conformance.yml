@@ -47,7 +47,7 @@ jobs:
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
@@ -121,7 +121,7 @@ jobs:
         echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
     - name: ccache
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -193,7 +193,7 @@ jobs:
 
     - name: Cache SDE
       if: ${{ matrix.target == 'AVX3' }}
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ github.workspace }}/sde
         key: sde-${{ env.SDE_ID }}
@@ -217,7 +217,7 @@ jobs:
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
