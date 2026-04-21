@@ -37,7 +37,7 @@ class PackedImage {
   static StatusOr<PackedImage> Create(size_t xsize, size_t ysize,
                                       const JxlPixelFormat& format);
 
-  PackedImage Copy() const;
+  StatusOr<PackedImage> Copy() const;
 
   // The interleaved pixels as defined in the storage format.
   void* pixels() const { return pixels_.get(); }
@@ -123,7 +123,8 @@ class PackedImage {
   PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format,
               size_t stride);
 
-  static size_t CalcStride(const JxlPixelFormat& format, size_t xsize);
+  static StatusOr<size_t> CalcStride(const JxlPixelFormat& format,
+                                     size_t xsize);
 
   size_t bytes_per_channel_;
   size_t pixel_stride_;

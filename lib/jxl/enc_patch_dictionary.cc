@@ -209,7 +209,11 @@ struct PatchColorspaceInfo {
   }
 
   int Quantize(float val, size_t c) {
-    return std::trunc(ScaleForQuantization(val, c));
+    float scaled = ScaleForQuantization(val, c);
+    // Clamping allows values outside of target range (int8_t); caller should
+    // deal with out-of-range values.
+    scaled = jxl::Clamp1(scaled, -32768.0f, 32767.0f);
+    return std::trunc(scaled);
   }
 
   bool is_similar_v(const Color& v1, const Color& v2, float threshold) {
@@ -538,20 +542,23 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
       QuantizedPatch& patch = info.back().first;
       patch.xsize = max_x - min_x + 1;
       patch.ysize = max_y - min_y + 1;
-      bool is_small = true;
+      bool too_big = false;
+      bool too_small = true;
       for (size_t c : {1, 0, 2}) {
         for (size_t iy = min_y; iy <= max_y; iy++) {
           for (size_t ix = min_x; ix <= max_x; ix++) {
             size_t offset = (iy - min_y) * patch.xsize + ix - min_x;
-            patch.fpixels[c][offset] =
-                opsin_rows[c][iy * opsin_stride + ix] - ref[c];
+            float fval = opsin_rows[c][iy * opsin_stride + ix] - ref[c];
+            patch.fpixels[c][offset] = fval;
             int val = pci.Quantize(patch.fpixels[c][offset], c);
-            patch.pixels[c][offset] = val;
-            is_small &= (val < kMinPeak) && (val > -kMinPeak);
+            int8_t qval = static_cast<int8_t>(val);
+            patch.pixels[c][offset] = qval;
+            too_big |= (val != static_cast<int>(qval));
+            too_small &= (val < kMinPeak) && (val > -kMinPeak);
           }
         }
       }
-      if (is_small) {
+      if (too_small || too_big) {
         info.pop_back();
         continue;
       }

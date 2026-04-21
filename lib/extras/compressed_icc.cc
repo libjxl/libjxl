@@ -36,6 +36,9 @@ JXL_BOOL JxlICCProfileEncode(const JxlMemoryManager* memory_manager,
   *compressed_icc_size = bytes.size();
   *compressed_icc = static_cast<uint8_t*>(
       jxl::MemoryManagerAlloc(&local_memory_manager, *compressed_icc_size));
+  if (*compressed_icc == nullptr) {
+    return JXL_FALSE;
+  }
   memcpy(*compressed_icc, bytes.data(), bytes.size());
   return JXL_TRUE;
 }
@@ -58,6 +61,9 @@ JXL_BOOL JxlICCProfileDecode(const JxlMemoryManager* memory_manager,
   *icc_size = decompressed.size();
   *icc = static_cast<uint8_t*>(
       jxl::MemoryManagerAlloc(&local_memory_manager, *icc_size));
+  if (*icc == nullptr) {
+    return JXL_FALSE;
+  }
   memcpy(*icc, decompressed.data(), *icc_size);
   return JXL_TRUE;
 }
