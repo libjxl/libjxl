@@ -2503,7 +2503,7 @@ JxlEncoderStatus JxlEncoderAddChunkedFrame(
   }
 
   if (is_last_frame) {
-    JxlEncoderCloseInput(frame_settings->enc);
+    JxlEncoderCloseFrames(frame_settings->enc);
   }
   if (streaming) {
     return JxlEncoderFlushInput(frame_settings->enc);

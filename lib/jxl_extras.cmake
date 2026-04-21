@@ -5,9 +5,9 @@
 
 include(jxl_lists.cmake)
 
-# Object library for those parts of extras that do not depend on jxl internals
-# or jpegli. We will create two versions of these object files, one with and one
-# without external codec support compiled in.
+# Object library for those parts of extras that do not depend on jxl internals.
+# We will create two versions of these object files, one with and one without
+# external codec support compiled in.
 list(APPEND JPEGXL_EXTRAS_CORE_SOURCES
   "${JPEGXL_INTERNAL_EXTRAS_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_APNG_SOURCES}"
@@ -62,17 +62,6 @@ if (JPEGXL_ENABLE_SJPEG)
   target_include_directories(jxl_extras_core-obj PRIVATE
     ../third_party/sjpeg/src)
   list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES sjpeg)
-endif()
-
-if(JPEGXL_ENABLE_JPEGLI)
-  add_library(jxl_extras_jpegli-obj OBJECT
-    "${JPEGXL_INTERNAL_CODEC_JPEGLI_SOURCES}"
-  )
-  target_include_directories(jxl_extras_jpegli-obj PRIVATE
-    "${CMAKE_CURRENT_BINARY_DIR}/include/jpegli"
-  )
-  list(APPEND JXL_EXTRAS_OBJECT_LIBRARIES jxl_extras_jpegli-obj)
-  list(APPEND JXL_EXTRAS_OBJECTS $<TARGET_OBJECTS:jxl_extras_jpegli-obj>)
 endif()
 
 if(NOT JPEGXL_BUNDLE_LIBPNG)
@@ -150,10 +139,6 @@ target_link_libraries(jxl_extras-internal PRIVATE
   jxl_threads
 )
 target_link_libraries(jxl_extras-internal PUBLIC jxl-internal)
-if(JPEGXL_ENABLE_JPEGLI)
-  target_compile_definitions(jxl_extras-internal PUBLIC -DJPEGXL_ENABLE_JPEGLI=1)
-  target_link_libraries(jxl_extras-internal PRIVATE jpegli-static)
-endif()
 
 ### Library that does not depend on internal parts of jxl library.
 ### Used by cjxl and djxl binaries.

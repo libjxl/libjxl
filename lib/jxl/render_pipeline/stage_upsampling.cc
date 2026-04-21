@@ -81,17 +81,18 @@ class UpsamplingStage : public RenderPipelineStage {
   }
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     constexpr HWY_FULL(float) df;
     size_t shift = settings_.shift_x;
     size_t N = 1 << shift;
     const size_t xsize_v = RoundUpTo(xsize, Lanes(df));
+    // TODO(eustas): double-check (un)poison ranges.
     for (ptrdiff_t iy = -2; iy <= 2; iy++) {
       msan::UnpoisonMemory(GetInputRow(input_rows, c_, iy) + xsize + 2,
                            sizeof(float) * (xsize_v - xsize));
     }
-    JXL_ENSURE(xextra == 0);
+    JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
     for (size_t x = 0; x < xsize; x += kChunkSize) {
       size_t xend = std::min(x + kChunkSize, xsize);
       size_t len = xend - x;
@@ -127,7 +128,9 @@ class UpsamplingStage : public RenderPipelineStage {
   }
 
   Status PrepareForThreads(size_t num_threads) override {
-    size_t alloc_size = sizeof(float) * (kChunkSize + 4);
+    constexpr HWY_FULL(float) df;
+    size_t alloc_size =
+        sizeof(float) * (kChunkSize + std::max(size_t{4}, Lanes(df)));
     for (size_t i = 0; i < 3; ++i) {
       temp_[i].resize(num_threads);
       for (size_t t = 0; t < num_threads; ++t) {

@@ -237,7 +237,7 @@ class ReadVisitor : public VisitorBase {
     // Skip new fields this (old?) decoder didn't know about, if any.
     const size_t bits_read = reader_->TotalBitsConsumed();
     uint64_t end;
-    if (!SafeAdd(pos_after_ext_size_, total_extension_bits_, end)) {
+    if (!SafeAdd<uint64_t>(pos_after_ext_size_, total_extension_bits_, end)) {
       return JXL_FAILURE("Invalid extension size, caused overflow");
     }
     if (bits_read > end) {
