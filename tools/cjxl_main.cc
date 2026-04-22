@@ -238,6 +238,17 @@ struct CompressArgs {
                             "The codestream level.", &codestream_level,
                             &ParseInt64, 2);
 
+    cmdline->AddOptionValue(
+        '\0', "buffering", "-1..3",
+        "How frames are buffered when encoding, which affects memory usage and "
+        "compression.\n    "
+        "-1 = encoder chooses (default). "
+        "0 = buffer everything (most memory, best compression).\n    "
+        "1 = stream input for large images, buffer output. "
+        "2 = stream input, buffer output.\n    "
+        "3 = stream both input and output (least memory, worst compression)",
+        &buffering, &ParseInt64, -1);
+
     cmdline->AddOptionValue('\0', "faster_decoding", "0..4",
                             "Higher values improve decode speed "
                             "at the expense of quality or density, "
@@ -535,6 +546,7 @@ struct CompressArgs {
   float modular_ma_tree_learning_percent = -1.f;
   float photon_noise_iso = 0;
   int64_t codestream_level = -1;
+  int64_t buffering = -1;
   int64_t responsive = -1;
   float distance = 1.0;
   float alpha_distance = 1.0;
@@ -731,6 +743,10 @@ void ProcessFlags(const jxl::extras::Codec codec,
       "brotli_effort", args->brotli_effort, JXL_ENC_FRAME_SETTING_BROTLI_EFFORT,
       params, [](int64_t x) { return (-1 <= x && x <= 11); },
       "Valid range is {-1, 0, 1, ..., 11}.");
+  ProcessFlag<int64_t>(
+      "buffering", args->buffering, JXL_ENC_FRAME_SETTING_BUFFERING, params,
+      [](int64_t x) { return (-1 <= x && x <= 3); },
+      "Valid values are -1, 0, 1, 2, 3.");
   ProcessFlag<int64_t>(
       "epf", args->epf, JXL_ENC_FRAME_SETTING_EPF, params,
       [](int64_t x) { return (-1 <= x && x <= 3); },
