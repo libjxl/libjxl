@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - decoder API: timeframes to successfully invoke `JxlDecoderSetImageOutBuffer`
    and `JxlDecoderSetPreviewOutBuffer` are non-intersecting; it is not possible
    to accidentally set one buffer when the other is expected
+ - decoder API: reference frame ID 3 is now available for use by external frames
+   if patches are disabled for the whole image. (#4512)
 
 ## [0.11.2] - 2026-02-10
 
