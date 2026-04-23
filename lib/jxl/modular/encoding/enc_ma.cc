@@ -31,6 +31,7 @@
 
 #include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/enc_Knuth_partition.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
@@ -751,26 +752,54 @@ void TreeSamples::Swap(size_t a, size_t b) {
 }
 
 namespace {
+int64_t HistogramIntervalCost(uint64_t count) {
+  if (count <= 1) return 0;
+  const double dcount = static_cast<double>(count);
+  return static_cast<int64_t>(std::llround(dcount * std::log2(dcount) * (1 << 10)));
+}
+
 std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
                                        size_t num_chunks) {
   if (histogram.empty() || num_chunks == 0) return {};
   uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
   if (sum == 0) return {};
-  // TODO(veluca): selecting distinct quantiles is likely not the best
-  // way to go about this.
-  std::vector<int32_t> thresholds;
-  uint64_t cumsum = 0;
-  uint64_t threshold = 1;
-  for (size_t i = 0; i < histogram.size(); i++) {
-    cumsum += histogram[i];
-    if (cumsum * num_chunks >= threshold * sum) {
-      thresholds.push_back(i);
-      while (cumsum * num_chunks >= threshold * sum) threshold++;
+  const uint32_t M = static_cast<uint32_t>(histogram.size());
+  const uint32_t target_intervals =
+      std::min<uint32_t>(static_cast<uint32_t>(num_chunks), M);
+  if (target_intervals <= 1) return {};
+  if (target_intervals >= M) {
+    std::vector<int32_t> thresholds;
+    thresholds.reserve(M - 1);
+    for (uint32_t i = 0; i + 1 < M; ++i) {
+      thresholds.push_back(static_cast<int32_t>(i));
+    }
+    return thresholds;
+  }
+
+  std::vector<uint64_t> prefix(M + 1, 0);
+  for (uint32_t i = 0; i < M; ++i) {
+    prefix[i + 1] = prefix[i] + histogram[i];
+  }
+
+  KnuthPartitionSolver solver(M);
+  solver.ResetCosts(static_cast<size_t>(M) * M);
+  for (uint32_t n = 0; n < M; ++n) {
+    int64_t prev_base = 0;
+    for (uint32_t l = 0; l <= n; ++l) {
+      const uint64_t total = prefix[n + 1] - prefix[l];
+      int64_t base = HistogramIntervalCost(total);
+      if (n > 0 && l < n) {
+        base -= HistogramIntervalCost(prefix[n] - prefix[l]);
+      }
+      solver.costs[n * M + l] = base - prev_base;
+      prev_base = base;
     }
   }
-  JXL_DASSERT(thresholds.size() <= num_chunks);
-  // last value collects all histogram and is not really a threshold
-  thresholds.pop_back();
+
+  std::vector<int32_t> thresholds;
+  for (uint32_t split_point : solver.Solve(target_intervals, M)) {
+    thresholds.push_back(static_cast<int32_t>(split_point - 1));
+  }
   return thresholds;
 }
 
