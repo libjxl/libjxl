@@ -763,29 +763,28 @@ std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
   if (histogram.empty() || num_chunks == 0) return {};
   uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
   if (sum == 0) return {};
-  const uint32_t M = static_cast<uint32_t>(histogram.size());
-  const uint32_t target_intervals =
-      std::min<uint32_t>(static_cast<uint32_t>(num_chunks), M);
+  size_t M = histogram.size();
+  size_t target_intervals = std::min(num_chunks, M);
   if (target_intervals <= 1) return {};
   if (target_intervals >= M) {
     std::vector<int32_t> thresholds;
     thresholds.reserve(M - 1);
-    for (uint32_t i = 0; i + 1 < M; ++i) {
+    for (size_t i = 0; i + 1 < M; ++i) {
       thresholds.push_back(static_cast<int32_t>(i));
     }
     return thresholds;
   }
 
   std::vector<uint64_t> prefix(M + 1, 0);
-  for (uint32_t i = 0; i < M; ++i) {
+  for (size_t i = 0; i < M; ++i) {
     prefix[i + 1] = prefix[i] + histogram[i];
   }
 
   KnuthPartitionSolver solver(M);
-  solver.ResetCosts(static_cast<size_t>(M) * M);
-  for (uint32_t n = 0; n < M; ++n) {
+  solver.ResetCosts(M * M);
+  for (size_t n = 0; n < M; ++n) {
     int64_t prev_base = 0;
-    for (uint32_t l = 0; l <= n; ++l) {
+    for (size_t l = 0; l <= n; ++l) {
       const uint64_t total = prefix[n + 1] - prefix[l];
       int64_t base = HistogramIntervalCost(total);
       if (n > 0 && l < n) {
