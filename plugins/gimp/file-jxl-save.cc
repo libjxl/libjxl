@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <limits>
 #include <string>
 
 #include "gobject/gsignal.h"
@@ -812,9 +813,32 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   }
 
   // process layers and compress into JXL
-  size_t buffer_size =
-      jxl_save_opts.basic_info.xsize * jxl_save_opts.basic_info.ysize *
-      jxl_save_opts.pixel_format.num_channels * 4;  // bytes per sample
+  const size_t width = static_cast<size_t>(jxl_save_opts.basic_info.xsize);
+  const size_t height = static_cast<size_t>(jxl_save_opts.basic_info.ysize);
+  const size_t num_channels =
+      static_cast<size_t>(jxl_save_opts.pixel_format.num_channels);
+  const size_t bytes_per_sample = sizeof(float);
+
+  if (width != 0 && height > std::numeric_limits<size_t>::max() / width) {
+    g_printerr(SAVE_PROC " Error: image dimensions are too large\n");
+    return false;
+  }
+  const size_t num_pixels = width * height;
+  if (num_channels != 0 &&
+      num_pixels > std::numeric_limits<size_t>::max() / num_channels) {
+    g_printerr(SAVE_PROC " Error: image dimensions are too large\n");
+    return false;
+  }
+  const size_t num_samples = num_pixels * num_channels;
+  if (num_samples > std::numeric_limits<size_t>::max() / bytes_per_sample) {
+    g_printerr(SAVE_PROC " Error: image dimensions are too large\n");
+    return false;
+  }
+  if (num_pixels > static_cast<size_t>(std::numeric_limits<long>::max())) {
+    g_printerr(SAVE_PROC " Error: image dimensions are too large\n");
+    return false;
+  }
+  const size_t buffer_size = num_samples * bytes_per_sample;
 
   for (int i = nlayers - 1; i >= 0; i--) {
     gimp_save_progress.update();
@@ -847,10 +871,8 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     const Babl* destination_format =
         babl_format(jxl_save_opts.babl_format_str.c_str());
 
-    babl_process(
-        babl_fish(native_format, destination_format), pixels_buffer_1,
-        pixels_buffer_2,
-        jxl_save_opts.basic_info.xsize * jxl_save_opts.basic_info.ysize);
+    babl_process(babl_fish(native_format, destination_format), pixels_buffer_1,
+                 pixels_buffer_2, static_cast<long>(num_pixels));
 
     gimp_save_progress.update();
 
