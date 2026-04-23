@@ -752,56 +752,6 @@ void TreeSamples::Swap(size_t a, size_t b) {
 }
 
 namespace {
-int64_t HistogramIntervalCost(uint64_t count) {
-  if (count <= 1) return 0;
-  const double dcount = static_cast<double>(count);
-  return static_cast<int64_t>(std::llround(dcount * std::log2(dcount) * (1 << 10)));
-}
-
-std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
-                                       size_t num_chunks) {
-  if (histogram.empty() || num_chunks == 0) return {};
-  uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
-  if (sum == 0) return {};
-  size_t M = histogram.size();
-  size_t target_intervals = std::min(num_chunks, M);
-  if (target_intervals <= 1) return {};
-  if (target_intervals >= M) {
-    std::vector<int32_t> thresholds;
-    thresholds.reserve(M - 1);
-    for (size_t i = 0; i + 1 < M; ++i) {
-      thresholds.push_back(static_cast<int32_t>(i));
-    }
-    return thresholds;
-  }
-
-  std::vector<uint64_t> prefix(M + 1, 0);
-  for (size_t i = 0; i < M; ++i) {
-    prefix[i + 1] = prefix[i] + histogram[i];
-  }
-
-  KnuthPartitionSolver solver(M);
-  solver.ResetCosts(M * M);
-  for (size_t n = 0; n < M; ++n) {
-    int64_t prev_base = 0;
-    for (size_t l = 0; l <= n; ++l) {
-      const uint64_t total = prefix[n + 1] - prefix[l];
-      int64_t base = HistogramIntervalCost(total);
-      if (n > 0 && l < n) {
-        base -= HistogramIntervalCost(prefix[n] - prefix[l]);
-      }
-      solver.costs[n * M + l] = base - prev_base;
-      prev_base = base;
-    }
-  }
-
-  std::vector<int32_t> thresholds;
-  for (uint32_t split_point : solver.Solve(target_intervals, M)) {
-    thresholds.push_back(static_cast<int32_t>(split_point - 1));
-  }
-  return thresholds;
-}
-
 std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
                                      size_t num_chunks) {
   if (samples.empty()) return {};
@@ -813,9 +763,7 @@ std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
     uint32_t sample_offset = jxl::Clamp1(s, -kRange, kRange) - min;
     counts[sample_offset]++;
   }
-  std::vector<int32_t> thresholds = QuantizeHistogram(counts, num_chunks);
-  for (auto &v : thresholds) v += min;
-  return thresholds;
+  return QuantizeHistogram(counts, num_chunks, min);
 }
 
 // `to[i]` is assigned value `v` conforming `from[v] <= i && from[v-1] > i`.

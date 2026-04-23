@@ -7,8 +7,11 @@
 #define LIB_JXL_ENC_KNUTH_PARTITION_H_
 
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <numeric>
 #include <vector>
 
 namespace jxl {
@@ -150,6 +153,66 @@ struct KnuthPartitionSolver {
     return thresholds;
   }
 };
+
+inline int64_t HistogramPartitionCost(uint64_t count) {
+  if (count <= 1) return 0;
+  const double dcount = static_cast<double>(count);
+  constexpr double cost_scale = 1 << 10;  // enough for current purposes
+  return static_cast<int64_t>(
+      std::llround(dcount * std::log2(dcount) * cost_scale));
+}
+
+// Generates `num_intervals` bins with the best partition for entropy coding.
+template<typename T>
+inline std::vector<int32_t> QuantizeHistogram(
+    const T& histogram, size_t num_intervals,
+    int32_t threshold_offset = 0) {
+  size_t M = histogram.size();
+  size_t target_intervals = std::min(num_intervals, M);
+  if (target_intervals <= 1) return {};
+  // Return an empty threshold list if the histogram is single-bin
+  std::vector<uint64_t> prefix(M + 1, 0);
+  size_t nonzero_bins = 0;
+  for (size_t i = 0; i < M; ++i) {
+    prefix[i + 1] = prefix[i] + histogram[i];
+    nonzero_bins += (histogram[i] != 0);
+  }
+  if (nonzero_bins < 2) return {};
+  // If the target number of intervals is greater or equal than the number of
+  // symbols, return a threshold for each symbol.
+  if (target_intervals >= M) {
+    std::vector<int32_t> thresholds;
+    thresholds.reserve(M - 1);
+    for (size_t i = 0; i + 1 < M; ++i) {
+      thresholds.push_back(static_cast<int32_t>(i) + threshold_offset);
+    }
+    return thresholds;
+  }
+
+  // Build differential cost table.
+  KnuthPartitionSolver solver(M);
+  solver.ResetCosts(M * M);
+  for (size_t n = 0; n < M; ++n) {
+    int64_t prev_base = 0;
+    for (size_t l = 0; l <= n; ++l) {
+      uint64_t total = prefix[n + 1] - prefix[l];
+      int64_t base = HistogramPartitionCost(total);
+      if (n > 0 && l < n) {
+        base -= HistogramPartitionCost(prefix[n] - prefix[l]);
+      }
+      solver.costs[n * M + l] = base - prev_base;
+      prev_base = base;
+    }
+  }
+
+  std::vector<int32_t> thresholds;
+  thresholds.reserve(target_intervals - 1);
+  for (uint32_t split_point : solver.Solve(target_intervals, M)) {
+    thresholds.push_back(static_cast<int32_t>(split_point) - 1 +
+                         threshold_offset);
+  }
+  return thresholds;
+}
 
 }  // namespace jxl
 
