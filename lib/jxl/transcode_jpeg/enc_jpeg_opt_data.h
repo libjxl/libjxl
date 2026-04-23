@@ -297,7 +297,7 @@ struct JPEGOptData {
         AC_hist_model == JPEGTranscodeACModel::kRawAI
             ? raw_symbol
             : zdc * kACTokenCount + Token420FromAI(raw_symbol % kDCTRange);
-    JXL_DASSERT(symbol < ac_histogram.compact_map_h.size());
+    JXL_DASSERT(symbol < AC_histogram.compact_map_h.size());
     if (symbol >= AC_histogram.compact_map_h.size()) {
       return {kInvalidCompactH, zdc};
     }
