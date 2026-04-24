@@ -132,9 +132,10 @@ class BlendingStage : public RenderPipelineStage {
   Status IsInitialized() const override { return initialized_; }
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     JXL_ENSURE(initialized_);
+    JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
     JxlMemoryManager* memory_manager = state_.memory_manager;
     const FrameOrigin& frame_origin = frame_header_.frame_origin;
     ptrdiff_t bg_xpos = frame_origin.x0 + static_cast<ptrdiff_t>(xpos);
