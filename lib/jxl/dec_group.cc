@@ -783,8 +783,8 @@ Status DecodeGroup(const FrameHeader& frame_header,
         }
         // Arguments set to 0/nullptr are not used.
         JXL_RETURN_IF_ERROR(dec_state->upsampler8x->ProcessRow(
-            input_rows, output_rows,
-            /*xextra=*/0, src_rect.xsize(), 0, 0, thread));
+            input_rows, output_rows, /*xextra_left=*/0, /*xextra_right=*/0,
+            src_rect.xsize(), 0, 0, thread));
       }
     }
     return true;
