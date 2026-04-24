@@ -52,7 +52,7 @@
 
 // Set JXL_DEBUG_AC_STRATEGY to 1 to enable debugging.
 #ifndef JXL_DEBUG_AC_STRATEGY
-#define JXL_DEBUG_AC_STRATEGY 1
+#define JXL_DEBUG_AC_STRATEGY 0
 #endif
 
 // This must come before the begin/end_target, but HWY_ONCE is only true
@@ -381,38 +381,28 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
 
   const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
   // avoid large blocks when there is a lot going on in red-green.
-  float quant_norm16 = 0;
-  if (num_blocks == 1) {
-    // When it is only one 8x8, we don't need aggregation of values.
-    quant_norm16 = config.Quant(x / 8, y / 8);
-  } else if (num_blocks == 2) {
-    // Taking max instead of 8th norm seems to work
-    // better for smallest blocks up to 16x8. Jyrki couldn't get
-    // improvements in trying the same for 16x16 blocks.
-    if (acs.covered_blocks_y() == 2) {
-      quant_norm16 =
-          std::max(config.Quant(x / 8, y / 8), config.Quant(x / 8, y / 8 + 1));
-    } else {
-      quant_norm16 =
-          std::max(config.Quant(x / 8, y / 8), config.Quant(x / 8 + 1, y / 8));
+  // norm16 was blurring real detail, norm8 preserves hard edges.
+  float quant_norm8 = 0;
+
+if (num_blocks == 1) {
+  quant_norm8 = config.Quant(x / 8, y / 8);
+} else if (num_blocks == 2) {
+  quant_norm8 = std::max(
+      config.Quant(x / 8, y / 8),
+      config.Quant(x / 8 + (acs.covered_blocks_x() > 1), 
+                   y / 8 + (acs.covered_blocks_y() > 1)));
+} else {
+  for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
+    for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
+      float qval = config.Quant(x / 8 + ix, y / 8 + iy);
+      quant_norm8 += qval * qval * qval * qval;
     }
-  } else {
-    // Load QF value, calculate empirical heuristic on masking field
-    // for weighting the information loss. Information loss manifests
-    // itself as ringing, and masking could hide it.
-    for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
-      for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
-        float qval = config.Quant(x / 8 + ix, y / 8 + iy);
-        qval *= qval;
-        qval *= qval;
-        qval *= qval;
-        quant_norm16 += qval * qval;
-      }
-    }
-    quant_norm16 /= num_blocks;
-    quant_norm16 = FastPowf(quant_norm16, 1.0f / 16.0f);
   }
-  const auto quant = Set(df, quant_norm16);
+  quant_norm8 /= num_blocks;
+  quant_norm8 = FastPowf(quant_norm8, 1.0f / 8.0f);
+}
+
+const auto quant = Set(df, quant_norm8);
 
   // Compute entropy.
   const HWY_CAPPED(float, 8) df8;
@@ -493,8 +483,8 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
     // Also add #bit of #bit of num_nonzeros, to estimate the ANS cost, with a
     // bias.
     entropy += config.zeros_mul * (CeilLog2Nonzero(nbits + 17) + nbits);
-    if (c == 0 && num_blocks >= 2) {
-      // It is X channel (red-green) and we often see ringing
+    if (c != 1 && num_blocks >= 2) {
+      // It is chroma channel (red-green/blue-yellow) and we often see ringing
       // in the large blocks. Let's punish that more here.
       float w = 1.0 + std::min(3.0, num_blocks / 8.0);
       entropy *= w;
@@ -504,12 +494,16 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
   float loss_scalar =
       pow(GetLane(SumOfLanes(df8, loss)) / (num_blocks * kDCTBlockSize),
           1.0f / 8.0f) *
-      (num_blocks * kDCTBlockSize) / quant_norm16;
+      (num_blocks * kDCTBlockSize) / quant_norm8;
   entropy *= entropy_mul;
   entropy += config.info_loss_multiplier * loss_scalar;
   return true;
 }
 
+// TODO(Jonnyawsom3): Transform/merge weights need to be further tuned
+// to the newer heuristics added in v0.9, or even revert to the v0.8 heuristics
+// to undo the severe quality and size regression post-v0.8.
+// If reverting is attempted, try to find the function with the largest impact.
 Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
                             float butteraugli_target, const ACSConfig& config,
                             const float* JXL_RESTRICT cmap_factors,
@@ -531,12 +525,12 @@ Status FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
       {
           AcStrategyType::DCT4X4,
           5,
-          0.79,
+          0.78,
       },
       {
           AcStrategyType::DCT2X2,
           5,
-          0.86,
+          0.895,
       },
       {
           AcStrategyType::DCT4X8,
@@ -890,12 +884,12 @@ Status ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // ringing next to sky etc. Optimization will find smaller numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
-  const float entropy_mul16X8 = 1.05;
-  const float entropy_mul16X16 = 1.4;
-  const float entropy_mul16X32 = 2.35;
-  const float entropy_mul32X32 = 3.45;
-  const float entropy_mul64X32 = 5.6;
-  const float entropy_mul64X64 = 9.0;
+  const float entropy_mul16X8 = 1.0;
+  const float entropy_mul16X16 = 1.05;
+  const float entropy_mul16X32 = 1.5;
+  const float entropy_mul32X32 = 2.2;
+  const float entropy_mul64X32 = 4.0;
+  const float entropy_mul64X64 = 6.0;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher
