@@ -24,6 +24,18 @@
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 namespace jxl {
+namespace {
+bool CheckedMulSize(size_t a, size_t b, size_t* out) {
+  if (a != 0 && b > static_cast<size_t>(-1) / a) return false;
+  *out = a * b;
+  return true;
+}
+bool CheckedAddSize(size_t a, size_t b, size_t* out) {
+  if (b > static_cast<size_t>(-1) - a) return false;
+  *out = a + b;
+  return true;
+}
+}  // namespace
 std::pair<size_t, size_t>
 LowMemoryRenderPipeline::ColorDimensionsToChannelDimensions(
     std::pair<size_t, size_t> in, size_t c, size_t stage) const {
@@ -398,12 +410,31 @@ Status LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
   }
   // TODO(veluca): avoid reallocating buffers if not needed.
   stage_data_.resize(num);
-  size_t upsampling = 1u << base_color_shift_;
-  size_t group_dim = frame_dimensions_.group_dim * upsampling;
-  size_t padding =
-      2 * group_data_x_border_ * upsampling +  // maximum size of a rect
-      2 * kRenderPipelineXOffset;              // extra padding for processing
-  size_t stage_buffer_xsize = group_dim + padding;
+  if (base_color_shift_ >= sizeof(size_t) * 8) {
+    return JXL_FAILURE("Invalid base_color_shift");
+  }
+  const size_t upsampling = static_cast<size_t>(1) << base_color_shift_;
+  size_t group_dim = 0;
+  if (!CheckedMulSize(frame_dimensions_.group_dim, upsampling, &group_dim)) {
+    return JXL_FAILURE("group_dim overflow");
+  }
+  size_t border_padding = 0;
+  if (!CheckedMulSize(group_data_x_border_, upsampling, &border_padding) ||
+      !CheckedMulSize(border_padding, 2, &border_padding)) {
+    return JXL_FAILURE("padding overflow");
+  }
+  size_t process_padding = 0;
+  if (!CheckedMulSize(kRenderPipelineXOffset, 2, &process_padding)) {
+    return JXL_FAILURE("padding overflow");
+  }
+  size_t padding = 0;
+  if (!CheckedAddSize(border_padding, process_padding, &padding)) {
+    return JXL_FAILURE("padding overflow");
+  }
+  size_t stage_buffer_xsize = 0;
+  if (!CheckedAddSize(group_dim, padding, &stage_buffer_xsize)) {
+    return JXL_FAILURE("stage_buffer_xsize overflow");
+  }
   for (size_t t = 0; t < num; t++) {
     stage_data_[t].resize(shifts.size());
     for (size_t c = 0; c < shifts.size(); c++) {
@@ -437,9 +468,12 @@ Status LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
     size_t left_padding = image_rect.x0();
     size_t middle_padding = group_dim;
     size_t right_padding = full_image_xsize_ - image_rect.x1();
-    size_t out_of_frame_xsize =
-        padding +
+    size_t max_padding =
         std::max(left_padding, std::max(middle_padding, right_padding));
+    size_t out_of_frame_xsize = 0;
+    if (!CheckedAddSize(padding, max_padding, &out_of_frame_xsize)) {
+      return JXL_FAILURE("out_of_frame_xsize overflow");
+    }
     out_of_frame_data_.resize(num);
     for (size_t t = 0; t < num; t++) {
       JXL_ASSIGN_OR_RETURN(
@@ -842,8 +876,21 @@ Status LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
   size_t gx = group_id % frame_dimensions_.xsize_groups;
 
   if (first_image_dim_stage_ != stages_.size()) {
-    size_t group_dim = frame_dimensions_.group_dim << base_color_shift_;
-    RectT<ptrdiff_t> group_rect(gx * group_dim, gy * group_dim, group_dim,
+    if (base_color_shift_ >= sizeof(size_t) * 8) {
+      return JXL_FAILURE("Invalid base_color_shift");
+    }
+    size_t group_dim = 0;
+    size_t group_x0 = 0;
+    size_t group_y0 = 0;
+    if (!CheckedMulSize(frame_dimensions_.group_dim,
+                        static_cast<size_t>(1) << base_color_shift_,
+                        &group_dim) ||
+        !CheckedMulSize(gx, group_dim, &group_x0) ||
+        !CheckedMulSize(gy, group_dim, &group_y0)) {
+      return JXL_FAILURE("group rect overflow");
+    }
+    RectT<ptrdiff_t> group_rect(static_cast<ptrdiff_t>(group_x0),
+                                static_cast<ptrdiff_t>(group_y0), group_dim,
                                 group_dim);
     RectT<ptrdiff_t> image_rect(0, 0, frame_dimensions_.xsize_upsampled,
                                 frame_dimensions_.ysize_upsampled);
