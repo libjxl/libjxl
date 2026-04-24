@@ -31,6 +31,7 @@
 
 #include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/enc_Knuth_partition.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
@@ -751,29 +752,6 @@ void TreeSamples::Swap(size_t a, size_t b) {
 }
 
 namespace {
-std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
-                                       size_t num_chunks) {
-  if (histogram.empty() || num_chunks == 0) return {};
-  uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
-  if (sum == 0) return {};
-  // TODO(veluca): selecting distinct quantiles is likely not the best
-  // way to go about this.
-  std::vector<int32_t> thresholds;
-  uint64_t cumsum = 0;
-  uint64_t threshold = 1;
-  for (size_t i = 0; i < histogram.size(); i++) {
-    cumsum += histogram[i];
-    if (cumsum * num_chunks >= threshold * sum) {
-      thresholds.push_back(i);
-      while (cumsum * num_chunks >= threshold * sum) threshold++;
-    }
-  }
-  JXL_DASSERT(thresholds.size() <= num_chunks);
-  // last value collects all histogram and is not really a threshold
-  thresholds.pop_back();
-  return thresholds;
-}
-
 std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
                                      size_t num_chunks) {
   if (samples.empty()) return {};
@@ -785,9 +763,7 @@ std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
     uint32_t sample_offset = jxl::Clamp1(s, -kRange, kRange) - min;
     counts[sample_offset]++;
   }
-  std::vector<int32_t> thresholds = QuantizeHistogram(counts, num_chunks);
-  for (auto &v : thresholds) v += min;
-  return thresholds;
+  return QuantizeHistogram(counts, num_chunks, min);
 }
 
 // `to[i]` is assigned value `v` conforming `from[v] <= i && from[v-1] > i`.

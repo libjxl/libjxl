@@ -39,6 +39,7 @@
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/dec_modular.h"
+#include "lib/jxl/enc_Knuth_partition.h"
 #include "lib/jxl/enc_ac_strategy.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "lib/jxl/enc_ans.h"
@@ -957,9 +958,8 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
     }
   }
   // JPEG DC is from -1024 to 1023.
-  std::vector<size_t> dc_counts;
-  dc_counts.resize(2048);
-  size_t total_dc[3] = {};
+  std::vector<uint32_t> dc_counts(2048);
+  uint32_t total_dc[3] = {};
   for (size_t c : {1, 0, 2}) {
     if (jpeg_data.components.size() == 1 && c != 1) {
       for (auto& coeff : enc_state->coeffs) {
@@ -1049,25 +1049,15 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
   auto& dct = enc_state->shared.block_ctx_map.dc_thresholds;
   auto& num_dc_ctxs = enc_state->shared.block_ctx_map.num_dc_ctxs;
 
-  for (size_t i = 0; i < 3; i++) {
-    dct[i].clear();
-  }
+  for (auto& i : dct) i.clear();
   // use more contexts for larger and higher quality images
-  int num_thresholds = CeilLog2Nonzero(total_dc[1]) -
-                       CeilLog2Nonzero(static_cast<unsigned>(
-                           qt[1] + qt[2] + qt[3] + qt[4] + qt[5])) -
-                       7;
+  int num_intervals = CeilLog2Nonzero(total_dc[1]) -
+                      CeilLog2Nonzero(static_cast<unsigned>(
+                          qt[1] + qt[2] + qt[3] + qt[4] + qt[5])) -
+                      6;
   // up to 8 buckets, based on luma only
-  num_thresholds = jxl::Clamp1(num_thresholds, 1, 7);
-  size_t cumsum = 0;
-  size_t cut = total_dc[1] / (num_thresholds + 1);
-  for (int j = 0; j < 2048; j++) {
-    cumsum += dc_counts[j];
-    if (cumsum > cut) {
-      dct[1].push_back(j - 1025);
-      cut = total_dc[1] * (dct[1].size() + 1) / (num_thresholds + 1);
-    }
-  }
+  num_intervals = jxl::Clamp1(num_intervals, 2, 8);
+  dct[1] = QuantizeHistogram(dc_counts, num_intervals, -1024);
   num_dc_ctxs = dct[1].size() + 1;
 
   auto& ctx_map = enc_state->shared.block_ctx_map.ctx_map;
