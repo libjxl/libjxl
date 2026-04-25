@@ -5017,8 +5017,7 @@ JXL_TRANSCODE_JPEG_TEST(DecodeTest, JPEGReconstructionTest) {
   std::vector<uint8_t> encoded_jpeg_data;
   ASSERT_TRUE(EncodeJPEGData(memory_manager, jpeg_data_copy, &encoded_jpeg_data,
                              cparams));
-  std::vector<uint8_t> container;
-  jxl::Bytes(jxl::kContainerHeader).AppendTo(container);
+  std::vector<uint8_t> container = jxl::MakeContainerHeader(0);
   jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), encoded_jpeg_data.size(),
                        false, &container);
   jxl::Bytes(encoded_jpeg_data).AppendTo(container);

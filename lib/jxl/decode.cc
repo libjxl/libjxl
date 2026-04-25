@@ -131,13 +131,11 @@ JxlSignature ReadSignature(const uint8_t* buf, size_t len, size_t* pos) {
 
   // JPEG XL container
   if (len >= 1 && buf[0] == 0) {
-    if (len < 12) {
+    if (len < jxl::kJxlSignatureBox.size()) {
       return JXL_SIG_NOT_ENOUGH_BYTES;
-    } else if (buf[1] == 0 && buf[2] == 0 && buf[3] == 0xC && buf[4] == 'J' &&
-               buf[5] == 'X' && buf[6] == 'L' && buf[7] == ' ' &&
-               buf[8] == 0xD && buf[9] == 0xA && buf[10] == 0x87 &&
-               buf[11] == 0xA) {
-      *pos += 12;
+    } else if (memcmp(buf, jxl::kJxlSignatureBox.data(),
+                      jxl::kJxlSignatureBox.size()) == 0) {
+      *pos += jxl::kJxlSignatureBox.size();
       return JXL_SIG_CONTAINER;
     } else {
       return JXL_SIG_INVALID;
