@@ -14,6 +14,7 @@
 #include <memory>
 #include <utility>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 
@@ -145,7 +146,10 @@ class AlignedArray {
 
   static StatusOr<AlignedArray> Create(JxlMemoryManager* memory_manager,
                                        size_t size) {
-    size_t storage_size = size * sizeof(T);
+    size_t storage_size;
+    if (!SafeMul(size, sizeof(T), &storage_size)) {
+      return JXL_FAILURE("Allocation too large");
+    }
     JXL_ASSIGN_OR_RETURN(AlignedMemory storage,
                          AlignedMemory::Create(memory_manager, storage_size));
     T* items = storage.address<T>();
