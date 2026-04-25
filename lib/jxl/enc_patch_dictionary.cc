@@ -824,8 +824,9 @@ Status RoundtripPatchFrame(Image3F* reference_frame,
   cparams.progressive_dc = 0;
   cparams.progressive_mode = Override::kOff;
   cparams.qprogressive_mode = Override::kOff;
-  // Use gradient predictor and not Predictor::Best.
-  cparams.options.predictor = Predictor::Gradient;
+  // LZ77 only as patch detection is currently optimized for text.
+  cparams.options.predictor = Predictor::Zero;
+  cparams.options.nb_repeats = 0;
   patch_frame_info.save_as_reference = idx;  // always saved.
   patch_frame_info.frame_type = FrameType::kReferenceOnly;
   patch_frame_info.save_before_color_transform = true;
