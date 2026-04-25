@@ -240,13 +240,13 @@ struct CompressArgs {
 
     cmdline->AddOptionValue(
         '\0', "buffering", "-1..3",
-        "How frames are buffered when encoding, which affects memory usage and "
-        "compression.\n    "
+        "Controls how much input buffering libjxl uses, affecting memory usage "
+        "and compression quality.\n    "
         "-1 = encoder chooses (default). "
-        "0 = buffer everything (most memory, best compression).\n    "
-        "1 = stream input for large images, buffer output. "
-        "2 = stream input, buffer output.\n    "
-        "3 = stream both input and output (least memory, worst compression)",
+        "0 = buffer entire image (most memory, best compression).\n    "
+        "1 = stream input for large images. "
+        "2 = stream input with a lower threshold.\n    "
+        "3 = deprecated; use --output_mode to control output streaming.",
         &buffering, &ParseInt64, -1);
 
     cmdline->AddOptionValue('\0', "faster_decoding", "0..4",
@@ -366,6 +366,13 @@ struct CompressArgs {
     cmdline->AddOptionFlag('\0', "streaming_output",
                            "Enable incremental writing of the output file.",
                            &streaming_output, &SetBooleanTrue, 3);
+
+    cmdline->AddOptionValue(
+        '\0', "output_mode", "-1..2",
+        "Output mode: -1=default (let encoder decide), 0=buffer output "
+        "internally, 1=streaming with seeking, 2=OOO jxlp (ftyp v1, no "
+        "seeking required).",
+        &output_mode, &ParseInt64, 3);
 
     cmdline->AddOptionFlag('\0', "disable_output",
                            "Do not write an output file.", &disable_output,
@@ -488,6 +495,7 @@ struct CompressArgs {
   jxl::Override print_profile = jxl::Override::kDefault;
   bool streaming_input = false;
   bool streaming_output = false;
+  int64_t output_mode = -1;
 
   bool verbose = false;
 
@@ -1149,10 +1157,8 @@ int main(int argc, char** argv) {
   params.runner = JxlThreadParallelRunner;
   params.runner_opaque = runner.get();
 
-  if (args.streaming_input) {
-    params.options.emplace_back(JXL_ENC_FRAME_SETTING_BUFFERING,
-                                static_cast<int64_t>(3), 0);
-  }
+  params.options.emplace_back(JXL_ENC_FRAME_SETTING_OUTPUT_MODE,
+                               args.output_mode, 0);
 
   jpegxl::tools::SpeedStats stats;
   jpegxl::tools::JxlOutputProcessor output_processor;

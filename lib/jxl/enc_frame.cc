@@ -23,6 +23,7 @@
 #include "lib/jxl/ac_context.h"
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -1953,19 +1954,13 @@ size_t ComputeDcGlobalPadding(const std::vector<size_t>& group_sizes,
   return group_data_offset - actual_offset;
 }
 
+// write_fn is called once per section (dc_group, then each ac_group).
 Status OutputGroups(std::vector<std::unique_ptr<BitWriter>>&& group_codes,
-                    std::vector<size_t>* group_sizes,
-                    JxlEncoderOutputProcessorWrapper* output_processor) {
+                    std::function<Status(PaddedBytes&&)> write_fn) {
   JXL_ENSURE(group_codes.size() >= 4);
-  {
-    PaddedBytes dc_group = std::move(*group_codes[1]).TakeBytes();
-    group_sizes->push_back(dc_group.size());
-    JXL_RETURN_IF_ERROR(AppendData(*output_processor, dc_group));
-  }
+  JXL_RETURN_IF_ERROR(write_fn(std::move(*group_codes[1]).TakeBytes()));
   for (size_t i = 3; i < group_codes.size(); ++i) {
-    PaddedBytes ac_group = std::move(*group_codes[i]).TakeBytes();
-    group_sizes->push_back(ac_group.size());
-    JXL_RETURN_IF_ERROR(AppendData(*output_processor, ac_group));
+    JXL_RETURN_IF_ERROR(write_fn(std::move(*group_codes[i]).TakeBytes()));
   }
   return true;
 }
@@ -2042,9 +2037,10 @@ StatusOr<std::unique_ptr<BitWriter>> OutputAcGlobal(
 JXL_NOINLINE Status EncodeFrameStreaming(
     JxlMemoryManager* memory_manager, const CompressParams& cparams,
     const FrameInfo& frame_info, const CodecMetadata* metadata,
-    JxlEncoderChunkedFrameAdapter& frame_data, bool streaming_output,
-    const JxlCmsInterface& cms, ThreadPool* pool,
-    JxlEncoderOutputProcessorWrapper* output_processor, AuxOut* aux_out) {
+    JxlEncoderChunkedFrameAdapter& frame_data, const JxlCmsInterface& cms,
+    ThreadPool* pool, JxlEncoderOutputProcessorWrapper* output_processor,
+    AuxOut* aux_out, uint32_t* jxlp_counter) {
+  const int output_mode = cparams.output_mode;
   auto enc_state = jxl::make_unique<PassesEncoderState>(memory_manager);
   SetProgressiveMode(cparams, &enc_state->progressive_splitter);
   FrameHeader frame_header(metadata);
@@ -2075,10 +2071,52 @@ JXL_NOINLINE Status EncodeFrameStreaming(
   PaddedBytes frame_header_bytes{memory_manager};
   PaddedBytes dc_global_bytes{memory_manager};
   std::vector<size_t> group_sizes;
-  size_t start_pos = output_processor->CurrentPosition();
-  std::vector<std::unique_ptr<BitWriter>> global_group_codes(
+  const bool streaming_output = (output_mode == 1);
+  const bool streaming = (output_mode >= 1);
+  const bool ooo = (output_mode == 2 && jxlp_counter != nullptr);
+  size_t start_pos =
+      (streaming_output && output_processor) ? output_processor->CurrentPosition() : 0;
+  const size_t total_sections =
       NumTocEntries(frame_header.ToFrameDimensions().num_groups,
-                    dc_group_order.size(), num_passes));
+                    dc_group_order.size(), num_passes);
+  std::vector<std::unique_ptr<BitWriter>> global_group_codes(
+      streaming ? 0 : total_sections);
+
+  // For OOO mode: inv_perm maps encoding_pos to codestream_slot so that
+  // jxlp box counters (jxlp_base + slot + 2) produce codestream order on sort.
+  size_t encoding_pos = 0;
+  std::vector<size_t> inv_perm;
+  if (ooo) {
+    inv_perm.resize(permutation.size());
+    for (size_t j = 0; j < permutation.size(); j++) {
+      inv_perm[permutation[j]] = j;
+    }
+  }
+
+  auto write_jxlp = [&](uint32_t counter, bool is_last,
+                         Span<const uint8_t> data) -> Status {
+    uint8_t hdr[kLargeBoxHeaderSize + 4];
+    const size_t hdr_size =
+        WriteBoxHeader(MakeBoxType("jxlp"), 4 + data.size(),
+                       /*unbounded=*/false, /*force_large_box=*/false, hdr);
+    StoreBE32(counter | (is_last ? 0x80000000u : 0u), hdr + hdr_size);
+    JXL_RETURN_IF_ERROR(AppendData(*output_processor,
+                                   Span<const uint8_t>(hdr, hdr_size + 4)));
+    return AppendData(*output_processor, data);
+  };
+
+  const uint32_t jxlp_base = jxlp_counter ? *jxlp_counter : 0;
+
+  auto write_group_section = [&](PaddedBytes&& bytes) -> Status {
+    group_sizes.push_back(bytes.size());
+    if (ooo) {
+      const size_t slot = inv_perm[encoding_pos++];
+      const bool is_last = (slot + 1 == total_sections) && frame_info.is_last;
+      return write_jxlp(jxlp_base + static_cast<uint32_t>(slot) + 2, is_last,
+                        Span<const uint8_t>(bytes.data(), bytes.size()));
+    }
+    return AppendData(*output_processor, bytes);
+  };
   for (size_t i = 0; i < dc_group_order.size(); ++i) {
     size_t dc_ix = dc_group_order[i];
     size_t dc_y = dc_ix / dc_group_xsize;
@@ -2135,11 +2173,18 @@ JXL_NOINLINE Status EncodeFrameStreaming(
         group_sizes.push_back(dc_global_bytes.size());
         JXL_RETURN_IF_ERROR(
             output_processor->Seek(start_pos + group_data_offset));
+      } else if (ooo) {
+        JXL_RETURN_IF_ERROR(write_jxlp(
+            jxlp_base, /*is_last=*/false,
+            Span<const uint8_t>(frame_header_bytes.data(),
+                                frame_header_bytes.size())));
+        JXL_RETURN_IF_ERROR(
+            write_group_section(std::move(*group_codes[0]).TakeBytes()));
       }
     }
-    if (streaming_output) {
+    if (streaming) {
       JXL_RETURN_IF_ERROR(
-          OutputGroups(std::move(group_codes), &group_sizes, output_processor));
+          OutputGroups(std::move(group_codes), write_group_section));
     } else {
       JXL_ENSURE(group_codes.size() >= 4);
       if (i == 0) {
@@ -2167,16 +2212,15 @@ JXL_NOINLINE Status EncodeFrameStreaming(
         std::unique_ptr<BitWriter> writer,
         OutputAcGlobal(*enc_state, frame_header.ToFrameDimensions(), aux_out));
     JXL_RETURN_IF_ERROR(writer->Shrink());
-    if (streaming_output) {
-      PaddedBytes ac_global = std::move(*writer).TakeBytes();
-      group_sizes.push_back(ac_global.size());
-      JXL_RETURN_IF_ERROR(AppendData(*output_processor, ac_global));
+    if (streaming) {
+      JXL_RETURN_IF_ERROR(
+          write_group_section(std::move(*writer).TakeBytes()));
     } else {
       global_group_codes[1 + dc_group_order.size()] = std::move(writer);
     }
   } else {
-    if (streaming_output) {
-      group_sizes.push_back(0);
+    if (streaming) {
+      JXL_RETURN_IF_ERROR(write_group_section(PaddedBytes{memory_manager}));
     } else {
       global_group_codes[1 + dc_group_order.size()] =
           jxl::make_unique<BitWriter>(memory_manager);
@@ -2203,6 +2247,22 @@ JXL_NOINLINE Status EncodeFrameStreaming(
     JXL_ENSURE(output_processor->CurrentPosition() ==
                start_pos + group_data_offset);
     JXL_RETURN_IF_ERROR(output_processor->Seek(end_pos));
+  } else if (ooo) {
+    // Write TOC (in codestream order) as jxlp[jxlp_base+1]; counter +1 means
+    // the decoder processes it before the group sections (counters >= +2).
+    JXL_ENSURE(group_sizes.size() == permutation.size());
+    std::vector<size_t> codestream_sizes(permutation.size());
+    for (size_t j = 0; j < permutation.size(); j++) {
+      codestream_sizes[j] = group_sizes[permutation[j]];
+    }
+    JXL_ASSIGN_OR_RETURN(PaddedBytes toc_bytes,
+                         EncodeTOC(memory_manager, codestream_sizes, aux_out));
+    JXL_RETURN_IF_ERROR(
+        write_jxlp(jxlp_base + 1, /*is_last=*/false,
+                   Span<const uint8_t>(toc_bytes.data(), toc_bytes.size())));
+    if (jxlp_counter != nullptr) {
+      *jxlp_counter = jxlp_base + static_cast<uint32_t>(total_sections) + 2;
+    }
   } else {
     for (auto& g : global_group_codes) {
       group_sizes.push_back(g->BitsWritten() / 8);
@@ -2213,8 +2273,8 @@ JXL_NOINLINE Status EncodeFrameStreaming(
     JXL_RETURN_IF_ERROR(AppendData(*output_processor, frame_header_bytes));
     JXL_RETURN_IF_ERROR(AppendData(*output_processor, toc_bytes));
     for (auto& g : global_group_codes) {
-      PaddedBytes bytes = std::move(*g).TakeBytes();
-      JXL_RETURN_IF_ERROR(AppendData(*output_processor, bytes));
+      JXL_RETURN_IF_ERROR(
+          AppendData(*output_processor, std::move(*g).TakeBytes()));
     }
   }
   return true;
@@ -2471,7 +2531,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
                    JxlEncoderChunkedFrameAdapter& frame_data,
                    const JxlCmsInterface& cms, ThreadPool* pool,
                    JxlEncoderOutputProcessorWrapper* output_processor,
-                   AuxOut* aux_out) {
+                   AuxOut* aux_out, uint32_t* jxlp_counter) {
   CompressParams cparams = cparams_orig;
   if (cparams.speed_tier == SpeedTier::kTectonicPlate &&
       !cparams.IsLossless()) {
@@ -2485,7 +2545,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
   if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
     // Test palette performance to inform later trials.
     std::vector<CompressParams> all_params;
-    CompressParams cparams_attempt = cparams_orig;
+    CompressParams cparams_attempt = cparams;
     cparams_attempt.speed_tier = SpeedTier::kGlacier;
 
     cparams_attempt.options.max_properties = 4;
@@ -2512,7 +2572,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
       JxlEncoderOutputProcessorWrapper local_output(memory_manager);
       JXL_RETURN_IF_ERROR(EncodeFrame(memory_manager, all_params[task],
                                       frame_info, metadata, frame_data, cms,
-                                      nullptr, &local_output, aux_out));
+                                      nullptr, &local_output, aux_out, nullptr));
       size[task] = local_output.CurrentPosition();
       return true;
     };
@@ -2525,10 +2585,10 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     size_t best_idx_test = 0;
 
     if (size_test[0] <= size_test[1]) {
-      all_params = TectonicPlateSettingsLessPalette(cparams_orig);
+      all_params = TectonicPlateSettingsLessPalette(cparams);
     } else {
       best_idx_test = 1;
-      all_params = TectonicPlateSettingsMorePalette(cparams_orig);
+      all_params = TectonicPlateSettingsMorePalette(cparams);
     }
 
     size.clear();
@@ -2602,9 +2662,14 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
 
   if (CanDoStreamingEncoding(cparams, frame_info, *metadata, frame_data)) {
     return EncodeFrameStreaming(memory_manager, cparams, frame_info, metadata,
-                                frame_data, cparams.buffering > 2, cms, pool,
-                                output_processor, aux_out);
+                                frame_data, cms, pool, output_processor,
+                                aux_out, jxlp_counter);
   } else {
+    if (cparams.output_mode == 2 && jxlp_counter != nullptr) {
+      // Leave a 12-byte gap for the jxlp box header; encode.cc fills it in.
+      JXL_RETURN_IF_ERROR(
+          output_processor->Seek(output_processor->CurrentPosition() + 12));
+    }
     return EncodeFrameOneShot(memory_manager, cparams, frame_info, metadata,
                               frame_data, cms, pool, output_processor, aux_out);
   }
@@ -2654,7 +2719,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
   JxlEncoderOutputProcessorWrapper output_processor(memory_manager);
   JXL_RETURN_IF_ERROR(EncodeFrame(memory_manager, cparams_orig, fi, metadata,
                                   frame_data, cms, pool, &output_processor,
-                                  aux_out));
+                                  aux_out, nullptr));
   JXL_RETURN_IF_ERROR(output_processor.SetFinalizedPosition());
   std::vector<uint8_t> output;
   JXL_RETURN_IF_ERROR(output_processor.CopyOutput(output));
