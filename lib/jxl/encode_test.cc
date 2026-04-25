@@ -1728,6 +1728,7 @@ class JxlChunkedFrameInputSourceAdapter {
 
 struct StreamingTestParam {
   size_t bitmask;
+  int output_mode = 0;
   bool use_container() const { return static_cast<bool>(bitmask & 0x1); }
   bool return_large_buffers() const { return static_cast<bool>(bitmask & 0x2); }
   bool multiple_frames() const { return static_cast<bool>(bitmask & 0x4); }
@@ -1743,15 +1744,20 @@ struct StreamingTestParam {
 
   static std::vector<StreamingTestParam> All() {
     std::vector<StreamingTestParam> params;
-    params.reserve(256);
+    params.reserve(768);
     for (size_t bitmask = 0; bitmask < 256; bitmask++) {
-      params.push_back(StreamingTestParam{bitmask});
+      for (int mode : {0, 1, 2}) {
+        params.push_back(StreamingTestParam{bitmask, mode});
+      }
     }
     return params;
   }
 };
 
 std::ostream& operator<<(std::ostream& out, StreamingTestParam p) {
+  const char* mode_names[] = {"BufferOutput_", "StreamOutputSeekForTOC_",
+                              "StreamOutputOOOjxlp_"};
+  out << mode_names[p.output_mode];
   if (p.use_container()) {
     out << "WithContainer_";
   } else {
@@ -1834,7 +1840,11 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(frame_settings,
                                                JXL_ENC_FRAME_SETTING_BUFFERING,
-                                               streaming ? 3 : 0));
+                                               streaming ? 2 : 0));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderFrameSettingsSetOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_OUTPUT_MODE,
+                  p.output_mode));
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings,
