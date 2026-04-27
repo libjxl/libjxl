@@ -222,16 +222,300 @@ Status ConvolutionWithTranspose(const ImageF& in,
   return true;
 }
 
+// Horizontal convolution, no transpose. Same dims in and out (out may not alias in).
+// Mirrors ConvolutionWithTranspose's case-N unrolls but writes contiguously
+// (`out->Row(y)[x]` instead of `out->Row(x)[y]`), which avoids one cache line
+// miss per inner iteration. Borders use the same scalar fallback shape.
+Status ConvolutionHorizontal(const ImageF& in,
+                             const std::vector<float>& kernel,
+                             ImageF* BUTTERAUGLI_RESTRICT out) {
+  JXL_ENSURE(out->xsize() == in.xsize());
+  JXL_ENSURE(out->ysize() == in.ysize());
+  const size_t len = kernel.size();
+  const size_t offset = len / 2;
+  float weight_no_border = 0.0f;
+  for (size_t j = 0; j < len; ++j) {
+    weight_no_border += kernel[j];
+  }
+  const float scale_no_border = 1.0f / weight_no_border;
+  const size_t border1 = std::min(in.xsize(), offset);
+  const size_t border2 = in.xsize() > offset ? in.xsize() - offset : 0;
+  std::vector<float> scaled_kernel(len / 2 + 1);
+  for (size_t i = 0; i <= len / 2; ++i) {
+    scaled_kernel[i] = kernel[i] * scale_no_border;
+  }
+
+  // Interior columns: full kernel, contiguous output.
+  switch (len) {
+    case 7: {
+      const float sk0 = scaled_kernel[0];
+      const float sk1 = scaled_kernel[1];
+      const float sk2 = scaled_kernel[2];
+      const float sk3 = scaled_kernel[3];
+      for (size_t y = 0; y < in.ysize(); ++y) {
+        const float* BUTTERAUGLI_RESTRICT row_in =
+            in.Row(y) + border1 - offset;
+        float* BUTTERAUGLI_RESTRICT row_out = out->Row(y);
+        for (size_t x = border1; x < border2; ++x, ++row_in) {
+          const float sum0 = (row_in[0] + row_in[6]) * sk0;
+          const float sum1 = (row_in[1] + row_in[5]) * sk1;
+          const float sum2 = (row_in[2] + row_in[4]) * sk2;
+          const float sum = (row_in[3]) * sk3 + sum0 + sum1 + sum2;
+          row_out[x] = sum;
+        }
+      }
+    } break;
+    case 13: {
+      for (size_t y = 0; y < in.ysize(); ++y) {
+        const float* BUTTERAUGLI_RESTRICT row_in =
+            in.Row(y) + border1 - offset;
+        float* BUTTERAUGLI_RESTRICT row_out = out->Row(y);
+        for (size_t x = border1; x < border2; ++x, ++row_in) {
+          float sum0 = (row_in[0] + row_in[12]) * scaled_kernel[0];
+          float sum1 = (row_in[1] + row_in[11]) * scaled_kernel[1];
+          float sum2 = (row_in[2] + row_in[10]) * scaled_kernel[2];
+          float sum3 = (row_in[3] + row_in[9]) * scaled_kernel[3];
+          sum0 += (row_in[4] + row_in[8]) * scaled_kernel[4];
+          sum1 += (row_in[5] + row_in[7]) * scaled_kernel[5];
+          const float sum = (row_in[6]) * scaled_kernel[6];
+          row_out[x] = sum + sum0 + sum1 + sum2 + sum3;
+        }
+      }
+      break;
+    }
+    case 15: {
+      for (size_t y = 0; y < in.ysize(); ++y) {
+        const float* BUTTERAUGLI_RESTRICT row_in =
+            in.Row(y) + border1 - offset;
+        float* BUTTERAUGLI_RESTRICT row_out = out->Row(y);
+        for (size_t x = border1; x < border2; ++x, ++row_in) {
+          float sum0 = (row_in[0] + row_in[14]) * scaled_kernel[0];
+          float sum1 = (row_in[1] + row_in[13]) * scaled_kernel[1];
+          float sum2 = (row_in[2] + row_in[12]) * scaled_kernel[2];
+          float sum3 = (row_in[3] + row_in[11]) * scaled_kernel[3];
+          sum0 += (row_in[4] + row_in[10]) * scaled_kernel[4];
+          sum1 += (row_in[5] + row_in[9]) * scaled_kernel[5];
+          sum2 += (row_in[6] + row_in[8]) * scaled_kernel[6];
+          const float sum = (row_in[7]) * scaled_kernel[7];
+          row_out[x] = sum + sum0 + sum1 + sum2 + sum3;
+        }
+      }
+      break;
+    }
+    case 33: {
+      for (size_t y = 0; y < in.ysize(); ++y) {
+        const float* BUTTERAUGLI_RESTRICT row_in =
+            in.Row(y) + border1 - offset;
+        float* BUTTERAUGLI_RESTRICT row_out = out->Row(y);
+        for (size_t x = border1; x < border2; ++x, ++row_in) {
+          float sum0 = (row_in[0] + row_in[32]) * scaled_kernel[0];
+          float sum1 = (row_in[1] + row_in[31]) * scaled_kernel[1];
+          float sum2 = (row_in[2] + row_in[30]) * scaled_kernel[2];
+          float sum3 = (row_in[3] + row_in[29]) * scaled_kernel[3];
+          sum0 += (row_in[4] + row_in[28]) * scaled_kernel[4];
+          sum1 += (row_in[5] + row_in[27]) * scaled_kernel[5];
+          sum2 += (row_in[6] + row_in[26]) * scaled_kernel[6];
+          sum3 += (row_in[7] + row_in[25]) * scaled_kernel[7];
+          sum0 += (row_in[8] + row_in[24]) * scaled_kernel[8];
+          sum1 += (row_in[9] + row_in[23]) * scaled_kernel[9];
+          sum2 += (row_in[10] + row_in[22]) * scaled_kernel[10];
+          sum3 += (row_in[11] + row_in[21]) * scaled_kernel[11];
+          sum0 += (row_in[12] + row_in[20]) * scaled_kernel[12];
+          sum1 += (row_in[13] + row_in[19]) * scaled_kernel[13];
+          sum2 += (row_in[14] + row_in[18]) * scaled_kernel[14];
+          sum3 += (row_in[15] + row_in[17]) * scaled_kernel[15];
+          const float sum = (row_in[16]) * scaled_kernel[16];
+          row_out[x] = sum + sum0 + sum1 + sum2 + sum3;
+        }
+      }
+      break;
+    }
+    default:
+      return JXL_UNREACHABLE("kernel size %d not implemented",
+                             static_cast<int>(len));
+  }
+
+  // Left + right border columns. Match ConvolveBorderColumn's FP ordering
+  // exactly: compute scale = 1/weight once per column, then sum * scale per y.
+  // This preserves bit-identical output vs the legacy transpose-based path.
+  auto border_column = [&](size_t x) {
+    int minx = x < offset ? 0 : static_cast<int>(x - offset);
+    int maxx = std::min<int>(in.xsize() - 1, x + offset);
+    float weight = 0.0f;
+    for (int j = minx; j <= maxx; ++j) {
+      weight += kernel[j - static_cast<int>(x) + offset];
+    }
+    const float scale = 1.0f / weight;
+    for (size_t y = 0; y < in.ysize(); ++y) {
+      const float* BUTTERAUGLI_RESTRICT row_in = in.Row(y);
+      float sum = 0.0f;
+      for (int j = minx; j <= maxx; ++j) {
+        sum += row_in[j] * kernel[j - static_cast<int>(x) + offset];
+      }
+      out->Row(y)[x] = sum * scale;
+    }
+  };
+  for (size_t x = 0; x < border1; ++x) border_column(x);
+  for (size_t x = border2; x < in.xsize(); ++x) border_column(x);
+  return true;
+}
+
+// Vertical convolution. For each output (y,x), sum over kernel[k] * in[y-offset+k, x].
+// Pre-collects row pointers once per y (sliding window across the image), then
+// the inner x loop is contiguous loads + contiguous stores — auto-vectorizes
+// cleanly without the transpose-on-write penalty.
+Status ConvolutionVertical(const ImageF& in,
+                           const std::vector<float>& kernel,
+                           ImageF* BUTTERAUGLI_RESTRICT out) {
+  JXL_ENSURE(out->xsize() == in.xsize());
+  JXL_ENSURE(out->ysize() == in.ysize());
+  const size_t W = in.xsize();
+  const size_t H = in.ysize();
+  const size_t len = kernel.size();
+  const size_t offset = len / 2;
+
+  float weight_no_border = 0.0f;
+  for (size_t j = 0; j < len; ++j) {
+    weight_no_border += kernel[j];
+  }
+  const float scale_no_border = 1.0f / weight_no_border;
+  std::vector<float> scaled_kernel(len);
+  for (size_t i = 0; i < len; ++i) {
+    scaled_kernel[i] = kernel[i] * scale_no_border;
+  }
+
+  const size_t y_top = std::min(H, offset);
+  const size_t y_bot = H > offset ? H - offset : 0;
+
+  // Partial-kernel V row — used for top, bottom, and (degenerate-image) overlap.
+  // Mirrors ConvolveBorderColumn's logic on transposed data: scale = 1/weight
+  // computed once per output row, then sum*scale per output column.
+  auto partial_kernel_row = [&](size_t y) {
+    int min_k =
+        static_cast<int>(y) < static_cast<int>(offset)
+            ? static_cast<int>(offset) - static_cast<int>(y)
+            : 0;
+    int max_k = std::min<int>(len - 1, static_cast<int>(H - 1 - y) + offset);
+    float weight = 0.0f;
+    for (int k = min_k; k <= max_k; ++k) weight += kernel[k];
+    const float s = 1.0f / weight;
+    float* BUTTERAUGLI_RESTRICT row_out = out->Row(y);
+    for (size_t x = 0; x < W; ++x) {
+      float sum = 0.0f;
+      for (int k = min_k; k <= max_k; ++k) {
+        sum += in.Row(y + k - offset)[x] * kernel[k];
+      }
+      row_out[x] = sum * s;
+    }
+  };
+
+  // Top border (or, when y_top > y_bot, every row).
+  for (size_t y = 0; y < y_top; ++y) partial_kernel_row(y);
+
+  // Interior rows: full kernel, case-N unroll on x.
+  switch (len) {
+    case 7: {
+      const float sk0 = scaled_kernel[0];
+      const float sk1 = scaled_kernel[1];
+      const float sk2 = scaled_kernel[2];
+      const float sk3 = scaled_kernel[3];
+      for (size_t y = y_top; y < y_bot; ++y) {
+        const float* BUTTERAUGLI_RESTRICT r0 = in.Row(y - 3);
+        const float* BUTTERAUGLI_RESTRICT r1 = in.Row(y - 2);
+        const float* BUTTERAUGLI_RESTRICT r2 = in.Row(y - 1);
+        const float* BUTTERAUGLI_RESTRICT r3 = in.Row(y);
+        const float* BUTTERAUGLI_RESTRICT r4 = in.Row(y + 1);
+        const float* BUTTERAUGLI_RESTRICT r5 = in.Row(y + 2);
+        const float* BUTTERAUGLI_RESTRICT r6 = in.Row(y + 3);
+        float* BUTTERAUGLI_RESTRICT row_out = out->Row(y);
+        for (size_t x = 0; x < W; ++x) {
+          const float s0 = (r0[x] + r6[x]) * sk0;
+          const float s1 = (r1[x] + r5[x]) * sk1;
+          const float s2 = (r2[x] + r4[x]) * sk2;
+          row_out[x] = r3[x] * sk3 + s0 + s1 + s2;
+        }
+      }
+    } break;
+    case 13: {
+      for (size_t y = y_top; y < y_bot; ++y) {
+        const float* BUTTERAUGLI_RESTRICT rows[13];
+        for (int k = 0; k < 13; ++k) rows[k] = in.Row(y + k - 6);
+        float* BUTTERAUGLI_RESTRICT row_out = out->Row(y);
+        for (size_t x = 0; x < W; ++x) {
+          float s0 = (rows[0][x] + rows[12][x]) * scaled_kernel[0];
+          float s1 = (rows[1][x] + rows[11][x]) * scaled_kernel[1];
+          float s2 = (rows[2][x] + rows[10][x]) * scaled_kernel[2];
+          float s3 = (rows[3][x] + rows[9][x]) * scaled_kernel[3];
+          s0 += (rows[4][x] + rows[8][x]) * scaled_kernel[4];
+          s1 += (rows[5][x] + rows[7][x]) * scaled_kernel[5];
+          row_out[x] = rows[6][x] * scaled_kernel[6] + s0 + s1 + s2 + s3;
+        }
+      }
+    } break;
+    case 15: {
+      for (size_t y = y_top; y < y_bot; ++y) {
+        const float* BUTTERAUGLI_RESTRICT rows[15];
+        for (int k = 0; k < 15; ++k) rows[k] = in.Row(y + k - 7);
+        float* BUTTERAUGLI_RESTRICT row_out = out->Row(y);
+        for (size_t x = 0; x < W; ++x) {
+          float s0 = (rows[0][x] + rows[14][x]) * scaled_kernel[0];
+          float s1 = (rows[1][x] + rows[13][x]) * scaled_kernel[1];
+          float s2 = (rows[2][x] + rows[12][x]) * scaled_kernel[2];
+          float s3 = (rows[3][x] + rows[11][x]) * scaled_kernel[3];
+          s0 += (rows[4][x] + rows[10][x]) * scaled_kernel[4];
+          s1 += (rows[5][x] + rows[9][x]) * scaled_kernel[5];
+          s2 += (rows[6][x] + rows[8][x]) * scaled_kernel[6];
+          row_out[x] = rows[7][x] * scaled_kernel[7] + s0 + s1 + s2 + s3;
+        }
+      }
+    } break;
+    case 33: {
+      for (size_t y = y_top; y < y_bot; ++y) {
+        const float* BUTTERAUGLI_RESTRICT rows[33];
+        for (int k = 0; k < 33; ++k) rows[k] = in.Row(y + k - 16);
+        float* BUTTERAUGLI_RESTRICT row_out = out->Row(y);
+        for (size_t x = 0; x < W; ++x) {
+          float s0 = (rows[0][x] + rows[32][x]) * scaled_kernel[0];
+          float s1 = (rows[1][x] + rows[31][x]) * scaled_kernel[1];
+          float s2 = (rows[2][x] + rows[30][x]) * scaled_kernel[2];
+          float s3 = (rows[3][x] + rows[29][x]) * scaled_kernel[3];
+          s0 += (rows[4][x] + rows[28][x]) * scaled_kernel[4];
+          s1 += (rows[5][x] + rows[27][x]) * scaled_kernel[5];
+          s2 += (rows[6][x] + rows[26][x]) * scaled_kernel[6];
+          s3 += (rows[7][x] + rows[25][x]) * scaled_kernel[7];
+          s0 += (rows[8][x] + rows[24][x]) * scaled_kernel[8];
+          s1 += (rows[9][x] + rows[23][x]) * scaled_kernel[9];
+          s2 += (rows[10][x] + rows[22][x]) * scaled_kernel[10];
+          s3 += (rows[11][x] + rows[21][x]) * scaled_kernel[11];
+          s0 += (rows[12][x] + rows[20][x]) * scaled_kernel[12];
+          s1 += (rows[13][x] + rows[19][x]) * scaled_kernel[13];
+          s2 += (rows[14][x] + rows[18][x]) * scaled_kernel[14];
+          s3 += (rows[15][x] + rows[17][x]) * scaled_kernel[15];
+          row_out[x] = rows[16][x] * scaled_kernel[16] + s0 + s1 + s2 + s3;
+        }
+      }
+    } break;
+    default:
+      return JXL_UNREACHABLE("kernel size %d not implemented",
+                             static_cast<int>(len));
+  }
+
+  // Bottom border. Note: when the image is too small (y_top > y_bot, e.g.
+  // ysize < kernel size) every row was already covered by the top loop with
+  // the correct min_k/max_k. The legacy transpose path tolerated this overlap
+  // because both writes produced the same value; we get the same property by
+  // using one partial_kernel_row helper for both ends.
+  for (size_t y = std::max(y_bot, y_top); y < H; ++y) partial_kernel_row(y);
+  return true;
+}
+
 // A blur somewhat similar to a 2D Gaussian blur.
 // See: https://en.wikipedia.org/wiki/Gaussian_blur
 //
-// This is a bottleneck because the sigma can be quite large (>7). We can use
-// gauss_blur.cc (runtime independent of sigma, closer to a 4*sigma truncated
-// Gaussian and our 2.25 in ComputeKernel), but its boundary conditions are
-// zero-valued. This leads to noticeable differences at the edges of diffmaps.
-// We retain a special case for 5x5 kernels (even faster than gauss_blur),
-// optionally use gauss_blur followed by fixup of the borders for large images,
-// or fall back to the previous truncated FIR followed by a transpose.
+// This is a bottleneck because the sigma can be quite large (>7). The 5x5 case
+// uses Separable5; larger kernels go through ConvolutionHorizontal +
+// ConvolutionVertical (direct H+V, no transpose buffer — drops a fully
+// strided write per inner iteration).
 Status Blur(const ImageF& in, float sigma, const ButteraugliParams& params,
             BlurTemp* temp, ImageF* out) {
   std::vector<float> kernel = ComputeKernel(sigma);
@@ -255,16 +539,44 @@ Status Blur(const ImageF& in, float sigma, const ButteraugliParams& params,
     return true;
   }
 
-  ImageF* temp_t;
-  JXL_RETURN_IF_ERROR(temp->GetTransposed(in, &temp_t));
-  JXL_RETURN_IF_ERROR(ConvolutionWithTranspose(in, kernel, temp_t));
-  JXL_RETURN_IF_ERROR(ConvolutionWithTranspose(*temp_t, kernel, out));
+  // Direct H then V — no transpose buffer.
+  ImageF* h_out;
+  JXL_RETURN_IF_ERROR(temp->GetSameSize(in, &h_out));
+  JXL_RETURN_IF_ERROR(ConvolutionHorizontal(in, kernel, h_out));
+  JXL_RETURN_IF_ERROR(ConvolutionVertical(*h_out, kernel, out));
   return true;
 }
 
 // Allows PaddedMaltaUnit to call either function via overloading.
 struct MaltaTagLF {};
 struct MaltaTag {};
+
+// Padded-Malta convention: callers allocate `diffs` with 4 px of border on
+// each side (i.e. xsize_+8 by ysize_+8) and call ZeroMaltaBorder() once. The
+// diff image is written into the interior `diffs[y+4][x+4]` for original
+// coords (x,y); the border stays zero across the lifetime of `diffs`. This
+// lets MaltaUnit's full SIMD path run on every pixel — no PaddedMaltaUnit
+// border path, no extract_window into a stack buffer.
+//
+// Only the 4-px border strips need zeroing (the interior is rewritten by each
+// Malta call). Skipping the interior saves a full-image worth of memory
+// traffic at 4K, which would otherwise dwarf the work the patch is meant to
+// avoid.
+constexpr size_t kMaltaPad = 4;
+
+static inline void ZeroMaltaBorder(ImageF* diffs) {
+  const size_t pw = diffs->xsize();
+  const size_t ph = diffs->ysize();
+  for (size_t y = 0; y < kMaltaPad; ++y) {
+    std::memset(diffs->Row(y), 0, pw * sizeof(float));
+    std::memset(diffs->Row(ph - 1 - y), 0, pw * sizeof(float));
+  }
+  for (size_t y = kMaltaPad; y < ph - kMaltaPad; ++y) {
+    float* row = diffs->Row(y);
+    std::memset(row, 0, kMaltaPad * sizeof(float));
+    std::memset(row + (pw - kMaltaPad), 0, kMaltaPad * sizeof(float));
+  }
+}
 
 }  // namespace jxl
 
@@ -482,15 +794,12 @@ Status SeparateHFAndUHF(const ButteraugliParams& params, ImageF* hf,
   JXL_ASSIGN_OR_RETURN(uhf[0], ImageF::Create(memory_manager, xsize, ysize));
   JXL_ASSIGN_OR_RETURN(uhf[1], ImageF::Create(memory_manager, xsize, ysize));
   for (int i = 0; i < 2; ++i) {
-    // Divide hf into hf and uhf.
-    for (size_t y = 0; y < ysize; ++y) {
-      float* BUTTERAUGLI_RESTRICT row_uhf = uhf[i].Row(y);
-      float* BUTTERAUGLI_RESTRICT row_hf = hf[i].Row(y);
-      for (size_t x = 0; x < xsize; ++x) {
-        row_uhf[x] = row_hf[x];
-      }
-    }
-    JXL_RETURN_IF_ERROR(Blur(hf[i], kSigmaUhf, params, blur_temp, &hf[i]));
+    // Blur hf into uhf so hf retains the original; saves the redundant
+    // hf->uhf copy that the previous in-place blur required.
+    JXL_RETURN_IF_ERROR(Blur(hf[i], kSigmaUhf, params, blur_temp, &uhf[i]));
+    // After blur:
+    //   row_hf  holds the original (pre-blur) high-freq signal
+    //   row_uhf holds blur(hf) — i.e. what the original code stored back into hf
     static const double kRemoveHfRange = 1.5;
     static const double kAddHfRange = 0.132;
     static const double kRemoveUhfRange = 0.04;
@@ -503,8 +812,8 @@ Status SeparateHFAndUHF(const ButteraugliParams& params, ImageF* hf,
         float* BUTTERAUGLI_RESTRICT row_uhf = uhf[0].Row(y);
         float* BUTTERAUGLI_RESTRICT row_hf = hf[0].Row(y);
         for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          auto hfv = Load(d, row_hf + x);
-          auto uhfv = Sub(Load(d, row_uhf + x), hfv);
+          auto hfv = Load(d, row_uhf + x);            // blur(hf)
+          auto uhfv = Sub(Load(d, row_hf + x), hfv);  // orig - blur
           hfv = RemoveRangeAroundZero(d, kRemoveHfRange, hfv);
           uhfv = RemoveRangeAroundZero(d, kRemoveUhfRange, uhfv);
           Store(hfv, d, row_hf + x);
@@ -516,10 +825,10 @@ Status SeparateHFAndUHF(const ButteraugliParams& params, ImageF* hf,
         float* BUTTERAUGLI_RESTRICT row_uhf = uhf[1].Row(y);
         float* BUTTERAUGLI_RESTRICT row_hf = hf[1].Row(y);
         for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          auto hfv = Load(d, row_hf + x);
+          auto hfv = Load(d, row_uhf + x);             // blur(hf)
           hfv = MaximumClamp(d, hfv, kMaxclampHf);
 
-          auto uhfv = Sub(Load(d, row_uhf + x), hfv);
+          auto uhfv = Sub(Load(d, row_hf + x), hfv);   // orig - clamped_blur
           uhfv = MaximumClamp(d, uhfv, kMaxclampUhf);
           uhfv = Mul(uhfv, Set(d, kMulYUhf));
           Store(uhfv, d, row_uhf + x);
@@ -990,9 +1299,11 @@ static Status MaltaDiffMapT(const Tag tag, const ImageF& lum0,
                             const double len, const double mulli,
                             ImageF* HWY_RESTRICT diffs,
                             ImageF* HWY_RESTRICT block_diff_ac) {
-  JXL_ENSURE(SameSize(lum0, lum1) && SameSize(lum0, *diffs));
   const size_t xsize_ = lum0.xsize();
   const size_t ysize_ = lum0.ysize();
+  JXL_ENSURE(SameSize(lum0, lum1));
+  JXL_ENSURE(diffs->xsize() == xsize_ + 2 * kMaltaPad);
+  JXL_ENSURE(diffs->ysize() == ysize_ + 2 * kMaltaPad);
 
   const float kWeight0 = 0.5;
   const float kWeight1 = 0.33;
@@ -1002,10 +1313,12 @@ static Status MaltaDiffMapT(const Tag tag, const ImageF& lum0,
   const float norm2_0gt1 = w_pre0gt1 * norm1;
   const float norm2_0lt1 = w_pre0lt1 * norm1;
 
+  // Compute the scaled diff into the padded interior. Border rows and the
+  // 4-px left/right strips of border remain zero (set once at allocation).
   for (size_t y = 0; y < ysize_; ++y) {
     const float* HWY_RESTRICT row0 = lum0.ConstRow(y);
     const float* HWY_RESTRICT row1 = lum1.ConstRow(y);
-    float* HWY_RESTRICT row_diffs = diffs->Row(y);
+    float* HWY_RESTRICT row_diffs = diffs->Row(y + kMaltaPad) + kMaltaPad;
     for (size_t x = 0; x < xsize_; ++x) {
       const float absval = 0.5f * (std::abs(row0[x]) + std::abs(row1[x]));
       const float diff = row0[x] - row1[x];
@@ -1041,43 +1354,27 @@ static Status MaltaDiffMapT(const Tag tag, const ImageF& lum0,
     }
   }
 
-  size_t y0 = 0;
-  // Top
-  for (; y0 < 4; ++y0) {
-    float* BUTTERAUGLI_RESTRICT row_diff = block_diff_ac->Row(y0);
-    for (size_t x0 = 0; x0 < xsize_; ++x0) {
-      row_diff[x0] += PaddedMaltaUnit<Tag>(*diffs, x0, y0);
-    }
-  }
-
+  // Single SIMD loop — every pixel goes through MaltaUnit's fast path,
+  // no border specialization. The padded zeros provide the same arithmetic
+  // as the previous PaddedMaltaUnit border path (which manually filled a
+  // 9x9 stack buffer with zeros for out-of-bounds cells).
   const HWY_FULL(float) df;
-  const size_t aligned_x = std::max(static_cast<size_t>(4), Lanes(df));
-  const ptrdiff_t stride = diffs->PixelsPerRow();
-
-  // Middle
-  for (; y0 < ysize_ - 4; ++y0) {
-    const float* BUTTERAUGLI_RESTRICT row_in = diffs->ConstRow(y0);
+  const HWY_CAPPED(float, 1) df1;
+  const size_t Lanes_full = Lanes(df);
+  const ptrdiff_t stride_p = diffs->PixelsPerRow();
+  for (size_t y0 = 0; y0 < ysize_; ++y0) {
+    const float* BUTTERAUGLI_RESTRICT row_in =
+        diffs->ConstRow(y0 + kMaltaPad) + kMaltaPad;
     float* BUTTERAUGLI_RESTRICT row_diff = block_diff_ac->Row(y0);
     size_t x0 = 0;
-    for (; x0 < aligned_x; ++x0) {
-      row_diff[x0] += PaddedMaltaUnit<Tag>(*diffs, x0, y0);
+    for (; x0 + Lanes_full <= xsize_; x0 += Lanes_full) {
+      auto v = Load(df, row_diff + x0);
+      v = Add(v, MaltaUnit(Tag(), df, row_in + x0, stride_p));
+      Store(v, df, row_diff + x0);
     }
-    for (; x0 + Lanes(df) + 4 <= xsize_; x0 += Lanes(df)) {
-      auto diff = Load(df, row_diff + x0);
-      diff = Add(diff, MaltaUnit(Tag(), df, row_in + x0, stride));
-      Store(diff, df, row_diff + x0);
-    }
-
     for (; x0 < xsize_; ++x0) {
-      row_diff[x0] += PaddedMaltaUnit<Tag>(*diffs, x0, y0);
-    }
-  }
-
-  // Bottom
-  for (; y0 < ysize_; ++y0) {
-    float* BUTTERAUGLI_RESTRICT row_diff = block_diff_ac->Row(y0);
-    for (size_t x0 = 0; x0 < xsize_; ++x0) {
-      row_diff[x0] += PaddedMaltaUnit<Tag>(*diffs, x0, y0);
+      row_diff[x0] +=
+          GetLane(MaltaUnit(Tag(), df1, row_in + x0, stride_p));
     }
   }
   return true;
@@ -1586,8 +1883,14 @@ Status ButteraugliDiffmapInPlace(Image3F& image0, Image3F& image1,
   ZeroFillImage(&block_diff_ac);
   // start accumulating ac diff image from MF images
   {
-    JXL_ASSIGN_OR_RETURN(ImageF diffs,
-                         ImageF::Create(memory_manager, xsize, ysize));
+    // Padded by 4 px on each side so MaltaDiffMapT can run its full SIMD
+    // path on every pixel without per-pixel border handling. ZeroFillImage
+    // sets the padded borders to zero once; only the interior is rewritten
+    // by each MaltaDiffMapLF call below.
+    JXL_ASSIGN_OR_RETURN(
+        ImageF diffs,
+        ImageF::Create(memory_manager, xsize + 8, ysize + 8));
+    ZeroMaltaBorder(&diffs);
     JXL_RETURN_IF_ERROR(MaltaDiffMapLF(image0.Plane(1), image1.Plane(1),
                                        wMfMalta, wMfMalta, norm1Mf, &diffs,
                                        &block_diff_ac));
@@ -1611,8 +1914,10 @@ Status ButteraugliDiffmapInPlace(Image3F& image0, Image3F& image1,
   // continue accumulating ac diff image from HF and UHF images
   const float hf_asymmetry = params.hf_asymmetry;
   {
-    JXL_ASSIGN_OR_RETURN(ImageF diffs,
-                         ImageF::Create(memory_manager, xsize, ysize));
+    JXL_ASSIGN_OR_RETURN(
+        ImageF diffs,
+        ImageF::Create(memory_manager, xsize + 8, ysize + 8));
+    ZeroMaltaBorder(&diffs);
     JXL_RETURN_IF_ERROR(MaltaDiffMap(uhf0[1], uhf1[1], wUhfMalta * hf_asymmetry,
                                      wUhfMalta / hf_asymmetry, norm1Uhf, &diffs,
                                      &block_diff_ac));
@@ -1901,8 +2206,12 @@ Status ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
   const float hf_asymmetry_ = params_.hf_asymmetry;
   const float xmul_ = params_.xmul;
 
-  JXL_ASSIGN_OR_RETURN(ImageF diffs,
-                       ImageF::Create(memory_manager, xsize_, ysize_));
+  // Padded by 4 px on each side (see iter3 Malta zero-pad). Border stays zero
+  // for the lifetime of `diffs`; only the interior is rewritten by each Malta call.
+  JXL_ASSIGN_OR_RETURN(
+      ImageF diffs,
+      ImageF::Create(memory_manager, xsize_ + 8, ysize_ + 8));
+  ZeroMaltaBorder(&diffs);
   JXL_ASSIGN_OR_RETURN(Image3F block_diff_ac,
                        Image3F::Create(memory_manager, xsize_, ysize_));
   ZeroFillImage(&block_diff_ac);
