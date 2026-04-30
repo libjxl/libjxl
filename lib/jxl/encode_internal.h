@@ -653,7 +653,7 @@ struct JxlEncoder {
   bool color_encoding_set;
   bool intensity_target_set;
   bool allow_expert_options = false;
-  // Added any frame that doesn't explicity disable patch generation
+  // Added any frame that doesn't explicitly disable patch generation
   bool patches_possible = false;
   bool used_reference_3 = false;
   int brotli_effort = -1;
