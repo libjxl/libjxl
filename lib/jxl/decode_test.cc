@@ -2227,17 +2227,17 @@ TEST(DecodeTest, BrobBoxInputIsRestrictedToBoxSize) {
   std::vector<uint8_t> input;
   input.insert(input.end(), std::begin(box_contents), std::end(box_contents));
   input.insert(input.end(), std::begin(extra_bytes), std::end(extra_bytes));
-  uint8_t out[32] = {};
+  std::vector<uint8_t> out(32);
   JxlBoxContentDecoder decoder;
   decoder.StartBox(true, false, sizeof(box_contents));
-  uint8_t* next_out = out;
-  size_t avail_out = sizeof(out);
+  uint8_t* next_out = out.data();
+  size_t avail_out = out.size();
   JxlDecoderStatus status = decoder.Process(
       input.data(), input.size(), 0, &next_out, &avail_out);
   EXPECT_EQ(JXL_DEC_BOX_COMPLETE, status);
-  size_t output_size = next_out - out;
+  size_t output_size = next_out - out.data();
   EXPECT_EQ(11u, output_size);
-  EXPECT_EQ(std::string("hello world"), std::string(reinterpret_cast<char*>(out), output_size));
+  EXPECT_EQ(std::string("hello world"), std::string(reinterpret_cast<char*>(out.data()), output_size));
 }
 
 TEST(DecodeTest, ExtraBytesAfterCompressedStreamRequireBoxes) {
