@@ -3894,7 +3894,8 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
         std::max<ptrdiff_t>(
             0, static_cast<ptrdiff_t>(ys) - static_cast<ptrdiff_t>(num_rows)) /
         2;
-    int y_count = std::min<int>(num_rows, ys - y_begin_group);
+    int y_count =
+        std::max<int>(0, std::min<int>(num_rows, ys - y_begin_group - 1));
     int x_max = xs / kChunkSize * kChunkSize;
     CollectSamples(rgba, 0, y_begin_group, x_max, stride, y_count, raw_counts,
                    lz77_counts, onegroup, !collided, bitdepth, nb_chans,
