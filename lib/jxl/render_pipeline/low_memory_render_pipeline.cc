@@ -410,25 +410,41 @@ Status LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
   }
   // TODO(veluca): avoid reallocating buffers if not needed.
   stage_data_.resize(num);
-  JXL_DASSERT(base_color_shift_ < sizeof(size_t) * 8);
+  if (base_color_shift_ >= sizeof(size_t) * 8) {
+    return JXL_FAILURE("base_color_shift_ too large");
+  }
   const size_t upsampling = static_cast<size_t>(1) << base_color_shift_;
-  JXL_DASSERT(upsampling <= 8);
-  JXL_DASSERT(frame_dimensions_.group_dim <= 1024);
-  size_t group_dim = frame_dimensions_.group_dim * upsampling;
-  JXL_DASSERT(CheckedMulSize(frame_dimensions_.group_dim, upsampling,
-                             &group_dim));
-  size_t border_padding = group_data_x_border_ * upsampling;
-  JXL_DASSERT(CheckedMulSize(group_data_x_border_, upsampling,
-                             &border_padding));
-  size_t double_border_padding = border_padding * 2;
-  JXL_DASSERT(CheckedMulSize(border_padding, 2, &double_border_padding));
+  if (upsampling > 8) {
+    return JXL_FAILURE("upsampling out of range");
+  }
+  if (frame_dimensions_.group_dim > 1024) {
+    return JXL_FAILURE("group_dim out of range");
+  }
+  size_t group_dim = 0;
+  if (!CheckedMulSize(frame_dimensions_.group_dim, upsampling, &group_dim)) {
+    return JXL_FAILURE("group_dim overflow");
+  }
+  size_t border_padding = 0;
+  if (!CheckedMulSize(group_data_x_border_, upsampling, &border_padding)) {
+    return JXL_FAILURE("border_padding overflow");
+  }
+  size_t double_border_padding = 0;
+  if (!CheckedMulSize(border_padding, 2, &double_border_padding)) {
+    return JXL_FAILURE("double_border_padding overflow");
+  }
   border_padding = double_border_padding;
-  size_t process_padding = kRenderPipelineXOffset * 2;
-  JXL_DASSERT(CheckedMulSize(kRenderPipelineXOffset, 2, &process_padding));
-  size_t padding = border_padding + process_padding;
-  JXL_DASSERT(CheckedAddSize(border_padding, process_padding, &padding));
-  size_t stage_buffer_xsize = group_dim + padding;
-  JXL_DASSERT(CheckedAddSize(group_dim, padding, &stage_buffer_xsize));
+  size_t process_padding = 0;
+  if (!CheckedMulSize(kRenderPipelineXOffset, 2, &process_padding)) {
+    return JXL_FAILURE("process_padding overflow");
+  }
+  size_t padding = 0;
+  if (!CheckedAddSize(border_padding, process_padding, &padding)) {
+    return JXL_FAILURE("padding overflow");
+  }
+  size_t stage_buffer_xsize = 0;
+  if (!CheckedAddSize(group_dim, padding, &stage_buffer_xsize)) {
+    return JXL_FAILURE("stage_buffer_xsize overflow");
+  }
   for (size_t t = 0; t < num; t++) {
     stage_data_[t].resize(shifts.size());
     for (size_t c = 0; c < shifts.size(); c++) {
@@ -870,16 +886,23 @@ Status LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
   size_t gx = group_id % frame_dimensions_.xsize_groups;
 
   if (first_image_dim_stage_ != stages_.size()) {
-    JXL_DASSERT(base_color_shift_ < sizeof(size_t) * 8);
-    size_t group_dim = frame_dimensions_.group_dim *
-                       (static_cast<size_t>(1) << base_color_shift_);
-    JXL_DASSERT(CheckedMulSize(frame_dimensions_.group_dim,
-                               static_cast<size_t>(1) << base_color_shift_,
-                               &group_dim));
-    size_t group_x0 = gx * group_dim;
-    JXL_DASSERT(CheckedMulSize(gx, group_dim, &group_x0));
-    size_t group_y0 = gy * group_dim;
-    JXL_DASSERT(CheckedMulSize(gy, group_dim, &group_y0));
+    if (base_color_shift_ >= sizeof(size_t) * 8) {
+      return JXL_FAILURE("base_color_shift_ too large in PrepareBuffers");
+    }
+    size_t group_dim = 0;
+    if (!CheckedMulSize(frame_dimensions_.group_dim,
+                        static_cast<size_t>(1) << base_color_shift_,
+                        &group_dim)) {
+      return JXL_FAILURE("group_dim overflow in PrepareBuffers");
+    }
+    size_t group_x0 = 0;
+    if (!CheckedMulSize(gx, group_dim, &group_x0)) {
+      return JXL_FAILURE("group_x0 overflow");
+    }
+    size_t group_y0 = 0;
+    if (!CheckedMulSize(gy, group_dim, &group_y0)) {
+      return JXL_FAILURE("group_y0 overflow");
+    }
     RectT<ptrdiff_t> group_rect(static_cast<ptrdiff_t>(group_x0),
                                 static_cast<ptrdiff_t>(group_y0), group_dim,
                                 group_dim);
