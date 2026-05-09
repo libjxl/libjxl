@@ -85,8 +85,10 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
     msan::UnpoisonMemory(next_out_before, produced);
     pos_ += consumed;
     if (!box_until_eof_) {
-      if (consumed > remaining_) return JXL_DEC_ERROR;
       remaining_ -= consumed;
+      if (res == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && remaining_ == 0) {
+        return JXL_DEC_ERROR;
+      }
     }
     if (res == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT) {
       return JXL_DEC_NEED_MORE_INPUT;
