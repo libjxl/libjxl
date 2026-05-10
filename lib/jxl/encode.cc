@@ -836,10 +836,18 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
     codestream_bytes_written_end_of_frame += header_bytes.size();
 
     if (MustUseContainer(output_mode)) {
-      container_ftyp_version = (output_mode == 2) ? 1 : 0;
+      // If any queued input uses output mode 2, ftyp version 1 is needed.
+      int ftyp_version = (output_mode == 2) ? 1 : 0;
+      for (const auto& qi : input_queue) {
+        if (qi.output_mode == 2) {
+          ftyp_version = 1;
+          break;
+        }
+      }
+      container_ftyp_version = ftyp_version;
       // Add "JXL " and ftyp box.
-      JXL_RETURN_IF_ERROR(AppendData(output_processor,
-                                     jxl::MakeContainerHeader(output_mode == 2 ? 1 : 0)));
+      JXL_RETURN_IF_ERROR(
+          AppendData(output_processor, jxl::MakeContainerHeader(ftyp_version)));
 
       if (codestream_level != 5) {
         // Add jxll box directly after the ftyp box to indicate the codestream
@@ -982,8 +990,8 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
             /*unbounded=*/false, /*force_large_box=*/false, hdr);
         WriteJxlpBoxCounter(static_cast<uint32_t>(jxlp_counter++),
                             /*last=*/false, hdr + hdr_size);
-        JXL_RETURN_IF_ERROR(AppendData(output_processor,
-                                       jxl::Span<const uint8_t>(hdr, hdr_size + 4)));
+        JXL_RETURN_IF_ERROR(AppendData(
+            output_processor, jxl::Span<const uint8_t>(hdr, hdr_size + 4)));
       }
       JXL_RETURN_IF_ERROR(AppendData(output_processor, header_bytes));
     }
@@ -1078,13 +1086,16 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
     codestream_bytes_written_end_of_frame +=
         content_size - header_bytes.size() - (jxlp_counter - n0) * 12;
 
-    if (MustUseContainer(output_mode) && (output_mode != 2 || jxlp_counter == n1)) {
+    if (MustUseContainer(output_mode) &&
+        (output_mode != 2 || jxlp_counter == n1)) {
       JXL_RETURN_IF_ERROR(output_processor.Seek(frame_start_pos));
       std::vector<uint8_t> box_header(box_header_size);
-      // For mode 2 fallback the box wraps only the frame data (not header_bytes).
-      const size_t frame_content_size = output_mode == 2
-          ? content_size - (frame_start_pos - content_start) - 12
-          : content_size;
+      // For mode 2 fallback the box wraps only the frame data (not
+      // header_bytes).
+      const size_t frame_content_size =
+          output_mode == 2
+              ? content_size - (frame_start_pos - content_start) - 12
+              : content_size;
       if (!use_large_box &&
           frame_content_size >= jxl::kLargeBoxContentSizeThreshold) {
         // Assuming our upper bound estimate is correct, this should never

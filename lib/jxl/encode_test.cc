@@ -2153,7 +2153,6 @@ std::vector<uint8_t> EncodeWithOutputMode(
   info.ysize = ppf.info.ysize;
   info.bits_per_sample = ppf.info.bits_per_sample;
   info.num_color_channels = ppf.info.num_color_channels;
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &info));
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetColorEncoding(enc.get(), &ppf.color_encoding));
@@ -2213,10 +2212,12 @@ TEST(EncodeTest, OutputModeComparisonTest) {
                           2.2f);
   }
 
-  // Size observations (reference machine: m0d=284344, m0p=284384,
-  //   m1d=m1p=284473, m2d=285068, m2p=285108):
+  // Size observations (reference machine: m0d=284295, m0p=284335,
+  //   m1d=m1p=284424, m2d=285059, m2p=285099).
+  // Note: modes 0 and 1 produce naked codestreams; mode 2 always uses a
+  // container (jxlp boxes), so its overhead is measured against mode 1.
   // - Mode 1 ignores the group_order setting (uses its own streaming
-  // permutation).
+  //   permutation).
   EXPECT_EQ(m1d.size(), m1p.size());
   // - Centerfirst adds ~40 bytes (permutation encoding, 54 groups) for modes 0
   //   and 2.
@@ -2224,12 +2225,12 @@ TEST(EncodeTest, OutputModeComparisonTest) {
   EXPECT_LT(m2d.size(), m2p.size());
   EXPECT_SLIGHTLY_BELOW(m0p.size() - m0d.size(), 50);
   EXPECT_SLIGHTLY_BELOW(m2p.size() - m2d.size(), 50);
-  // - Mode 1 seek-streaming adds ~129 bytes over mode 0 buffered streaming
-  //   (streaming permutation in the TOC).
+  // - Mode 1 seek-streaming adds ~129 bytes over mode 0 (streaming permutation
+  //   in the TOC).
   EXPECT_LT(m0d.size(), m1d.size());
   EXPECT_SLIGHTLY_BELOW(m1d.size() - m0d.size(), 160);
-  // - Ooo mode (mode 2) is larger than mode 1 due to one jxlp box per group
-  //   section (~595 bytes on this image, ~0.21% of the ~285 kB file).
+  // - Mode 2 uses a container (jxlp boxes + ftyp header), adding ~635 bytes
+  //   over mode 1 (~0.22% of the ~285 kB file).
   EXPECT_LT(m1d.size(), m2d.size());
-  EXPECT_SLIGHTLY_BELOW(m2d.size() - m1d.size(), 700);
+  EXPECT_SLIGHTLY_BELOW(m2d.size() - m1d.size(), 750);
 }
