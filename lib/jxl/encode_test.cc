@@ -1841,10 +1841,10 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
               JxlEncoderFrameSettingsSetOption(frame_settings,
                                                JXL_ENC_FRAME_SETTING_BUFFERING,
                                                streaming ? 2 : 0));
-    EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderFrameSettingsSetOption(
-                  frame_settings, JXL_ENC_FRAME_SETTING_OUTPUT_MODE,
-                  p.output_mode));
+    EXPECT_EQ(
+        JXL_ENC_SUCCESS,
+        JxlEncoderFrameSettingsSetOption(
+            frame_settings, JXL_ENC_FRAME_SETTING_OUTPUT_MODE, p.output_mode));
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings,
@@ -2139,4 +2139,97 @@ TEST(EncoderTest, CMYK) {
   jxl::extras::PackedPixelFile ppf;
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,
                              nullptr, &ppf, nullptr));
+}
+
+namespace {
+std::vector<uint8_t> EncodeWithOutputMode(
+    const jxl::extras::PackedPixelFile& ppf, int output_mode, int group_order) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  JxlEncoderFrameSettings* fs =
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  JxlBasicInfo info;
+  JxlEncoderInitBasicInfo(&info);
+  info.xsize = ppf.info.xsize;
+  info.ysize = ppf.info.ysize;
+  info.bits_per_sample = ppf.info.bits_per_sample;
+  info.num_color_channels = ppf.info.num_color_channels;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &info));
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &ppf.color_encoding));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetFrameDistance(fs, 2.0f));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFrameSettingsSetOption(
+                                 fs, JXL_ENC_FRAME_SETTING_EFFORT, 6));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFrameSettingsSetOption(
+                                 fs, JXL_ENC_FRAME_SETTING_BUFFERING, 2));
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderFrameSettingsSetOption(
+                fs, JXL_ENC_FRAME_SETTING_OUTPUT_MODE, output_mode));
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderFrameSettingsSetOption(
+                fs, JXL_ENC_FRAME_SETTING_GROUP_ORDER, group_order));
+  const jxl::extras::PackedImage& color = ppf.frames[0].color;
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(fs, &color.format, color.pixels(),
+                                    color.pixels_size));
+  JxlEncoderCloseInput(enc.get());
+  JxlStreamingAdapter adapter(enc.get(), /*return_large_buffers=*/true,
+                              /*can_seek=*/output_mode == 1);
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFlushInput(enc.get()));
+  return std::move(adapter).output();
+}
+}  // namespace
+
+// Verifies that output modes 0/1/2 × default/centerfirst group order all
+// produce the same decoded pixels but different (small-overhead) bitstreams.
+TEST(EncodeTest, OutputModeComparisonTest) {
+  jxl::test::TestImage t;
+  ASSERT_TRUE(
+      t.DecodeFromBytes(jxl::test::ReadTestData("jxl/flower/flower.png")));
+  const jxl::extras::PackedPixelFile& ppf_orig = t.ppf();
+
+  const auto m0d = EncodeWithOutputMode(ppf_orig, 0, 0);
+  const auto m0p = EncodeWithOutputMode(ppf_orig, 0, 1);
+  const auto m1d = EncodeWithOutputMode(ppf_orig, 1, 0);
+  const auto m1p = EncodeWithOutputMode(ppf_orig, 1, 1);
+  const auto m2d = EncodeWithOutputMode(ppf_orig, 2, 0);
+  const auto m2p = EncodeWithOutputMode(ppf_orig, 2, 1);
+
+  // All 6 variants must decode to the same pixels.
+  EXPECT_TRUE(SameDecodedPixels(m0d, m0p));
+  EXPECT_TRUE(SameDecodedPixels(m0d, m1d));
+  EXPECT_TRUE(SameDecodedPixels(m0d, m1p));
+  EXPECT_TRUE(SameDecodedPixels(m0d, m2d));
+  EXPECT_TRUE(SameDecodedPixels(m0d, m2p));
+
+  // Butteraugli distance of decoded output vs original.
+  {
+    jxl::extras::JXLDecompressParams dparams;
+    dparams.accepted_formats = {ppf_orig.frames[0].color.format};
+    jxl::extras::PackedPixelFile ppf_decoded;
+    ASSERT_TRUE(DecodeImageJXL(m0d.data(), m0d.size(), dparams, nullptr,
+                               &ppf_decoded, nullptr));
+    EXPECT_SLIGHTLY_BELOW(jxl::test::ButteraugliDistance(ppf_orig, ppf_decoded),
+                          2.2f);
+  }
+
+  // Size observations (reference machine: m0d=284344, m0p=284384,
+  //   m1d=m1p=284473, m2d=285068, m2p=285108):
+  // - Mode 1 ignores the group_order setting (uses its own streaming
+  // permutation).
+  EXPECT_EQ(m1d.size(), m1p.size());
+  // - Centerfirst adds ~40 bytes (permutation encoding, 54 groups) for modes 0
+  //   and 2.
+  EXPECT_LT(m0d.size(), m0p.size());
+  EXPECT_LT(m2d.size(), m2p.size());
+  EXPECT_SLIGHTLY_BELOW(m0p.size() - m0d.size(), 50);
+  EXPECT_SLIGHTLY_BELOW(m2p.size() - m2d.size(), 50);
+  // - Mode 1 seek-streaming adds ~129 bytes over mode 0 buffered streaming
+  //   (streaming permutation in the TOC).
+  EXPECT_LT(m0d.size(), m1d.size());
+  EXPECT_SLIGHTLY_BELOW(m1d.size() - m0d.size(), 160);
+  // - Ooo mode (mode 2) is larger than mode 1 due to one jxlp box per group
+  //   section (~595 bytes on this image, ~0.21% of the ~285 kB file).
+  EXPECT_LT(m1d.size(), m2d.size());
+  EXPECT_SLIGHTLY_BELOW(m2d.size() - m1d.size(), 700);
 }

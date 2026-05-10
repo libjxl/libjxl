@@ -560,7 +560,12 @@ TEST(ModularTest, PredictorIntegerOverflow) {
       return true;
     }));
   }
-  EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
+  std::vector<size_t> sizes_0;
+  for (const auto& bw : group_codes) {
+    sizes_0.push_back(bw->BitsWritten() / kBitsPerByte);
+  }
+  EXPECT_TRUE(WriteTocPermutation({}, &writer, nullptr));
+  EXPECT_TRUE(WriteTocSizes(sizes_0, &writer, nullptr));
   ASSERT_TRUE(writer.AppendByteAligned(group_codes));
 
   PaddedBytes compressed = std::move(writer).TakeBytes();
@@ -611,7 +616,12 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
       return true;
     }));
   }
-  EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
+  std::vector<size_t> sizes_1;
+  for (const auto& bw : group_codes) {
+    sizes_1.push_back(bw->BitsWritten() / kBitsPerByte);
+  }
+  EXPECT_TRUE(WriteTocPermutation({}, &writer, nullptr));
+  EXPECT_TRUE(WriteTocSizes(sizes_1, &writer, nullptr));
   ASSERT_TRUE(writer.AppendByteAligned(group_codes));
 
   PaddedBytes compressed = std::move(writer).TakeBytes();

@@ -1775,6 +1775,7 @@ Status PermuteGroups(const CompressParams& cparams,
       permutation->push_back(pass_start + v);
     }
   }
+  if (group_codes == nullptr) return true;
   std::vector<std::unique_ptr<BitWriter>> new_group_codes(group_codes->size());
   for (size_t i = 0; i < permutation->size(); i++) {
     new_group_codes[(*permutation)[i]] = std::move((*group_codes)[i]);
@@ -1916,21 +1917,6 @@ size_t TOCSize(const std::vector<size_t>& group_sizes) {
     toc_bits += kTOCBits[TOCBucket(group_size)];
   }
   return (toc_bits + 7) / 8;
-}
-
-StatusOr<PaddedBytes> EncodeTOC(JxlMemoryManager* memory_manager,
-                                const std::vector<size_t>& group_sizes,
-                                AuxOut* aux_out) {
-  BitWriter writer{memory_manager};
-  JXL_RETURN_IF_ERROR(writer.WithMaxBits(
-      32 * group_sizes.size(), LayerType::Toc, aux_out, [&]() -> Status {
-        for (size_t group_size : group_sizes) {
-          JXL_RETURN_IF_ERROR(U32Coder::Write(kTocDist, group_size, &writer));
-        }
-        writer.ZeroPadToByte();  // before first group
-        return true;
-      }));
-  return std::move(writer).TakeBytes();
 }
 
 Status ComputeGroupDataOffset(size_t frame_header_size, size_t dc_global_size,
@@ -2092,8 +2078,11 @@ JXL_NOINLINE Status EncodeFrameStreaming(
   std::vector<std::unique_ptr<BitWriter>> global_group_codes(
       streaming ? 0 : total_sections);
 
-  // For OOO mode: inv_perm maps encoding_pos to codestream_slot so that
-  // jxlp box counters (jxlp_base + slot + 2) produce codestream order on sort.
+  // Compute group_order_perm for all modes (centerfirst, if requested).
+  // For ooo mode, also compute inv_perm (encoding_pos → canonical_idx).
+  std::vector<coeff_order_t> group_order_perm;
+  JXL_RETURN_IF_ERROR(PermuteGroups(cparams, frame_header.ToFrameDimensions(),
+                                    num_passes, &group_order_perm, nullptr));
   size_t encoding_pos = 0;
   std::vector<size_t> inv_perm;
   if (ooo) {
@@ -2120,9 +2109,12 @@ JXL_NOINLINE Status EncodeFrameStreaming(
   auto write_group_section = [&](PaddedBytes&& bytes) -> Status {
     group_sizes.push_back(bytes.size());
     if (ooo) {
-      const size_t slot = inv_perm[encoding_pos++];
-      const bool is_last = (slot + 1 == total_sections) && frame_info.is_last;
-      return write_jxlp(jxlp_base + static_cast<uint32_t>(slot) + 2, is_last,
+      const size_t canonical_idx = inv_perm[encoding_pos++];
+      const size_t cs_pos = group_order_perm.empty()
+                                ? canonical_idx
+                                : group_order_perm[canonical_idx];
+      const bool is_last = (cs_pos + 1 == total_sections) && frame_info.is_last;
+      return write_jxlp(jxlp_base + static_cast<uint32_t>(cs_pos) + 2, is_last,
                         Span<const uint8_t>(bytes.data(), bytes.size()));
     }
     return AppendData(*output_processor, bytes);
@@ -2156,19 +2148,8 @@ JXL_NOINLINE Status EncodeFrameStreaming(
     if (i == 0) {
       BitWriter writer{memory_manager};
       JXL_RETURN_IF_ERROR(WriteFrameHeader(frame_header, &writer, aux_out));
-      JXL_RETURN_IF_ERROR(
-          writer.WithMaxBits(8, LayerType::Header, aux_out, [&]() -> Status {
-            if (streaming_output) {
-              writer.Write(1, 1);  // write permutation
-              JXL_RETURN_IF_ERROR(EncodePermutation(
-                  permutation.data(), /*skip=*/0, permutation.size(), &writer,
-                  LayerType::Header, aux_out));
-            } else {
-              writer.Write(1, 0); // no permutation
-            }
-            writer.ZeroPadToByte();
-            return true;
-          }));
+      JXL_RETURN_IF_ERROR(WriteTocPermutation(
+          streaming_output ? permutation : group_order_perm, &writer, aux_out));
       frame_header_bytes = std::move(writer).TakeBytes();
       if (streaming_output) {
         dc_global_bytes = std::move(*group_codes[0]).TakeBytes();
@@ -2244,8 +2225,9 @@ JXL_NOINLINE Status EncodeFrameStreaming(
         ComputeDcGlobalPadding(group_sizes, frame_header_bytes.size(),
                                group_data_offset, min_dc_global_size);
     group_sizes[0] += padding_size;
-    JXL_ASSIGN_OR_RETURN(PaddedBytes toc_bytes,
-                         EncodeTOC(memory_manager, group_sizes, aux_out));
+    BitWriter toc_writer{memory_manager};
+    JXL_RETURN_IF_ERROR(WriteTocSizes(group_sizes, &toc_writer, aux_out));
+    PaddedBytes toc_bytes = std::move(toc_writer).TakeBytes();
     std::vector<uint8_t> padding_bytes(padding_size);
     JXL_RETURN_IF_ERROR(AppendData(*output_processor, frame_header_bytes));
     JXL_RETURN_IF_ERROR(AppendData(*output_processor, toc_bytes));
@@ -2262,11 +2244,16 @@ JXL_NOINLINE Status EncodeFrameStreaming(
     // the decoder processes it before the group sections (counters >= +2).
     JXL_ENSURE(group_sizes.size() == permutation.size());
     std::vector<size_t> codestream_sizes(permutation.size());
-    for (size_t j = 0; j < permutation.size(); j++) {
-      codestream_sizes[j] = group_sizes[permutation[j]];
+    for (size_t canonical_idx = 0; canonical_idx < permutation.size();
+         canonical_idx++) {
+      const size_t cs_pos = group_order_perm.empty()
+                                ? canonical_idx
+                                : group_order_perm[canonical_idx];
+      codestream_sizes[cs_pos] = group_sizes[permutation[canonical_idx]];
     }
-    JXL_ASSIGN_OR_RETURN(PaddedBytes toc_bytes,
-                         EncodeTOC(memory_manager, codestream_sizes, aux_out));
+    BitWriter toc_writer{memory_manager};
+    JXL_RETURN_IF_ERROR(WriteTocSizes(codestream_sizes, &toc_writer, aux_out));
+    PaddedBytes toc_bytes = std::move(toc_writer).TakeBytes();
     JXL_RETURN_IF_ERROR(
         write_jxlp(jxlp_base + 1, /*is_last=*/false,
                    Span<const uint8_t>(toc_bytes.data(), toc_bytes.size())));
@@ -2278,10 +2265,24 @@ JXL_NOINLINE Status EncodeFrameStreaming(
       group_sizes.push_back(g->BitsWritten() / 8);
     }
     JXL_ENSURE(group_sizes.size() == permutation.size());
-    JXL_ASSIGN_OR_RETURN(PaddedBytes toc_bytes,
-                         EncodeTOC(memory_manager, group_sizes, aux_out));
-    JXL_RETURN_IF_ERROR(AppendData(*output_processor, frame_header_bytes));
-    JXL_RETURN_IF_ERROR(AppendData(*output_processor, toc_bytes));
+    if (!group_order_perm.empty()) {
+      std::vector<std::unique_ptr<BitWriter>> reordered(
+          group_order_perm.size());
+      std::vector<size_t> reordered_sizes(group_sizes.size());
+      for (size_t i = 0; i < group_order_perm.size(); i++) {
+        reordered[group_order_perm[i]] = std::move(global_group_codes[i]);
+        reordered_sizes[group_order_perm[i]] = group_sizes[i];
+      }
+      global_group_codes.swap(reordered);
+      group_sizes.swap(reordered_sizes);
+    }
+    BitWriter combined{memory_manager};
+    JXL_RETURN_IF_ERROR(WriteFrameHeader(frame_header, &combined, aux_out));
+    JXL_RETURN_IF_ERROR(
+        WriteTocPermutation(group_order_perm, &combined, aux_out));
+    JXL_RETURN_IF_ERROR(WriteTocSizes(group_sizes, &combined, aux_out));
+    JXL_RETURN_IF_ERROR(
+        AppendData(*output_processor, std::move(combined).TakeBytes()));
     for (auto& g : global_group_codes) {
       JXL_RETURN_IF_ERROR(
           AppendData(*output_processor, std::move(*g).TakeBytes()));
@@ -2328,8 +2329,14 @@ Status EncodeFrameOneShot(JxlMemoryManager* memory_manager,
   JXL_RETURN_IF_ERROR(PermuteGroups(cparams, enc_state->shared.frame_dim,
                                     num_passes, &permutation, &group_codes));
 
-  JXL_RETURN_IF_ERROR(
-      WriteGroupOffsets(group_codes, permutation, &writer, aux_out));
+  std::vector<size_t> group_sizes;
+  group_sizes.reserve(group_codes.size());
+  for (const auto& bw : group_codes) {
+    JXL_ENSURE(bw->BitsWritten() % kBitsPerByte == 0);
+    group_sizes.push_back(bw->BitsWritten() / kBitsPerByte);
+  }
+  JXL_RETURN_IF_ERROR(WriteTocPermutation(permutation, &writer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteTocSizes(group_sizes, &writer, aux_out));
 
   JXL_RETURN_IF_ERROR(writer.AppendByteAligned(group_codes));
   PaddedBytes frame_bytes = std::move(writer).TakeBytes();
