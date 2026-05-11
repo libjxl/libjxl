@@ -14,7 +14,6 @@ load(
     "libjxl_codec_apng_sources",
     "libjxl_codec_exr_sources",
     "libjxl_codec_gif_sources",
-    "libjxl_codec_jpegli_sources",
     "libjxl_codec_jpg_sources",
     "libjxl_codec_jxl_sources",
     "libjxl_codec_npy_sources",
@@ -27,11 +26,6 @@ load(
     "libjxl_extras_for_tools_sources",
     "libjxl_extras_sources",
     # "libjxl_gbench_sources",
-    # "libjxl_jpegli_lib_version",
-    "libjxl_jpegli_libjpeg_helper_files",
-    "libjxl_jpegli_sources",
-    "libjxl_jpegli_testlib_files",
-    "libjxl_jpegli_tests",
     "libjxl_major_version",
     "libjxl_minor_version",
     "libjxl_patch_version",
@@ -137,33 +131,6 @@ cc_library(
     strip_include_prefix = INCLUDES_DIR,
 )
 
-JPEGLI_JCONFIG_H = INCLUDES_DIR + "/jpegli/jconfig.h"
-
-JPEGLI_JMORECFG_H = INCLUDES_DIR + "/jpegli/jmorecfg.h"
-
-JPEGLI_JPEGLIB_H = INCLUDES_DIR + "/jpegli/jpeglib.h"
-
-copy_file(
-    name = "expand_jconfig",
-    src = "@libjpeg_turbo//:jconfig.h",
-    out = JPEGLI_JCONFIG_H,
-    compatible_with = DEFAULT_COMPATIBILITY,
-)
-
-copy_file(
-    name = "copy_jmorecfg",
-    src = "@libjpeg_turbo//:jmorecfg.h",
-    out = JPEGLI_JMORECFG_H,
-    compatible_with = DEFAULT_COMPATIBILITY,
-)
-
-copy_file(
-    name = "copy_jpeglib",
-    src = "@libjpeg_turbo//:jpeglib.h",
-    out = JPEGLI_JPEGLIB_H,
-    compatible_with = DEFAULT_COMPATIBILITY,
-)
-
 cc_library(
     name = "includes",
     hdrs = libjxl_public_headers + [
@@ -173,17 +140,6 @@ cc_library(
     compatible_with = DEFAULT_COMPATIBILITY,
     strip_include_prefix = INCLUDES_DIR,
     deps = [":jxl_version"],
-)
-
-cc_library(
-    name = "libjpeg_includes",
-    hdrs = [
-        JPEGLI_JCONFIG_H,
-        JPEGLI_JMORECFG_H,
-        JPEGLI_JPEGLIB_H,
-    ],
-    compatible_with = DEFAULT_COMPATIBILITY,
-    strip_include_prefix = INCLUDES_DIR + "/jpegli",
 )
 
 cc_library(
@@ -232,24 +188,11 @@ cc_library(
     ],
 )
 
-CODEC_FILES = libjxl_codec_apng_sources + libjxl_codec_exr_sources + libjxl_codec_gif_sources + libjxl_codec_jpegli_sources + libjxl_codec_jpg_sources + libjxl_codec_jxl_sources + libjxl_codec_npy_sources + libjxl_codec_pgx_sources + libjxl_codec_pnm_sources
+CODEC_FILES = libjxl_codec_apng_sources + libjxl_codec_exr_sources + libjxl_codec_gif_sources + libjxl_codec_jpg_sources + libjxl_codec_jxl_sources + libjxl_codec_npy_sources + libjxl_codec_pgx_sources + libjxl_codec_pnm_sources
 
 CODEC_SRCS = [path for path in CODEC_FILES if path.endswith(".cc")]
 
 CODEC_HDRS = [path for path in CODEC_FILES if path.endswith(".h")]
-
-cc_library(
-    name = "jpegli",
-    srcs = libjxl_jpegli_sources,
-    hdrs = [
-        "jpegli/common_internal.h",  # TODO(eustas): should not be here
-    ],
-    compatible_with = DEFAULT_COMPATIBILITY,
-    deps = [
-        ":jpegxl_private",
-        ":libjpeg_includes",
-    ] + libjxl_deps_hwy,
-)
 
 # TODO(eustas): build codecs separately?
 cc_library(
@@ -262,17 +205,15 @@ cc_library(
         "JPEGXL_ENABLE_EXR=1",
         "JPEGXL_ENABLE_GIF=1",
         "JPEGXL_ENABLE_JPEG=1",
-        "JPEGXL_ENABLE_JPEGLI=1",
     ],
     deps = [
-        ":jpegli",
         ":jpegxl_private",
         ":jpegxl_threads",
         ":jxl_version",
     ] + libjxl_deps_exr + libjxl_deps_gif + libjxl_deps_jpeg + libjxl_deps_png,
 )
 
-TESTLIB_FILES = libjxl_testlib_files + libjxl_jpegli_testlib_files + libjxl_jpegli_libjpeg_helper_files
+TESTLIB_FILES = libjxl_testlib_files
 
 cc_library(
     name = "test_utils",
@@ -284,13 +225,12 @@ cc_library(
         'JPEGXL_ROOT_PACKAGE=\'"' + libjxl_root_package + '"\'',
     ],
     deps = [
-        ":jpegli",
         ":jpegxl_extras",
         ":jpegxl_private",
     ] + libjxl_deps_runfiles,
 )
 
-TESTS = [path.partition(".")[0] for path in libjxl_tests + libjxl_jpegli_tests]
+TESTS = [path.partition(".")[0] for path in libjxl_tests]
 
 [
     cc_test(
@@ -298,7 +238,6 @@ TESTS = [path.partition(".")[0] for path in libjxl_tests + libjxl_jpegli_tests]
         timeout = libjxl_test_timeouts.get(test, "moderate"),
         srcs = [
             test + ".cc",
-            "jpegli/testing.h",
             "jxl/testing.h",
         ],
         data = ["//:testdata"],

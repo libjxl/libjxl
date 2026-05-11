@@ -92,8 +92,10 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
 StatusOr<AlignedMemory> AlignedMemory::Create(JxlMemoryManager* memory_manager,
                                               size_t size, size_t pre_padding) {
   JXL_ENSURE(pre_padding <= memory_manager_internal::kAlias);
-  size_t allocation_size = size + pre_padding + memory_manager_internal::kAlias;
-  if (size > allocation_size) {
+  size_t allocation_size;
+  if (!SafeAdd<size_t>(size, pre_padding, allocation_size) ||
+      !SafeAdd(allocation_size, memory_manager_internal::kAlias,
+               allocation_size)) {
     return JXL_FAILURE("Requested allocation is too large");
   }
   JXL_ENSURE(memory_manager);

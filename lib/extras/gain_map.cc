@@ -105,13 +105,13 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
   uint64_t cursor = 0;
   uint64_t next_cursor = 0;
 
-#define SAFE_CURSOR_UPDATE(n)                    \
-  do {                                           \
-    cursor = next_cursor;                        \
-    if (!jxl::SafeAdd(cursor, n, next_cursor) || \
-        next_cursor > output_buffer_size) {      \
-      return JXL_FALSE;                          \
-    }                                            \
+#define SAFE_CURSOR_UPDATE(n)                              \
+  do {                                                     \
+    cursor = next_cursor;                                  \
+    if (!jxl::SafeAdd<uint64_t>(cursor, n, next_cursor) || \
+        next_cursor > output_buffer_size) {                \
+      return JXL_FALSE;                                    \
+    }                                                      \
   } while (false)
 
   SAFE_CURSOR_UPDATE(1);
@@ -164,13 +164,13 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
   uint64_t cursor = 0;
   uint64_t next_cursor = 0;
 
-#define SAFE_CURSOR_UPDATE(n)                    \
-  do {                                           \
-    cursor = next_cursor;                        \
-    if (!jxl::SafeAdd(cursor, n, next_cursor) || \
-        next_cursor > input_buffer_size) {       \
-      return JXL_FALSE;                          \
-    }                                            \
+#define SAFE_CURSOR_UPDATE(n)                              \
+  do {                                                     \
+    cursor = next_cursor;                                  \
+    if (!jxl::SafeAdd<uint64_t>(cursor, n, next_cursor) || \
+        next_cursor > input_buffer_size) {                 \
+      return JXL_FALSE;                                    \
+    }                                                      \
   } while (false)
 
   // Read the version byte

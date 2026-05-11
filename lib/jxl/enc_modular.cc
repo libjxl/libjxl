@@ -1548,7 +1548,8 @@ int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
   svalue -= pred.guess;
   if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
   int residual = 0;
-  if (svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
+  if (std::isnan(svalue) ||
+      svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
       svalue < static_cast<float>(std::numeric_limits<int>::min())) {
     *has_outliers = true;
   } else {

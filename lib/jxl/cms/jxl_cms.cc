@@ -338,6 +338,11 @@ JXL_MUST_USE_RESULT cmsCIEXYZ D50_XYZ() {
 
 // RAII
 
+struct ContextDeleter {
+  void operator()(void* p) { cmsDeleteContext(static_cast<cmsContext>(p)); }
+};
+using Context = std::unique_ptr<void, ContextDeleter>;
+
 struct ProfileDeleter {
   void operator()(void* p) { cmsCloseProfile(p); }
 };
@@ -795,14 +800,14 @@ void ErrorHandler(cmsContext context, cmsUInt32Number code, const char* text) {
 
 // Returns a context for the current thread, creating it if necessary.
 cmsContext GetContext() {
-  static thread_local void* context_;
+  static thread_local Context context_;
   if (context_ == nullptr) {
-    context_ = cmsCreateContext(nullptr, nullptr);
+    context_.reset(cmsCreateContext(nullptr, nullptr));
     JXL_DASSERT(context_ != nullptr);
 
-    cmsSetLogErrorHandlerTHR(static_cast<cmsContext>(context_), &ErrorHandler);
+    cmsSetLogErrorHandlerTHR(static_cast<cmsContext>(context_.get()), &ErrorHandler);
   }
-  return static_cast<cmsContext>(context_);
+  return static_cast<cmsContext>(context_.get());
 }
 
 #endif  // JPEGXL_ENABLE_SKCMS

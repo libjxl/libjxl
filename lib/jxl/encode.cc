@@ -2386,6 +2386,10 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
         frame_data.GetInputSource(), xsize, ysize, num_channels,
         frame_settings->enc->metadata.m.bit_depth.bits_per_sample, big_endian,
         /*effort=*/2, oneshot);
+    if (!frame_state) {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
+                           "Internal: JxlFastLosslessPrepareFrame failed");
+    }
     if (!streaming) {
       bool ok =
           JxlFastLosslessProcessFrame(frame_state, /*is_last=*/false, &ticket,

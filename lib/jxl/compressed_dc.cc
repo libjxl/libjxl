@@ -254,6 +254,15 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
       memset(qdc_row, 0, sizeof(*qdc_row) * r.xsize());
     }
   } else {
+    JXL_DASSERT(r.ysize() == 0 ||
+                (r.ysize() - 1) >> chroma_subsampling.VShift(0) <
+                    in.channel[1].plane.ysize());
+    JXL_DASSERT(r.ysize() == 0 ||
+                (r.ysize() - 1) >> chroma_subsampling.VShift(1) <
+                    in.channel[0].plane.ysize());
+    JXL_DASSERT(r.ysize() == 0 ||
+                (r.ysize() - 1) >> chroma_subsampling.VShift(2) <
+                    in.channel[2].plane.ysize());
     for (size_t y = 0; y < r.ysize(); y++) {
       uint8_t* qdc_row_val = r.Row(quant_dc, y);
       const int32_t* quant_row_x =

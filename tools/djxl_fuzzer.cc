@@ -318,21 +318,22 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
                                  icc_profile->data(), icc_profile->size())) {
         return false;
       }
-      if (want_preview) {
-        size_t preview_size;
-        if (JXL_DEC_SUCCESS !=
-            JxlDecoderPreviewOutBufferSize(dec.get(), &format, &preview_size)) {
-          return false;
-        }
-        preview_pixels.resize(preview_size);
-        if (JXL_DEC_SUCCESS != JxlDecoderSetPreviewOutBuffer(
-                                   dec.get(), &format, preview_pixels.data(),
-                                   preview_pixels.size())) {
-          abort();
-        }
+    } else if (status == JXL_DEC_NEED_PREVIEW_OUT_BUFFER) {
+      if (seen_preview) abort();
+      if (!want_preview) abort();
+      if (!seen_color_encoding) abort();
+      size_t preview_size;
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderPreviewOutBufferSize(dec.get(), &format, &preview_size)) {
+        return false;
+      }
+      preview_pixels.resize(preview_size);
+      if (JXL_DEC_SUCCESS != JxlDecoderSetPreviewOutBuffer(
+                                  dec.get(), &format, preview_pixels.data(),
+                                  preview_pixels.size())) {
+        abort();
       }
     } else if (status == JXL_DEC_PREVIEW_IMAGE) {
-      // TODO(eustas): test JXL_DEC_NEED_PREVIEW_OUT_BUFFER
       if (seen_preview) abort();
       if (!want_preview) abort();
       if (!seen_color_encoding) abort();

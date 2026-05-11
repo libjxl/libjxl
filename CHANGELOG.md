@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed / clarified
+ - decoder API: timeframes to successfully invoke `JxlDecoderSetImageOutBuffer`
+   and `JxlDecoderSetPreviewOutBuffer` are non-intersecting; it is not possible
+   to accidentally set one buffer when the other is expected
+
+## [0.11.2] - 2026-02-10
+
 ### Fixed
   - `JxlEncoderAddChunkedFrame` incorrectly called `JxlEncoderCloseInput`
     instead of `JxlEncoderCloseFrames`, resulting in corrupted files when

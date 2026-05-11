@@ -353,6 +353,11 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         return false;
       }
       bool have_alpha = (format.num_channels == 2 || format.num_channels == 4);
+      size_t format_color_channels = have_alpha ? format.num_channels - 1
+                                                : format.num_channels;
+      if (format_color_channels > ppf->info.num_color_channels) {
+        ppf->info.num_color_channels = format_color_channels;
+      }
       if (!have_alpha) {
         // Mark in the basic info that alpha channel was dropped.
         ppf->info.alpha_bits = 0;

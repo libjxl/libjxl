@@ -81,14 +81,14 @@ Status PlaneBase::Allocate(JxlMemoryManager* memory_manager,
     return true;
   }
 
-  size_t max_y_size = std::numeric_limits<size_t>::max() / bytes_per_row_;
-  if (ysize_ > max_y_size) {
+  size_t total_bytes;
+  if (!SafeMul<size_t>(ysize_, bytes_per_row_, total_bytes)) {
     return JXL_FAILURE("Image dimensions are too large");
   }
 
-  JXL_ASSIGN_OR_RETURN(
-      bytes_, AlignedMemory::Create(memory_manager, bytes_per_row_ * ysize_,
-                                    pre_padding * sizeof_t_));
+  JXL_ASSIGN_OR_RETURN(bytes_,
+                       AlignedMemory::Create(memory_manager, total_bytes,
+                                             pre_padding * sizeof_t_));
 
   InitializePadding(*this, sizeof_t_);
 
