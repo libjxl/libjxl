@@ -2228,7 +2228,7 @@ TEST(DecodeTest, BrobBoxInputIsRestrictedToBoxSize) {
   input.insert(input.end(), std::begin(box_contents), std::end(box_contents));
   input.insert(input.end(), std::begin(extra_bytes), std::end(extra_bytes));
   std::vector<uint8_t> out(32);
-  JxlBoxContentDecoder decoder;
+  jxl::JxlBoxContentDecoder decoder;
   decoder.StartBox(true, false, sizeof(box_contents));
   uint8_t* next_out = out.data();
   size_t avail_out = out.size();
@@ -2249,7 +2249,7 @@ TEST(DecodeTest, BrobBoxTruncatedStreamWithExactBoxSizeReturnsError) {
   input.insert(input.end(), std::begin(box_contents), std::end(box_contents) - 1);
 
   std::vector<uint8_t> out(32);
-  JxlBoxContentDecoder decoder;
+  jxl::JxlBoxContentDecoder decoder;
   decoder.StartBox(true, false, input.size());
   uint8_t* next_out = out.data();
   size_t avail_out = out.size();
