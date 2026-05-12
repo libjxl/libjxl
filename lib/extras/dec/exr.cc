@@ -328,16 +328,19 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
     }
 
     // Setup framebuffer: extra channels
-    char* extra_rows_ptr =
-        input_extra_rows.data() -
-        (dataWindow.min.x + start_y * row_size) * extraPixelBytes;
+    char* extra_rows_ptr = input_extra_rows.data();
     for (OpenEXR::ChannelList::ConstIterator it = channels.begin();
          it != channels.end(); ++it) {
       if (extraChannels.find(&it.channel()) == extraChannels.end()) {
         continue;
       }
       const size_t size = it.channel().type == OpenEXR::HALF ? 2 : 4;
-      fb.insert(it.name(), OpenEXR::Slice(it.channel().type, extra_rows_ptr,
+      // Compute per-channel virtual base pointer using per-channel stride (not
+      // extraPixelBytes) to avoid underflow when dataWindow.min.x > 0 with
+      // multiple extra channels.
+      char* ch_base_ptr =
+          extra_rows_ptr - (dataWindow.min.x + start_y * row_size) * size;
+      fb.insert(it.name(), OpenEXR::Slice(it.channel().type, ch_base_ptr,
                                           size, size * row_size));
       extra_rows_ptr += size * row_size * (end_y - start_y + 1);
     }
