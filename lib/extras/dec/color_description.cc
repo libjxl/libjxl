@@ -84,11 +84,12 @@ class Tokenizer {
     const size_t end = input_->find(separator_, start_);
     if (end == std::string::npos) {
       *next = input_->substr(start_);  // rest of string
+      start_ = input_->size();
     } else {
       *next = input_->substr(start_, end - start_);
+      start_ = end + 1;
     }
     if (next->empty()) return JXL_FAILURE("Missing token");
-    start_ = end + 1;
     return true;
   }
 
