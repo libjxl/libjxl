@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `JxlDecoderSetPreviewOutBuffer` are non-intersecting; it is not possible
   to accidentally set one buffer when the other is expected
 
-## [0.11.2] - 2026-02-10
+## [0.12.0] - 2026-05-14
 
 ### Fixed
 - `JxlEncoderAddChunkedFrame` incorrectly called `JxlEncoderCloseInput`
@@ -472,13 +472,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   usage. The C API is a work in progress and likely to change both in API and
   ABI in future releases.
 
-[Unreleased]: https://github.com/libjxl/libjxl/compare/v0.11.2...HEAD
-[0.11.2]: https://github.com/libjxl/libjxl/compare/v0.11.2...v0.11.2
+[Unreleased]: https://github.com/libjxl/libjxl/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/libjxl/libjxl/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/libjxl/libjxl/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/libjxl/libjxl/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/libjxl/libjxl/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/libjxl/libjxl/compare/v0.10.1...v0.10.2
-[0.10.1]: https://github.com/libjxl/libjxl/compare/v0.9.2...v0.10.1
+[0.10.1]: https://github.com/libjxl/libjxl/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/libjxl/libjxl/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/libjxl/libjxl/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/libjxl/libjxl/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/libjxl/libjxl/compare/v0.8.2...v0.9.0
