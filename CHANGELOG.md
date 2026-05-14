@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When lossy encoding, resampling 2 is now enabled at distance 10, and is up to
   10x faster below effort 10 by using a faster downsampling method. (#4147)
 
+### Removed
+- The `jpegli` codebase has been removed as it is now maintained as a separate project at [google/jpegli](https://github.com/google/jpegli).
+
 ### Fixed
 - Fixed an issue where Lossy Delta Palette encoding failed on images larger than 2048x2048. (#4201)
 - `JxlEncoderAddChunkedFrame` incorrectly called `JxlEncoderCloseInput`
