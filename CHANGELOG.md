@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   #4448, #4449, #4529)
 - Streaming input with buffered output is now supported and enabled by default,
   allowing basic progressive loading at no cost. (#4634, #4635, #4637 and #4642)
-- Better Desnity/Speed tradeoff for lossless effort levels. (#4236)
+- Better Density/Speed tradeoff for lossless effort levels. (#4236)
 - Improved visual quality of gradients by using channel-offset blue noise dithering
   instead of bayer when decoding to lower bitdepths. (#4305 and #4559)
 - Lossy modular encoding quality/density improvements. (#3575)
@@ -471,3 +471,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API: new decoder API in C, check the `examples/` directory for its example
   usage. The C API is a work in progress and likely to change both in API and
   ABI in future releases.
+
+[Unreleased]: https://github.com/libjxl/libjxl/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/libjxl/libjxl/compare/v0.11.2...v0.11.2
+[0.11.2]: https://github.com/libjxl/libjxl/compare/v0.11.1...v0.11.2
+[0.11.1]: https://github.com/libjxl/libjxl/compare/v0.11.0...v0.11.1
+[0.11.0]: https://github.com/libjxl/libjxl/compare/v0.10.2...v0.11.0
+[0.10.2]: https://github.com/libjxl/libjxl/compare/v0.10.1...v0.10.2
+[0.10.1]: https://github.com/libjxl/libjxl/compare/v0.9.2...v0.10.1
+[0.9.2]: https://github.com/libjxl/libjxl/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/libjxl/libjxl/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/libjxl/libjxl/compare/v0.8.2...v0.9.0
+[0.8.2]: https://github.com/libjxl/libjxl/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/libjxl/libjxl/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/libjxl/libjxl/compare/v0.7...v0.8.0
+[0.7]: https://github.com/libjxl/libjxl/compare/v0.6.1...v0.7
+[0.6.1]: https://github.com/libjxl/libjxl/compare/v0.6...v0.6.1
+[0.6]: https://github.com/libjxl/libjxl/compare/v0.5...v0.6
+[0.5]: https://github.com/libjxl/libjxl/compare/v0.3.7...v0.5
+[0.3.7]: https://github.com/libjxl/libjxl/compare/v0.3.6...v0.3.7
+[0.3.6]: https://github.com/libjxl/libjxl/compare/v0.3.5...v0.3.6
+[0.3.5]: https://github.com/libjxl/libjxl/compare/v0.3.4...v0.3.5
+[0.3.4]: https://github.com/libjxl/libjxl/compare/v0.3.3...v0.3.4
+[0.3.3]: https://github.com/libjxl/libjxl/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/libjxl/libjxl/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/libjxl/libjxl/compare/v0.3...v0.3.1
+[0.3]: https://github.com/libjxl/libjxl/compare/v0.2...v0.3
+[0.2]: https://github.com/libjxl/libjxl/compare/v0.1.1...v0.2
+[0.1.1]: https://github.com/libjxl/libjxl/compare/v0.1...v0.1.1
+[0.1]: https://github.com/libjxl/libjxl/releases/tag/v0.1
