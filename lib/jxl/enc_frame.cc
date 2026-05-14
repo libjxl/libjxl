@@ -1592,10 +1592,24 @@ Status ComputeEncodingData(
         jxl::cms::kM10, jxl::cms::kM11, jxl::cms::kM12,
         jxl::cms::kM20, jxl::cms::kM21, jxl::cms::kM22
       };
-      if (cparams.isolate_s_cone || cparams.yellow_bias >= 0.0f) {
+      if (cparams.red_bias >= 0.0f || cparams.green_bias >= 0.0f || cparams.isolate_s_cone || cparams.yellow_bias >= 0.0f) {
+        if (cparams.red_bias >= 0.0f) {
+          float r = cparams.red_bias;
+          float g_ratio = jxl::cms::kM01 / (jxl::cms::kM01 + jxl::cms::kM02);
+          custom_opsin[0] = r;
+          custom_opsin[1] = g_ratio * (1.0f - r);
+          custom_opsin[2] = (1.0f - g_ratio) * (1.0f - r);
+        }
+        if (cparams.green_bias >= 0.0f) {
+          float g = cparams.green_bias;
+          float r_ratio = jxl::cms::kM10 / (jxl::cms::kM10 + jxl::cms::kM12);
+          custom_opsin[4] = g;
+          custom_opsin[3] = r_ratio * (1.0f - g);
+          custom_opsin[5] = (1.0f - r_ratio) * (1.0f - g);
+        }
         if (cparams.isolate_s_cone) {
           custom_opsin[6] = 0.0f; custom_opsin[7] = 0.0f; custom_opsin[8] = 1.0f;
-        } else {
+        } else if (cparams.yellow_bias >= 0.0f) {
           float b = cparams.yellow_bias;
           float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
           custom_opsin[8] = b;

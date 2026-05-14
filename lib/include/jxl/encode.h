@@ -400,6 +400,14 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_YELLOW_BIAS = 41,
 
+  /** Set the red multiplier for the L-cone to tune the red bias (e.g. 0.85).
+   * Range [0, 1]. */
+  JXL_ENC_FRAME_SETTING_RED_BIAS = 42,
+
+  /** Set the green multiplier for the M-cone to tune the green bias (e.g. 0.85).
+   * Range [0, 1]. */
+  JXL_ENC_FRAME_SETTING_GREEN_BIAS = 43,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */

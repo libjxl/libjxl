@@ -403,12 +403,22 @@ struct CompressArgs {
                            4);
 
     cmdline->AddOptionFlag('\0', "isolate_s_cone",
-                           "Use a custom Opsin Inverse Matrix to isolate the S-cone from red/green cross-talk.",
+                           "Use a custom Opsin Inverse Matrix to isolate the "
+                           "S-cone from red/green cross-talk.",
                            &isolate_s_cone, &SetBooleanTrue, 4);
 
     cmdline->AddOptionValue('\0', "yellow_bias", "FLOAT",
-                            "Set the blue multiplier for the S-cone to tune the yellow bias (e.g. 0.85).",
+                            "Set the blue multiplier for the S-cone to tune "
+                            "the yellow bias (default 0.55).",
                             &yellow_bias, &ParseFloat, 4);
+
+    cmdline->AddOptionValue('\0', "red_bias", "FLOAT",
+                            "Set the red multiplier for the L-cone to tune the "
+                            "red bias (default 0.3).",
+                            &red_bias, &ParseFloat, 4);
+    cmdline->AddOptionValue('\0', "green_bias", "FLOAT",
+                            "Set the green multiplier for the M-cone to tune the green bias (default 0.69).",
+                            &green_bias, &ParseFloat, 4);
 
     cmdline->AddHelpText("\nModular mode options:", 4);
 
@@ -539,6 +549,8 @@ struct CompressArgs {
   bool disable_perceptual_optimizations = false;
   bool isolate_s_cone = false;
   float yellow_bias = -1.0f;
+  float red_bias = -1.0f;
+  float green_bias = -1.0f;
 
   size_t faster_decoding = 0;
   int64_t resampling = -1;
@@ -720,12 +732,22 @@ void ProcessFlags(const jxl::extras::Codec codec,
   if (args->disable_perceptual_optimizations) {
     params->AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS, 1);
   }
-  
+
   if (args->isolate_s_cone) {
-    params->options.emplace_back(JXL_ENC_FRAME_SETTING_ISOLATE_S_CONE, static_cast<int64_t>(1), 0);
+    params->options.emplace_back(JXL_ENC_FRAME_SETTING_ISOLATE_S_CONE,
+                                 static_cast<int64_t>(1), 0);
   }
   if (args->yellow_bias >= 0.0f) {
-    params->options.emplace_back(JXL_ENC_FRAME_SETTING_YELLOW_BIAS, args->yellow_bias, 0);
+    params->options.emplace_back(JXL_ENC_FRAME_SETTING_YELLOW_BIAS,
+                                 args->yellow_bias, 0);
+  }
+  if (args->red_bias >= 0.0f) {
+    params->options.emplace_back(JXL_ENC_FRAME_SETTING_RED_BIAS, args->red_bias,
+                                 0);
+  }
+  if (args->green_bias >= 0.0f) {
+    params->options.emplace_back(JXL_ENC_FRAME_SETTING_GREEN_BIAS,
+                                 args->green_bias, 0);
   }
 
   if (!args->frame_indexing.empty()) {

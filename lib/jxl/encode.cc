@@ -805,7 +805,9 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
     }
 
     if (first_frame_settings) {
-      if (first_frame_settings->cparams.isolate_s_cone ||
+      if (first_frame_settings->cparams.red_bias >= 0.0f ||
+          first_frame_settings->cparams.green_bias >= 0.0f ||
+          first_frame_settings->cparams.isolate_s_cone ||
           first_frame_settings->cparams.yellow_bias >= 0.0f) {
         metadata.transform_data.all_default = false;
         metadata.transform_data.opsin_inverse_matrix.all_default = false;
@@ -815,11 +817,25 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
             {{jxl::cms::kM10, jxl::cms::kM11, jxl::cms::kM12}},
             {{jxl::cms::kM20, jxl::cms::kM21, jxl::cms::kM22}},
         }};
+        if (first_frame_settings->cparams.red_bias >= 0.0f) {
+          float r = first_frame_settings->cparams.red_bias;
+          float g_ratio = jxl::cms::kM01 / (jxl::cms::kM01 + jxl::cms::kM02);
+          custom_opsin[0][0] = r;
+          custom_opsin[0][1] = g_ratio * (1.0f - r);
+          custom_opsin[0][2] = (1.0f - g_ratio) * (1.0f - r);
+        }
+        if (first_frame_settings->cparams.green_bias >= 0.0f) {
+          float g = first_frame_settings->cparams.green_bias;
+          float r_ratio = jxl::cms::kM10 / (jxl::cms::kM10 + jxl::cms::kM12);
+          custom_opsin[1][1] = g;
+          custom_opsin[1][0] = r_ratio * (1.0f - g);
+          custom_opsin[1][2] = (1.0f - r_ratio) * (1.0f - g);
+        }
         if (first_frame_settings->cparams.isolate_s_cone) {
           custom_opsin[2][0] = 0.0f;
           custom_opsin[2][1] = 0.0f;
           custom_opsin[2][2] = 1.0f;
-        } else {
+        } else if (first_frame_settings->cparams.yellow_bias >= 0.0f) {
           float b = first_frame_settings->cparams.yellow_bias;
           float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
           custom_opsin[2][2] = b;
@@ -1940,6 +1956,20 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
                              "Yellow bias must be in [0.0, 1.0]");
       }
       frame_settings->values.cparams.yellow_bias = value;
+      return JxlErrorOrStatus::Success();
+    case JXL_ENC_FRAME_SETTING_RED_BIAS:
+      if (value < 0.0f || value > 1.0f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Red bias must be in [0.0, 1.0]");
+      }
+      frame_settings->values.cparams.red_bias = value;
+      return JxlErrorOrStatus::Success();
+    case JXL_ENC_FRAME_SETTING_GREEN_BIAS:
+      if (value < 0.0f || value > 1.0f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Green bias must be in [0.0, 1.0]");
+      }
+      frame_settings->values.cparams.green_bias = value;
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT:
       if (value < -1.f || value > 100.f) {
