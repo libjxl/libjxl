@@ -31,6 +31,7 @@
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
@@ -1587,16 +1588,16 @@ Status ComputeEncodingData(
 
       const float* custom_opsin_ptr = nullptr;
       float custom_opsin[9] = {
-        0.30f, 0.622f, 0.078f,
-        0.23f, 0.692f, 0.078f,
-        0.243f, 0.205f, 0.552f
+        jxl::cms::kM00, jxl::cms::kM01, jxl::cms::kM02,
+        jxl::cms::kM10, jxl::cms::kM11, jxl::cms::kM12,
+        jxl::cms::kM20, jxl::cms::kM21, jxl::cms::kM22
       };
       if (cparams.isolate_s_cone || cparams.yellow_bias >= 0.0f) {
         if (cparams.isolate_s_cone) {
           custom_opsin[6] = 0.0f; custom_opsin[7] = 0.0f; custom_opsin[8] = 1.0f;
         } else {
           float b = cparams.yellow_bias;
-          float r_ratio = 0.243f / (0.243f + 0.205f);
+          float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
           custom_opsin[8] = b;
           custom_opsin[6] = r_ratio * (1.0f - b);
           custom_opsin[7] = (1.0f - r_ratio) * (1.0f - b);

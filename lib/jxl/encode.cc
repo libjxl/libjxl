@@ -37,6 +37,7 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/base/matrix_ops.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
@@ -795,33 +796,43 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
     jxl::AuxOut* aux_out =
         input.frame ? input.frame->option_values.aux_out : nullptr;
 
-    if (input.frame) {
-      if (input.frame->option_values.cparams.isolate_s_cone || input.frame->option_values.cparams.yellow_bias >= 0.0f) {
+    const jxl::JxlEncoderFrameSettingsValues* first_frame_settings = nullptr;
+    for (const auto& queued_input : input_queue) {
+      if (queued_input.frame) {
+        first_frame_settings = &queued_input.frame->option_values;
+        break;
+      }
+    }
+
+    if (first_frame_settings) {
+      if (first_frame_settings->cparams.isolate_s_cone ||
+          first_frame_settings->cparams.yellow_bias >= 0.0f) {
         metadata.transform_data.all_default = false;
         metadata.transform_data.opsin_inverse_matrix.all_default = false;
-        
+
         jxl::Matrix3x3 custom_opsin = {{
-          {{0.30f, 0.622f, 0.078f}},
-          {{0.23f, 0.692f, 0.078f}},
-          {{0.243f, 0.205f, 0.552f}} // default
+            {{jxl::cms::kM00, jxl::cms::kM01, jxl::cms::kM02}},
+            {{jxl::cms::kM10, jxl::cms::kM11, jxl::cms::kM12}},
+            {{jxl::cms::kM20, jxl::cms::kM21, jxl::cms::kM22}},
         }};
-        if (input.frame->option_values.cparams.isolate_s_cone) {
+        if (first_frame_settings->cparams.isolate_s_cone) {
           custom_opsin[2][0] = 0.0f;
           custom_opsin[2][1] = 0.0f;
           custom_opsin[2][2] = 1.0f;
         } else {
-          float b = input.frame->option_values.cparams.yellow_bias;
-          float r_ratio = 0.243f / (0.243f + 0.205f);
+          float b = first_frame_settings->cparams.yellow_bias;
+          float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
           custom_opsin[2][2] = b;
           custom_opsin[2][0] = r_ratio * (1.0f - b);
           custom_opsin[2][1] = (1.0f - r_ratio) * (1.0f - b);
         }
-        
+
         // matrix_ops.h Inv3x3Matrix modifies the matrix in place.
         JXL_RETURN_IF_ERROR(jxl::Inv3x3Matrix(custom_opsin));
         for (int i = 0; i < 3; i++) {
           for (int j = 0; j < 3; j++) {
-            metadata.transform_data.opsin_inverse_matrix.inverse_matrix[i][j] = custom_opsin[i][j];
+            metadata.transform_data.opsin_inverse_matrix.inverse_matrix[i][j] =
+                custom_opsin[i][j];
           }
         }
       }
@@ -1918,7 +1929,6 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_YELLOW_BIAS:
       frame_settings->values.cparams.yellow_bias = value;
-      return JxlErrorOrStatus::Success();
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT:
       if (value < -1.f || value > 100.f) {
