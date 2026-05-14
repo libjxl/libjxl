@@ -392,6 +392,14 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS = 39,
 
+  /** Isolate the S-cone in the XYB transform. 0 = disabled (default), 1 = enabled.
+   */
+  JXL_ENC_FRAME_SETTING_ISOLATE_S_CONE = 40,
+
+  /** Tune the blue multiplier for the S-cone. -1.0 means disable (default).
+   */
+  JXL_ENC_FRAME_SETTING_YELLOW_BIAS = 41,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */

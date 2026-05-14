@@ -106,6 +106,9 @@ struct CompressParams {
   // exposure for a given ISO setting on a 35mm camera.
   float photon_noise_iso = 0;
 
+  bool isolate_s_cone = false;
+  float yellow_bias = -1.0f;
+
   // modular mode options below
   ModularOptions options;
 

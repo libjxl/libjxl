@@ -1584,8 +1584,28 @@ Status ComputeEncodingData(
                                              patch_rect.ysize()));
         linear = &linear_storage;
       }
+
+      const float* custom_opsin_ptr = nullptr;
+      float custom_opsin[9] = {
+        0.30f, 0.622f, 0.078f,
+        0.23f, 0.692f, 0.078f,
+        0.243f, 0.205f, 0.552f
+      };
+      if (cparams.isolate_s_cone || cparams.yellow_bias >= 0.0f) {
+        if (cparams.isolate_s_cone) {
+          custom_opsin[6] = 0.0f; custom_opsin[7] = 0.0f; custom_opsin[8] = 1.0f;
+        } else {
+          float b = cparams.yellow_bias;
+          float r_ratio = 0.243f / (0.243f + 0.205f);
+          custom_opsin[8] = b;
+          custom_opsin[6] = r_ratio * (1.0f - b);
+          custom_opsin[7] = (1.0f - r_ratio) * (1.0f - b);
+        }
+        custom_opsin_ptr = custom_opsin;
+      }
+
       JXL_RETURN_IF_ERROR(ToXYB(c_enc, metadata->m.IntensityTarget(), black,
-                                pool, &color, cms, linear));
+                                pool, &color, cms, linear, custom_opsin_ptr));
     } else {
       // Nothing to do.
       // RGB or YCbCr: forward YCbCr is not implemented, this is only used
