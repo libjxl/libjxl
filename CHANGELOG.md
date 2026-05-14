@@ -20,10 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     increasing encoding performance by 2-5x.
   - Lossless images with faster decoding are now 30-80% smaller and their decoding speeds
     properly scale as the faster decoding level increases from 1-4.
-  - Fixed an issue where Lossy Delta Palette encoding failed on images larger than 2048x2048.
-- Numerous speed/memory usage improvements. (#4322, #4330, #4332, #4341, #4384, #4448, #4449, #4529)
-- Streaming input with buffered output is now supported and enabled by default,
-  allowing basic progressive loading at no cost. (#4634, #4635, #4637, #4642)
+  - Disabled global palette for progressive images, fixing glitchy progressive loading for indexed/low color images and restoring transparency support (Note: this causes a density/speed penalty for very low bit-depth images).
+- Numerous speed/memory usage improvements.
+  - Improved encoding speeds by SIMDifying `EstimateCost` (+5% performance) and speeding up uint-coding trials. (#4322, #4330)
+  - Accelerated modular encoding and decoding via SIMD optimizations for forward RCT transforms and upsampling (up to 4x faster). (#4332, #4384)
+  - Fixed performance regressions in fast lossless modes and optimized text-like patch detection. (#4341, #4448)
+  - Refined x86 `XCR0` CPU checks to prevent issues on specific hardware. (#4449)
+  - Migrated Windows release builds to use `clang-cl`, which improves performance across the board. (#4529)
+- A new buffering flag is now available in the CLI. Buffering level 2 is now enabled by default, which greatly improves encoding performance for images under 2048x2048 (note: this disables patch detection). Streaming input with buffered output is also now supported and enabled by default, allowing basic progressive loading at no cost. (#4634, #4635, #4637, #4642)
 - Better Density/Speed tradeoff for lossless effort levels. (#4236)
 - Improved visual quality of gradients by using channel-offset blue noise dithering
   instead of bayer when decoding to lower bitdepths. (#4305, #4559)
@@ -39,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   10x faster below effort 10 by using a faster downsampling method. (#4147)
 
 ### Fixed
+- Fixed an issue where Lossy Delta Palette encoding failed on images larger than 2048x2048. (#4201)
 - `JxlEncoderAddChunkedFrame` incorrectly called `JxlEncoderCloseInput`
   instead of `JxlEncoderCloseFrames`, resulting in corrupted files when
   trying to add more boxes. (#4466)
