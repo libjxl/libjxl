@@ -7,12 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-### Changed / clarified
-- decoder API: timeframes to successfully invoke `JxlDecoderSetImageOutBuffer`
-  and `JxlDecoderSetPreviewOutBuffer` are non-intersecting; it is not possible
-  to accidentally set one buffer when the other is expected
-
 ## [0.12.0] - 2026-05-14
+
+### Added
+- A new buffering flag is now available in the CLI, alongside support for streaming input with buffered output. (#4634)
+- Introduced the new `jxltran` tool, which supports extracting codestreams from `jxlp` boxes and packing raw codestreams into `jxlc` boxes. (#4161, #4165, #4168, #4196)
+- Added the `--reconstruct_jpeg` flag to `djxl` to losslessly reconstruct a JPEG and fail if impossible (mutually exclusive with `--pixels_to_jpeg` and `--jpeg_quality`). (#4498)
+- Added `JXL_DEC_UNSUPPORTED` (`kUnsupported`) status code to the core API to better indicate when requested features or operations are not supported by the decoder. (#4390)
 
 ### Changed
 - Major overhaul for faster decoding and progressive lossless (#4201, #4641)
@@ -24,16 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Numerous speed/memory usage improvements.
   - Improved encoding speeds by SIMDifying `EstimateCost` (+5% performance) and speeding up uint-coding trials. (#4322, #4330)
   - Accelerated modular encoding and decoding via SIMD optimizations for forward RCT transforms and upsampling (up to 4x faster). (#4332, #4384)
+  - Massive overhaul to histogram encoding and decoding, providing significant performance optimizations for modular mode. (#4123, #4132, #4136, #4185)
+  - Tweaked JPEG recompression logic to improve density and efficiency. (#4202)
   - Fixed performance regressions in fast lossless modes and optimized text-like patch detection. (#4341, #4448)
   - Refined x86 `XCR0` CPU checks to prevent issues on specific hardware. (#4449)
   - Migrated Windows release builds to use `clang-cl`, which improves performance across the board. (#4529)
-- A new buffering flag is now available in the CLI. Buffering level 2 is now enabled by default, which greatly improves encoding performance for images under 2048x2048 (note: this disables patch detection). Streaming input with buffered output is also now supported and enabled by default, allowing basic progressive loading at no cost. (#4634, #4635, #4637, #4642)
+- The default buffering level in the CLI has been changed to `2`, greatly improving encoding performance for images under 2048x2048 (note: this disables patch detection). Additionally, streaming input with buffered output is now enabled by default to allow basic progressive loading at no cost. (#4635, #4637, #4642)
 - Better Density/Speed tradeoff for lossless effort levels. (#4236)
 - Improved visual quality of gradients by using channel-offset blue noise dithering
   instead of bayer when decoding to lower bitdepths. (#4305, #4559)
 - Lossy modular encoding quality/density improvements. (#3575)
-- Significant improvements to EXR input handling for cjxl. Now supports float32,
-  multilayer and per-channel bitdepth. (#4312)
+- `local_tone_map` tool: Now produces SDR output in the `DisplayP3` color space rather than `Rec2020`. Also added an optional third command-line argument to dump the HDR image as a raw `rgba1010102` file for use with the `libultrahdr` example app. (#4210)
+- Significant improvements to EXR input/output handling for cjxl. Now supports reading float32,
+  multilayer, per-channel bitdepth, and writing greyscale EXR images. (#4312, #4460)
+- The decoder API for `JxlDecoderSetImageOutBuffer` and `JxlDecoderSetPreviewOutBuffer` has been clarified; their timeframes are now non-intersecting, preventing accidental buffer overwrites. (#4671)
 - Layered JXL files are no longer coalesced when re-encoding with cjxl, and can now
   be decoded to separate PNG/PAM files with djxl by using `--no_coalescing`. (#4299)
 - The progressive flag `-p` in cjxl will now encode a more progressive image at the cost
@@ -41,9 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or `--progressive_dc 0` can be used to return to old behaviour. (#4258)
 - When lossy encoding, resampling 2 is now enabled at distance 10, and is up to
   10x faster below effort 10 by using a faster downsampling method. (#4147)
+- Faster PNG compression. (#3819)
 
 ### Removed
-- The `jpegli` codebase has been removed as it is now maintained as a separate project at [google/jpegli](https://github.com/google/jpegli).
+- The `jpegli` codebase has been removed as it is now maintained as a separate project at [google/jpegli](https://github.com/google/jpegli). (#4657)
 
 ### Fixed
 - Fixed an issue where Lossy Delta Palette encoding failed on images larger than 2048x2048. (#4201)
