@@ -14,6 +14,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.12.0] - 2026-05-14
 
+### Changed
+- Major overhaul for faster decoding and progressive lossless (#4201, #4641)
+  - Progressive lossless images are around 30-40% smaller and are now multithreaded
+    increasing encoding performance by 2-5x.
+  - Lossless images with faster decoding are now 30-80% smaller and their decoding speeds
+    properly scale as the faster decoding level increases from 1-4.
+  - Fixed an issue where Lossy Delta Palette encoding failed on images larger than 2048x2048.
+- Numerous speed/memory usage improvements. (#4322, #4330, #4332, #4341, #4384, #4448, #4449, #4529)
+- Streaming input with buffered output is now supported and enabled by default,
+  allowing basic progressive loading at no cost. (#4634, #4635, #4637, #4642)
+- Better Density/Speed tradeoff for lossless effort levels. (#4236)
+- Improved visual quality of gradients by using channel-offset blue noise dithering
+  instead of bayer when decoding to lower bitdepths. (#4305, #4559)
+- Lossy modular encoding quality/density improvements. (#3575)
+- Significant improvements to EXR input handling for cjxl. Now supports float32,
+  multilayer and per-channel bitdepth. (#4312)
+- Layered JXL files are no longer coalesced when re-encoding with cjxl, and can now
+  be decoded to separate PNG/PAM files with djxl by using `--no_coalescing`. (#4299)
+- The progressive flag `-p` in cjxl will now encode a more progressive image at the cost
+  of encode speed. `--patches 0` can be used to significantly improve encode speed
+  or `--progressive_dc 0` can be used to return to old behaviour. (#4258)
+- When lossy encoding, resampling 2 is now enabled at distance 10, and is up to
+  10x faster below effort 10 by using a faster downsampling method. (#4147)
+
 ### Fixed
 - `JxlEncoderAddChunkedFrame` incorrectly called `JxlEncoderCloseInput`
   instead of `JxlEncoderCloseFrames`, resulting in corrupted files when
@@ -21,43 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Noise is no longer rendered on LF frames. (#4514)
 - Float16 values roundtrip more accurately. (#4461)
 - JXL input to cjxl no longer gets double orientation applied and
-  also now keeps frame names. (#4374 and #4561)
+  also now keeps frame names. (#4374, #4561)
 - `JxlBasicInfo.alpha_premultiplied` was not correctly forwarded. (#4357)
 - CMYK JXL files would not decode to PNG correctly. (#4301)
 - Encoder would hang with specific parameters on images containing
   more than 256 groups. (#4302)
 - Decoding would fail with LZ77 runs that crossed entropy-coded streams
   within the same section. (#4298)
-- Images could be corrupted when encoding effort 1 lossless. (#4027 and #4291)
+- Images could be corrupted when encoding effort 1 lossless. (#4027, #4291)
 - Extremely high quality lossy would not conform to Level 5 of the spec. (#4238)
 - Density regression with Predictor Zero since v0.11. (#4225)
 - Progressive VarDCT encoding would create non-progressive files. (#4223)
-- Lossless Faster Decoding would create uncompressed files for levels 1 and 2,
-  with levels 3 and 4 being slower. (#4201)
-- Lossy Delta Palette encoding now works on images larger than 2048*2048. (#4201)
-- Extremely tall/wide images failed to encode using modular. (#3937 and #4308)
+- Extremely tall/wide images failed to encode using modular. (#3937, #4308)
 - Empty DHT markers no longer cause JPEG transcoding to fail. (#2704)
-
-### Changed / clarified
-- Numerous speed/memory usage improvements. (#4322, #4330, #4332, #4341, #4384,
-  #4448, #4449, #4529)
-- Streaming input with buffered output is now supported and enabled by default,
-  allowing basic progressive loading at no cost. (#4634, #4635, #4637 and #4642)
-- Better Density/Speed tradeoff for lossless effort levels. (#4236)
-- Improved visual quality of gradients by using channel-offset blue noise dithering
-  instead of bayer when decoding to lower bitdepths. (#4305 and #4559)
-- Lossy modular encoding quality/density improvements. (#3575)
-- Significant improvements to EXR input handling for cjxl. Now supports float32,
-  multilayer and per-channel bitdepth. (#4312)
-- Layered JXL files are no longer coalesced when re-encoding with cjxl, and can now
-  be decoded to separate PNG/PAM files with djxl by using `--no_coalescing`. (#4299)
-- Using `-p` in cjxl will now encode a more progressive image at the cost
-  of encode speed. `--patches 0` can be used to significantly improve encode speed
-  or `--progressive_dc 0` can be used to return to old behaviour. (#4258)
-- Progressive lossless is now 30-40% smaller on average and
-  can utilize multithreaded encoding. (#4201 and #4641)
-- When encoding, resampling 2 is now enabled at distance 10, and is up to
-  10x faster below effort 10 by using a faster downsampling method. (#4147)
 
 ## [0.11.2] - 2026-02-10
 
