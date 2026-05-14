@@ -835,6 +835,13 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
                 custom_opsin[i][j];
           }
         }
+        // Spec (Annex L.2.1, Table L.1): when all_default=false, the decoder
+        // reads opsin_biases and quant_biases from the bitstream. Explicitly
+        // set them to the standard defaults so the bitstream is self-consistent.
+        auto& oim = metadata.transform_data.opsin_inverse_matrix;
+        oim.opsin_biases[0] = jxl::cms::kNegOpsinAbsorbanceBiasRGB[0];
+        oim.opsin_biases[1] = jxl::cms::kNegOpsinAbsorbanceBiasRGB[1];
+        oim.opsin_biases[2] = jxl::cms::kNegOpsinAbsorbanceBiasRGB[2];
       }
     }
 
@@ -1928,6 +1935,10 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
       frame_settings->values.cparams.photon_noise_iso = value;
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_YELLOW_BIAS:
+      if (value < 0.0f || value > 1.0f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Yellow bias must be in [0.0, 1.0]");
+      }
       frame_settings->values.cparams.yellow_bias = value;
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT:
