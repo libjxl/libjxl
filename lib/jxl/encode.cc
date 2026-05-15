@@ -807,7 +807,7 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
     if (first_frame_settings) {
       if (first_frame_settings->cparams.red_bias >= 0.0f ||
           first_frame_settings->cparams.green_bias >= 0.0f ||
-          first_frame_settings->cparams.isolate_s_cone ||
+          first_frame_settings->cparams.color_boost ||
           first_frame_settings->cparams.yellow_bias >= 0.0f) {
         metadata.transform_data.all_default = false;
         metadata.transform_data.opsin_inverse_matrix.all_default = false;
@@ -831,10 +831,27 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
           custom_opsin[1][0] = r_ratio * (1.0f - g);
           custom_opsin[1][2] = (1.0f - r_ratio) * (1.0f - g);
         }
-        if (first_frame_settings->cparams.isolate_s_cone) {
-          custom_opsin[2][0] = 0.0f;
-          custom_opsin[2][1] = 0.0f;
-          custom_opsin[2][2] = 1.0f;
+        if (first_frame_settings->cparams.color_boost) {
+          // Yellow 0.85
+          float b = 0.85f;
+          float r_ratio_b = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
+          custom_opsin[2][2] = b;
+          custom_opsin[2][0] = r_ratio_b * (1.0f - b);
+          custom_opsin[2][1] = (1.0f - r_ratio_b) * (1.0f - b);
+
+          // Red 0.42
+          float r = 0.42f;
+          float g_ratio_r = jxl::cms::kM01 / (jxl::cms::kM01 + jxl::cms::kM02);
+          custom_opsin[0][0] = r;
+          custom_opsin[0][1] = g_ratio_r * (1.0f - r);
+          custom_opsin[0][2] = (1.0f - g_ratio_r) * (1.0f - r);
+
+          // Green 0.74
+          float g = 0.74f;
+          float r_ratio_g = jxl::cms::kM10 / (jxl::cms::kM10 + jxl::cms::kM12);
+          custom_opsin[1][1] = g;
+          custom_opsin[1][0] = r_ratio_g * (1.0f - g);
+          custom_opsin[1][2] = (1.0f - r_ratio_g) * (1.0f - g);
         } else if (first_frame_settings->cparams.yellow_bias >= 0.0f) {
           float b = first_frame_settings->cparams.yellow_bias;
           float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
@@ -1930,8 +1947,8 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       }
       break;
 
-    case JXL_ENC_FRAME_SETTING_ISOLATE_S_CONE:
-      frame_settings->values.cparams.isolate_s_cone = default_to_true(value);
+    case JXL_ENC_FRAME_SETTING_COLOR_BOOST:
+      frame_settings->values.cparams.color_boost = (value > 0.5f);
       return JxlErrorOrStatus::Success();
     default:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,

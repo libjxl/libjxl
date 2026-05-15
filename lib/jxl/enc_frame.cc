@@ -1592,7 +1592,7 @@ Status ComputeEncodingData(
         jxl::cms::kM10, jxl::cms::kM11, jxl::cms::kM12,
         jxl::cms::kM20, jxl::cms::kM21, jxl::cms::kM22
       };
-      if (cparams.red_bias >= 0.0f || cparams.green_bias >= 0.0f || cparams.isolate_s_cone || cparams.yellow_bias >= 0.0f) {
+      if (cparams.red_bias >= 0.0f || cparams.green_bias >= 0.0f || cparams.color_boost || cparams.yellow_bias >= 0.0f) {
         if (cparams.red_bias >= 0.0f) {
           float r = cparams.red_bias;
           float g_ratio = jxl::cms::kM01 / (jxl::cms::kM01 + jxl::cms::kM02);
@@ -1607,8 +1607,27 @@ Status ComputeEncodingData(
           custom_opsin[3] = r_ratio * (1.0f - g);
           custom_opsin[5] = (1.0f - r_ratio) * (1.0f - g);
         }
-        if (cparams.isolate_s_cone) {
-          custom_opsin[6] = 0.0f; custom_opsin[7] = 0.0f; custom_opsin[8] = 1.0f;
+        if (cparams.color_boost) {
+          // Yellow 0.85
+          float b = 0.85f;
+          float r_ratio_b = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
+          custom_opsin[8] = b;
+          custom_opsin[6] = r_ratio_b * (1.0f - b);
+          custom_opsin[7] = (1.0f - r_ratio_b) * (1.0f - b);
+
+          // Red 0.42
+          float r = 0.42f;
+          float g_ratio_r = jxl::cms::kM01 / (jxl::cms::kM01 + jxl::cms::kM02);
+          custom_opsin[0] = r;
+          custom_opsin[1] = g_ratio_r * (1.0f - r);
+          custom_opsin[2] = (1.0f - g_ratio_r) * (1.0f - r);
+
+          // Green 0.74
+          float g = 0.74f;
+          float r_ratio_g = jxl::cms::kM10 / (jxl::cms::kM10 + jxl::cms::kM12);
+          custom_opsin[4] = g;
+          custom_opsin[3] = r_ratio_g * (1.0f - g);
+          custom_opsin[5] = (1.0f - r_ratio_g) * (1.0f - g);
         } else if (cparams.yellow_bias >= 0.0f) {
           float b = cparams.yellow_bias;
           float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);

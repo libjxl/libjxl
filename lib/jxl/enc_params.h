@@ -109,7 +109,7 @@ struct CompressParams {
   float yellow_bias = -1.0f;
   float red_bias = -1.0f;
   float green_bias = -1.0f;
-  bool isolate_s_cone = false;
+  bool color_boost = false;
 
   // modular mode options below
   ModularOptions options;

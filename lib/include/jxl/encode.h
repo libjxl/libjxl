@@ -392,9 +392,9 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS = 39,
 
-  /** Isolate the S-cone in the XYB transform. 0 = disabled (default), 1 = enabled.
+  /** Boost colors (Yellow 0.85, Red 0.42, Green 0.74). 0 = disabled (default), 1 = enabled.
    */
-  JXL_ENC_FRAME_SETTING_ISOLATE_S_CONE = 40,
+  JXL_ENC_FRAME_SETTING_COLOR_BOOST = 40,
 
   /** Tune the blue multiplier for the S-cone. -1.0 means disable (default).
    */
@@ -412,8 +412,8 @@ typedef enum {
    * C compiler to have the enum to take a known size.
    */
   JXL_ENC_FRAME_SETTING_FILL_ENUM = 65535,
-
 } JxlEncoderFrameSettingId;
+
 
 /**
  * Creates an instance of @ref JxlEncoder and initializes it.
