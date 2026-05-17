@@ -35,9 +35,10 @@ namespace extras {
 // Class representing an interleaved image with a bunch of channels.
 StatusOr<PackedImage> PackedImage::Create(size_t xsize, size_t ysize,
                                           const JxlPixelFormat& format) {
+  JXL_RETURN_IF_ERROR(ValidateDataType(format.data_type));
   JXL_ASSIGN_OR_RETURN(size_t stride, CalcStride(format, xsize));
-  size_t pixels_size = ysize * stride;
-  if ((pixels_size / stride) != ysize) {
+  size_t pixels_size;
+  if (!SafeMul(ysize, stride, pixels_size)) {
     return JXL_FAILURE("Image too big");
   }
   PackedImage image(xsize, ysize, format, stride);
@@ -117,15 +118,24 @@ PackedImage::PackedImage(size_t xsize, size_t ysize,
 
 StatusOr<size_t> PackedImage::CalcStride(const JxlPixelFormat& format,
                                          size_t xsize) {
-  size_t multiplier = (BitsPerChannel(format.data_type) * format.num_channels /
-                       jxl::kBitsPerByte);
-  size_t stride = xsize * multiplier;
-  if ((stride / multiplier) != xsize) {
+  JXL_RETURN_IF_ERROR(ValidateDataType(format.data_type));
+  size_t bits_per_pixel;
+  if (!SafeMul(BitsPerChannel(format.data_type),
+               static_cast<size_t>(format.num_channels), bits_per_pixel)) {
+    return JXL_FAILURE("Image too big");
+  }
+  size_t multiplier = bits_per_pixel / jxl::kBitsPerByte;
+  size_t stride;
+  if (!SafeMul(xsize, multiplier, stride)) {
     return JXL_FAILURE("Image too big");
   }
   if (format.align > 1) {
-    size_t aligned_stride = jxl::DivCeil(stride, format.align) * format.align;
-    if (stride > aligned_stride) {
+    size_t align_offset;
+    if (!SafeAdd(stride, format.align - 1, align_offset)) {
+      return JXL_FAILURE("Image too big");
+    }
+    size_t aligned_stride;
+    if (!SafeMul(align_offset / format.align, format.align, aligned_stride)) {
       return JXL_FAILURE("Image too big");
     }
     stride = aligned_stride;

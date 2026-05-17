@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -459,6 +460,46 @@ TEST(CodecTest, FormatNegotiation) {
   EXPECT_EQ(format.num_channels, info.num_color_channels);
   // 16 is the smallest accepted format that can accommodate the 12-bit data.
   EXPECT_EQ(format.data_type, JXL_TYPE_UINT16);
+}
+
+TEST(CodecTest, PackedImageRejectsOverflowingSizes) {
+  JxlPixelFormat format = {/*num_channels=*/4,
+                           /*data_type=*/JXL_TYPE_FLOAT,
+                           /*endianness=*/JXL_NATIVE_ENDIAN,
+                           /*align=*/0};
+
+  EXPECT_FALSE(
+      PackedImage::Create(std::numeric_limits<size_t>::max() / 16 + 1, 1,
+                          format)
+          .ok());
+  EXPECT_FALSE(
+      PackedImage::Create(std::numeric_limits<size_t>::max() / 16, 2, format)
+          .ok());
+}
+
+TEST(CodecTest, PackedImageRejectsOverflowingAlignment) {
+  JxlPixelFormat format = {/*num_channels=*/1,
+                           /*data_type=*/JXL_TYPE_UINT8,
+                           /*endianness=*/JXL_NATIVE_ENDIAN,
+                           /*align=*/32};
+
+  EXPECT_FALSE(
+      PackedImage::Create(std::numeric_limits<size_t>::max() - 15, 1, format)
+          .ok());
+}
+
+TEST(CodecTest, PackedImageAllowsEmptyRows) {
+  JxlPixelFormat format = {/*num_channels=*/3,
+                           /*data_type=*/JXL_TYPE_UINT8,
+                           /*endianness=*/JXL_NATIVE_ENDIAN,
+                           /*align=*/0};
+
+  JXL_TEST_ASSIGN_OR_DIE(PackedImage image, PackedImage::Create(0, 1, format));
+  EXPECT_EQ(image.xsize, 0u);
+  EXPECT_EQ(image.ysize, 1u);
+  EXPECT_EQ(image.stride, 0u);
+  EXPECT_EQ(image.pixels_size, 0u);
+  EXPECT_NE(image.pixels(), nullptr);
 }
 
 TEST(CodecTest, FormatNegotiationGrayscalePromotion) {
