@@ -844,7 +844,8 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
             int block_y = ss.mcu_y * n_blocks_y + iy;
             int block_x = mcu_x * n_blocks_x + ix;
             size_t block_idx =
-                static_cast<size_t>(block_y) * c.width_in_blocks + block_x;
+                static_cast<size_t>(block_y) * c.width_in_blocks +
+                static_cast<size_t>(block_x);
             if (ss.block_scan_index == ss.next_reset_point) {
               Flush(coding_state, bw);
               ss.next_reset_point = get_next_reset_point();

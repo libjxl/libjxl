@@ -834,7 +834,8 @@ Status ProcessScan(const uint8_t* data, const size_t len,
             int block_y = mcu_y * nblocks_y + iy;
             int block_x = mcu_x * nblocks_x + ix;
             size_t block_idx =
-                static_cast<size_t>(block_y) * c->width_in_blocks + block_x;
+                static_cast<size_t>(block_y) * c->width_in_blocks +
+                static_cast<size_t>(block_x);
             bool reset_state = false;
             int num_zero_runs = 0;
             coeff_t* coeffs = &c->coeffs[block_idx * kDCTBlockSize];
