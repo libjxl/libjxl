@@ -54,6 +54,7 @@
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_group.h"
 #include "lib/jxl/enc_heuristics.h"
+#include "lib/jxl/enc_jpeg_frame.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_noise.h"
 #include "lib/jxl/enc_params.h"
@@ -769,6 +770,62 @@ void FindIndexOfSumMaximum(const V* array, R* idx, V* sum) {
   *sum = maxval;
 }
 
+Status ComputeJPEGContextMap(const jpeg::JPEGData& jpeg_data,
+                             PassesEncoderState* enc_state,
+                             size_t (&total_dc)[3],
+                             const std::vector<size_t>& dc_counts,
+                             const std::vector<int>& qt) {
+  auto& dct = enc_state->shared.block_ctx_map.dc_thresholds;
+  auto& num_dc_ctxs = enc_state->shared.block_ctx_map.num_dc_ctxs;
+
+  for (auto& i : dct) i.clear();
+
+  // use more contexts for larger and higher quality images
+  int num_thresholds = CeilLog2Nonzero(total_dc[1]) -
+                       CeilLog2Nonzero(static_cast<unsigned>(
+                           qt[1] + qt[2] + qt[3] + qt[4] + qt[5])) -
+                       7;
+  //  up to 8 buckets, based on luma only
+  num_thresholds = jxl::Clamp1(num_thresholds, 1, 7);
+  size_t cumsum = 0;
+  size_t cut = total_dc[1] / (num_thresholds + 1);
+  for (int j = 0; j < 2048; j++) {
+    cumsum += dc_counts[j];
+    if (cumsum > cut) {
+      dct[1].push_back(j - 1025);
+      cut = total_dc[1] * (dct[1].size() + 1) / (num_thresholds + 1);
+    }
+  }
+  num_dc_ctxs = dct[1].size() + 1;
+
+  auto& ctx_map = enc_state->shared.block_ctx_map.ctx_map;
+  ctx_map.assign(3 * kNumOrders * num_dc_ctxs, 0);
+
+  for (size_t i = 0; i < num_dc_ctxs; i++) {
+    // luma: one context per luma DC bucket
+    ctx_map[i] = i;
+    if (jpeg_data.components.size() == 1) {
+      // grayscale -> one context for all chroma
+      ctx_map[kNumOrders * num_dc_ctxs + i] =
+          ctx_map[2 * kNumOrders * num_dc_ctxs + i] = num_dc_ctxs;
+    } else {
+      // color -> multiple contexts per chroma component
+      ctx_map[kNumOrders * num_dc_ctxs + i] = num_dc_ctxs + i / 2;
+      ctx_map[2 * kNumOrders * num_dc_ctxs + i] =
+          num_dc_ctxs + (num_dc_ctxs - 1) / 2 + 1 + i / 2;
+    }
+  }
+  enc_state->shared.block_ctx_map.num_ctxs =
+      *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
+
+  if (enc_state->cparams.speed_tier <= SpeedTier::kKitten) {
+    // For slower speed tiers, use sophisticated context modeling.
+  }
+  JXL_ENSURE(enc_state->shared.block_ctx_map.num_ctxs <= 16);
+
+  return true;
+}
+
 Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
                                   const FrameHeader& frame_header,
                                   ThreadPool* pool,
@@ -828,14 +885,14 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
                                1.0f / dcquantization[2]};
 
   // not transposed
-  std::vector<int32_t> scaled_qtable(kDCTBlockSize * 3);
+  int32_t scaled_qtable[3][kDCTBlockSize];
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < 8; y++) {
       for (size_t x = 0; x < 8; x++) {
         int coeffpos = y * 8 + x;
-        scaled_qtable[kDCTBlockSize * c + 8 * x + y] =
-            (1 << kCFLFixedPointPrecision) * qt[kDCTBlockSize + coeffpos] /
-            qt[kDCTBlockSize * c + coeffpos];
+        scaled_qtable[c][8 * x + y] = (1 << kCFLFixedPointPrecision) *
+                                      qt[kDCTBlockSize + coeffpos] /
+                                      qt[kDCTBlockSize * c + coeffpos];
       }
     }
   }
@@ -862,9 +919,10 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
 
   bool DCzero = (frame_header.color_transform == ColorTransform::kYCbCr);
   // Compute chroma-from-luma for AC (doesn't seem to be useful for DC)
-  if (frame_header.chroma_subsampling.Is444() &&
-      enc_state->cparams.force_cfl_jpeg_recompression &&
-      jpeg_data.components.size() == 3) {
+  bool cfl_enabled = enc_state->cparams.force_cfl_jpeg_recompression &&
+                     frame_header.chroma_subsampling.Is444() &&
+                     jpeg_data.components.size() == 3;
+  if (cfl_enabled) {
     for (size_t c : {0, 2}) {
       ImageSB* map = (c == 0 ? &shared.cmap.ytox_map : &shared.cmap.ytob_map);
       const float kScale = kDefaultColorFactor;
@@ -895,7 +953,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
             for (size_t x = x0; x < x1; ++x) {
               for (size_t coeffpos = 1; coeffpos < kDCTBlockSize; coeffpos++) {
                 const float scaled_m = row_m[x * kDCTBlockSize + coeffpos] *
-                                       scaled_qtable[64 * c + coeffpos] *
+                                       scaled_qtable[c][coeffpos] *
                                        (1.0f / (1 << kCFLFixedPointPrecision));
                 const float scaled_s =
                     kScale * row_s[x * kDCTBlockSize + coeffpos] +
@@ -1005,8 +1063,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
           }
           total_dc[c]++;
           fdc[bx >> hshift] = idc * dcquantization_r[c];
-          if (c == 1 || !enc_state->cparams.force_cfl_jpeg_recompression ||
-              !frame_header.chroma_subsampling.Is444()) {
+          if (c == 1 || !cfl_enabled) {
             for (size_t y = 0; y < 8; y++) {
               for (size_t x = 0; x < 8; x++) {
                 block[x * 8 + y] = inputjpeg[base + y * 8 + x];
@@ -1023,10 +1080,9 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
                 int QChroma = inputjpeg[kDCTBlockSize * bx + coeffpos];
                 // Fixed-point multiply of CfL scale with quant table ratio
                 // first, and Y value second.
-                int coeff_scale =
-                    (scale * scaled_qtable[kDCTBlockSize * c + coeffpos] +
-                     (1 << (kCFLFixedPointPrecision - 1))) >>
-                    kCFLFixedPointPrecision;
+                int coeff_scale = (scale * scaled_qtable[c][coeffpos] +
+                                   (1 << (kCFLFixedPointPrecision - 1))) >>
+                                  kCFLFixedPointPrecision;
                 int cfl_factor =
                     (Y * coeff_scale + (1 << (kCFLFixedPointPrecision - 1))) >>
                     kCFLFixedPointPrecision;
@@ -1046,52 +1102,20 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
     }
   }
 
-  auto& dct = enc_state->shared.block_ctx_map.dc_thresholds;
-  auto& num_dc_ctxs = enc_state->shared.block_ctx_map.num_dc_ctxs;
+  if (enc_state->cparams.speed_tier >= SpeedTier::kSquirrel) {
+    JXL_RETURN_IF_ERROR(
+        ComputeJPEGContextMap(jpeg_data, enc_state, total_dc, dc_counts, qt));
+  } else {
+    // For slower speed tiers, use sophisticated context modeling.
+    JpegCflContext cfl_ctx = {jpeg_c_map,
+                              cfl_enabled,
+                              {&shared.cmap.ytox_map, &shared.cmap.ytob_map},
+                              {scaled_qtable[0], scaled_qtable[2]}};
 
-  for (size_t i = 0; i < 3; i++) {
-    dct[i].clear();
+    JXL_RETURN_IF_ERROR(
+        OptimizeJPEGContextMap(jpeg_data, enc_state->cparams.speed_tier,
+                               cfl_ctx, enc_state->shared.block_ctx_map, pool));
   }
-  // use more contexts for larger and higher quality images
-  int num_thresholds = CeilLog2Nonzero(total_dc[1]) -
-                       CeilLog2Nonzero(static_cast<unsigned>(
-                           qt[1] + qt[2] + qt[3] + qt[4] + qt[5])) -
-                       7;
-  // up to 8 buckets, based on luma only
-  num_thresholds = jxl::Clamp1(num_thresholds, 1, 7);
-  size_t cumsum = 0;
-  size_t cut = total_dc[1] / (num_thresholds + 1);
-  for (int j = 0; j < 2048; j++) {
-    cumsum += dc_counts[j];
-    if (cumsum > cut) {
-      dct[1].push_back(j - 1025);
-      cut = total_dc[1] * (dct[1].size() + 1) / (num_thresholds + 1);
-    }
-  }
-  num_dc_ctxs = dct[1].size() + 1;
-
-  auto& ctx_map = enc_state->shared.block_ctx_map.ctx_map;
-  ctx_map.clear();
-  ctx_map.resize(3 * kNumOrders * num_dc_ctxs, 0);
-
-  for (size_t i = 0; i < num_dc_ctxs; i++) {
-    // luma: one context per luma DC bucket
-    ctx_map[i] = i;
-    if (jpeg_data.components.size() == 1) {
-      // grayscale -> one context for all chroma
-      ctx_map[kNumOrders * num_dc_ctxs + i] =
-          ctx_map[2 * kNumOrders * num_dc_ctxs + i] = num_dc_ctxs;
-    } else {
-      // color -> multiple contexts per chroma component
-      ctx_map[kNumOrders * num_dc_ctxs + i] = num_dc_ctxs + i / 2;
-      ctx_map[2 * kNumOrders * num_dc_ctxs + i] =
-          num_dc_ctxs + (num_dc_ctxs - 1) / 2 + 1 + i / 2;
-    }
-  }
-  enc_state->shared.block_ctx_map.num_ctxs =
-      *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
-
-  JXL_ENSURE(enc_state->shared.block_ctx_map.num_ctxs <= 16);
 
   // disable DC frame for now
   auto compute_dc_coeffs = [&](const uint32_t group_index,

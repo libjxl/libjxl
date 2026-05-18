@@ -1,0 +1,563 @@
+// Copyright (c) the JPEG XL Project Authors. All rights reserved.
+//
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+#include "lib/jxl/transcode_jpeg/enc_jpeg_threshold.h"
+
+#include <limits>
+
+#include "lib/jxl/transcode_jpeg/enc_jpeg_stream.h"
+
+namespace jxl {
+
+template <uint32_t I>
+static JXL_INLINE uint32_t SelectDC(uint32_t dc0, uint32_t dc1, uint32_t dc2) {
+  return I == 0 ? dc0 : (I == 1 ? dc1 : dc2);
+}
+
+template <int sign>
+void PartitioningCtx::FlushTerm(std::vector<uint32_t>& cnt,
+                                std::vector<uint64_t>& group_touched,
+                                std::vector<uint64_t>& touched, uint32_t M_eff,
+                                uint32_t ncells) {
+  const JPEGOptData& d = data();
+  std::vector<FixedPointCost>& costs = Knuth_solver.costs;
+  // Track which `ci` slots were touched so we can clear their histories.
+  uint32_t touched_ci = 0;
+
+  for (uint32_t hi_idx = 0; hi_idx < kGroupCount; ++hi_idx) {
+    uint64_t group_mask = group_touched[hi_idx];
+
+    while (group_mask) {
+      uint32_t lo_idx = CountrZero64(group_mask);
+      uint32_t group_idx = (hi_idx << 6) | lo_idx;
+      uint64_t cell_mask = touched[group_idx];
+      uint32_t base_bit_idx = group_idx << 6;
+
+      while (cell_mask) {
+        uint32_t t = CountrZero64(cell_mask);
+        uint32_t bit_idx = base_bit_idx | t;
+
+        // Decode rank and cell from the rank-major flat index.
+        uint32_t n = bit_idx / ncells;   // dc_k_bkt rank
+        uint32_t ci = bit_idx % ncells;  // cell index
+
+        // `costs[n * M_eff + l]` = diff contribution for interval `[l..n]`.
+        FixedPointCost* cost_row = &costs[n * M_eff];
+
+        uint32_t freq = cnt[bit_idx];
+        auto& history = h_history[ci];
+        touched_ci |= (1U << ci);
+
+        // `j_n` = cumulative count for ranks `[0..n]` in this `ci` group.
+        uint32_t j_n = freq;  // starts with just the current rank `n`
+        if (!history.empty()) {
+          // Carry forward the running cumulative from earlier ranks.
+          j_n += history.back().second;
+
+          // One-write diff trick for the cost matrix:
+          // adding `freq` at rank `n` changes `cost[l..n]` for all l ≤ n.
+          // The change is piecewise-constant between spotted ranks, so we
+          // only write at the boundaries (where the term changes).
+          uint32_t l = 0;
+          uint32_t j_before_l = 0;
+          FixedPointCost prev_term = 0;
+          for (const Bin& h : history) {
+            // `j_ln` = counts in `[l..n]` before adding `freq`.
+            uint32_t j_ln = j_n - j_before_l;
+            // Entropy change for interval `[l..n]` from adding `freq`.
+            FixedPointCost term = sign * (d.ftab[j_ln - freq] - d.ftab[j_ln]);
+            cost_row[l] += term - prev_term;
+            // Move to the next interval boundary.
+            l = h.first + 1;
+            j_before_l = h.second;
+            prev_term = term;
+          }
+          // Last segment: `j_before_l = j_n - freq`, so `j_ln = freq`,
+          // `j_ln - freq = 0`, `ftab[0] = 0` → `term = -sign * ftab[freq]`.
+          cost_row[l] -= sign * d.ftab[freq] + prev_term;
+        }
+        // Record this rank for future `n`.
+        history.emplace_back(static_cast<uint16_t>(n), j_n);
+        cnt[bit_idx] = 0;            // reset count to clean the histogram
+        cell_mask &= cell_mask - 1;  // clear processed mask bit
+      }
+      touched[group_idx] = 0;        // reset processed mask
+      group_mask &= group_mask - 1;  // clear processed mask bit
+    }
+    group_touched[hi_idx] = 0;  // reset processed mask
+  }
+  // Clear per-ci histories for all cells touched in this segment.
+  while (touched_ci) {
+    uint32_t ci = CountrZero64(touched_ci);
+    h_history[ci].clear();
+    touched_ci &= touched_ci - 1;
+  }
+}
+template void PartitioningCtx::FlushTerm<+1>(std::vector<uint32_t>&,
+                                             std::vector<uint64_t>&,
+                                             std::vector<uint64_t>&, uint32_t,
+                                             uint32_t);
+template void PartitioningCtx::FlushTerm<-1>(std::vector<uint32_t>&,
+                                             std::vector<uint64_t>&,
+                                             std::vector<uint64_t>&, uint32_t,
+                                             uint32_t);
+
+// Callable passed to `SweepACStream` as the `on_run` callback.
+// Captures hoisted pointers by value to avoid reloading `this` on each call.
+// `Axis` selects which dc argument maps to ax0 (the slow-varying / bucketed
+// axis); Ax1/Ax2 are the fast axes that form `ci`.
+template <uint32_t Axis>
+struct OnRunCallback {
+  static constexpr uint32_t Ax1 = (Axis + 1) % 3;
+  static constexpr uint32_t Ax2 = (Axis + 2) % 3;
+  const uint16_t* JXL_RESTRICT p_ax0;
+  const uint16_t* JXL_RESTRICT p_ax1;
+  const uint16_t* JXL_RESTRICT p_ax2;
+  uint32_t* JXL_RESTRICT p_h;
+  uint32_t* JXL_RESTRICT p_N;
+  uint64_t* p_gh;
+  uint64_t* p_th;
+  uint64_t* p_gN;
+  uint64_t* p_tN;
+  uint32_t ncells;  // stride: number of cells per ax0 bucket
+
+  void operator()(uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx,
+                  uint32_t run, uint32_t /*bin_state*/) const {
+    uint32_t dc_k_bkt = p_ax0[SelectDC<Axis>(dc0_idx, dc1_idx, dc2_idx)];
+    uint32_t ci = p_ax1[SelectDC<Ax1>(dc0_idx, dc1_idx, dc2_idx)] +
+                  p_ax2[SelectDC<Ax2>(dc0_idx, dc1_idx, dc2_idx)];
+    uint32_t idx = dc_k_bkt * ncells + ci;
+    if (p_h[idx] == 0) {
+      size_t gi = idx >> 6;
+      size_t ggi = gi >> 6;
+      uint64_t bit = 1ULL << (idx & 63);
+      uint64_t gbit = 1ULL << (gi & 63);
+      p_gh[ggi] |= gbit;
+      p_th[gi] |= bit;
+      p_gN[ggi] |= gbit;
+      p_tN[gi] |= bit;
+    }
+    p_h[idx] += run;
+    p_N[idx] += run;
+  }
+};
+
+// Builds an `OnRunCallback<Axis>` from a `PartitioningCtx`, hoisting all
+// relevant data pointers.
+template <uint32_t Axis>
+static OnRunCallback<Axis> MakeOnRun(PartitioningCtx& ctx, uint32_t ncells) {
+  return {ctx.axis_maps.ax0_to_k.data(),
+          ctx.axis_maps.ax1_row.data(),
+          ctx.axis_maps.ax2_col.data(),
+          ctx.h_cnt.data(),
+          ctx.N_cnt.data(),
+          ctx.group_touched_h.data(),
+          ctx.touched_h.data(),
+          ctx.group_touched_N.data(),
+          ctx.touched_N.data(),
+          ncells};
+}
+
+template <uint32_t Axis>
+void PartitioningCtx::SweepGeneralAxis(uint32_t M_eff, uint32_t ncells,
+                                       const std::vector<ACEntry>& stream) {
+  SweepACStream(
+      stream,
+      [&]() {
+        FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff, ncells);
+      },
+      [&]() {
+        FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff, ncells);
+      },
+      MakeOnRun<Axis>(*this, ncells));
+  FlushTerm<+1>(h_cnt, group_touched_h, touched_h, M_eff, ncells);
+  FlushTerm<-1>(N_cnt, group_touched_N, touched_N, M_eff, ncells);
+}
+
+// Accumulates the K=2 score-diff curve for the sparse `axis == 0` path.
+void PartitioningCtx::AccumulateSingleSplitAxis0(
+    std::vector<FixedPointCost>& score_diff, uint32_t& bin_mask,
+    uint32_t& ctx_mask) {
+  const JPEGOptData& d = data();
+  // Converts the sparse `(rank, count)` list accumulated in `ch[ci]` for
+  // each touched cell into additive contributions to `score_diff`.
+  //
+  // `ch[ci]` contains `(dc_k_idx, run)` bins in strictly increasing rank
+  // order (the accumulation loop merges same-rank entries on the fly).
+  //
+  // For split rank `s`, the entropy term for this group is:
+  //   `term(s) = sign * (ftab[j_before_l(s)] + ftab[total - j_before_l(s)])`
+  // where `j_before_l(s)` = count of entries with rank < `s`. This is a
+  // step function of `s` that changes only at the ranks present in the
+  // group. We encode it with the one-write diff trick: for each boundary
+  // at rank `r_i`, instead of writing `+term` and `-term` at both ends of
+  // the constant segment, we write only `(term - prev_term)` at `l =
+  // r_{i-1}+1`. The segment close is deferred into the next open, halving
+  // the writes. The last segment needs no explicit close since indices
+  // beyond `M-1` are never read.
+  //
+  // `sign=-1` for `h_hist` (h-term subtracts from entropy),
+  // `sign=+1` for `N_hist` (N-term adds to entropy).
+  auto flush_histogram = [&](CellHistory& ch, uint32_t& mask, int sign) {
+    while (mask) {
+      uint32_t ci = CountrZero64(mask);
+      mask &= mask - 1;
+      auto& hist = ch[ci];
+      uint32_t total = 0;
+      for (const auto& hi : hist) total += hi.second;
+      uint32_t j_before_l = 0;
+      uint32_t l = 1;
+      FixedPointCost prev_term = 0;
+      for (const auto& h : hist) {
+        FixedPointCost term =
+            sign * (d.ftab[j_before_l] + d.ftab[total - j_before_l]);
+        score_diff[l] += term - prev_term;
+        j_before_l += h.second;
+        l = static_cast<uint32_t>(h.first) + 1;
+        prev_term = term;
+      }
+      score_diff[l] += sign * d.ftab[total] - prev_term;
+      hist.clear();
+    }
+  };
+
+  // Single pass over `AC_stream`. Decode and accumulate
+  // `(dc_k_idx, run)` into `h_hist[ci]` and `N_hist[ci]`.
+  SweepACStream(
+      d.AC_stream, [&]() { flush_histogram(h_history, bin_mask, -1); },
+      [&]() { flush_histogram(N_history, ctx_mask, +1); },
+      [&](uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
+          uint32_t) {
+        uint32_t dc_k_bkt = axis_maps.ax0_to_k[dc0_idx];
+        uint32_t ci = axis_maps.ax1_row[dc1_idx] + axis_maps.ax2_col[dc2_idx];
+        bin_mask |= (1U << ci);
+        ctx_mask |= (1U << ci);
+        if (!h_history[ci].empty() && h_history[ci].back().first == dc_k_bkt) {
+          h_history[ci].back().second += run;
+        } else {
+          h_history[ci].emplace_back(static_cast<uint16_t>(dc_k_bkt), run);
+        }
+        if (!N_history[ci].empty() && N_history[ci].back().first == dc_k_bkt) {
+          N_history[ci].back().second += run;
+        } else {
+          N_history[ci].emplace_back(static_cast<uint16_t>(dc_k_bkt), run);
+        }
+      });
+  flush_histogram(h_history, bin_mask, -1);
+  flush_histogram(N_history, ctx_mask, +1);
+}
+
+// K=2 fast path for `axis != 0` using dense `h_cnt` sweep.
+// Accumulates `h_cnt[ci * M_eff + dc_k_bkt]` in one stream pass, then at each
+// bin/ctx flush sweeps `n=0..M_eff-1` per touched cell (O(M_eff)) and applies
+// the one-write diff to `score_diff`. Another approach is to use history like
+// in `AccumulateSingleSplitAxis0` but with sorting — it is slower.
+template <uint32_t Axis>
+void PartitioningCtx::AccumulateSingleSplitOtherAxis(
+    uint32_t ncells, uint32_t M_eff, std::vector<FixedPointCost>& score_diff,
+    uint32_t& bin_mask, uint32_t& ctx_mask) {
+  constexpr uint32_t Ax1 = (Axis + 1) % 3;
+  constexpr uint32_t Ax2 = (Axis + 2) % 3;
+  const JPEGOptData& d = data();
+  uint32_t cnt_size = M_eff * ncells;
+  if (h_cnt.size() < cnt_size) h_cnt.assign(cnt_size, 0);
+  if (N_cnt.size() < cnt_size) N_cnt.assign(cnt_size, 0);
+
+  // Sweep dense `h_cnt` for each touched cell, update `score_diff`.
+  // `sign=-1` for h-term, `sign=+1` for N-term.
+  auto flush_dense = [&](std::vector<uint32_t>& cnt, uint32_t& mask, int sign) {
+    while (mask) {
+      uint32_t ci = CountrZero64(mask);
+      mask &= mask - 1;
+      // Pass 1: compute total count per cell.
+      uint32_t total = 0;
+      for (uint32_t n = 0; n < M_eff; ++n) total += cnt[ci * M_eff + n];
+      // Pass 2: one-write diff over ranks `0..M_eff-1`, reset entries.
+      uint32_t j_before_l = 0;
+      uint32_t l = 1;
+      FixedPointCost prev_term = 0;
+      for (uint32_t n = 0; n < M_eff; ++n) {
+        uint32_t f = cnt[ci * M_eff + n];
+        cnt[ci * M_eff + n] = 0;
+        if (f == 0) continue;
+        FixedPointCost term =
+            sign * (d.ftab[j_before_l] + d.ftab[total - j_before_l]);
+        score_diff[l] += term - prev_term;
+        prev_term = term;
+        j_before_l += f;
+        l = n + 1;
+      }
+      score_diff[l] += sign * d.ftab[total] - prev_term;
+    }
+  };
+
+  const uint16_t* JXL_RESTRICT p_ax0 = axis_maps.ax0_to_k.data();
+  const uint16_t* JXL_RESTRICT p_ax1 = axis_maps.ax1_row.data();
+  const uint16_t* JXL_RESTRICT p_ax2 = axis_maps.ax2_col.data();
+  uint32_t* JXL_RESTRICT p_h = h_cnt.data();
+  uint32_t* JXL_RESTRICT p_N = N_cnt.data();
+  SweepACStream(
+      d.AC_stream, [&]() { flush_dense(h_cnt, bin_mask, -1); },
+      [&]() { flush_dense(N_cnt, ctx_mask, +1); },
+      [p_ax0, p_ax1, p_ax2, p_h, p_N, M_eff, &bin_mask, &ctx_mask](
+          uint32_t dc0_idx, uint32_t dc1_idx, uint32_t dc2_idx, uint32_t run,
+          uint32_t) {
+        uint32_t dc_k_bkt = p_ax0[SelectDC<Axis>(dc0_idx, dc1_idx, dc2_idx)];
+        uint32_t ci = p_ax1[SelectDC<Ax1>(dc0_idx, dc1_idx, dc2_idx)] +
+                      p_ax2[SelectDC<Ax2>(dc0_idx, dc1_idx, dc2_idx)];
+        uint32_t idx = ci * M_eff + dc_k_bkt;
+        p_h[idx] += run;
+        bin_mask |= (1U << ci);
+        p_N[idx] += run;
+        ctx_mask |= (1U << ci);
+      });
+  flush_dense(h_cnt, bin_mask, -1);
+  flush_dense(N_cnt, ctx_mask, +1);
+}
+
+void PartitioningCtx::AccumulateSingleSplitOther(
+    uint32_t axis, uint32_t ncells, uint32_t M_eff,
+    std::vector<FixedPointCost>& score_diff, uint32_t& bin_mask,
+    uint32_t& ctx_mask) {
+  if (axis == 1) {
+    AccumulateSingleSplitOtherAxis<1>(ncells, M_eff, score_diff, bin_mask,
+                                      ctx_mask);
+  } else {
+    AccumulateSingleSplitOtherAxis<2>(ncells, M_eff, score_diff, bin_mask,
+                                      ctx_mask);
+  }
+}
+
+// Evaluates the K=2 case for one axis in a single stream pass. It builds a
+// diff-form score curve over split positions and returns the best cut.
+Thresholds PartitioningCtx::OptimizeAxisSingleSplit(uint32_t axis,
+                                                    uint32_t ncells,
+                                                    uint32_t M_eff,
+                                                    FixedPointCost* best_cost) {
+  const JPEGOptData& d = data();
+  // Reuse `costs` as a 1D diff buffer (indices `1..M_eff-1`).
+  // `score_diff[s]` holds the delta `E(s) - E(s-1)` in bucket space.
+  // After the stream pass, prefix-summing recovers the exact score `E(s)` for
+  // each valid split `s`.
+  auto& score_diff = Knuth_solver.costs;
+  Knuth_solver.ResetCosts(M_eff + 1);
+
+  // `bin_mask` and `ctx_mask` are used to track which cells have been visited
+  // during bins and contexts collection. The number of cells is less or equal
+  // to 32, so we can use `uint32_t` to store the mask.
+  uint32_t bin_mask = 0;
+  uint32_t ctx_mask = 0;
+
+  if (axis == 0) {
+    AccumulateSingleSplitAxis0(score_diff, bin_mask, ctx_mask);
+  } else {
+    AccumulateSingleSplitOther(axis, ncells, M_eff, score_diff, bin_mask,
+                               ctx_mask);
+  }
+
+  // Prefix-sum `score_diff[1..M_eff-1]` recovers the exact score `E(s)` for
+  // each valid split `s`.
+  FixedPointCost cur = 0;
+  FixedPointCost best = std::numeric_limits<FixedPointCost>::max();
+  uint32_t best_s = 1;
+  for (uint32_t s = 1; s < M_eff; ++s) {
+    cur += score_diff[s];
+    if (cur < best) {
+      best = cur;
+      best_s = s;
+    }
+  }
+  if (best_cost != nullptr) *best_cost = best;
+  return {d.DC_vals[axis][axis_maps.k_to_dc0[best_s]]};
+}
+
+// Optimizes one axis while keeping the other two threshold vectors fixed.
+// Uses the K=2 fast path for a single split and the Knuth-DP path otherwise.
+bool PartitioningCtx::OptimizeAxisSingleSweep(
+    uint32_t axis, ThresholdSet* T, Thresholds* scratch,
+    const Thresholds& bucket_thresholds, const std::vector<ACEntry>& stream,
+    FixedPointCost* best_cost) {
+  JXL_DASSERT(T != nullptr);
+  JXL_DASSERT(scratch != nullptr);
+  const JPEGOptData& d = data();
+  Thresholds& T0 = T->T[axis];
+  const Thresholds& T1 = T->T[(axis + 1) % 3];
+  const Thresholds& T2 = T->T[(axis + 2) % 3];
+  uint32_t num_intervals = static_cast<uint32_t>(T0.size() + 1);
+  if (num_intervals == 1) return false;
+  uint32_t M = static_cast<uint32_t>(d.DC_vals[axis].size());
+  if (M <= num_intervals) {  // exclude first DC value from thresholds
+    scratch->assign(d.DC_vals[axis].begin() + 1, d.DC_vals[axis].end());
+  } else {
+    uint32_t n1 = static_cast<uint32_t>(T1.size() + 1);
+    uint32_t n2 = static_cast<uint32_t>(T2.size() + 1);
+    uint32_t ncells = n1 * n2;
+    uint32_t M_eff = axis_maps.PrepareBuckets(axis, bucket_thresholds, T1, T2);
+
+    if (num_intervals == 2) {
+      // Fast path with `O(M_eff)` memory complexity
+      *scratch = OptimizeAxisSingleSplit(axis, ncells, M_eff, best_cost);
+      // Extension of fast path above for `K=3` has proven disastrous
+      // for performance (it has the same `O(M_eff^2)` complexity as the general
+      // path) and is not implemented.
+      // Divide and Conquer approach was also tested with no avail.
+    } else {
+      // General path with `O(M_eff^2)` memory complexity
+      // Total number of cells probed is `n1 * n2 * M_eff`
+      size_t cnt_size = ncells * M_eff;
+      if (h_cnt.size() < cnt_size) h_cnt.assign(cnt_size, 0);
+      if (N_cnt.size() < cnt_size) N_cnt.assign(cnt_size, 0);
+
+      Knuth_solver.ResetCosts(M_eff * M_eff);
+
+      if (axis == 0) {
+        SweepGeneralAxis<0>(M_eff, ncells, stream);
+      } else if (axis == 1) {
+        SweepGeneralAxis<1>(M_eff, ncells, stream);
+      } else {
+        JXL_DASSERT(axis == 2);
+        SweepGeneralAxis<2>(M_eff, ncells, stream);
+      }
+
+      std::vector<uint32_t> solution =
+          Knuth_solver.Solve(num_intervals, M_eff, best_cost);
+      scratch->clear();
+      for (auto t : solution) {
+        scratch->push_back(d.DC_vals[axis][axis_maps.k_to_dc0[t]]);
+      }
+    }
+  }
+
+  bool changed = (*scratch != T0);
+  if (changed) std::swap(T0, *scratch);
+
+  if (best_cost != nullptr && M <= num_intervals) {
+    *best_cost = TotalCost(*T, stream);
+  }
+  return changed;
+}
+
+// Runs coordinate descent over Y/Cb/Cr threshold vectors for one factorization.
+// Re-optimizes each axis until the thresholds stop changing or the iteration
+// cap is hit.
+ThresholdSet PartitioningCtx::OptimizeThresholds(ThresholdSet T,
+                                                 uint32_t M_target,
+                                                 uint32_t max_iters,
+                                                 FixedPointCost* best_cost) {
+  return OptimizeThresholds(std::move(T), data().AC_stream, M_target, max_iters,
+                            best_cost);
+}
+
+ThresholdSet PartitioningCtx::OptimizeThresholds(
+    ThresholdSet T, const std::vector<ACEntry>& stream, uint32_t M_target,
+    uint32_t max_iters, FixedPointCost* best_cost) {
+  const JPEGOptData& d = data();
+  uint32_t a = static_cast<uint32_t>(T.TY().size() + 1);
+  uint32_t b = static_cast<uint32_t>(T.TCb().size() + 1);
+  uint32_t c = static_cast<uint32_t>(T.TCr().size() + 1);
+  Thresholds scratch;
+  scratch.reserve(kMaxCells);
+  // Build per-axis bucketing for the coordinate-descent sweeps.
+  std::array<Thresholds, 3> bucket_thresholds;
+  if (a != 1) bucket_thresholds[0] = InitThresh(d, 0, M_target);
+  if (b != 1) bucket_thresholds[1] = InitThresh(d, 1, M_target);
+  if (c != 1) bucket_thresholds[2] = InitThresh(d, 2, M_target);
+
+  bool TY_changed = (a != 1);
+  bool TCb_changed = (b != 1);
+  bool TCr_changed = (c != 1);
+  bool have_cost = false;
+  for (uint32_t iter = 0; iter < max_iters; ++iter) {
+    if ((a != 1) && (iter == 0 || TCb_changed || TCr_changed)) {
+      TY_changed = OptimizeAxisSingleSweep(
+          0, &T, &scratch, bucket_thresholds[0], stream, best_cost);
+      have_cost = true;
+    } else {
+      TY_changed = false;
+    }
+    if ((b != 1) && (iter == 0 || TY_changed || TCr_changed)) {
+      TCb_changed = OptimizeAxisSingleSweep(
+          1, &T, &scratch, bucket_thresholds[1], stream, best_cost);
+      have_cost = true;
+    } else {
+      TCb_changed = false;
+    }
+    if ((c != 1) && (iter == 0 || TY_changed || TCb_changed)) {
+      TCr_changed = OptimizeAxisSingleSweep(
+          2, &T, &scratch, bucket_thresholds[2], stream, best_cost);
+      have_cost = true;
+    } else {
+      TCr_changed = false;
+    }
+    if (!TY_changed && !TCb_changed && !TCr_changed) break;
+  }
+  if (best_cost != nullptr && !have_cost) *best_cost = TotalCost(T, stream);
+  return T;
+}
+
+// Computes the exact entropy objective for a fixed threshold set.
+// It streams AC events once, accumulates per-cell histograms, and flushes them
+// sparsely.
+FixedPointCost PartitioningCtx::TotalCost(const ThresholdSet& T) {
+  return TotalCost(T, data().AC_stream);
+}
+
+FixedPointCost PartitioningCtx::TotalCost(const ThresholdSet& T,
+                                          const std::vector<ACEntry>& stream) {
+  const JPEGOptData& d = data();
+  uint32_t na = static_cast<uint32_t>(T.TY().size() + 1);
+  uint32_t num_cells = na * static_cast<uint32_t>(T.TCb().size() + 1) *
+                       static_cast<uint32_t>(T.TCr().size() + 1);
+  axis_maps.Update(T);
+  if (h_cnt.size() < num_cells) h_cnt.assign(num_cells, 0);
+  if (N_cnt.size() < num_cells) N_cnt.assign(num_cells, 0);
+  FixedPointCost cost = 0;
+
+  auto flush_h = [&]() {
+    for (size_t gi = 0; gi < kGroupCount; ++gi) {
+      uint64_t gm = group_touched_h[gi];
+      while (gm) {
+        size_t gi2 = (gi << 6) | CountrZero64(gm);
+        uint64_t cm = touched_h[gi2];
+        while (cm) {
+          size_t idx = (gi2 << 6) | CountrZero64(cm);
+          cost -= d.ftab[h_cnt[idx]];
+          h_cnt[idx] = 0;
+          cm &= cm - 1;
+        }
+        touched_h[gi2] = 0;
+        gm &= gm - 1;
+      }
+      group_touched_h[gi] = 0;
+    }
+  };
+  auto flush_N = [&]() {
+    for (size_t gi = 0; gi < kGroupCount; ++gi) {
+      uint64_t gm = group_touched_N[gi];
+      while (gm) {
+        size_t gi2 = (gi << 6) | CountrZero64(gm);
+        uint64_t cm = touched_N[gi2];
+        while (cm) {
+          size_t idx = (gi2 << 6) | CountrZero64(cm);
+          cost += d.ftab[N_cnt[idx]];
+          N_cnt[idx] = 0;
+          cm &= cm - 1;
+        }
+        touched_N[gi2] = 0;
+        gm &= gm - 1;
+      }
+      group_touched_N[gi] = 0;
+    }
+  };
+
+  uint32_t ncells_per_ax0 = static_cast<uint32_t>(T.TCb().size() + 1) *
+                            static_cast<uint32_t>(T.TCr().size() + 1);
+  SweepACStream(stream, flush_h, flush_N, MakeOnRun<0>(*this, ncells_per_ax0));
+  flush_h();
+  flush_N();
+  return cost;
+}
+
+}  // namespace jxl

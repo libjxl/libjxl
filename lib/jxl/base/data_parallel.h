@@ -141,8 +141,8 @@ Status RunOnPool(ThreadPool* pool, const uint32_t begin, const uint32_t end,
 
 template <class DataFunc>
 Status RunOnPool(ThreadPool* pool, const uint32_t begin, const uint32_t end,
-                 const ThreadPoolNoInit& no_init_func,
-                 const DataFunc& data_func, const char* caller) {
+                 const ThreadPoolNoInit no_init_func, const DataFunc& data_func,
+                 const char* caller) {
   const auto init_func = [](size_t num_threads) -> Status { return true; };
   return RunOnPool(pool, begin, end, init_func, data_func, caller);
 }
