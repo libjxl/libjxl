@@ -101,7 +101,7 @@ jobs:
       with:
         name: jxl-linux-x86_64-static
         path: jxl-linux-x86_64-static.tar.gz
-        compression-level: 0
+        archive: false
 
 
 
@@ -223,7 +223,7 @@ jobs:
       with:
         name: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}
         path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz
-        compression-level: 0
+        archive: false
 
 
   windows_build:
@@ -371,7 +371,7 @@ jobs:
         name: jxl-${{matrix.triplet}}
         path: |
           jxl-${{matrix.triplet}}.zip
-        compression-level: 0
+        archive: false
 
     - name: Upload 7Z release 
       if: matrix.upload != 'OFF'
@@ -380,7 +380,7 @@ jobs:
         name: jxl-${{matrix.triplet}}-7z
         path: |
           jxl-${{matrix.triplet}}.7z
-        compression-level: 0
+        archive: false
 
 
   publish_release_assets:
