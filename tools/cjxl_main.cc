@@ -782,7 +782,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
 
   // Set progressive options before processing flags
   if (args->progressive) {
-    args->qprogressive_ac = true;
+    args->progressive_ac = true;
     if (args->progressive_dc == -1) {
       args->progressive_dc = 1;
     }
