@@ -32,6 +32,7 @@ endif()
 
 list(APPEND JPEGXL_INTERNAL_TESTS
   # TODO(deymo): Move this to tools/
+  ../tools/benchmark/benchmark_file_io_test.cc
   ../tools/djxl_fuzzer_test.cc
   ../tools/gauss_blur_test.cc
 )
@@ -64,6 +65,9 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
   if(TESTFILE STREQUAL ../tools/djxl_fuzzer_test.cc)
     add_executable(${TESTNAME} ${TESTFILE} ../tools/djxl_fuzzer.cc)
     target_link_libraries(${TESTNAME} jxl_tool)
+  elseif(TESTFILE STREQUAL ../tools/benchmark/benchmark_file_io_test.cc)
+    add_executable(${TESTNAME} ${TESTFILE}
+                   ../tools/benchmark/benchmark_file_io.cc)
   else()
     add_executable(${TESTNAME} ${TESTFILE})
   endif()
