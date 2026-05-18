@@ -408,13 +408,26 @@ StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(const char* path) {
   if (header.has_alpha || !header.ec_types.empty() || header.floating_point) {
     return JXL_FAILURE("Only PGM and PPM inputs are supported");
   }
+  // Bound dimensions before any size arithmetic; the parser accepts arbitrary
+  // values from the PNM header. Without this, large xsize/ysize wrap the
+  // pixel-data size check below and produce out-of-bounds reads later in
+  // GetColorChannelDataAt.
+  JXL_RETURN_IF_ERROR(
+      VerifyDimensions(/*constraints=*/nullptr, header.xsize, header.ysize));
 
   const size_t bytes_per_channel =
       DivCeil(dec.header_.bits_per_sample, jxl::kBitsPerByte);
   const size_t num_channels = dec.header_.is_gray ? 1 : 3;
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
-  size_t row_size = dec.header_.xsize * bytes_per_pixel;
-  if (size < header.ysize * row_size + dec.data_start_) {
+  size_t row_size;
+  size_t pixel_bytes;
+  size_t required_size;
+  if (!SafeMul(header.xsize, bytes_per_pixel, row_size) ||
+      !SafeMul(header.ysize, row_size, pixel_bytes) ||
+      !SafeAdd(pixel_bytes, dec.data_start_, required_size)) {
+    return JXL_FAILURE("PNM image dimensions are too large");
+  }
+  if (size < required_size) {
     return JXL_FAILURE("PNM file too small");
   }
   return dec;
