@@ -376,6 +376,82 @@ Status LowMemoryRenderPipeline::Init() {
       }
     }
   }
+
+  std::vector<std::vector<size_t>> num_buffers(shifts.size());
+  for (size_t c = 0; c < shifts.size(); c++) {
+    num_buffers[c].resize(stages_.size());
+    size_t next_y_border = 0;
+    for (size_t i = stages_.size(); i-- > 0;) {
+      if (stages_[i]->GetChannelMode(c) == RenderPipelineChannelMode::kInOut) {
+        size_t stage_buffer_ysize =
+            2 * next_y_border + (1 << stages_[i]->settings_.shift_y);
+        next_y_border = stages_[i]->settings_.border_y;
+        num_buffers[c][i] = stage_buffer_ysize;
+      }
+    }
+  }
+
+  size_t num_retries = 0;
+  bool ypadding_is_valid = false;
+  while (num_retries < shifts.size() * stages_.size()) {
+    ypadding_is_valid = CheckYPaddingForOutput(num_buffers);
+    if (ypadding_is_valid) break;
+    num_retries++;
+  }
+  JXL_ENSURE(ypadding_is_valid);
+  return true;
+}
+
+// Checks each stage have valid inputs (at least for the first time).
+bool LowMemoryRenderPipeline::CheckYPaddingForOutput(
+    const std::vector<std::vector<size_t>>& num_buffers) {
+  intptr_t num_extra_rows = *std::max_element(
+      virtual_ypadding_for_output_.begin(), virtual_ypadding_for_output_.end());
+  size_t num_stages = stages_.size();
+  size_t num_c = channel_shifts_[0].size();
+  for (size_t i = 0; i < num_stages; i++) {
+    const auto& stage = stages_[i];
+    const size_t border_y = stage->settings_.border_y;
+    const size_t channel_shift = channel_shifts_[i][anyc_[i]].second;
+    size_t span = 1 << channel_shift;
+    const intptr_t vyp = virtual_ypadding_for_output_[i];
+    intptr_t stage_vy = -vyp;
+    stage_vy = ((stage_vy + span - 1) / span) * span;
+    intptr_t y = stage_vy >> channel_shift;
+    intptr_t vy = stage_vy + num_extra_rows - vyp;
+    // Inclusive range for input rows.
+    intptr_t min_y = y - border_y;
+    intptr_t max_y = y + border_y;
+    for (size_t c = 0; c < num_c; ++c) {
+      int input_stage_idx = stage_input_for_channel_[i][c];
+      if (input_stage_idx == -1) {
+        continue;
+      }
+      if (stage->GetChannelMode(c) == RenderPipelineChannelMode::kIgnored) {
+        continue;
+      }
+      intptr_t input_stage_vy =
+          vy - num_extra_rows + virtual_ypadding_for_output_[input_stage_idx];
+      intptr_t input_channel_shift =
+          channel_shifts_[input_stage_idx][anyc_[input_stage_idx]].second;
+      intptr_t input_y = input_stage_vy >> input_channel_shift;
+      intptr_t input_shift = stages_[input_stage_idx]->settings_.shift_y;
+      intptr_t input_bundle = 1 << input_shift;
+      intptr_t input_max_y = (input_y + 1) * input_bundle - 1;
+      intptr_t input_span = num_buffers[c][input_stage_idx];
+      intptr_t input_min_y = input_max_y - (input_span - 1);
+      if (max_y > input_max_y) {
+        // Input row not yet produced
+        virtual_ypadding_for_output_[input_stage_idx] += 1;
+        return false;
+      }
+      if (min_y < input_min_y) {
+        // Input row is already recycled
+        virtual_ypadding_for_output_[i] += 1;
+        return false;
+      }
+    }
+  }
   return true;
 }
 

@@ -40,6 +40,8 @@ class LowMemoryRenderPipeline final : public RenderPipeline {
   void ClearDone(size_t i) override { group_border_assigner_.ClearDone(i); }
 
   Status Init() override;
+  bool CheckYPaddingForOutput(
+      const std::vector<std::vector<size_t>>& num_buffers);
 
   Status EnsureBordersStorage();
   size_t GroupInputXSize(size_t c) const;
