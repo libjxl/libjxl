@@ -81,6 +81,9 @@ Status PlaneBase::Allocate(JxlMemoryManager* memory_manager,
     return true;
   }
 
+  if (bytes_per_row_ == 0) {
+    return JXL_FAILURE("Image dimensions are too large");
+  }
   size_t total_bytes;
   if (!SafeMul<size_t>(ysize_, bytes_per_row_, total_bytes)) {
     return JXL_FAILURE("Image dimensions are too large");
