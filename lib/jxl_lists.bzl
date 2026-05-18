@@ -295,6 +295,7 @@ libjxl_dec_sources = [
 libjxl_enc_sources = [
     "jxl/butteraugli/butteraugli.cc",
     "jxl/butteraugli/butteraugli.h",
+    "jxl/enc_Knuth_partition.h",
     "jxl/enc_ac_strategy.cc",
     "jxl/enc_ac_strategy.h",
     "jxl/enc_adaptive_quantization.cc",
