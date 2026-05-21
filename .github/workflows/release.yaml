@@ -93,14 +93,14 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build
-        tar -Jcvf ${ROOT}/jxl-linux-x86_64-static.tar.xz \
+        tar -cvf ${ROOT}/jxl-linux-x86_64-static.tar.lz -I 'lzip -9' \
           LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-linux-x86_64-static
-        path: jxl-linux-x86_64-static.tar.xz
+        path: jxl-linux-x86_64-static.tar.lz
         archive: false
 
 
