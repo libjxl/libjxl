@@ -93,7 +93,7 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build
-        tar -Jcvf ${ROOT}/jxl-linux-x86_64-static.tar.gz \
+        tar -Jcvf ${ROOT}/jxl-linux-x86_64-static.tar.xz \
           LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
@@ -216,7 +216,7 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build/debs/
-        tar -Jcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz *jxl*.*
+        tar -Jcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.xz *jxl*.*
 
     - name: Upload release tarball
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
