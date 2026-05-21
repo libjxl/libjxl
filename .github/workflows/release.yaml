@@ -93,14 +93,14 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build
-        tar -zcvf ${ROOT}/jxl-linux-x86_64-static.tar.gz \
+        tar -Jcvf ${ROOT}/jxl-linux-x86_64-static.tar.gz \
           LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-linux-x86_64-static
-        path: jxl-linux-x86_64-static.tar.gz
+        path: jxl-linux-x86_64-static.tar.xz
         archive: false
 
 
@@ -216,13 +216,13 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build/debs/
-        tar -zcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz *jxl*.*
+        tar -Jcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz *jxl*.*
 
     - name: Upload release tarball
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}
-        path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz
+        path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.xz
         archive: false
 
 
@@ -362,7 +362,7 @@ jobs:
       if: matrix.upload != 'OFF'
       run: |
         7z -mx=9 -mfb=273 -mmt=1 -ms=on a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
-        7z -mx=9 a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
+        7z -mm=Deflate64 -mx=9 -mfb=257 -mpass=12 a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
 
     - name: Upload ZIP release 
       if: matrix.upload != 'OFF'
