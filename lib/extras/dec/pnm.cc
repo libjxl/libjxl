@@ -387,7 +387,8 @@ struct PNMChunkedInputFrame {
   const ChunkedPNMDecoder* dec;
 };
 
-StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(const char* path) {
+StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(
+    const char* path, const SizeConstraints* constraints) {
   ChunkedPNMDecoder dec;
   JXL_ASSIGN_OR_RETURN(dec.pnm_, MemoryMappedFile::Init(path));
   size_t size = dec.pnm_.size();
@@ -408,13 +409,23 @@ StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(const char* path) {
   if (header.has_alpha || !header.ec_types.empty() || header.floating_point) {
     return JXL_FAILURE("Only PGM and PPM inputs are supported");
   }
+  JXL_RETURN_IF_ERROR(
+      VerifyDimensions(constraints, header.xsize, header.ysize));
 
   const size_t bytes_per_channel =
       DivCeil(dec.header_.bits_per_sample, jxl::kBitsPerByte);
   const size_t num_channels = dec.header_.is_gray ? 1 : 3;
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
-  size_t row_size = dec.header_.xsize * bytes_per_pixel;
-  if (size < header.ysize * row_size + dec.data_start_) {
+  size_t row_size;
+  if (!SafeMul(dec.header_.xsize, bytes_per_pixel, row_size)) {
+    return JXL_FAILURE("PNM image dimensions are too large");
+  }
+  size_t required_size;
+  if (!SafeMul(header.ysize, row_size, required_size) ||
+      !SafeAdd(required_size, dec.data_start_, required_size)) {
+    return JXL_FAILURE("PNM image dimensions are too large");
+  }
+  if (size < required_size) {
     return JXL_FAILURE("PNM file too small");
   }
   return dec;
