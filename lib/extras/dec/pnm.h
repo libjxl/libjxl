@@ -48,7 +48,8 @@ struct HeaderPNM {
 
 class ChunkedPNMDecoder {
  public:
-  static StatusOr<ChunkedPNMDecoder> Init(const char* file_path);
+  static StatusOr<ChunkedPNMDecoder> Init(
+      const char* file_path, const SizeConstraints* constraints = nullptr);
   // Initializes `ppf` with a pointer to this `ChunkedPNMDecoder`.
   jxl::Status InitializePPF(const ColorHints& color_hints,
                             PackedPixelFile* ppf);
