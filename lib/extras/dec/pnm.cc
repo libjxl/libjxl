@@ -537,9 +537,23 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
   // EC format is same as color, but 1-channel.
   JxlPixelFormat ec_format = format;
   ec_format.num_channels = 1;
-  size_t required_pnm_size =
-      header.ysize * header.xsize *
-      (num_interleaved_channels + header.ec_types.size()) * twidth;
+  size_t total_channels;
+  if (!SafeAdd(static_cast<size_t>(num_interleaved_channels),
+               header.ec_types.size(), total_channels)) {
+    return JXL_FAILURE("PNM image dimensions are too large");
+  }
+  size_t bytes_per_pixel;
+  if (!SafeMul(total_channels, twidth, bytes_per_pixel)) {
+    return JXL_FAILURE("PNM image dimensions are too large");
+  }
+  size_t row_size;
+  if (!SafeMul(header.xsize, bytes_per_pixel, row_size)) {
+    return JXL_FAILURE("PNM image dimensions are too large");
+  }
+  size_t required_pnm_size;
+  if (!SafeMul(header.ysize, row_size, required_pnm_size)) {
+    return JXL_FAILURE("PNM image dimensions are too large");
+  }
   size_t pnm_remaining_size = bytes.data() + bytes.size() - pos;
   if (pnm_remaining_size < required_pnm_size) {
     return JXL_FAILURE("PNM file too small");
