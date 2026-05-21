@@ -21,6 +21,7 @@
 
 Checks: >-
   bugprone-*,
+  cppcoreguidelines-pro-type-member-init,
   clang-*,
   -clang-diagnostic-unused-command-line-argument,
   google-*,
