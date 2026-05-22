@@ -64,6 +64,7 @@ jobs:
           libopenexr-dev \
           libpng-dev \
           libwebp-dev \
+          lzip \
           ninja-build \
           pkg-config \
           xdg-utils \
