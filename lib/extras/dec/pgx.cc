@@ -15,6 +15,7 @@
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
@@ -136,9 +137,13 @@ class Parser {
       return JXL_FAILURE("PGX: signed not yet supported");
     }
 
-    size_t numpixels = header->xsize * header->ysize;
     size_t bytes_per_pixel = header->bits_per_sample <= 8 ? 1 : 2;
-    if (pos_ + numpixels * bytes_per_pixel > end_) {
+    size_t required;
+    if (!SafeMul(header->xsize, header->ysize, required) ||
+        !SafeMul(required, bytes_per_pixel, required)) {
+      return JXL_FAILURE("PGX: image dimensions are too large");
+    }
+    if (required > static_cast<size_t>(end_ - pos_)) {
       return JXL_FAILURE("PGX: data too small");
     }
 
