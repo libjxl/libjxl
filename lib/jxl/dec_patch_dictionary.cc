@@ -336,20 +336,27 @@ Status PatchDictionary::AddOneRow(
     if (bx + patch_xsize < x0) continue;
     size_t patch_x0 = std::max(bx, x0);
     size_t patch_x1 = std::min(bx + patch_xsize, x0 + xsize);
+    // Both subtractions are non-negative by construction:
+    // patch_x0 = max(bx, x0) guarantees patch_x0 >= bx and patch_x0 >= x0.
+    // ref_pos.x0 + patch_in_ref <= ref_pos.x0 + ref_pos.xsize <= ib.xsize(),
+    // checked at PatchDictionary::Decode time, so the resulting fg pointer
+    // is always within the reference frame row.
+    const size_t patch_in_ref = patch_x0 - bx;
+    const size_t out_in_seg = patch_x0 - x0;
     for (size_t c = 0; c < 3; c++) {
       fg_ptrs[c] = reference_frames_->at(ref).frame->color()->ConstPlaneRow(
                        c, ref_pos.y0 + iy) +
-                   ref_pos.x0 + x0 - bx;
+                   ref_pos.x0 + patch_in_ref;
     }
     for (size_t i = 0; i < num_ec; i++) {
       fg_ptrs[3 + i] =
           reference_frames_->at(ref).frame->extra_channels()[i].ConstRow(
               ref_pos.y0 + iy) +
-          ref_pos.x0 + x0 - bx;
+          ref_pos.x0 + patch_in_ref;
     }
     JXL_RETURN_IF_ERROR(PerformBlending(
-        memory_manager_, inout, fg_ptrs.data(), inout, patch_x0 - x0,
-        patch_x1 - patch_x0, blendings_[blending_idx],
+        memory_manager_, inout, fg_ptrs.data(), inout, out_in_seg,
+        /*fg_x0=*/0, patch_x1 - patch_x0, blendings_[blending_idx],
         blendings_.data() + blending_idx + 1, extra_channel_info));
   }
   return true;
