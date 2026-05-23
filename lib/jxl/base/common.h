@@ -18,6 +18,10 @@
 #include <type_traits>
 #include <vector>
 
+#if JXL_COMPILER_MSVC
+#include <intrin.h>
+#endif
+
 #include "lib/jxl/base/compiler_specific.h"
 
 namespace jxl {
@@ -48,6 +52,21 @@ static inline bool SafeMul(const U a, const U b, U& product) {
   if (b > (std::numeric_limits<U>::max() / a)) return false;
   product = a * b;
   return true;
+}
+
+static inline bool SubOverflow(const int32_t a, const int32_t b, int32_t& c) {
+  // Clang 3.8+ / GCC 5.1+
+#if JXL_COMPILER_GCC || JXL_COMPILER_CLANG
+  return __builtin_sub_overflow(a, b, &c);
+#elif JXL_COMPILER_MSVC >= 1937
+  return _sub_overflow_i32(/*carry*/ 0, a, b, &c);
+#else
+  uint32_t ua = static_cast<uint32_t>(a);
+  uint32_t ub = static_cast<uint32_t>(b);
+  uint32_t uc = ua - ub;
+  c = static_cast<int32_t>(uc);
+  return !!(((ua ^ ub) & (ua ^ uc)) >> 31);
+#endif
 }
 
 template <typename T1, typename T2>
