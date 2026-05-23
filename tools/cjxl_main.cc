@@ -1063,7 +1063,11 @@ int main(int argc, char** argv) {
       exit(EXIT_FAILURE);
     }
     input_bytes = image_data.size();
-    if (!jpegxl::tools::IsJPG(image_data)) args.lossless_jpeg = JXL_FALSE;
+    if (jpegxl::tools::IsJPG(image_data)) {
+      codec = jxl::extras::Codec::kJPG;
+    } else {
+      args.lossless_jpeg = JXL_FALSE;
+    }
     ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
     if (!FROM_JXL_BOOL(args.lossless_jpeg)) {
       const double t0 = jxl::Now();
