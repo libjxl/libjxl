@@ -98,17 +98,17 @@ Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data) {
       marker[16] = num_icc;
     }
     if (jpeg_data->app_marker_type[i] == AppMarkerType::kExif) {
-      marker[0] = 0xE1;
       if (marker.size() < 3 + sizeof kExifTag) {
         return JXL_FAILURE("Incorrect Exif marker size");
       }
+      marker[0] = 0xE1;
       memcpy(&marker[3], kExifTag, sizeof kExifTag);
     }
     if (jpeg_data->app_marker_type[i] == AppMarkerType::kXMP) {
-      marker[0] = 0xE1;
       if (marker.size() < 3 + sizeof kXMPTag) {
         return JXL_FAILURE("Incorrect XMP marker size");
       }
+      marker[0] = 0xE1;
       memcpy(&marker[3], kXMPTag, sizeof kXMPTag);
     }
   }
