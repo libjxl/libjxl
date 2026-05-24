@@ -387,7 +387,8 @@ struct PNMChunkedInputFrame {
   const ChunkedPNMDecoder* dec;
 };
 
-StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(const char* path) {
+StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(
+    const char* path, const SizeConstraints* constraints) {
   ChunkedPNMDecoder dec;
   JXL_ASSIGN_OR_RETURN(dec.pnm_, MemoryMappedFile::Init(path));
   size_t size = dec.pnm_.size();
@@ -408,13 +409,23 @@ StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(const char* path) {
   if (header.has_alpha || !header.ec_types.empty() || header.floating_point) {
     return JXL_FAILURE("Only PGM and PPM inputs are supported");
   }
+  JXL_RETURN_IF_ERROR(
+      VerifyDimensions(constraints, header.xsize, header.ysize));
 
   const size_t bytes_per_channel =
       DivCeil(dec.header_.bits_per_sample, jxl::kBitsPerByte);
   const size_t num_channels = dec.header_.is_gray ? 1 : 3;
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
-  size_t row_size = dec.header_.xsize * bytes_per_pixel;
-  if (size < header.ysize * row_size + dec.data_start_) {
+  size_t row_size;
+  if (!SafeMul(dec.header_.xsize, bytes_per_pixel, row_size)) {
+    return JXL_FAILURE("PNM image dimensions are too large");
+  }
+  size_t required_size;
+  if (!SafeMul(header.ysize, row_size, required_size) ||
+      !SafeAdd(required_size, dec.data_start_, required_size)) {
+    return JXL_FAILURE("PNM image dimensions are too large");
+  }
+  if (size < required_size) {
     return JXL_FAILURE("PNM file too small");
   }
   return dec;
@@ -526,9 +537,16 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
   // EC format is same as color, but 1-channel.
   JxlPixelFormat ec_format = format;
   ec_format.num_channels = 1;
-  size_t required_pnm_size =
-      header.ysize * header.xsize *
-      (num_interleaved_channels + header.ec_types.size()) * twidth;
+  // Compute required pixel-data size with overflow checks. Without these,
+  // a crafted header (large xsize/ysize) wraps the multiplication and lets
+  // the size check below pass while the actual memcpy below reads OOB.
+  size_t total_channels = num_interleaved_channels + header.ec_types.size();
+  size_t required_pnm_size;
+  if (!SafeMul(header.xsize, total_channels, required_pnm_size) ||
+      !SafeMul(required_pnm_size, twidth, required_pnm_size) ||
+      !SafeMul(required_pnm_size, header.ysize, required_pnm_size)) {
+    return JXL_FAILURE("PNM image dimensions are too large");
+  }
   size_t pnm_remaining_size = bytes.data() + bytes.size() - pos;
   if (pnm_remaining_size < required_pnm_size) {
     return JXL_FAILURE("PNM file too small");
