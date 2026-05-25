@@ -53,8 +53,9 @@ Status DetectIccProfile(JPEGData& jpeg_data) {
     size_t tag_length = (app[pos] << 8) + app[pos + 1];
     pos += 2;
     JXL_ENSURE(app.size() == tag_length + 1);
-    // Empty payload is 2 bytes for tag length itself + signature
-    if (tag_length < 2 + sizeof kIccProfileTag) continue;
+    // Minimum is 2 bytes for tag length itself + signature + 2 bytes for
+    // chunk_id and num_chunks (read below).
+    if (tag_length < 2 + sizeof kIccProfileTag + 2) continue;
 
     if (memcmp(&app[pos], kIccProfileTag, sizeof kIccProfileTag) != 0) continue;
     pos += sizeof kIccProfileTag;

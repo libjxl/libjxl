@@ -41,7 +41,7 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+      uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
       with:
         egress-policy: audit
 
@@ -101,7 +101,7 @@ jobs:
       with:
         name: jxl-linux-x86_64-static
         path: jxl-linux-x86_64-static.tar.gz
-        compression-level: 0
+        archive: false
 
 
 
@@ -132,7 +132,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+      uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
       with:
         egress-policy: audit
 
@@ -223,7 +223,7 @@ jobs:
       with:
         name: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}
         path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz
-        compression-level: 0
+        archive: false
 
 
   windows_build:
@@ -259,7 +259,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+      uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
       with:
         egress-policy: audit
 
@@ -269,7 +269,7 @@ jobs:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+    - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -371,7 +371,7 @@ jobs:
         name: jxl-${{matrix.triplet}}
         path: |
           jxl-${{matrix.triplet}}.zip
-        compression-level: 0
+        archive: false
 
     - name: Upload 7Z release 
       if: matrix.upload != 'OFF'
@@ -380,7 +380,7 @@ jobs:
         name: jxl-${{matrix.triplet}}-7z
         path: |
           jxl-${{matrix.triplet}}.7z
-        compression-level: 0
+        archive: false
 
 
   publish_release_assets:
