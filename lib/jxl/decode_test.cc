@@ -63,7 +63,9 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
+#if JPEGXL_ENABLE_BOXES
 #include "lib/jxl/box_content_decoder.h"
+#endif  // JPEGXL_ENABLE_BOXES
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/padded_bytes.h"
@@ -2218,6 +2220,7 @@ TEST(DecodeTest, ExtraBytesAfterCompressedStream) {
   }
 }
 
+#if JPEGXL_ENABLE_BOXES
 TEST(DecodeTest, BrobBoxInputIsRestrictedToBoxSize) {
   const uint8_t box_contents[] = {
       'o', 'r', 'i', 'g',
@@ -2257,6 +2260,7 @@ TEST(DecodeTest, BrobBoxTruncatedStreamWithExactBoxSizeReturnsError) {
       input.data(), input.size(), 0, &next_out, &avail_out);
   EXPECT_EQ(JXL_DEC_ERROR, status);
 }
+#endif  // JPEGXL_ENABLE_BOXES
 
 TEST(DecodeTest, ExtraBytesAfterCompressedStreamRequireBoxes) {
   size_t xsize = 123;
