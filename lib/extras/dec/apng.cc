@@ -886,6 +886,10 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     size_t ysize = static_cast<size_t>(vp.ysize());
     JXL_ASSIGN_OR_RETURN(PackedImage image,
                          PackedImage::Create(xsize, ysize, format));
+    if (ctx.frameRaw.rows.size() < ysize) {
+      return JXL_FAILURE("APNG frame has fewer decoded rows (%zu) than expected height (%zu)",
+                         ctx.frameRaw.rows.size(), ysize);
+    }
     for (size_t y = 0; y < ysize; ++y) {
       // TODO(eustas): ensure multiplication is safe
       memcpy(static_cast<uint8_t*>(image.pixels()) + image.stride * y,
