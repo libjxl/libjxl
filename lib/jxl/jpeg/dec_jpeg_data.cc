@@ -72,6 +72,9 @@ Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data) {
   size_t num_icc = 0;
   for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
     auto& marker = jpeg_data->app_data[i];
+    if (marker.size() < 3) {
+      return JXL_FAILURE("APP marker too short");
+    }
     if (jpeg_data->app_marker_type[i] != AppMarkerType::kUnknown) {
       // Set the size of the marker.
       size_t size_minus_1 = marker.size() - 1;
