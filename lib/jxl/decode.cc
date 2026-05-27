@@ -2461,10 +2461,10 @@ static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
       !jxl::SafeMul<size_t>(row_bits, bits, row_bits)) {
     return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
-  size_t row_size = jxl::DivCeil(row_bits, jxl::kBitsPerByte);
+  size_t row_size = jxl::SafeDivCeil(row_bits, jxl::kBitsPerByte);
   const size_t last_row_size = row_size;
   if (format->align > 1) {
-    size_t aligned_rows = jxl::DivCeil(row_size, format->align);
+    size_t aligned_rows = jxl::SafeDivCeil(row_size, format->align);
     if (!jxl::SafeMul<size_t>(aligned_rows, format->align, row_size)) {
       return JXL_API_ERROR(
           "Image too large for output buffer size calculation");

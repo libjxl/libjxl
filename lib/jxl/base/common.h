@@ -74,6 +74,17 @@ constexpr inline T1 DivCeil(T1 a, T2 b) {
   return (a + b - 1) / b;
 }
 
+// Overflow-safe ceiling division for unsigned dividends.
+// Equivalent to DivCeil but avoids the (a + b - 1) intermediate overflow
+// that can occur when a is close to the type maximum. Use this instead of
+// DivCeil whenever 'a' may be attacker-controlled or decoder-bounded.
+template <typename T1, typename T2,
+          class = typename std::enable_if<std::is_unsigned<T1>::value>::type>
+constexpr inline T1 SafeDivCeil(T1 a, T2 b) {
+  const T1 divisor = static_cast<T1>(b);
+  return a / divisor + (a % divisor != 0 ? T1{1} : T1{0});
+}
+
 // Works for any `align`; if a power of two, compiler emits ADD+AND.
 constexpr inline size_t RoundUpTo(size_t what, size_t align) {
   return DivCeil(what, align) * align;
