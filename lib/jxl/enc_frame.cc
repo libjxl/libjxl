@@ -1670,7 +1670,9 @@ Status ComputeEncodingData(
     if (cparams.speed_tier < SpeedTier::kTortoise ||
         !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
         // Allow Local trees for progressive lossless.
-        (!(cparams.responsive && cparams.ModularPartIsLossless()) &&
+        // TODO(Jonnyawsom3): Figure out how to allow local trees for
+        // extra channels on VarDCT images without failing tests.
+        (!(cparams.responsive && cparams.IsLossless()) &&
         cparams.buffering < 3) || !cparams.custom_fixed_tree.empty()) {
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
