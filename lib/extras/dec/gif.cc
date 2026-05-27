@@ -375,7 +375,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
                          y * sub_frame_image.xsize;
         for (size_t x = 0; x < image_rect.xsize(); ++x, ++byte_index) {
           const GifByteType byte = image.RasterBits[byte_index];
-          if (byte > color_map->ColorCount) {
+          if (byte >= color_map->ColorCount) {
             return JXL_FAILURE("GIF color is out of bounds");
           }
           if (byte == gcb.TransparentColor) {

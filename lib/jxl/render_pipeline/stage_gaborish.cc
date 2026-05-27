@@ -30,8 +30,8 @@ using hwy::HWY_NAMESPACE::MulAdd;
 class GaborishStage : public RenderPipelineStage {
  public:
   explicit GaborishStage(const LoopFilter& lf)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/1)) {
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(1)) {
     weights_[0] = 1;
     weights_[1] = lf.gab_x_weight1;
     weights_[2] = lf.gab_x_weight2;
@@ -53,9 +53,14 @@ class GaborishStage : public RenderPipelineStage {
   }
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     const HWY_FULL(float) d;
+
+    ptrdiff_t x_start =
+        -static_cast<ptrdiff_t>(RoundUpTo(xextra_left, Lanes(d)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra_right);
+
     for (size_t c = 0; c < 3; c++) {
       float* JXL_RESTRICT row_t = GetInputRow(input_rows, c, -1);
       float* JXL_RESTRICT row_m = GetInputRow(input_rows, c, 0);
@@ -73,8 +78,7 @@ class GaborishStage : public RenderPipelineStage {
 #endif
       // Since GetInputRow(input_rows, c, {-1, 0, 1}) is aligned, rounding
       // xextra up to Lanes(d) doesn't access anything problematic.
-      for (ptrdiff_t x = -RoundUpTo(xextra, Lanes(d));
-           x < static_cast<ptrdiff_t>(xsize + xextra); x += Lanes(d)) {
+      for (ptrdiff_t x = x_start; x < x_end; x += Lanes(d)) {
         const auto t = LoadMaybeU(d, row_t + x);
         const auto tl = LoadU(d, row_t + x - 1);
         const auto tr = LoadU(d, row_t + x + 1);

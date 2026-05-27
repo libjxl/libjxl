@@ -207,6 +207,9 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
           c, CeilLog2Nonzero(frame_header.upsampling))));
     }
   }
+  // Starting from this line all the stages considered to have zero xextra.
+  // Upsampling does not have xextra as well (even if it happens before
+  // splines/patches for EC).
   if (options.render_noise) {
     JXL_RETURN_IF_ERROR(builder.AddStage(GetConvolveNoiseStage(num_c)));
     JXL_RETURN_IF_ERROR(builder.AddStage(GetAddNoiseStage(

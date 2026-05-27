@@ -251,6 +251,7 @@ float EstimateWPCost(const Image& img, size_t i) {
     const ptrdiff_t onerow = ch.plane.PixelsPerRow();
     weighted::State wp_state(wp_header, ch.w, ch.h);
     Properties properties(1);
+    bool unhealthy = false;
     for (size_t y = 0; y < ch.h; y++) {
       const pixel_type* JXL_RESTRICT r = ch.Row(y);
       for (size_t x = 0; x < ch.w; x++) {
@@ -268,7 +269,8 @@ float EstimateWPCost(const Image& img, size_t i) {
         for (int c : cutoffs) {
           ctx += (c >= properties[0]) ? 1 : 0;
         }
-        pixel_type res = r[x] - guess;
+        pixel_type res;
+        unhealthy |= SubOverflow(r[x], guess, res);
         uint32_t token;
         uint32_t nbits;
         uint32_t bits;
@@ -277,6 +279,10 @@ float EstimateWPCost(const Image& img, size_t i) {
         extra_bits += nbits;
         wp_state.UpdateErrors(r[x], x, y, ch.w);
       }
+    }
+    if (unhealthy) {
+      // Force this predictor option to be rejected by the cost selector.
+      return std::numeric_limits<float>::max();
     }
     for (auto& h : histo) {
       histo_cost += h.ShannonEntropy();
@@ -1548,7 +1554,8 @@ int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
   svalue -= pred.guess;
   if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
   int residual = 0;
-  if (svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
+  if (std::isnan(svalue) ||
+      svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
       svalue < static_cast<float>(std::numeric_limits<int>::min())) {
     *has_outliers = true;
   } else {

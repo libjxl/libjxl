@@ -41,7 +41,7 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
@@ -97,11 +97,11 @@ jobs:
           LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
-      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-linux-x86_64-static
         path: jxl-linux-x86_64-static.tar.gz
-        compression-level: 0
+        archive: false
 
 
 
@@ -132,7 +132,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
@@ -219,11 +219,11 @@ jobs:
         tar -zcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz *jxl*.*
 
     - name: Upload release tarball
-      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}
         path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz
-        compression-level: 0
+        archive: false
 
 
   windows_build:
@@ -259,7 +259,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
@@ -269,7 +269,7 @@ jobs:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+    - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -366,21 +366,21 @@ jobs:
 
     - name: Upload ZIP release 
       if: matrix.upload != 'OFF'
-      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-${{matrix.triplet}}
         path: |
           jxl-${{matrix.triplet}}.zip
-        compression-level: 0
+        archive: false
 
     - name: Upload 7Z release 
       if: matrix.upload != 'OFF'
-      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-${{matrix.triplet}}-7z
         path: |
           jxl-${{matrix.triplet}}.7z
-        compression-level: 0
+        archive: false
 
 
   publish_release_assets:
