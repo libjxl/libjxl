@@ -90,6 +90,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
                   size_t* xsize, size_t* ysize,
                   std::vector<uint8_t>* icc_profile) {
   size_t total_pixels = 0;
+  size_t retry_pixel_tax = 0;
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
   // itself is already multithreaded.
   size_t num_threads =
@@ -205,6 +206,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
       return false;
     } else if (status == JXL_DEC_NEED_MORE_INPUT) {
       if (spec.use_streaming) {
+        if (total_pixels > max_total_pixels) return false;
+        total_pixels += retry_pixel_tax;
         size_t remaining = JxlDecoderReleaseInput(dec.get());
         // move any remaining bytes to the front if necessary
         size_t used = streaming_size - remaining;
@@ -270,6 +273,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
       if (*xsize != 0 && num_pixels / *xsize != *ysize) return false;
       // limit max memory of this fuzzer test
       if (num_pixels > max_pixels) return false;
+      retry_pixel_tax = num_pixels;
 
       if (info.have_preview) {
         want_preview = true;
