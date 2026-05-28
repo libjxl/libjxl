@@ -368,12 +368,17 @@ class CommandLineParser {
 //
 
 static inline bool ParseSigned(const char* arg, int* out) {
+  // Parse() only passes argv entries while i < argc, so arg is non-null.
   char* end;
-  *out = static_cast<int>(strtol(arg, &end, 0));
-  if (end[0] != '\0') {
+  errno = 0;
+  const long value = strtol(arg, &end, 0);
+  if (errno == ERANGE || end == arg || end[0] != '\0' ||
+      value < std::numeric_limits<int>::min() ||
+      value > std::numeric_limits<int>::max()) {
     fprintf(stderr, "Unable to interpret as signed integer: %s.\n", arg);
     return false;
   }
+  *out = static_cast<int>(value);
   return true;
 }
 
