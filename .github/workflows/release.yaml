@@ -64,9 +64,9 @@ jobs:
           libopenexr-dev \
           libpng-dev \
           libwebp-dev \
-          tarlz \
           ninja-build \
           pkg-config \
+          tarlz \
           xdg-utils \
         #
         echo "CC=clang" >> $GITHUB_ENV
@@ -94,7 +94,7 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build
-        tarlz -9cvf ${ROOT}/jxl-linux-x86_64-static.tar.lz -I \
+        tarlz -9cvf ${ROOT}/jxl-linux-x86_64-static.tar.lz \
           LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
