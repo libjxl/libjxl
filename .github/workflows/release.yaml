@@ -362,7 +362,7 @@ jobs:
       shell: 'bash'
       if: matrix.upload != 'OFF'
       run: |
-        7z -mx=9 -mfb=273 -mmt=1 a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
+        7z -mx=9 -mfb=273 a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
         7z -mm=Deflate64 -mfb=257 -mpass=15 -mtp=2 a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
 
     - name: Upload ZIP release 
