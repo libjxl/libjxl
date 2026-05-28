@@ -69,20 +69,22 @@ static inline bool SubOverflow(const int32_t a, const int32_t b, int32_t& c) {
 #endif
 }
 
+// Ceiling division. For unsigned dividend types this implementation avoids
+// the intermediate (a + b - 1) overflow by computing `a / b + (a % b != 0)`.
+// This merges the previous SafeDivCeil into DivCeil; callers should use
+// `DivCeil` unconditionally. For signed types the simpler expression is
+// used since intermediate overflow is not a concern in the same way.
 template <typename T1, typename T2>
-constexpr inline T1 DivCeil(T1 a, T2 b) {
-  return (a + b - 1) / b;
-}
-
-// Overflow-safe ceiling division for unsigned dividends.
-// Equivalent to DivCeil but avoids the (a + b - 1) intermediate overflow
-// that can occur when a is close to the type maximum. Use this instead of
-// DivCeil whenever 'a' may be attacker-controlled or decoder-bounded.
-template <typename T1, typename T2,
-          class = typename std::enable_if<std::is_unsigned<T1>::value>::type>
-constexpr inline T1 SafeDivCeil(T1 a, T2 b) {
+constexpr inline typename std::enable_if<std::is_unsigned<T1>::value, T1>::type
+DivCeil(T1 a, T2 b) {
   const T1 divisor = static_cast<T1>(b);
   return a / divisor + (a % divisor != 0 ? T1{1} : T1{0});
+}
+
+template <typename T1, typename T2>
+constexpr inline typename std::enable_if<!std::is_unsigned<T1>::value, T1>::type
+DivCeil(T1 a, T2 b) {
+  return (a + b - 1) / b;
 }
 
 // Works for any `align`; if a power of two, compiler emits ADD+AND.
