@@ -46,10 +46,10 @@ Status DetectIccProfile(JPEGData& jpeg_data) {
   size_t num_icc_jpeg = 0;
   for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
     const auto& app = jpeg_data.app_data[i];
-    size_t pos = 0;
-    if (app[pos++] != 0xE2) continue;
     // At least APPn + size; otherwise it should be intermarker-data.
     JXL_ENSURE(app.size() >= 3);
+    size_t pos = 0;
+    if (app[pos++] != 0xE2) continue;
     size_t tag_length = (app[pos] << 8) + app[pos + 1];
     pos += 2;
     JXL_ENSURE(app.size() == tag_length + 1);
