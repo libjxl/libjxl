@@ -64,7 +64,7 @@ jobs:
           libopenexr-dev \
           libpng-dev \
           libwebp-dev \
-          lzip \
+          tarlz \
           ninja-build \
           pkg-config \
           xdg-utils \
@@ -94,7 +94,7 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build
-        tar -cvf ${ROOT}/jxl-linux-x86_64-static.tar.lz -I 'lzip -9' \
+        tarlz -9cvf ${ROOT}/jxl-linux-x86_64-static.tar.lz -I \
           LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
