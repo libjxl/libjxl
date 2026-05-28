@@ -782,13 +782,22 @@ void ProcessFlags(const jxl::extras::Codec codec,
 
   // Set progressive options before processing flags
   if (args->progressive) {
+    // progressive_ac and qprogressive_ac should be made into
+    // a single parameter like progressive_dc to allow overriding.
     args->progressive_ac = true;
     if (args->progressive_dc == -1) {
       args->progressive_dc = 1;
     }
+    if (args->group_order == jxl::Override::kDefault) {
     args->group_order = jxl::Override::kOn;
+    }
+    if (args->patches == jxl::Override::kDefault) {
+    args->patches = jxl::Override::kOff;
+    }
+    if (args->responsive == -1) {
     args->responsive = 1;
     responsive_set = true;
+    }
   }
 
   if (args->group_order != jxl::Override::kOn &&
