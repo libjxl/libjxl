@@ -789,14 +789,14 @@ void ProcessFlags(const jxl::extras::Codec codec,
       args->progressive_dc = 1;
     }
     if (args->group_order == jxl::Override::kDefault) {
-    args->group_order = jxl::Override::kOn;
+      args->group_order = jxl::Override::kOn;
     }
     if (args->patches == jxl::Override::kDefault) {
-    args->patches = jxl::Override::kOff;
+      args->patches = jxl::Override::kOff;
     }
     if (args->responsive == -1) {
-    args->responsive = 1;
-    responsive_set = true;
+      args->responsive = 1;
+      responsive_set = true;
     }
   }
 
