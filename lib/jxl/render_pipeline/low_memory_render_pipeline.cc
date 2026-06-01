@@ -412,8 +412,8 @@ Status LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
       for (size_t i = stages_.size(); i-- > 0;) {
         if (stages_[i]->GetChannelMode(c) ==
             RenderPipelineChannelMode::kInOut) {
-          size_t stage_buffer_ysize =
-              2 * next_y_border + (1 << stages_[i]->settings_.shift_y);
+          size_t bundle = (1 << stages_[i]->settings_.shift_y);
+          size_t stage_buffer_ysize = 2 * next_y_border + bundle;
           stage_buffer_ysize = 1 << CeilLog2Nonzero(stage_buffer_ysize);
           next_y_border = stages_[i]->settings_.border_y;
           JXL_ASSIGN_OR_RETURN(
@@ -546,6 +546,7 @@ class Rows {
           rows[i + 1][c].ymod_minus_1 = buffer.ysize() - 1;
           rows[i + 1][c].base_ptr = buffer.Row(0);
           rows[i + 1][c].stride = buffer.PixelsPerRow();
+          rows[i + 1][c].row_idx.resize(buffer.ysize());
         }
       }
     }
@@ -567,11 +568,30 @@ class Rows {
 
   // Stage -1 refers to the input data; all other values must be nonnegative and
   // refer to the data for the output of that stage.
-  JXL_INLINE float* GetBuffer(int stage, int y, size_t c) const {
+  template <bool read>
+  JXL_INLINE float* GetBuffer(int stage, int y, size_t c) {
+#if JXL_IS_DEBUG_BUILD
+    CheckBuffer<read>(stage, y, c);
+#endif
+    RowInfo& info = rows_[stage + 1][c];
+    if (stage == -1) {
+      return info.base_ptr + static_cast<ptrdiff_t>(info.stride) * y;
+    }
+    int idx = y & info.ymod_minus_1;
+    return info.base_ptr + static_cast<ptrdiff_t>(info.stride) * idx;
+  }
+
+  template <bool read>
+  JXL_INLINE void CheckBuffer(int stage, int y, size_t c) {
     JXL_DASSERT(stage >= -1);
-    const RowInfo& info = rows_[stage + 1][c];
-    return info.base_ptr +
-           static_cast<ptrdiff_t>(info.stride) * (y & info.ymod_minus_1);
+    RowInfo& info = rows_[stage + 1][c];
+    if (stage == -1) return;
+    int idx = y & info.ymod_minus_1;
+    if (read) {
+      JXL_DASSERT(info.row_idx[idx] == y);
+    } else {
+      info.row_idx[idx] = y;
+    }
   }
 
  private:
@@ -583,6 +603,7 @@ class Rows {
     int ymod_minus_1;
     // Number of floats per row.
     size_t stride;
+    std::vector<int> row_idx;
   };
 
   explicit Rows(std::vector<std::vector<RowInfo>>&& rows)
@@ -673,10 +694,10 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     ptrdiff_t bordery = stages_[i]->settings_.border_y;
     size_t shifty = stages_[i]->settings_.shift_y;
     auto make_row = [&](size_t c, ptrdiff_t iy) {
-      size_t mirrored_y = GetMirroredY(y + iy - bordery, group_rect[i].y0(),
-                                       image_rect_[i].ysize());
+      int mirrored_y = GetMirroredY(y + iy - bordery, group_rect[i].y0(),
+                                    image_rect_[i].ysize());
       input_rows[i][c][iy] =
-          rows.GetBuffer(stage_input_for_channel_[i][c], mirrored_y, c);
+          rows.GetBuffer<true>(stage_input_for_channel_[i][c], mirrored_y, c);
       ApplyXMirroring(input_rows[i][c][iy], stages_[i]->settings_.border_x,
                       group_rect[i].x0(), group_rect[i].xsize(),
                       image_rect_[i].xsize());
@@ -691,11 +712,16 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
       if (input_rows[i][c].size() == 2 * static_cast<size_t>(bordery) + 1) {
         for (ptrdiff_t iy = 0; iy < 2 * bordery; iy++) {
           input_rows[i][c][iy] = input_rows[i][c][iy + 1];
+#if JXL_IS_DEBUG_BUILD
+          int mirrored_y = GetMirroredY(y + iy - bordery, group_rect[i].y0(),
+                                        image_rect_[i].ysize());
+          rows.CheckBuffer<true>(stage_input_for_channel_[i][c], mirrored_y, c);
+#endif
         }
         make_row(c, bordery * 2);
       } else {
         input_rows[i][c].resize(2 * bordery + 1);
-        for (ptrdiff_t iy = 0; iy < 2 * bordery + 1; iy++) {
+        for (ptrdiff_t iy = 0; iy <= 2 * bordery; iy++) {
           make_row(c, iy);
         }
       }
@@ -704,7 +730,7 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
       if (mode == RenderPipelineChannelMode::kInOut) {
         size_t bundle = static_cast<size_t>(1u) << shifty;
         for (size_t iy = 0; iy < bundle; iy++) {
-          output_rows[c][iy] = rows.GetBuffer(i, y * bundle + iy, c);
+          output_rows[c][iy] = rows.GetBuffer<false>(i, y * bundle + iy, c);
         }
       }
     }
@@ -760,16 +786,16 @@ Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
 
     int y = vy - num_extra_rows;
 
-    for (size_t c = 0; c < input_data.size(); c++) {
-      input_rows[first_trailing_stage_][c][0] = rows.GetBuffer(
-          stage_input_for_channel_[first_trailing_stage_][c], y, c);
-    }
-
     // Check that we are not outside of the bounds for the current rendering
     // rect. Not doing so might result in overwriting some rows that have been
     // written (or will be written) by other threads.
     if (y < 0 || y >= static_cast<ptrdiff_t>(image_area_rect.ysize())) {
       continue;
+    }
+
+    for (size_t c = 0; c < input_data.size(); c++) {
+      input_rows[first_trailing_stage_][c][0] = rows.GetBuffer<true>(
+          stage_input_for_channel_[first_trailing_stage_][c], y, c);
     }
 
     for (size_t i = first_trailing_stage_; i < first_image_dim_stage_; i++) {
