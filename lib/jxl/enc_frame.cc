@@ -1673,13 +1673,15 @@ Status ComputeEncodingData(
   }
 
   if (!enc_state.streaming_mode) {
-    // If checks pass here, a Global MA tree is used.
+    // If checks pass here and CanDoStreamingEncoding returns false
+    // a Global MA tree is used.
     if (cparams.speed_tier < SpeedTier::kTortoise ||
         !cparams.ModularPartIsLossless() || cparams.lossy_palette ||
-        // Allow Local trees for progressive lossless but not lossy.
-        (cparams.responsive == 1 && !cparams.IsLossless()) ||
-        cparams.buffering < 3 || !cparams.custom_fixed_tree.empty()) {
-      // Use local trees if doing lossless modular, unless at very slow speeds.
+        // Allow Local trees for progressive lossless.
+        // TODO(Jonnyawsom3): Figure out how to allow local trees for
+        // extra channels on VarDCT images without failing tests.
+        (!(cparams.responsive && cparams.IsLossless()) &&
+        cparams.buffering < 3) || !cparams.custom_fixed_tree.empty()) {
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
     }
