@@ -41,9 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The decoder API for `JxlDecoderSetImageOutBuffer` and `JxlDecoderSetPreviewOutBuffer` has been clarified; their timeframes are now non-intersecting, preventing accidental buffer overwrites. (#4671)
 - Layered JXL files are no longer coalesced when re-encoding with cjxl, and can now
   be decoded to separate PNG/PAM files with djxl by using `--no_coalescing`. (#4299)
-- The progressive flag `-p` in cjxl will now encode a more progressive image at the cost
-  of encode speed. `--patches 0` can be used to significantly improve encode speed
-  or `--progressive_dc 0` can be used to return to old behaviour. (#4258)
+- The progressive flag `-p` in cjxl will now encode a more progressive image. (#4258, #4699)
 - When lossy encoding, resampling 2 is now enabled at distance 10, and is up to
   10x faster below effort 10 by using a faster downsampling method. (#4147)
 - Faster PNG compression. (#3819)
