@@ -69,22 +69,25 @@ static inline bool SubOverflow(const int32_t a, const int32_t b, int32_t& c) {
 #endif
 }
 
-// Ceiling division. For unsigned dividend types this implementation avoids
-// the intermediate (a + b - 1) overflow by computing `a / b + (a % b != 0)`.
-// This merges the previous SafeDivCeil into DivCeil; callers should use
-// `DivCeil` unconditionally. For signed types the simpler expression is
-// used since intermediate overflow is not a concern in the same way.
-template <typename T1, typename T2>
-constexpr inline typename std::enable_if<std::is_unsigned<T1>::value, T1>::type
-DivCeil(T1 a, T2 b) {
-  const T1 divisor = static_cast<T1>(b);
-  return a / divisor + (a % divisor != 0 ? T1{1} : T1{0});
+// Ceiling division, restricted to `size_t` / `uint64_t` operands (which cover
+// all current callers). Computing `a / b + (a % b != 0)` avoids the `(a + b
+// - 1)` intermediate overflow of the naive form. Both operands share a single
+// type `T`, so callers with narrower or mixed-width operands must request the
+// type explicitly (e.g. `DivCeil<size_t>(a, b)` or by casting `b`).
+template <typename T>
+constexpr inline typename std::enable_if<
+    std::is_same<T, size_t>::value || std::is_same<T, uint64_t>::value, T>::type
+DivCeil(T a, T b) {
+  return a / b + (a % b != 0 ? T{1} : T{0});
 }
 
-template <typename T1, typename T2>
-constexpr inline typename std::enable_if<!std::is_unsigned<T1>::value, T1>::type
-DivCeil(T1 a, T2 b) {
-  return (a + b - 1) / b;
+// Ceiling division by a power of two `2 ^ shift` (the most frequent case).
+// Equivalent to `DivCeil(a, T{1} << shift)` but without the division/modulo.
+template <typename T>
+constexpr inline typename std::enable_if<
+    std::is_same<T, size_t>::value || std::is_same<T, uint64_t>::value, T>::type
+DivCeilPow2(T a, size_t shift) {
+  return (a >> shift) + ((a & ((T{1} << shift) - T{1})) != 0 ? T{1} : T{0});
 }
 
 // Works for any `align`; if a power of two, compiler emits ADD+AND.

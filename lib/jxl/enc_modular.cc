@@ -810,8 +810,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
         int exp_bits = metadata.bit_depth.exponent_bits_per_sample;
         gi.channel[c_out].hshift = frame_header.chroma_subsampling.HShift(c);
         gi.channel[c_out].vshift = frame_header.chroma_subsampling.VShift(c);
-        size_t xsize_shifted = DivCeil(xsize, 1 << gi.channel[c_out].hshift);
-        size_t ysize_shifted = DivCeil(ysize, 1 << gi.channel[c_out].vshift);
+        size_t xsize_shifted = DivCeilPow2(xsize, gi.channel[c_out].hshift);
+        size_t ysize_shifted = DivCeilPow2(ysize, gi.channel[c_out].vshift);
         JXL_RETURN_IF_ERROR(
             gi.channel[c_out].shrink(xsize_shifted, ysize_shifted));
         const auto process_row = [&](const int task,
