@@ -57,6 +57,18 @@ Status EncodeImagePGX(const PackedFrame& frame, const JxlBasicInfo& info,
   JXL_RETURN_IF_ERROR(EncodeHeader(info, header, &header_size));
 
   const PackedImage& color = frame.color;
+  // num_samples below is derived from `info`, but pixel data is read from
+  // `color.pixels()`, which is sized for the frame's actual dimensions.
+  // VerifyImageSize (in encode.cc) only checks the frame's internal
+  // consistency and channel count; it does not enforce that the frame
+  // dimensions equal the basic-info dimensions. If `info` carries
+  // dimensions larger than the frame (e.g. a cropped sub-frame in an
+  // animated grayscale APNG, where ppf.info stores the full-canvas size
+  // while each PackedFrame stores its viewport size), the memcpy below
+  // would read past the end of the frame buffer.
+  if (color.xsize != info.xsize || color.ysize != info.ysize) {
+    return JXL_FAILURE("PGX: frame dimensions do not match basic info");
+  }
   const JxlPixelFormat format = color.format;
   const uint8_t* in = reinterpret_cast<const uint8_t*>(color.pixels());
   JXL_RETURN_IF_ERROR(PackedImage::ValidateDataType(format.data_type));
