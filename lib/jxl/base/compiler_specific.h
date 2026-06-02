@@ -44,6 +44,21 @@
 #define JXL_COMPILER_CLANG 0
 #endif
 
+// Safe Buffers (-Wunsafe-buffer-usage) support. Code wrapped between these two
+// macros is exempt from the unsafe-buffer-usage analysis; use it to encapsulate
+// the (audited) raw pointer arithmetic that backs a bounds-carrying abstraction
+// such as jxl::Span, so that callers using that abstraction can be compiled
+// with -Wunsafe-buffer-usage. The pragma exists since clang 15; gate on 16 to
+// be safe. No-op on other compilers.
+#if JXL_COMPILER_CLANG >= 1600
+#define JXL_UNSAFE_BUFFER_USAGE_BEGIN \
+  _Pragma("clang unsafe_buffer_usage begin")
+#define JXL_UNSAFE_BUFFER_USAGE_END _Pragma("clang unsafe_buffer_usage end")
+#else
+#define JXL_UNSAFE_BUFFER_USAGE_BEGIN
+#define JXL_UNSAFE_BUFFER_USAGE_END
+#endif
+
 #if JXL_COMPILER_MSVC
 #define JXL_RESTRICT __restrict
 #elif JXL_COMPILER_GCC || JXL_COMPILER_CLANG

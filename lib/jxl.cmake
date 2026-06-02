@@ -25,6 +25,20 @@ endif()
 
 set_source_files_properties(jxl/enc_fast_lossless.cc PROPERTIES COMPILE_FLAGS "${FJXL_COMPILE_FLAGS}")
 
+# huffman_table.cc has been migrated to the Safe Buffers programming model (no
+# raw pointer arithmetic; all accesses go through jxl::Span / std::array /
+# std::vector). Compile it with -Werror=unsafe-buffer-usage so the property
+# cannot regress. The libc-call sub-analysis is left off because surrounding
+# headers (e.g. base/status.h's vfprintf) are not migrated yet.
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag("-Wunsafe-buffer-usage" CXX_UNSAFE_BUFFER_USAGE_SUPPORTED)
+  if (CXX_UNSAFE_BUFFER_USAGE_SUPPORTED)
+    set_source_files_properties(jxl/huffman_table.cc PROPERTIES COMPILE_FLAGS
+        "-Werror=unsafe-buffer-usage -Wno-unsafe-buffer-usage-in-libc-call")
+  endif()
+endif()
+
 set(JPEGXL_DEC_INTERNAL_LIBS
   hwy
   Threads::Threads
