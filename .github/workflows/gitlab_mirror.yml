@@ -1,0 +1,51 @@
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Workflow for mirroring the github libjxl repo to the wg1 gitlab repo
+
+name: Mirror to GitLab
+
+on:
+  push:
+    branches:
+      - main
+      - v*.*.x
+
+env:
+  BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    if: github.repository_owner == 'libjxl'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      with:
+        egress-policy: audit
+
+    - name: Checkout source
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        fetch-depth: 0  # Disable shallow clone
+
+    - name: Set up SSH
+      run: |
+        mkdir -p ~/.ssh/
+        chmod 700 ~/.ssh/
+        echo "${{ secrets.GITLAB_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+        chmod 400 ~/.ssh/id_ed25519
+        ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
+
+    - name: Push to GitLab
+      env:
+        GIT_SSH_COMMAND: ssh -v -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no
+      run: |
+        git remote add gitlab git@gitlab.com:wg1/jpeg-xl.git
+        git push gitlab "$BRANCH_NAME:$BRANCH_NAME"
