@@ -326,8 +326,16 @@ class ANSSymbolReader {
           size_t to_fill = std::min<size_t>(num_to_copy_, kWindowSize);
           memset(lz77_window_, 0, to_fill * sizeof(lz77_window_[0]));
         }
-        // TODO(eustas): overflow; mark BitReader as unhealthy
-        if (num_to_copy_ < lz77_min_length_) return 0;
+        if (JXL_UNLIKELY(num_to_copy_ < lz77_min_length_)) {
+          // num_to_copy_ = ReadHybridUintConfig(...) + lz77_min_length_ above
+          // wrapped (lz77_min_length_ added to a value near SIZE_MAX). Stop
+          // accepting further data so the corruption surfaces at the next
+          // AllReadsWithinBounds() / Close() check instead of letting the
+          // decoder keep producing phantom symbols from the LZ77 window.
+          num_to_copy_ = 0;
+          br->MarkUnhealthy();
+          return 0;
+        }
         // the code below is the same as doing this:
         //        return ReadHybridUintClustered<uses_lz77>(ctx, br);
         // but gcc doesn't like recursive inlining
