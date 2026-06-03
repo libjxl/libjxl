@@ -58,23 +58,23 @@ Status MemoryManagerInit(JxlMemoryManager* self,
   return true;
 }
 
-size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
+StatusOr<size_t> BytesPerRow(const size_t xsize, const size_t sizeof_t) {
   // Special case: we don't allow any ops -> don't need extra padding/
   if (xsize == 0) {
-    return 0;
+    return static_cast<size_t>(0);
   }
 
   const size_t vec_size = MaxVectorSize();
   size_t valid_bytes;
   if (!SafeMul(xsize, sizeof_t, valid_bytes)) {
-    return 0;
+    return JXL_FAILURE("Image dimensions are too large");
   }
 
   // Allow unaligned accesses starting at the last valid value.
   // Skip for the scalar case because no extra lanes will be loaded.
   if (vec_size != 0) {
     if (!SafeAdd(valid_bytes, vec_size - sizeof_t, valid_bytes)) {
-      return 0;
+      return JXL_FAILURE("Image dimensions are too large");
     }
   }
 
@@ -83,7 +83,7 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
   JXL_DASSERT(align > 0);
   size_t bytes_per_row;
   if (!SafeAdd(valid_bytes, align - 1, bytes_per_row)) {
-    return 0;
+    return JXL_FAILURE("Image dimensions are too large");
   }
   bytes_per_row &= ~(align - 1);
 
@@ -94,7 +94,7 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
   // Avoid2K prevents the same problem for the planes of an Image3.
   if (bytes_per_row % memory_manager_internal::kAlias == 0) {
     if (!SafeAdd(bytes_per_row, align, bytes_per_row)) {
-      return 0;
+      return JXL_FAILURE("Image dimensions are too large");
     }
   }
 

@@ -97,8 +97,8 @@ JXL_INLINE MemoryManagerUniquePtr<T> MemoryManagerMakeUniquePrivate(
 // NOLINTEND(bugprone-macro-parentheses)
 
 // Returns recommended distance in bytes between the start of two consecutive
-// rows.
-size_t BytesPerRow(size_t xsize, size_t sizeof_t);
+// rows. Fails if the computation overflows.
+StatusOr<size_t> BytesPerRow(size_t xsize, size_t sizeof_t);
 
 class AlignedMemory {
  public:
