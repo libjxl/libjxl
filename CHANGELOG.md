@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-## [0.12.0] - 2026-05-14
+## [0.12.0] - 2026-06-14
 
 ### Added
 - A new buffering flag is now available in the CLI, alongside support for streaming input with buffered output. (#4634)
@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `jpegli` codebase has been removed as it is now maintained as a separate project at [google/jpegli](https://github.com/google/jpegli). (#4657)
 
 ### Fixed
+- allows -E to be used in jpeg-transcoding again (#4729)
 - Fixed an issue where Lossy Delta Palette encoding failed on images larger than 2048x2048. (#4201)
 - `JxlEncoderAddChunkedFrame` incorrectly called `JxlEncoderCloseInput`
   instead of `JxlEncoderCloseFrames`, resulting in corrupted files when
