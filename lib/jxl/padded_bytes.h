@@ -81,7 +81,7 @@ class PaddedBytes {
 
     size_t new_capacity;
     if (!SafeAdd(capacity_, capacity_ / 2, new_capacity)) {
-      new_capacity = capacity;
+      return JXL_FAILURE("PaddedBytes reserve: capacity overflow");
     }
     new_capacity = std::max(capacity, new_capacity);
 
