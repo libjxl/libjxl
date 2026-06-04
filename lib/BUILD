@@ -19,6 +19,7 @@ load(
     "libjxl_codec_npy_sources",
     "libjxl_codec_pgx_sources",
     "libjxl_codec_pnm_sources",
+    "libjxl_codec_tiff_sources",
     "libjxl_dec_box_sources",
     "libjxl_dec_jpeg_sources",
     "libjxl_dec_sources",
@@ -188,7 +189,7 @@ cc_library(
     ],
 )
 
-CODEC_FILES = libjxl_codec_apng_sources + libjxl_codec_exr_sources + libjxl_codec_gif_sources + libjxl_codec_jpg_sources + libjxl_codec_jxl_sources + libjxl_codec_npy_sources + libjxl_codec_pgx_sources + libjxl_codec_pnm_sources
+CODEC_FILES = libjxl_codec_apng_sources + libjxl_codec_exr_sources + libjxl_codec_gif_sources + libjxl_codec_jpg_sources + libjxl_codec_jxl_sources + libjxl_codec_npy_sources + libjxl_codec_pgx_sources + libjxl_codec_pnm_sources + libjxl_codec_tiff_sources
 
 CODEC_SRCS = [path for path in CODEC_FILES if path.endswith(".cc")]
 

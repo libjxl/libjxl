@@ -95,6 +95,11 @@ set(JPEGXL_INTERNAL_CODEC_PNM_SOURCES
   extras/enc/pnm.h
 )
 
+set(JPEGXL_INTERNAL_CODEC_TIFF_SOURCES
+  extras/dec/tiff.cc
+  extras/dec/tiff.h
+)
+
 set(JPEGXL_INTERNAL_DEC_BOX_SOURCES
   jxl/box_content_decoder.cc
   jxl/box_content_decoder.h
@@ -491,6 +496,7 @@ set(JPEGXL_INTERNAL_TESTS
   extras/compressed_icc_test.cc
   extras/dec/color_description_test.cc
   extras/dec/pgx_test.cc
+  extras/dec/tiff_test.cc
   extras/gain_map_test.cc
   jxl/ac_strategy_test.cc
   jxl/alpha_test.cc

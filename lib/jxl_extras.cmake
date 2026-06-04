@@ -17,6 +17,7 @@ list(APPEND JPEGXL_EXTRAS_CORE_SOURCES
   "${JPEGXL_INTERNAL_CODEC_JXL_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_PGX_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_PNM_SOURCES}"
+  "${JPEGXL_INTERNAL_CODEC_TIFF_SOURCES}"
   "${JPEGXL_INTERNAL_CODEC_NPY_SOURCES}"
 )
 foreach(LIB jxl_extras_core-obj jxl_extras_core_nocodec-obj)
@@ -73,6 +74,18 @@ if(PNG_FOUND)
   list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES ${PNG_LIBRARIES})
   configure_file(extras/LICENSE.apngdis
                  ${PROJECT_BINARY_DIR}/LICENSE.apngdis COPYONLY)
+endif()
+
+if(NOT JPEGXL_BUNDLE_LIBTIFF)
+  find_package(TIFF)
+  if(TIFF_FOUND AND TARGET TIFF::TIFF)
+    set(TIFF_LIBRARIES TIFF::TIFF)
+  endif()
+endif()
+if(TIFF_FOUND)
+  target_include_directories(jxl_extras_core-obj PRIVATE "${TIFF_INCLUDE_DIRS}")
+  target_compile_definitions(jxl_extras_core-obj PRIVATE -DJPEGXL_ENABLE_TIFF=1)
+  list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES ${TIFF_LIBRARIES})
 endif()
 
 if (JPEGXL_ENABLE_OPENEXR)

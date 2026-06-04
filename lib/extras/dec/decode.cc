@@ -10,6 +10,7 @@
 #include <jxl/types.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -24,6 +25,7 @@
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
+#include "lib/extras/dec/tiff.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/span.h"
@@ -82,6 +84,8 @@ Codec CodecFromPath(const std::string& path,
   if (ext == ".gif") return Codec::kGIF;
 
   if (ext == ".exr") return Codec::kEXR;
+  if (ext == ".tif") return Codec::kTIFF;
+  if (ext == ".tiff") return Codec::kTIFF;
 
   return Codec::kUnknown;
 }
@@ -96,6 +100,8 @@ bool CanDecode(Codec codec) {
       return CanDecodeJPG();
     case Codec::kPNG:
       return CanDecodeAPNG();
+    case Codec::kTIFF:
+      return CanDecodeTIFF();
     case Codec::kPNM:
     case Codec::kPGX:
     case Codec::kJXL:
@@ -111,6 +117,7 @@ std::string ListOfDecodeCodecs() {
   if (CanDecode(Codec::kGIF)) list_of_codecs.append(", GIF");
   if (CanDecode(Codec::kJPG)) list_of_codecs.append(", JPEG");
   if (CanDecode(Codec::kEXR)) list_of_codecs.append(", EXR");
+  if (CanDecode(Codec::kTIFF)) list_of_codecs.append(", TIFF");
   return list_of_codecs;
 }
 
@@ -168,6 +175,10 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
 
     case Codec::kPNM:
       ok = DecodeImagePNM(bytes, color_hints, ppf, constraints);
+      break;
+
+    case Codec::kTIFF:
+      ok = DecodeImageTIFF(bytes, color_hints, ppf, constraints);
       break;
 
     case Codec::kUnknown:
@@ -233,6 +244,10 @@ Codec DetectCodec(const Span<const uint8_t>& bytes) {
   static const std::array<std::array<uint8_t, 2>, 1> kJxlSignatures = {{
       {0xFF, 0x0A},
   }};
+  static const std::array<std::array<uint8_t, 4>, 2> kTiffSignatures = {{
+      {'I', 'I', 42, 0},
+      {'M', 'M', 0, 42},
+  }};
 
   if (CheckSignatures(bytes, kExrSignatures)) return Codec::kEXR;
   if (CheckSignatures(bytes, kGifSignatures)) return Codec::kGIF;
@@ -242,6 +257,7 @@ Codec DetectCodec(const Span<const uint8_t>& bytes) {
   if (CheckSignatures(bytes, kPgxSignatures)) return Codec::kPGX;
   if (CheckSignatures(bytes, kPngSignatures)) return Codec::kPNG;
   if (CheckSignatures(bytes, kPnmSignatures)) return Codec::kPNM;
+  if (CheckSignatures(bytes, kTiffSignatures)) return Codec::kTIFF;
   return Codec::kUnknown;
 }
 

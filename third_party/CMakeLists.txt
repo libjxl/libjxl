@@ -170,6 +170,38 @@ else()
   endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
+# libtiff
+if (JPEGXL_BUNDLE_LIBTIFF)
+  if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libtiff/CMakeLists.txt")
+    message(FATAL_ERROR "Please provide libtiff or "
+            "run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the build dependencies.")
+  endif()
+  set(tiff-static ON CACHE BOOL "")
+  set(tiff-tools OFF CACHE BOOL "")
+  set(tiff-tests OFF CACHE BOOL "")
+  set(tiff-contrib OFF CACHE BOOL "")
+  set(tiff-docs OFF CACHE BOOL "")
+  set(tiff-install OFF CACHE BOOL "")
+  add_subdirectory(libtiff EXCLUDE_FROM_ALL)
+  set(TIFF_FOUND YES PARENT_SCOPE)
+  set(TIFF_INCLUDE_DIRS
+      "${CMAKE_CURRENT_SOURCE_DIR}/libtiff/libtiff"
+      "${CMAKE_CURRENT_BINARY_DIR}/libtiff/libtiff" PARENT_SCOPE)
+  set(TIFF_LIBRARIES TIFF::tiff PARENT_SCOPE)
+  set_property(TARGET tiff PROPERTY POSITION_INDEPENDENT_CODE ON)
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/libtiff/LICENSE.md"
+                 ${PROJECT_BINARY_DIR}/LICENSE.libtiff COPYONLY)
+else()
+  find_package(TIFF)
+  if(TIFF_FOUND AND TARGET TIFF::TIFF)
+    set(TIFF_LIBRARIES TIFF::TIFF PARENT_SCOPE)
+  endif()
+  if(TIFF_FOUND AND JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libtiff-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.libtiff COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
+endif()
+
 # sjpeg
 if (JPEGXL_ENABLE_SJPEG)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/CMakeLists.txt")
