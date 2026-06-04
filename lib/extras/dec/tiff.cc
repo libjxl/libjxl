@@ -167,6 +167,63 @@ void StoreSample(const uint8_t* src, uint16_t bits, uint16_t sample_format,
   }
 }
 
+Status ValidateOrientation(uint16_t orientation) {
+  if (orientation < ORIENTATION_TOPLEFT || orientation > ORIENTATION_LEFTBOT) {
+    return JXL_FAILURE("Invalid TIFF orientation");
+  }
+  return true;
+}
+
+bool OrientationSwapsDimensions(uint16_t orientation) {
+  return orientation >= ORIENTATION_LEFTTOP;
+}
+
+uint32_t OrientedWidth(uint32_t width, uint32_t height, uint16_t orientation) {
+  return OrientationSwapsDimensions(orientation) ? height : width;
+}
+
+uint32_t OrientedHeight(uint32_t width, uint32_t height, uint16_t orientation) {
+  return OrientationSwapsDimensions(orientation) ? width : height;
+}
+
+void OrientedPixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+                   uint16_t orientation, uint32_t* out_x, uint32_t* out_y) {
+  switch (orientation) {
+    case ORIENTATION_TOPRIGHT:
+      *out_x = width - 1 - x;
+      *out_y = y;
+      break;
+    case ORIENTATION_BOTRIGHT:
+      *out_x = width - 1 - x;
+      *out_y = height - 1 - y;
+      break;
+    case ORIENTATION_BOTLEFT:
+      *out_x = x;
+      *out_y = height - 1 - y;
+      break;
+    case ORIENTATION_LEFTTOP:
+      *out_x = y;
+      *out_y = x;
+      break;
+    case ORIENTATION_RIGHTTOP:
+      *out_x = height - 1 - y;
+      *out_y = x;
+      break;
+    case ORIENTATION_RIGHTBOT:
+      *out_x = height - 1 - y;
+      *out_y = width - 1 - x;
+      break;
+    case ORIENTATION_LEFTBOT:
+      *out_x = y;
+      *out_y = width - 1 - x;
+      break;
+    case ORIENTATION_TOPLEFT:
+    default:
+      *out_x = x;
+      *out_y = y;
+      break;
+  }
+}
 Status SetColorAndMetadata(TIFF* tif, bool is_gray,
                            const ColorHints& color_hints,
                            PackedPixelFile* ppf) {
@@ -212,7 +269,14 @@ Status ReadTIFFDirect(TIFF* tif, uint32_t width, uint32_t height,
     return false;
   }
 
-  JXL_RETURN_IF_ERROR(VerifyDimensions<uint32_t>(constraints, width, height));
+  uint16_t orientation = ORIENTATION_TOPLEFT;
+  TIFFGetFieldDefaulted(tif, TIFFTAG_ORIENTATION, &orientation);
+  JXL_RETURN_IF_ERROR(ValidateOrientation(orientation));
+  const uint32_t oriented_width = OrientedWidth(width, height, orientation);
+  const uint32_t oriented_height = OrientedHeight(width, height, orientation);
+
+  JXL_RETURN_IF_ERROR(
+      VerifyDimensions<uint32_t>(constraints, oriented_width, oriented_height));
 
   bool alpha_premultiplied = false;
   const bool has_alpha =
@@ -231,8 +295,8 @@ Status ReadTIFFDirect(TIFF* tif, uint32_t width, uint32_t height,
       /*align=*/0,
   };
 
-  ppf->info.xsize = width;
-  ppf->info.ysize = height;
+  ppf->info.xsize = oriented_width;
+  ppf->info.ysize = oriented_height;
   ppf->info.bits_per_sample = sample_format == SAMPLEFORMAT_IEEEFP ? 32 : bits;
   ppf->info.exponent_bits_per_sample =
       sample_format == SAMPLEFORMAT_IEEEFP ? 8 : 0;
@@ -246,8 +310,9 @@ Status ReadTIFFDirect(TIFF* tif, uint32_t width, uint32_t height,
   JXL_RETURN_IF_ERROR(SetColorAndMetadata(tif, is_gray, color_hints, ppf));
 
   ppf->frames.clear();
-  JXL_ASSIGN_OR_RETURN(PackedFrame frame,
-                       PackedFrame::Create(width, height, format));
+  JXL_ASSIGN_OR_RETURN(
+      PackedFrame frame,
+      PackedFrame::Create(oriented_width, oriented_height, format));
   ppf->frames.emplace_back(std::move(frame));
   PackedImage& image = ppf->frames.back().color;
 
@@ -266,14 +331,17 @@ Status ReadTIFFDirect(TIFF* tif, uint32_t width, uint32_t height,
       const uint8_t* src =
           scanline.data() +
           (static_cast<size_t>(x) * samples) * input_sample_bytes;
+      uint32_t out_x;
+      uint32_t out_y;
+      OrientedPixel(x, y, width, height, orientation, &out_x, &out_y);
       for (uint32_t c = 0; c < color_channels; ++c) {
         StoreSample(src + c * input_sample_bytes, bits, sample_format,
                     is_gray && photometric == PHOTOMETRIC_MINISWHITE,
-                    image.pixels(y, x, c));
+                    image.pixels(out_y, out_x, c));
       }
       if (has_alpha) {
         const uint8_t* alpha = src + color_channels * input_sample_bytes;
-        uint8_t* dst = image.pixels(y, x, color_channels);
+        uint8_t* dst = image.pixels(out_y, out_x, color_channels);
         if (input_sample_bytes == output_sample_bytes) {
           memcpy(dst, alpha, output_sample_bytes);
         } else {
@@ -292,6 +360,14 @@ Status ReadTIFFRGBA(TIFF* tif, uint32_t width, uint32_t height,
   TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLESPERPIXEL, &samples);
   bool alpha_premultiplied = false;
   const bool has_alpha = HasAlpha(tif, samples, 3, &alpha_premultiplied);
+  uint16_t orientation = ORIENTATION_TOPLEFT;
+  TIFFGetFieldDefaulted(tif, TIFFTAG_ORIENTATION, &orientation);
+  JXL_RETURN_IF_ERROR(ValidateOrientation(orientation));
+  if (OrientationSwapsDimensions(orientation)) {
+    return JXL_FAILURE(
+        "TIFF orientations requiring rotation are not supported by RGBA "
+        "fallback");
+  }
 
   JXL_RETURN_IF_ERROR(VerifyDimensions<uint32_t>(constraints, width, height));
   if (height != 0 && width > std::numeric_limits<size_t>::max() / height) {
@@ -318,7 +394,7 @@ Status ReadTIFFRGBA(TIFF* tif, uint32_t width, uint32_t height,
   ppf->info.orientation = JXL_ORIENT_IDENTITY;
   ppf->info.alpha_bits = has_alpha ? 8 : 0;
   ppf->info.alpha_exponent_bits = 0;
-  ppf->info.alpha_premultiplied = TO_JXL_BOOL(alpha_premultiplied);
+  ppf->info.alpha_premultiplied = TO_JXL_BOOL(has_alpha);
   ppf->info.num_color_channels = 3;
   ppf->info.num_extra_channels = has_alpha ? 1 : 0;
   JXL_RETURN_IF_ERROR(
@@ -382,7 +458,6 @@ Status DecodeImageTIFF(Span<const uint8_t> bytes, const ColorHints& color_hints,
   }
   TIFFClose(tif);
   JXL_RETURN_IF_ERROR(status);
-  ppf->metadata.exif.assign(bytes.data(), bytes.data() + bytes.size());
   return true;
 #else
   return false;

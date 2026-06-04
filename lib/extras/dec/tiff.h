@@ -21,8 +21,8 @@ namespace extras {
 
 bool CanDecodeTIFF();
 
-// Decodes `bytes` into `ppf` and preserves the original TIFF file bytes as
-// Exif metadata. Color hints are ignored when the TIFF carries an ICC profile.
+// Decodes `bytes` into `ppf`. Color hints are ignored when the TIFF carries an
+// ICC profile.
 Status DecodeImageTIFF(Span<const uint8_t> bytes, const ColorHints& color_hints,
                        PackedPixelFile* ppf,
                        const SizeConstraints* constraints = nullptr);

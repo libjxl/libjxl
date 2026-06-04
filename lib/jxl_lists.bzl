@@ -98,11 +98,6 @@ libjxl_codec_pnm_sources = [
     "extras/enc/pnm.h",
 ]
 
-libjxl_codec_tiff_sources = [
-    "extras/dec/tiff.cc",
-    "extras/dec/tiff.h",
-]
-
 libjxl_dec_box_sources = [
     "jxl/box_content_decoder.cc",
     "jxl/box_content_decoder.h",
@@ -438,6 +433,8 @@ libjxl_extras_sources = [
     "extras/dec/color_hints.h",
     "extras/dec/decode.cc",
     "extras/dec/decode.h",
+    "extras/dec/tiff.cc",
+    "extras/dec/tiff.h",
     "extras/enc/encode.cc",
     "extras/enc/encode.h",
     "extras/exif.cc",
