@@ -31,8 +31,8 @@
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -1592,7 +1592,8 @@ Status ComputeEncodingData(
         jxl::cms::kM10, jxl::cms::kM11, jxl::cms::kM12,
         jxl::cms::kM20, jxl::cms::kM21, jxl::cms::kM22
       };
-      if (cparams.red_bias >= 0.0f || cparams.green_bias >= 0.0f || cparams.color_boost || cparams.yellow_bias >= 0.0f) {
+      bool active_color_boost = cparams.color_boost && cparams.butteraugli_distance > 0.3f;
+      if (cparams.red_bias >= 0.0f || cparams.green_bias >= 0.0f || active_color_boost || cparams.yellow_bias >= 0.0f) {
         if (cparams.red_bias >= 0.0f) {
           float r = cparams.red_bias;
           float g_ratio = jxl::cms::kM01 / (jxl::cms::kM01 + jxl::cms::kM02);
@@ -1607,27 +1608,15 @@ Status ComputeEncodingData(
           custom_opsin[3] = r_ratio * (1.0f - g);
           custom_opsin[5] = (1.0f - r_ratio) * (1.0f - g);
         }
-        if (cparams.color_boost) {
-          // Yellow 0.85
-          float b = 0.85f;
+        if (active_color_boost) {
+          // Yellow dynamic scaling
+          float dist = std::max(0.3f, std::min(3.0f, cparams.butteraugli_distance));
+          float factor = (dist - 0.3f) / 2.7f;
+          float b = jxl::cms::kM22 + factor * (0.85f - jxl::cms::kM22);
           float r_ratio_b = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
           custom_opsin[8] = b;
           custom_opsin[6] = r_ratio_b * (1.0f - b);
           custom_opsin[7] = (1.0f - r_ratio_b) * (1.0f - b);
-
-          // Red 0.42
-          float r = 0.42f;
-          float g_ratio_r = jxl::cms::kM01 / (jxl::cms::kM01 + jxl::cms::kM02);
-          custom_opsin[0] = r;
-          custom_opsin[1] = g_ratio_r * (1.0f - r);
-          custom_opsin[2] = (1.0f - g_ratio_r) * (1.0f - r);
-
-          // Green 0.74
-          float g = 0.74f;
-          float r_ratio_g = jxl::cms::kM10 / (jxl::cms::kM10 + jxl::cms::kM12);
-          custom_opsin[4] = g;
-          custom_opsin[3] = r_ratio_g * (1.0f - g);
-          custom_opsin[5] = (1.0f - r_ratio_g) * (1.0f - g);
         } else if (cparams.yellow_bias >= 0.0f) {
           float b = cparams.yellow_bias;
           float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);

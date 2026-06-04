@@ -392,7 +392,9 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS = 39,
 
-  /** Boost colors (Yellow 0.85, Red 0.42, Green 0.74). 0 = disabled (default), 1 = enabled.
+  /** Dynamically scale yellow bias based on butteraugli distance to boost color
+   * accuracy. Scales from distance 0.3 and maxes out at 3.0. 0 = disabled
+   * (default), 1 = enabled.
    */
   JXL_ENC_FRAME_SETTING_COLOR_BOOST = 40,
 
@@ -404,8 +406,8 @@ typedef enum {
    * Range [0, 1]. */
   JXL_ENC_FRAME_SETTING_RED_BIAS = 42,
 
-  /** Set the green multiplier for the M-cone to tune the green bias (e.g. 0.85).
-   * Range [0, 1]. */
+  /** Set the green multiplier for the M-cone to tune the green bias (e.g.
+   * 0.85). Range [0, 1]. */
   JXL_ENC_FRAME_SETTING_GREEN_BIAS = 43,
 
   /** Enum value not to be used as an option. This value is added to force the
@@ -413,7 +415,6 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_FILL_ENUM = 65535,
 } JxlEncoderFrameSettingId;
-
 
 /**
  * Creates an instance of @ref JxlEncoder and initializes it.

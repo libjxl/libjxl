@@ -403,7 +403,9 @@ struct CompressArgs {
                            4);
 
     cmdline->AddOptionFlag('\0', "color_boost",
-                           "Use a custom Opsin Inverse Matrix to boost color accuracy (Yellow 0.85, Red 0.42, Green 0.74).",
+                           "Dynamically scale yellow bias based on butteraugli "
+                           "distance to boost color accuracy."
+                           "The strength scales from distance 0.3 to 3.0.",
                            &color_boost, &SetBooleanTrue, 4);
 
     cmdline->AddOptionValue('\0', "yellow_bias", "FLOAT",
@@ -416,7 +418,8 @@ struct CompressArgs {
                             "red bias (default 0.3).",
                             &red_bias, &ParseFloat, 4);
     cmdline->AddOptionValue('\0', "green_bias", "FLOAT",
-                            "Set the green multiplier for the M-cone to tune the green bias (default 0.69).",
+                            "Set the green multiplier for the M-cone to tune "
+                            "the green bias (default 0.69).",
                             &green_bias, &ParseFloat, 4);
 
     cmdline->AddHelpText("\nModular mode options:", 4);
@@ -736,7 +739,8 @@ void ProcessFlags(const jxl::extras::Codec codec,
     params->AddOption(JXL_ENC_FRAME_SETTING_COLOR_BOOST, 1);
   }
   if (args->yellow_bias >= 0.0f) {
-    params->AddFloatOption(JXL_ENC_FRAME_SETTING_YELLOW_BIAS, args->yellow_bias);
+    params->AddFloatOption(JXL_ENC_FRAME_SETTING_YELLOW_BIAS,
+                           args->yellow_bias);
   }
   if (args->red_bias >= 0.0f) {
     params->AddFloatOption(JXL_ENC_FRAME_SETTING_RED_BIAS, args->red_bias);

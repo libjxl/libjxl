@@ -31,14 +31,14 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/exif.h"
+#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/base/matrix_ops.h"
-#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -805,9 +805,10 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
     }
 
     if (first_frame_settings) {
+      bool active_color_boost = first_frame_settings->cparams.color_boost && first_frame_settings->cparams.butteraugli_distance > 0.3f;
       if (first_frame_settings->cparams.red_bias >= 0.0f ||
           first_frame_settings->cparams.green_bias >= 0.0f ||
-          first_frame_settings->cparams.color_boost ||
+          active_color_boost ||
           first_frame_settings->cparams.yellow_bias >= 0.0f) {
         metadata.transform_data.all_default = false;
         metadata.transform_data.opsin_inverse_matrix.all_default = false;
@@ -831,27 +832,15 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
           custom_opsin[1][0] = r_ratio * (1.0f - g);
           custom_opsin[1][2] = (1.0f - r_ratio) * (1.0f - g);
         }
-        if (first_frame_settings->cparams.color_boost) {
-          // Yellow 0.85
-          float b = 0.85f;
+        if (active_color_boost) {
+          // Yellow dynamic scaling
+          float dist = std::max(0.3f, std::min(3.0f, first_frame_settings->cparams.butteraugli_distance));
+          float factor = (dist - 0.3f) / 2.7f;
+          float b = jxl::cms::kM22 + factor * (0.85f - jxl::cms::kM22);
           float r_ratio_b = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
           custom_opsin[2][2] = b;
           custom_opsin[2][0] = r_ratio_b * (1.0f - b);
           custom_opsin[2][1] = (1.0f - r_ratio_b) * (1.0f - b);
-
-          // Red 0.42
-          float r = 0.42f;
-          float g_ratio_r = jxl::cms::kM01 / (jxl::cms::kM01 + jxl::cms::kM02);
-          custom_opsin[0][0] = r;
-          custom_opsin[0][1] = g_ratio_r * (1.0f - r);
-          custom_opsin[0][2] = (1.0f - g_ratio_r) * (1.0f - r);
-
-          // Green 0.74
-          float g = 0.74f;
-          float r_ratio_g = jxl::cms::kM10 / (jxl::cms::kM10 + jxl::cms::kM12);
-          custom_opsin[1][1] = g;
-          custom_opsin[1][0] = r_ratio_g * (1.0f - g);
-          custom_opsin[1][2] = (1.0f - r_ratio_g) * (1.0f - g);
         } else if (first_frame_settings->cparams.yellow_bias >= 0.0f) {
           float b = first_frame_settings->cparams.yellow_bias;
           float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
@@ -868,13 +857,6 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
                 custom_opsin[i][j];
           }
         }
-        // Spec (Annex L.2.1, Table L.1): when all_default=false, the decoder
-        // reads opsin_biases and quant_biases from the bitstream. Explicitly
-        // set them to the standard defaults so the bitstream is self-consistent.
-        auto& oim = metadata.transform_data.opsin_inverse_matrix;
-        oim.opsin_biases[0] = jxl::cms::kNegOpsinAbsorbanceBiasRGB[0];
-        oim.opsin_biases[1] = jxl::cms::kNegOpsinAbsorbanceBiasRGB[1];
-        oim.opsin_biases[2] = jxl::cms::kNegOpsinAbsorbanceBiasRGB[2];
       }
     }
 
