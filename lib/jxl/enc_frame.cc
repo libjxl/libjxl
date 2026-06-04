@@ -1592,8 +1592,10 @@ Status ComputeEncodingData(
         jxl::cms::kM10, jxl::cms::kM11, jxl::cms::kM12,
         jxl::cms::kM20, jxl::cms::kM21, jxl::cms::kM22
       };
-      bool active_color_boost = cparams.color_boost && cparams.butteraugli_distance > 0.3f;
-      if (cparams.red_bias >= 0.0f || cparams.green_bias >= 0.0f || active_color_boost || cparams.yellow_bias >= 0.0f) {
+      bool active_color_boost =
+          cparams.color_boost && cparams.butteraugli_distance > 0.3f;
+      if (cparams.red_bias >= 0.0f || cparams.green_bias >= 0.0f ||
+          active_color_boost || cparams.yellow_bias >= 0.0f) {
         if (cparams.red_bias >= 0.0f) {
           float r = cparams.red_bias;
           float g_ratio = jxl::cms::kM01 / (jxl::cms::kM01 + jxl::cms::kM02);
@@ -1610,7 +1612,8 @@ Status ComputeEncodingData(
         }
         if (active_color_boost) {
           // Yellow dynamic scaling
-          float dist = std::max(0.3f, std::min(3.0f, cparams.butteraugli_distance));
+          float dist = std::max(
+              0.3f, std::min(3.0f, cparams.butteraugli_distance));
           float factor = (dist - 0.3f) / 2.7f;
           float b = jxl::cms::kM22 + factor * (0.85f - jxl::cms::kM22);
           float r_ratio_b = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);

@@ -805,7 +805,9 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
     }
 
     if (first_frame_settings) {
-      bool active_color_boost = first_frame_settings->cparams.color_boost && first_frame_settings->cparams.butteraugli_distance > 0.3f;
+      bool active_color_boost =
+          first_frame_settings->cparams.color_boost &&
+          first_frame_settings->cparams.butteraugli_distance > 0.3f;
       if (first_frame_settings->cparams.red_bias >= 0.0f ||
           first_frame_settings->cparams.green_bias >= 0.0f ||
           active_color_boost ||
@@ -834,7 +836,10 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
         }
         if (active_color_boost) {
           // Yellow dynamic scaling
-          float dist = std::max(0.3f, std::min(3.0f, first_frame_settings->cparams.butteraugli_distance));
+          float dist = std::max(
+              0.3f,
+              std::min(3.0f,
+                       first_frame_settings->cparams.butteraugli_distance));
           float factor = (dist - 0.3f) / 2.7f;
           float b = jxl::cms::kM22 + factor * (0.85f - jxl::cms::kM22);
           float r_ratio_b = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
