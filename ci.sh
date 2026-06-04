@@ -1212,7 +1212,7 @@ cmd_fuzz() {
   )
 }
 
-# Runs the linters (clang-format, build_cleaner, buildirier) on the pending CLs.
+# Runs the linters (clang-format, build_cleaner, buildifier) on the pending CLs.
 cmd_lint() {
   merge_request_commits
   { set +x; } 2>/dev/null
