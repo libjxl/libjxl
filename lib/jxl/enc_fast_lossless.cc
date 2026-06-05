@@ -2923,8 +2923,19 @@ constexpr uint8_t MoreThan14Bits::kMinRawLength[];
 constexpr uint8_t MoreThan14Bits::kMaxRawLength[];
 
 bool PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
+                           size_t max_encoded_bits_per_sample,
                            const PrefixCode code[4], BitWriter* output) {
-  if (!output->Allocate(100000 + (is_single_group ? width * height * 16 : 0))) {
+  // In single-group mode the pixel data of (at least) channel 0 is written
+  // into this same buffer, so it must be budgeted for the worst-case encoded
+  // size of a sample, which is `max_encoded_bits_per_sample` (up to 24 for
+  // >14-bit input), not a hardcoded 16. Using 16 here under-allocates for
+  // 15/16-bit images and leads to a heap-buffer-overflow when the data is
+  // incompressible. The non-single-group path already uses
+  // BitDepth::MaxEncodedBitsPerSample() (see WriteACSection).
+  if (!output->Allocate(100000 +
+                        (is_single_group
+                             ? width * height * max_encoded_bits_per_sample
+                             : 0))) {
     return false;
   }
   // No patches, spline or noise.
@@ -3004,9 +3015,10 @@ bool PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
 }
 
 bool PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
-                     size_t nb_chans, const PrefixCode code[4],
-                     BitWriter* output) {
-  if (!PrepareDCGlobalCommon(is_single_group, width, height, code, output)) {
+                     size_t max_encoded_bits_per_sample, size_t nb_chans,
+                     const PrefixCode code[4], BitWriter* output) {
+  if (!PrepareDCGlobalCommon(is_single_group, width, height,
+                             max_encoded_bits_per_sample, code, output)) {
     return false;
   }
   if (nb_chans > 2) {
@@ -3669,10 +3681,12 @@ void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
 }
 
 bool PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
-                            size_t nb_chans, const PrefixCode code[4],
+                            size_t max_encoded_bits_per_sample, size_t nb_chans,
+                            const PrefixCode code[4],
                             const std::vector<uint32_t>& palette,
                             size_t pcolors, BitWriter* output) {
-  if (!PrepareDCGlobalCommon(is_single_group, width, height, code, output)) {
+  if (!PrepareDCGlobalCommon(is_single_group, width, height,
+                             max_encoded_bits_per_sample, code, output)) {
     return false;
   }
   output->Write(2, 0b01);     // 1 transform
@@ -3993,13 +4007,15 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
   frame_state->group_data = std::vector<std::array<BitWriter, 4>>(num_groups);
   frame_state->group_sizes.resize(num_groups);
   if (collided) {
-    if (!PrepareDCGlobal(onegroup, width, height, nb_chans, frame_state->hcode,
-                         &frame_state->group_data[0][0])) {
+    if (!PrepareDCGlobal(onegroup, width, height,
+                         bitdepth.MaxEncodedBitsPerSample(), nb_chans,
+                         frame_state->hcode, &frame_state->group_data[0][0])) {
       delete frame_state;
       return nullptr;
     }
   } else {
-    if (!PrepareDCGlobalPalette(onegroup, width, height, nb_chans,
+    if (!PrepareDCGlobalPalette(onegroup, width, height,
+                                bitdepth.MaxEncodedBitsPerSample(), nb_chans,
                                 frame_state->hcode, palette, pcolors,
                                 &frame_state->group_data[0][0])) {
       delete frame_state;
