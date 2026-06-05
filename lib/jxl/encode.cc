@@ -2107,6 +2107,9 @@ JxlEncoderStatus GetCurrentDimensions(
 }
 }  // namespace
 
+static JxlEncoderError GetJpegReconstructionError(
+    const jxl::jpeg::JPEGData& jpeg);
+
 JxlEncoderStatus JxlEncoderAddJPEGFrame(
     const JxlEncoderFrameSettings* frame_settings, const uint8_t* buffer,
     size_t size) {
@@ -2221,6 +2224,25 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
                            "Need to preserve EXIF and XMP to allow JPEG "
                            "bitstream reconstruction");
     }
+    JxlEncoderError precheck_error = GetJpegReconstructionError(*jpeg_data);
+    if (precheck_error != JXL_ENC_ERR_OK) {
+      switch (precheck_error) {
+        case JXL_ENC_ERR_JBRD_TOO_MUCH_TAIL_DATA:
+          return JXL_API_ERROR(frame_settings->enc, precheck_error,
+                               "JPEG tail data is too large for "
+                               "reconstruction metadata");
+        case JXL_ENC_ERR_JBRD_TOO_MANY_RESET_POINTS:
+          return JXL_API_ERROR(frame_settings->enc, precheck_error,
+                               "Too many JPEG reset points for "
+                               "reconstruction metadata");
+        case JXL_ENC_ERR_JBRD_TOO_MANY_MARKERS:
+          return JXL_API_ERROR(frame_settings->enc, precheck_error,
+                               "Too many JPEG markers for reconstruction "
+                               "metadata");
+        default:
+          break;
+      }
+    }
     std::vector<uint8_t> jpeg_metadata;
     if (!jxl::jpeg::EncodeJPEGData(&frame_settings->enc->memory_manager,
                                    *jpeg_data, &jpeg_metadata,
@@ -2311,8 +2333,30 @@ static bool CanDoFastLossless(const JxlEncoderFrameSettings* frame_settings,
         has_alpha)) {
     return false;
   }
-
   return true;
+}
+
+static JxlEncoderError GetJpegReconstructionError(
+    const jxl::jpeg::JPEGData& jpeg) {
+  if (jpeg.tail_data.size() > 4260096) {
+    return JXL_ENC_ERR_JBRD_TOO_MUCH_TAIL_DATA;
+  }
+  if (jpeg.marker_order.size() > 16384) {
+    return JXL_ENC_ERR_JBRD_TOO_MANY_MARKERS;
+  }
+  for (const auto& scan : jpeg.scan_info) {
+    for (uint32_t block_idx : scan.reset_points) {
+      if (block_idx >= (3u << 26)) {
+        return JXL_ENC_ERR_JBRD_TOO_MANY_RESET_POINTS;
+      }
+    }
+    for (const auto& extra_zero_run : scan.extra_zero_runs) {
+      if (extra_zero_run.block_idx > (3u << 26)) {
+        return JXL_ENC_ERR_JBRD_TOO_MANY_RESET_POINTS;
+      }
+    }
+  }
+  return JXL_ENC_ERR_OK;
 }
 
 namespace {
