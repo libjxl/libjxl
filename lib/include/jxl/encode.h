@@ -398,7 +398,7 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_COLOR_BOOST = 40,
 
-  /** Tune the blue multiplier for the S-cone. -1.0 means disable (default).
+  /** Tune the yellow multiplier for the S-cone. -1.0 means disable (default).
    */
   JXL_ENC_FRAME_SETTING_YELLOW_BIAS = 41,
 
