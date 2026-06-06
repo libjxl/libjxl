@@ -394,7 +394,9 @@ typedef enum {
 
   /** Dynamically scale yellow bias based on butteraugli distance to boost color
    * accuracy. Scales from distance 0.3 and maxes out at 3.0. 0 = disabled
-   * (default), 1 = enabled.
+   * (default), 1 = enabled. Note: For multi-frame animations, the scaling
+   * multiplier is calculated based on the first frame's distance and applied
+   * globally to the entire sequence.
    */
   JXL_ENC_FRAME_SETTING_COLOR_BOOST = 40,
 

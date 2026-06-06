@@ -777,7 +777,13 @@ void ComputeCustomOpsinMatrix(const jxl::CompressParams& cparams,
     custom_opsin[1][0] = r_ratio * (1.0f - g);
     custom_opsin[1][2] = (1.0f - r_ratio) * (1.0f - g);
   }
-  if (cparams.color_boost && cparams.butteraugli_distance > 0.3f) {
+  if (cparams.yellow_bias >= 0.0f) {
+    float b = cparams.yellow_bias;
+    float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
+    custom_opsin[2][2] = b;
+    custom_opsin[2][0] = r_ratio * (1.0f - b);
+    custom_opsin[2][1] = (1.0f - r_ratio) * (1.0f - b);
+  } else if (cparams.color_boost && cparams.butteraugli_distance > 0.3f) {
     // Yellow dynamic scaling
     float dist =
         std::max(0.3f, std::min(3.0f, cparams.butteraugli_distance));
@@ -787,12 +793,6 @@ void ComputeCustomOpsinMatrix(const jxl::CompressParams& cparams,
     custom_opsin[2][2] = b;
     custom_opsin[2][0] = r_ratio_b * (1.0f - b);
     custom_opsin[2][1] = (1.0f - r_ratio_b) * (1.0f - b);
-  } else if (cparams.yellow_bias >= 0.0f) {
-    float b = cparams.yellow_bias;
-    float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
-    custom_opsin[2][2] = b;
-    custom_opsin[2][0] = r_ratio * (1.0f - b);
-    custom_opsin[2][1] = (1.0f - r_ratio) * (1.0f - b);
   }
 }
 
