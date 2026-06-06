@@ -1938,6 +1938,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
           default_to_false(value);
       if (frame_settings->values.cparams.disable_perceptual_optimizations &&
           frame_settings->enc->basic_info_set &&
+          frame_settings->enc->metadata.m.xyb_encoded) {
         return JXL_API_ERROR(
             frame_settings->enc, JXL_ENC_ERR_API_USAGE,
             "Set uses_original_profile=true for non-perceptual encoding");
