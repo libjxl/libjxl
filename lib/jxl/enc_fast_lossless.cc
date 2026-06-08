@@ -2751,7 +2751,7 @@ struct From9To13Bits {
   static constexpr uint8_t kMaxRawLength[17] = {
       8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 10,
   };
-  static size_t MaxEncodedBitsPerSample() { return 21; }
+  static size_t MaxEncodedBitsPerSample() { return 22; }
   static constexpr size_t kInputBytes = 2;
   using pixel_t = int16_t;
   using upixel_t = uint16_t;
@@ -2817,7 +2817,7 @@ struct Exactly14Bits {
       7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 10,
   };
   static constexpr size_t bitdepth = 14;
-  static size_t MaxEncodedBitsPerSample() { return 22; }
+  static size_t MaxEncodedBitsPerSample() { return 23; }
   static constexpr size_t kInputBytes = 2;
   using pixel_t = int16_t;
   using upixel_t = uint16_t;
@@ -2874,7 +2874,7 @@ struct MoreThan14Bits {
   static constexpr uint8_t kMaxRawLength[20] = {
       7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 10,
   };
-  static size_t MaxEncodedBitsPerSample() { return 24; }
+  static size_t MaxEncodedBitsPerSample() { return 25; }
   static constexpr size_t kInputBytes = 2;
   using pixel_t = int32_t;
   using upixel_t = uint32_t;
@@ -2925,10 +2925,8 @@ constexpr uint8_t MoreThan14Bits::kMaxRawLength[];
 bool PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
                            size_t max_encoded_bits_per_sample,
                            const PrefixCode code[4], BitWriter* output) {
-  if (!output->Allocate(100000 +
-                        (is_single_group
-                             ? width * height * max_encoded_bits_per_sample
-                             : 0))) {
+  size_t num_samples = is_single_group ? (width * height) : 0;
+  if (!output->Allocate(100000 + num_samples * max_encoded_bits_per_sample)) {
     return false;
   }
   // No patches, spline or noise.
