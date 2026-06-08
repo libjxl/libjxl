@@ -48,4 +48,4 @@ jobs:
         GIT_SSH_COMMAND: ssh -v -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no
       run: |
         git remote add gitlab git@gitlab.com:wg1/jpeg-xl.git
-        git push gitlab $BRANCH_NAME:$BRANCH_NAME
+        git push gitlab "$BRANCH_NAME:$BRANCH_NAME"
