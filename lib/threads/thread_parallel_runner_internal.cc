@@ -167,13 +167,11 @@ ThreadParallelRunner::~ThreadParallelRunner() {
   }
 
   for (std::thread& thread : threads_) {
-    if (thread.joinable()) {
-      thread.join();
+    if (!thread.joinable()) {
+      // Should not ever happen.
+      // TODO(eustas): do we need to log some alert?
     } else {
-#if JXL_IS_DEBUG_BUILD
-      JXL_PRINT_STACK_TRACE();
-      JXL_CRASH();
-#endif
+      thread.join();
     }
   }
 }

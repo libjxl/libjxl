@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_BASE_INCLUDE_JPEGLIB_H_
-#define LIB_JXL_BASE_INCLUDE_JPEGLIB_H_
+#ifndef LIB_EXTRAS_INCLUDE_JPEGLIB_H_
+#define LIB_EXTRAS_INCLUDE_JPEGLIB_H_
 
 // Using this header ensures that includes go in the right order,
 // not alphabetically sorted.
@@ -17,4 +17,4 @@
 /* clang-format on */
 // NOLINTEND
 
-#endif  // LIB_JXL_BASE_INCLUDE_JPEGLIB_H_
+#endif  // LIB_EXTRAS_INCLUDE_JPEGLIB_H_

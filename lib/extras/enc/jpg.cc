@@ -37,10 +37,10 @@ std::unique_ptr<Encoder> GetJPEGEncoder() { return nullptr; }
 #include <vector>
 
 #include "lib/extras/exif.h"
+#include "lib/extras/include_jpeglib.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/include_jpeglib.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 
