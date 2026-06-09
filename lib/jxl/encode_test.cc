@@ -2158,7 +2158,7 @@ std::vector<uint8_t> EncodeWithOutputMode(
             JxlEncoderSetColorEncoding(enc.get(), &ppf.color_encoding));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetFrameDistance(fs, 2.0f));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFrameSettingsSetOption(
-                                 fs, JXL_ENC_FRAME_SETTING_EFFORT, 6));
+                                 fs, JXL_ENC_FRAME_SETTING_EFFORT, 3));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFrameSettingsSetOption(
                                  fs, JXL_ENC_FRAME_SETTING_BUFFERING, 2));
   EXPECT_EQ(JXL_ENC_SUCCESS,
