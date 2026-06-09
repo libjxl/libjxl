@@ -5,6 +5,8 @@
 
 #include "lib/extras/dec/exr.h"
 
+#include <jxl/codestream_header.h>  // JXL_CHANNEL_OPTIONAL
+
 #include <cstdint>
 
 #include "lib/extras/dec/color_hints.h"
@@ -47,6 +49,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
 #include <cstring>
 #include <memory>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 

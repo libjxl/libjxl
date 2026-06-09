@@ -6,6 +6,9 @@
 #include "lib/jxl/simd_util.h"
 
 #include <cstddef>
+#include <cstdint>
+
+#include "lib/jxl/base/compiler_specific.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/simd_util.cc"

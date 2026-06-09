@@ -7,6 +7,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
@@ -20,6 +22,7 @@
 #include "lib/jxl/enc_ans_simd.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"

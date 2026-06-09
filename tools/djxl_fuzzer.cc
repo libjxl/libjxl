@@ -365,7 +365,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
           decode_callback_data.called_rows.clear();
         }
         decode_callback_data.called_rows_mutex =
-            jxl::make_unique<std::mutex[]>(decode_callback_data.ysize);
+            std::make_unique<std::mutex[]>(decode_callback_data.ysize);
         decode_callback_data.called_rows.resize(decode_callback_data.ysize);
         for (size_t y = 0; y < decode_callback_data.ysize; ++y) {
           decode_callback_data.called_rows[y].delta.clear();

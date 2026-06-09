@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "lib/extras/dec/color_hints.h"
+#include "lib/extras/mmap.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/bits.h"
