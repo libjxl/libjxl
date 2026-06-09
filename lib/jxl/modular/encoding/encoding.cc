@@ -193,7 +193,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
 
   // True iff every decision node in global_tree splits on a static property
   // (channel or group_id) and every leaf has Gradient predictor with identity
-  // transform. When this holds, all channels collapse to the same single-leaf
+  // transform. When this holds, all channels collapse to a single-leaf
   // Gradient+noop tree regardless of channel index, so the shared fl_run/fl_v
   // RLE state remains consistent across channel calls.
   const bool global_tree_is_all_gradient_noop = [&] {
