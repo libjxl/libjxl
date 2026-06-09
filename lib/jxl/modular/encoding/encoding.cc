@@ -191,6 +191,24 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     return val * multiplier + offset;
   };
 
+  // True iff every decision node in global_tree splits on a static property
+  // (channel or group_id) and every leaf has Gradient predictor with identity
+  // transform. When this holds, all channels collapse to the same single-leaf
+  // Gradient+noop tree regardless of channel index, so the shared fl_run/fl_v
+  // RLE state remains consistent across channel calls.
+  const bool global_tree_is_all_gradient_noop = [&] {
+    for (const auto& n : global_tree) {
+      if (n.property == -1) {
+        if (n.predictor != Predictor::Gradient || n.predictor_offset != 0 ||
+            n.multiplier != 1)
+          return false;
+      } else if (n.property >= kNumStaticProperties) {
+        return false;
+      }
+    }
+    return true;
+  }();
+
   if (tree.size() == 1) {
     // special optimized case: no meta-adaptation, so no need
     // to compute properties.
@@ -234,8 +252,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         }
       }
       return true;
-    } else if (uses_lz77 && predictor == Predictor::Gradient && offset == 0 &&
-               multiplier == 1 && reader->IsHuffRleOnly()) {
+    } else if (uses_lz77 && reader->IsHuffRleOnly() &&
+               global_tree_is_all_gradient_noop) {
       JXL_DEBUG_V(8, "Gradient RLE (fjxl) very fast track.");
       pixel_type_w sv = UnpackSigned(fl_v);
       for (size_t y = 0; y < channel.h; y++) {
