@@ -9,8 +9,6 @@
 #include <cstdint>
 #include <vector>
 
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -39,8 +37,7 @@ TEST(ThreadParallelRunnerTest, TestPool) {
       for (int begin = 0; begin < 32; ++begin) {
         std::fill(mementos.begin(), mementos.end(), 0);
         const auto do_task = [begin, num_tasks, &mementos](
-                                 const int task,
-                                 const int thread) -> jxl::Status {
+                                 const int task, const int thread) -> bool {
           // Parameter is in the given range
           EXPECT_GE(task, begin);
           EXPECT_LT(task, begin + num_tasks);
@@ -49,8 +46,11 @@ TEST(ThreadParallelRunnerTest, TestPool) {
           mementos.at(task - begin) = 1000 + task;
           return true;
         };
-        EXPECT_TRUE(RunOnPool(pool.get(), begin, begin + num_tasks,
-                              jxl::ThreadPool::NoInit, do_task, "TestPool"));
+        const auto no_init_func = [](size_t num_threads) -> bool {
+          return true;
+        };
+        EXPECT_TRUE(pool.get()->Run(begin, begin + num_tasks, no_init_func,
+                                    do_task, "TestPool"));
         for (int task = begin; task < begin + num_tasks; ++task) {
           EXPECT_EQ(1000 + task, mementos.at(task - begin));
         }
@@ -69,7 +69,7 @@ TEST(ThreadParallelRunnerTest, TestSmallAssignments) {
     std::atomic<uint64_t> id_bits{0};
     std::atomic<uint32_t> num_calls{0};
     const auto do_task = [&num_calls, num_threads, &id_bits](
-                             const int task, const int thread) -> jxl::Status {
+                             const int task, const int thread) -> bool {
       num_calls.fetch_add(1, std::memory_order_relaxed);
 
       EXPECT_LT(static_cast<size_t>(thread), num_threads);
@@ -79,8 +79,9 @@ TEST(ThreadParallelRunnerTest, TestSmallAssignments) {
       }
       return true;
     };
-    EXPECT_TRUE(RunOnPool(pool.get(), 0, num_threads, jxl::ThreadPool::NoInit,
-                          do_task, "TestSmallAssignments"));
+    const auto no_init_func = [](size_t num_threads) -> bool { return true; };
+    EXPECT_TRUE(pool.get()->Run(0, num_threads, no_init_func, do_task,
+                                "TestSmallAssignments"));
 
     // Correct number of tasks.
     EXPECT_EQ(num_threads, num_calls.load());
@@ -107,13 +108,13 @@ TEST(ThreadParallelRunnerTest, TestCounter) {
   alignas(128) Counter counters[kNumThreads];
 
   const int kNumTasks = kNumThreads * 19;
-  const auto count = [&counters](const int task,
-                                 const int thread) -> jxl::Status {
+  const auto count = [&counters](const int task, const int thread) -> bool {
     counters[thread].counter += task;
     return true;
   };
-  EXPECT_TRUE(RunOnPool(pool.get(), 0, kNumTasks, jxl::ThreadPool::NoInit,
-                        count, "TestCounter"));
+  const auto no_init_func = [](size_t num_threads) -> bool { return true; };
+  EXPECT_TRUE(
+      pool.get()->Run(0, kNumTasks, no_init_func, count, "TestCounter"));
 
   int expected = 0;
   for (int i = 0; i < kNumTasks; ++i) {
