@@ -19,6 +19,7 @@
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"

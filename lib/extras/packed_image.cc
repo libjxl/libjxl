@@ -9,12 +9,10 @@
 #include "packed_image.h"
 
 #include <jxl/codestream_header.h>
-#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
 #include <jxl/types.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
