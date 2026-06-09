@@ -44,12 +44,10 @@ static inline bool SafeAdd(const U a, const U b, U& sum) {
   return sum >= a;  // no need to check b - either sum >= both or < both.
 }
 
-template <typename U,
-          class = typename std::enable_if<std::is_unsigned<U>::value>::type>
-static inline bool SafeMul(const U a, const U b, U& product) {
+static inline bool SafeMul(size_t a, size_t b, size_t& product) {
   product = 0;
   if (a == 0 || b == 0) return true;
-  if (b > (std::numeric_limits<U>::max() / a)) return false;
+  if (b > (std::numeric_limits<size_t>::max() / a)) return false;
   product = a * b;
   return true;
 }
