@@ -5597,6 +5597,51 @@ JXL_BOXES_TEST(DecodeTest, PartialCodestreamBoxTest) {
   }
 }
 
+// Regression test for out-of-order jxlp box handling (PR #4741). A jxlp box
+// whose index duplicates an already-buffered out-of-order index must be
+// rejected. Before the fix, the second box's payload was silently concatenated
+// onto the first buffered one (and its is_last flag dropped) instead of being
+// flagged as an error, so the decoder kept asking for more input. We therefore
+// keep the input open: without the fix this returns JXL_DEC_NEED_MORE_INPUT,
+// with the fix it returns JXL_DEC_ERROR at the duplicate box.
+JXL_BOXES_TEST(DecodeTest, OutOfOrderJxlpDuplicateIndexTest) {
+  auto append_tag = [](const char* tag, std::vector<uint8_t>* out) {
+    out->insert(out->end(), tag, tag + 4);
+  };
+  std::vector<uint8_t> c;
+
+  // JXL signature box (12 bytes).
+  AppendU32BE(12, &c);
+  append_tag("JXL ", &c);
+  c.insert(c.end(), {0x0D, 0x0A, 0x87, 0x0A});
+
+  // ftyp box declaring file format version 1, which enables out-of-order jxlp.
+  AppendU32BE(20, &c);
+  append_tag("ftyp", &c);
+  append_tag("jxl ", &c);  // major brand
+  AppendU32BE(1, &c);      // minor version = 1
+  append_tag("jxl ", &c);  // compatible brand
+
+  // Two jxlp boxes that both carry out-of-order index 1 (the expected first
+  // index is 0). The first is buffered; the second is a duplicate.
+  for (int i = 0; i < 2; ++i) {
+    AppendU32BE(16, &c);  // box size: 8-byte header + 8-byte contents
+    append_tag("jxlp", &c);
+    AppendU32BE(1, &c);  // jxlp index 1, high bit unset (not the last box)
+    c.insert(c.end(), {0xAA, 0xBB, 0xCC, 0xDD});  // payload
+  }
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, c.data(), c.size()));
+  // Intentionally do not close the input: this distinguishes the rejection
+  // (JXL_DEC_ERROR) from the pre-fix "buffer and wait" (JXL_DEC_NEED_MORE_INPUT)
+  // behavior.
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec));
+  JxlDecoderDestroy(dec);
+}
+
 TEST(DecodeTest, SpotColorTest) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
