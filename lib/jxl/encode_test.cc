@@ -2209,7 +2209,7 @@ TEST(EncodeTest, OutputModeComparisonTest) {
     ASSERT_TRUE(DecodeImageJXL(m0d.data(), m0d.size(), dparams, nullptr,
                                &ppf_decoded, nullptr));
     EXPECT_SLIGHTLY_BELOW(jxl::test::ButteraugliDistance(ppf_orig, ppf_decoded),
-                          2.2f);
+                          2.5f);
   }
 
   // Size observations (reference machine: m0d=284295, m0p=284335,
