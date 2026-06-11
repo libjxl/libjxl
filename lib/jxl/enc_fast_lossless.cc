@@ -2925,13 +2925,6 @@ constexpr uint8_t MoreThan14Bits::kMaxRawLength[];
 bool PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
                            size_t max_encoded_bits_per_sample,
                            const PrefixCode code[4], BitWriter* output) {
-  // In single-group mode the pixel data of (at least) channel 0 is written
-  // into this same buffer, so it must be budgeted for the worst-case encoded
-  // size of a sample, which is `max_encoded_bits_per_sample` (up to 24 for
-  // >14-bit input), not a hardcoded 16. Using 16 here under-allocates for
-  // 15/16-bit images and leads to a heap-buffer-overflow when the data is
-  // incompressible. The non-single-group path already uses
-  // BitDepth::MaxEncodedBitsPerSample() (see WriteACSection).
   if (!output->Allocate(100000 +
                         (is_single_group
                              ? width * height * max_encoded_bits_per_sample
