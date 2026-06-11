@@ -10,7 +10,6 @@
 #include <algorithm>  // fill, swap
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/memory_manager_internal.h"

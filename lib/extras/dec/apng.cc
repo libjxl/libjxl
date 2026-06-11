@@ -69,7 +69,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 #include <csetjmp>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <string>
 #include <utility>
 #include <vector>

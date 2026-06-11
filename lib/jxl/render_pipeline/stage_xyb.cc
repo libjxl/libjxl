@@ -10,8 +10,10 @@
 #include <memory>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"

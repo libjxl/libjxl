@@ -30,6 +30,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_cache.h"
@@ -1954,10 +1955,19 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         dec->box_stage = BoxStage::kCodestream;
       } else if (dec->jxl_file_format_version >= 1) {
         // Out-of-order box (version 1+): buffer payload for later injection.
+        // Reject a counter that is already buffered: emplace() would be a
+        // no-op (leaving the old is_last in place), and the kBufferingJxlp
+        // stage would then concatenate this box's payload onto the previously
+        // buffered one via operator[]. Both effects corrupt the reconstructed
+        // codestream and let a single index accumulate unbounded data, so a
+        // duplicate index must be a hard error (jxlp indices are unique).
+        auto insert_result = dec->jxlp_ooo_buffer.emplace(
+            counter, std::make_pair(std::vector<uint8_t>(), is_last));
+        if (!insert_result.second) {
+          return JXL_INPUT_ERROR("duplicate jxlp box index %u", counter);
+        }
         dec->buffering_jxlp_index = counter;
         dec->buffering_jxlp_is_last = is_last;
-        dec->jxlp_ooo_buffer.emplace(
-            counter, std::make_pair(std::vector<uint8_t>(), is_last));
         dec->box_stage = BoxStage::kBufferingJxlp;
       } else {
         return JXL_INPUT_ERROR(

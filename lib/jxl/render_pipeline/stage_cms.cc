@@ -6,6 +6,7 @@
 #include "lib/jxl/render_pipeline/stage_cms.h"
 
 #include <cstddef>
+#include <cstring>
 #include <memory>
 #include <utility>
 #include <vector>
