@@ -32,6 +32,7 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -1592,8 +1593,23 @@ Status ComputeEncodingData(
                                              patch_rect.ysize()));
         linear = &linear_storage;
       }
+
+      const float* custom_opsin_ptr = nullptr;
+      float custom_opsin[9];
+      if (!metadata->transform_data.opsin_inverse_matrix.all_default) {
+        jxl::Matrix3x3 forward_matrix =
+            metadata->transform_data.opsin_inverse_matrix.inverse_matrix;
+        JXL_RETURN_IF_ERROR(jxl::Inv3x3Matrix(forward_matrix));
+        for (int i = 0; i < 3; i++) {
+          for (int j = 0; j < 3; j++) {
+            custom_opsin[i * 3 + j] = forward_matrix[i][j];
+          }
+        }
+        custom_opsin_ptr = custom_opsin;
+      }
+
       JXL_RETURN_IF_ERROR(ToXYB(c_enc, metadata->m.IntensityTarget(), black,
-                                pool, &color, cms, linear));
+                                pool, &color, cms, linear, custom_opsin_ptr));
     } else {
       // Nothing to do.
       // RGB or YCbCr: forward YCbCr is not implemented, this is only used

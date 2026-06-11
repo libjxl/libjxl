@@ -40,9 +40,12 @@ namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::IfThenElse;
+using hwy::HWY_NAMESPACE::Lt;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
 using hwy::HWY_NAMESPACE::Sub;
+using hwy::HWY_NAMESPACE::Zero;
 using hwy::HWY_NAMESPACE::ZeroIfNegative;
 
 // 4x3 matrix * 3x1 SIMD vectors
@@ -211,13 +214,15 @@ Status SRGBToXYBAndLinear(const float* JXL_RESTRICT premul_absorb,
   return true;
 }
 
-void ComputePremulAbsorb(float intensity_target, float* premul_absorb) {
+void ComputePremulAbsorb(float intensity_target, float* premul_absorb,
+                         const float* custom_opsin) {
   const HWY_FULL(float) d;
   const size_t N = Lanes(d);
   const float mul = intensity_target / 255.0f;
   for (size_t j = 0; j < 3; ++j) {
     for (size_t i = 0; i < 3; ++i) {
-      const auto absorb = Set(d, jxl::cms::kOpsinAbsorbanceMatrix[j][i] * mul);
+      const float val = custom_opsin ? custom_opsin[j * 3 + i] : jxl::cms::kOpsinAbsorbanceMatrix[j][i];
+      const auto absorb = Set(d, val * mul);
       Store(absorb, d, premul_absorb + (j * 3 + i) * N);
     }
   }
@@ -232,7 +237,8 @@ void ComputePremulAbsorb(float intensity_target, float* premul_absorb) {
 // it does not contain a sensitivity multiplier based on the blurred image.
 Status ToXYB(const ColorEncoding& c_current, float intensity_target,
              const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
-             const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear) {
+             const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear,
+             const float* custom_opsin) {
   JXL_ENSURE(image);
   if (black) JXL_ENSURE(SameSize(*image, *black));
   if (linear) JXL_ENSURE(SameSize(*image, *linear));
@@ -246,7 +252,7 @@ Status ToXYB(const ColorEncoding& c_current, float intensity_target,
       AlignedMemory mem,
       AlignedMemory::Create(memory_manager, Lanes(d) * 12 * sizeof(float)));
   float* premul_absorb = mem.address<float>();
-  ComputePremulAbsorb(intensity_target, premul_absorb);
+  ComputePremulAbsorb(intensity_target, premul_absorb, custom_opsin);
 
   const bool want_linear = (linear != nullptr);
 
@@ -360,9 +366,10 @@ namespace jxl {
 HWY_EXPORT(ToXYB);
 Status ToXYB(const ColorEncoding& c_current, float intensity_target,
              const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
-             const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear) {
+             const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear,
+             const float* custom_opsin) {
   return HWY_DYNAMIC_DISPATCH(ToXYB)(c_current, intensity_target, black, pool,
-                                     image, cms, linear);
+                                     image, cms, linear, custom_opsin);
 }
 
 HWY_EXPORT(LinearRGBRowToXYB);
@@ -374,14 +381,16 @@ void LinearRGBRowToXYB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
 }
 
 HWY_EXPORT(ComputePremulAbsorb);
-void ComputePremulAbsorb(float intensity_target, float* premul_absorb) {
-  HWY_DYNAMIC_DISPATCH(ComputePremulAbsorb)(intensity_target, premul_absorb);
+void ComputePremulAbsorb(float intensity_target, float* premul_absorb,
+                         const float* custom_opsin) {
+  HWY_DYNAMIC_DISPATCH(ComputePremulAbsorb)(intensity_target, premul_absorb, custom_opsin);
 }
 
 void ScaleXYBRow(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                  float* JXL_RESTRICT row2, size_t xsize) {
   for (size_t x = 0; x < xsize; x++) {
-    row2[x] = (row2[x] - row1[x] + jxl::cms::kScaledXYBOffset[2]) *
+    float s_minus_y = row2[x] - row1[x];
+    row2[x] = (s_minus_y + jxl::cms::kScaledXYBOffset[2]) *
               jxl::cms::kScaledXYBScale[2];
     row0[x] = (row0[x] + jxl::cms::kScaledXYBOffset[0]) *
               jxl::cms::kScaledXYBScale[0];

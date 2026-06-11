@@ -31,12 +31,14 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/exif.h"
+#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -754,6 +756,46 @@ void FastLosslessRunnerAdapter(void* void_ticket, void* opaque,
   }
 }
 
+void ComputeCustomOpsinMatrix(const jxl::CompressParams& cparams,
+                              jxl::Matrix3x3& custom_opsin) {
+  custom_opsin = {{
+      {{jxl::cms::kM00, jxl::cms::kM01, jxl::cms::kM02}},
+      {{jxl::cms::kM10, jxl::cms::kM11, jxl::cms::kM12}},
+      {{jxl::cms::kM20, jxl::cms::kM21, jxl::cms::kM22}},
+  }};
+  if (cparams.red_bias >= 0.0f) {
+    float r = cparams.red_bias;
+    float g_ratio = jxl::cms::kM01 / (jxl::cms::kM01 + jxl::cms::kM02);
+    custom_opsin[0][0] = r;
+    custom_opsin[0][1] = g_ratio * (1.0f - r);
+    custom_opsin[0][2] = (1.0f - g_ratio) * (1.0f - r);
+  }
+  if (cparams.green_bias >= 0.0f) {
+    float g = cparams.green_bias;
+    float r_ratio = jxl::cms::kM10 / (jxl::cms::kM10 + jxl::cms::kM12);
+    custom_opsin[1][1] = g;
+    custom_opsin[1][0] = r_ratio * (1.0f - g);
+    custom_opsin[1][2] = (1.0f - r_ratio) * (1.0f - g);
+  }
+  if (cparams.yellow_bias >= 0.0f) {
+    float b = cparams.yellow_bias;
+    float r_ratio = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
+    custom_opsin[2][2] = b;
+    custom_opsin[2][0] = r_ratio * (1.0f - b);
+    custom_opsin[2][1] = (1.0f - r_ratio) * (1.0f - b);
+  } else if (cparams.color_boost && cparams.butteraugli_distance > 0.3f) {
+    // Yellow dynamic scaling
+    float dist =
+        std::max(0.3f, std::min(3.0f, cparams.butteraugli_distance));
+    float factor = (dist - 0.3f) / 2.7f;
+    float b = jxl::cms::kM22 + factor * (0.85f - jxl::cms::kM22);
+    float r_ratio_b = jxl::cms::kM20 / (jxl::cms::kM20 + jxl::cms::kM21);
+    custom_opsin[2][2] = b;
+    custom_opsin[2][0] = r_ratio_b * (1.0f - b);
+    custom_opsin[2][1] = (1.0f - r_ratio_b) * (1.0f - b);
+  }
+}
+
 }  // namespace
 
 jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
@@ -793,6 +835,47 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
     }
     jxl::AuxOut* aux_out =
         input.frame ? input.frame->option_values.aux_out : nullptr;
+
+    const jxl::JxlEncoderFrameSettingsValues* first_frame_settings = nullptr;
+    for (const auto& queued_input : input_queue) {
+      if (queued_input.frame) {
+        first_frame_settings = &queued_input.frame->option_values;
+        break;
+      }
+    }
+
+    if (first_frame_settings) {
+      bool active_color_boost =
+          first_frame_settings->cparams.color_boost &&
+          first_frame_settings->cparams.butteraugli_distance > 0.3f;
+      if (first_frame_settings->cparams.red_bias >= 0.0f ||
+          first_frame_settings->cparams.green_bias >= 0.0f ||
+          active_color_boost ||
+          first_frame_settings->cparams.yellow_bias >= 0.0f) {
+        metadata.transform_data.all_default = false;
+        metadata.transform_data.opsin_inverse_matrix.all_default = false;
+
+        jxl::Matrix3x3 custom_opsin;
+        ComputeCustomOpsinMatrix(first_frame_settings->cparams, custom_opsin);
+
+        // matrix_ops.h Inv3x3Matrix modifies the matrix in place.
+        JXL_RETURN_IF_ERROR(jxl::Inv3x3Matrix(custom_opsin));
+        for (int i = 0; i < 3; i++) {
+          for (int j = 0; j < 3; j++) {
+            metadata.transform_data.opsin_inverse_matrix.inverse_matrix[i][j] =
+                custom_opsin[i][j];
+          }
+        }
+        // Spec (Annex L.2.1, Table L.1): when all_default=false, the decoder
+        // reads opsin_biases and quant_biases from the bitstream. Explicitly
+        // set them to the standard defaults so the bitstream is self-consistent.
+        auto& oim = metadata.transform_data.opsin_inverse_matrix;
+        oim.opsin_biases[0] = jxl::cms::kNegOpsinAbsorbanceBiasRGB[0];
+        oim.opsin_biases[1] = jxl::cms::kNegOpsinAbsorbanceBiasRGB[1];
+        oim.opsin_biases[2] = jxl::cms::kNegOpsinAbsorbanceBiasRGB[2];
+      }
+    }
+
     jxl::BitWriter writer{&memory_manager};
     if (!WriteCodestreamHeaders(&metadata, &writer, aux_out)) {
       return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
@@ -1862,6 +1945,9 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       }
       break;
 
+    case JXL_ENC_FRAME_SETTING_COLOR_BOOST:
+      frame_settings->values.cparams.color_boost = (value > 0.5f);
+      return JxlErrorOrStatus::Success();
     default:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                            "Unknown option");
@@ -1878,6 +1964,27 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
       // TODO(lode): add encoder setting to set the 8 floating point values of
       // the noise synthesis parameters per frame for more fine grained control.
       frame_settings->values.cparams.photon_noise_iso = value;
+      return JxlErrorOrStatus::Success();
+    case JXL_ENC_FRAME_SETTING_YELLOW_BIAS:
+      if (value < 0.0f || value > 1.0f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Yellow bias must be in [0.0, 1.0]");
+      }
+      frame_settings->values.cparams.yellow_bias = value;
+      return JxlErrorOrStatus::Success();
+    case JXL_ENC_FRAME_SETTING_RED_BIAS:
+      if (value < 0.0f || value > 1.0f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Red bias must be in [0.0, 1.0]");
+      }
+      frame_settings->values.cparams.red_bias = value;
+      return JxlErrorOrStatus::Success();
+    case JXL_ENC_FRAME_SETTING_GREEN_BIAS:
+      if (value < 0.0f || value > 1.0f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Green bias must be in [0.0, 1.0]");
+      }
+      frame_settings->values.cparams.green_bias = value;
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT:
       if (value < -1.f || value > 100.f) {

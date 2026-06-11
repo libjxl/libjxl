@@ -403,6 +403,26 @@ struct CompressArgs {
                            &disable_perceptual_optimizations, &SetBooleanTrue,
                            4);
 
+    cmdline->AddOptionFlag('\0', "color_boost",
+                           "Dynamically scale yellow bias based on butteraugli "
+                           "distance to boost color accuracy."
+                           "The strength scales from distance 0.3 to 3.0.",
+                           &color_boost, &SetBooleanTrue, 4);
+
+    cmdline->AddOptionValue('\0', "yellow_bias", "FLOAT",
+                            "Set the blue multiplier for the S-cone to tune "
+                            "the yellow bias (default 0.55).",
+                            &yellow_bias, &ParseFloat, 4);
+
+    cmdline->AddOptionValue('\0', "red_bias", "FLOAT",
+                            "Set the red multiplier for the L-cone to tune the "
+                            "red bias (default 0.3).",
+                            &red_bias, &ParseFloat, 4);
+    cmdline->AddOptionValue('\0', "green_bias", "FLOAT",
+                            "Set the green multiplier for the M-cone to tune "
+                            "the green bias (default 0.69).",
+                            &green_bias, &ParseFloat, 4);
+
     cmdline->AddHelpText("\nModular mode options:", 4);
 
     // modular mode options
@@ -530,6 +550,10 @@ struct CompressArgs {
 
   bool allow_expert_options = false;
   bool disable_perceptual_optimizations = false;
+  bool color_boost = false;
+  float yellow_bias = -1.0f;
+  float red_bias = -1.0f;
+  float green_bias = -1.0f;
 
   size_t faster_decoding = 0;
   int64_t resampling = -1;
@@ -710,6 +734,20 @@ void ProcessFlags(const jxl::extras::Codec codec,
   params->allow_expert_options = args->allow_expert_options;
   if (args->disable_perceptual_optimizations) {
     params->AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS, 1);
+  }
+
+  if (args->color_boost) {
+    params->AddOption(JXL_ENC_FRAME_SETTING_COLOR_BOOST, 1);
+  }
+  if (args->yellow_bias >= 0.0f) {
+    params->AddFloatOption(JXL_ENC_FRAME_SETTING_YELLOW_BIAS,
+                           args->yellow_bias);
+  }
+  if (args->red_bias >= 0.0f) {
+    params->AddFloatOption(JXL_ENC_FRAME_SETTING_RED_BIAS, args->red_bias);
+  }
+  if (args->green_bias >= 0.0f) {
+    params->AddFloatOption(JXL_ENC_FRAME_SETTING_GREEN_BIAS, args->green_bias);
   }
 
   if (!args->frame_indexing.empty()) {
