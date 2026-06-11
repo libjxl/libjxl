@@ -883,6 +883,10 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     const RectT<uint64_t>& vp = current_frame.viewport;
     size_t xsize = static_cast<size_t>(vp.xsize());
     size_t ysize = static_cast<size_t>(vp.ysize());
+    // prevent heap buffer overflow
+    if (ctx.frameRaw.rows.size() < ysize) {
+      return JXL_FAILURE("Row index out of bounds");
+    }
     JXL_ASSIGN_OR_RETURN(PackedImage image,
                          PackedImage::Create(xsize, ysize, format));
     for (size_t y = 0; y < ysize; ++y) {
