@@ -169,6 +169,8 @@ struct CompressParams {
 
   // See JXL_ENC_FRAME_SETTING_BUFFERING option value.
   int buffering = -1;
+  // Output streaming mode: 0=buffered, 1=seek-based streaming, 2=OOO jxlp.
+  int output_mode = 0;
   // See JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS option value.
   bool use_full_image_heuristics = true;
 
