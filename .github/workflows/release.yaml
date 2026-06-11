@@ -408,5 +408,6 @@ jobs:
     - name: Publish assets
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
       run: |
-        gh release upload ${{ github.event.release.tag_name }} ./release_assets/*
+        gh release upload "$RELEASE_TAG" ./release_assets/*
