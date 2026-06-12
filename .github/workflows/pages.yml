@@ -48,6 +48,7 @@ jobs:
         with:
           submodules: true
           fetch-depth: 2
+          persist-credentials: false
 
       - name: Install build deps
         run: |
