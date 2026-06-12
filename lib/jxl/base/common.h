@@ -69,9 +69,25 @@ static inline bool SubOverflow(const int32_t a, const int32_t b, int32_t& c) {
 #endif
 }
 
-template <typename T1, typename T2>
-constexpr inline T1 DivCeil(T1 a, T2 b) {
-  return (a + b - 1) / b;
+// Ceiling division, restricted to `size_t` / `uint64_t` operands (which cover
+// all current callers). Computing `a / b + (a % b != 0)` avoids the `(a + b
+// - 1)` intermediate overflow of the naive form. Both operands share a single
+// type `T`, so callers with narrower or mixed-width operands must request the
+// type explicitly (e.g. `DivCeil<size_t>(a, b)` or by casting `b`).
+template <typename T>
+constexpr inline typename std::enable_if<
+    std::is_same<T, size_t>::value || std::is_same<T, uint64_t>::value, T>::type
+DivCeil(T a, T b) {
+  return a / b + (a % b != 0 ? T{1} : T{0});
+}
+
+// Ceiling division by a power of two `2 ^ shift` (the most frequent case).
+// Equivalent to `DivCeil(a, T{1} << shift)` but without the division/modulo.
+template <typename T>
+constexpr inline typename std::enable_if<
+    std::is_same<T, size_t>::value || std::is_same<T, uint64_t>::value, T>::type
+DivCeilPow2(T a, size_t shift) {
+  return (a >> shift) + ((a & ((T{1} << shift) - T{1})) != 0 ? T{1} : T{0});
 }
 
 // Works for any `align`; if a power of two, compiler emits ADD+AND.
