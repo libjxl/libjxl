@@ -147,7 +147,7 @@ class AlignedArray {
   static StatusOr<AlignedArray> Create(JxlMemoryManager* memory_manager,
                                        size_t size) {
     size_t storage_size;
-    if (!SafeMul<size_t>(size, sizeof(T), storage_size)) {
+    if (!SafeMul(size, sizeof(T), storage_size)) {
       return JXL_FAILURE("Allocation too large");
     }
     JXL_ASSIGN_OR_RETURN(AlignedMemory storage,
