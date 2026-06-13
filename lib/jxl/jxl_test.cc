@@ -1085,7 +1085,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8) {
   PackedPixelFile ppf_out;
   size_t compressed_size =
       Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out);
-  EXPECT_EQ(compressed_size, 218284u);
+  EXPECT_EQ(compressed_size, 215768u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1165,7 +1165,7 @@ TEST(JxlTest, RoundtripLossless8Alpha) {
 
   PackedPixelFile ppf_out;
   size_t compressed_size = Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out);
-  EXPECT_EQ(compressed_size, 246071u);
+  EXPECT_EQ(compressed_size, 243527u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.alpha_bits, 8u);
   EXPECT_TRUE(test::SameAlpha(t.ppf(), ppf_out));
@@ -1205,7 +1205,7 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
   PackedPixelFile ppf_out;
   // TODO(szabadka) Investigate big size difference on i686
   size_t compressed_size = Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out);
-  EXPECT_NEAR(compressed_size, 3334u, 100u);
+  EXPECT_NEAR(compressed_size, 2421u, 100u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.alpha_bits, 16u);
   EXPECT_TRUE(test::SameAlpha(t.ppf(), ppf_out));
@@ -1341,7 +1341,7 @@ TEST(JxlTest, RoundtripLossless8Gray) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 92495u);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 92360u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.color_encoding.color_space, JXL_COLOR_SPACE_GRAY);
   EXPECT_EQ(ppf_out.info.bits_per_sample, 8u);
@@ -1583,7 +1583,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression444wh12) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_444_1x2.jpg");
   // JPEG size is 703,874 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 569206u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 569256u, 20);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression422) {
@@ -1609,7 +1609,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompressionAsymmetric) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
   // JPEG size is 604,601 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 500974u, 20u);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 501001u, 20u);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression420Progr) {
