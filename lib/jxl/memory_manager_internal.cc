@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>     // memcpy
+#include <limits>
 #include <hwy/base.h>  // kMaxVectorSize
 
 #include "lib/jxl/base/common.h"
@@ -57,24 +58,34 @@ Status MemoryManagerInit(JxlMemoryManager* self,
   return true;
 }
 
-size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
+StatusOr<size_t> BytesPerRow(const size_t xsize, const size_t sizeof_t) {
   // Special case: we don't allow any ops -> don't need extra padding/
   if (xsize == 0) {
-    return 0;
+    return static_cast<size_t>(0);
   }
 
   const size_t vec_size = MaxVectorSize();
-  size_t valid_bytes = xsize * sizeof_t;
+  size_t valid_bytes;
+  if (!SafeMul(xsize, sizeof_t, valid_bytes)) {
+    return JXL_FAILURE("Image dimensions are too large");
+  }
 
   // Allow unaligned accesses starting at the last valid value.
   // Skip for the scalar case because no extra lanes will be loaded.
   if (vec_size != 0) {
-    valid_bytes += vec_size - sizeof_t;
+    if (!SafeAdd(valid_bytes, vec_size - sizeof_t, valid_bytes)) {
+      return JXL_FAILURE("Image dimensions are too large");
+    }
   }
 
   // Round up to vector and cache line size.
   const size_t align = std::max(vec_size, memory_manager_internal::kAlignment);
-  size_t bytes_per_row = RoundUpTo(valid_bytes, align);
+  JXL_DASSERT(align > 0);
+  size_t bytes_per_row;
+  if (!SafeAdd(valid_bytes, align - 1, bytes_per_row)) {
+    return JXL_FAILURE("Image dimensions are too large");
+  }
+  bytes_per_row &= ~(align - 1);
 
   // During the lengthy window before writes are committed to memory, CPUs
   // guard against read after write hazards by checking the address, but
@@ -82,7 +93,9 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
   // consecutive rows by ensuring their sizes are not multiples of 2 KiB.
   // Avoid2K prevents the same problem for the planes of an Image3.
   if (bytes_per_row % memory_manager_internal::kAlias == 0) {
-    bytes_per_row += align;
+    if (!SafeAdd(bytes_per_row, align, bytes_per_row)) {
+      return JXL_FAILURE("Image dimensions are too large");
+    }
   }
 
   JXL_DASSERT(bytes_per_row % align == 0);

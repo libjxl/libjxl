@@ -67,7 +67,7 @@ PlaneBase::PlaneBase(const uint32_t xsize, const uint32_t ysize,
       ysize_(ysize),
       orig_xsize_(xsize),
       orig_ysize_(ysize),
-      bytes_per_row_(BytesPerRow(xsize_, sizeof_t)),
+      bytes_per_row_(0),
       sizeof_t_(sizeof_t) {}
 
 Status PlaneBase::Allocate(JxlMemoryManager* memory_manager,
@@ -79,6 +79,8 @@ Status PlaneBase::Allocate(JxlMemoryManager* memory_manager,
   if (xsize_ == 0 || ysize_ == 0) {
     return true;
   }
+
+  JXL_ASSIGN_OR_RETURN(bytes_per_row_, BytesPerRow(xsize_, sizeof_t_));
 
   size_t total_bytes;
   if (!SafeMul<size_t>(ysize_, bytes_per_row_, total_bytes)) {
