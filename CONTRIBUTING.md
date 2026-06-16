@@ -1,5 +1,9 @@
 # Contributing to libjxl
 
+## contributing with AI 
+
+We do not prevent the use of AI but we do expect a couple guidelines. A human must be pressnt somewhere in the loop, no autonomous AI bots. We expect the contributor to be the author and is responsible for all their code.
+
 ## Contributing with bug reports
 
 For security-related issues please see [SECURITY.md](SECURITY.md).
