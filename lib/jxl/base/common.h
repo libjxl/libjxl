@@ -77,6 +77,20 @@ constexpr inline size_t RoundUpTo(size_t what, size_t align) {
   return DivCeil(what, align) * align;
 }
 
+// `align <= 1` means no rounding.
+static inline bool SafeRoundUpTo(size_t what, size_t align, size_t& result) {
+  if (align < 2) {
+    result = what;
+    return true;
+  }
+  size_t reminder = what % align;
+  if (reminder == 0) {
+    result = what;
+    return true;
+  }
+  return SafeAdd(what, align - reminder, result);
+}
+
 constexpr double kPi = 3.14159265358979323846264338327950288;
 
 // Multiplier for conversion of log2(x) result to ln(x).
