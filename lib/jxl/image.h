@@ -189,7 +189,6 @@ using ImageS = Plane<int16_t>;  // signed integer or half-float
 using ImageU = Plane<uint16_t>;
 using ImageI = Plane<int32_t>;
 using ImageF = Plane<float>;
-using ImageD = Plane<double>;
 
 // Currently, we abuse Image to either refer to an image that owns its storage
 // or one that doesn't. In similar vein, we abuse Image* function parameters to
@@ -325,7 +324,6 @@ using Image3S = Image3<int16_t>;
 using Image3U = Image3<uint16_t>;
 using Image3I = Image3<int32_t>;
 using Image3F = Image3<float>;
-using Image3D = Image3<double>;
 
 }  // namespace jxl
 
