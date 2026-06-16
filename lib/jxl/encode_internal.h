@@ -240,6 +240,7 @@ class JxlEncoderChunkedFrameAdapter {
       JxlPixelFormat format{4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
       input_source_.get_color_channels_pixel_format(input_source_.opaque,
                                                     &format);
+      format.align = 0;  // .align must be ignored
       size_t row_offset;
       {
         auto buffer =
@@ -253,6 +254,7 @@ class JxlEncoderChunkedFrameAdapter {
       for (size_t ec = 0; ec + 1 < channels_.size(); ++ec) {
         input_source_.get_extra_channel_pixel_format(input_source_.opaque, ec,
                                                      &format);
+        format.align = 0;  // .align must be ignored
         auto buffer = GetExtraChannelBuffer(input_source_, ec, 0, 0, xsize,
                                             ysize, &row_offset);
         if (!buffer) continue;
@@ -340,6 +342,7 @@ class JxlEncoderChunkedFrameAdapter {
     bool CopyFromBuffer(const void* buffer, JxlPixelFormat format,
                         size_t x_size, size_t y_size, size_t row_offset) {
       if (!SetFormatAndDimensions(format, x_size, y_size)) return false;
+      JXL_ENSURE(stride_ <= row_offset);
       buffer_ = nullptr;
       copy_.resize(y_size * stride_);
       for (size_t y = 0; y < y_size; ++y) {
