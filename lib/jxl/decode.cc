@@ -1443,21 +1443,21 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
         GetCurrentDimensions(dec, xsize, ysize);
         size_t bits_per_sample = GetBitDepth(
             dec->image_out_bit_depth, dec->metadata.m, dec->image_out_format);
-        dec->frame_dec->SetImageOutput(
+        JXL_API_RETURN_IF_ERROR(dec->frame_dec->SetImageOutput(
             PixelCallback{
                 dec->image_out_init_callback, dec->image_out_run_callback,
                 dec->image_out_destroy_callback, dec->image_out_init_opaque},
             reinterpret_cast<uint8_t*>(dec->image_out_buffer),
             dec->image_out_size, xsize, ysize, dec->image_out_format,
-            bits_per_sample, dec->unpremul_alpha, !dec->keep_orientation);
+            bits_per_sample, dec->unpremul_alpha, !dec->keep_orientation));
         for (size_t i = 0; i < dec->extra_channel_output.size(); ++i) {
           const auto& extra = dec->extra_channel_output[i];
           size_t ec_bits_per_sample =
               GetBitDepth(dec->image_out_bit_depth,
                           dec->metadata.m.extra_channel_info[i], extra.format);
-          dec->frame_dec->AddExtraChannelOutput(extra.buffer, extra.buffer_size,
-                                                xsize, extra.format,
-                                                ec_bits_per_sample);
+          JXL_API_RETURN_IF_ERROR(dec->frame_dec->AddExtraChannelOutput(
+              extra.buffer, extra.buffer_size, xsize, extra.format,
+              ec_bits_per_sample));
         }
       }
 
@@ -2471,12 +2471,8 @@ static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
   }
   size_t row_size = jxl::DivCeil(row_bits, jxl::kBitsPerByte);
   const size_t last_row_size = row_size;
-  if (format->align > 1) {
-    size_t aligned_rows = jxl::DivCeil(row_size, format->align);
-    if (!jxl::SafeMul(aligned_rows, format->align, row_size)) {
-      return JXL_API_ERROR(
-          "Image too large for output buffer size calculation");
-    }
+  if (!jxl::SafeRoundUpTo(row_size, format->align, row_size)) {
+    return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
 
   size_t total = 0;

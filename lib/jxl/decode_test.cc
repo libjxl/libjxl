@@ -503,9 +503,7 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
                            test::GetDataBits(format.data_type) /
                            jxl::kBitsPerByte;
   size_t stride = bytes_per_pixel * info.xsize;
-  if (format.align > 1) {
-    stride = jxl::DivCeil(stride, format.align) * format.align;
-  }
+  EXPECT_TRUE(SafeRoundUpTo(stride, format.align, stride));
   auto callback = [&](size_t x, size_t y, size_t num_pixels,
                       const void* pixels_row) {
     memcpy(pixels.data() + stride * y + bytes_per_pixel * x, pixels_row,

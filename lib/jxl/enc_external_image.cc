@@ -155,10 +155,9 @@ Status ConvertFromExternal(const uint8_t* data, size_t size, size_t xsize,
   if (!SafeMul(xsize, bytes_per_pixel, last_row_size)) {
     return JXL_FAILURE("Image dimensions are too large");
   }
-  const size_t align = format.align;
   size_t row_size = last_row_size;
-  if (align > 1) {
-    row_size = jxl::DivCeil(last_row_size, align) * align;
+  if (!SafeRoundUpTo(row_size, format.align, row_size)) {
+    return JXL_FAILURE("Image dimensions are too large");
   }
   if (xsize == 0 || ysize == 0) return JXL_FAILURE("Empty image");
   size_t bytes_to_read;
