@@ -37,6 +37,7 @@ class FileWrapper {
       : file_(pathname == "-" ? (mode[0] == 'r' ? stdin : stdout)
                               : fopen(pathname.c_str(), mode)),
         close_on_delete_(pathname != "-") {
+    if (file_ == nullptr) return;
 #ifdef _WIN32
     struct __stat64 s = {};
     int err = _fstat64(_fileno(file_), &s);
