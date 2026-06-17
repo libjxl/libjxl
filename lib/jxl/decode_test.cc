@@ -63,6 +63,9 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
+#if JPEGXL_ENABLE_BOXES
+#include "lib/jxl/box_content_decoder.h"
+#endif  // JPEGXL_ENABLE_BOXES
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/padded_bytes.h"
@@ -500,9 +503,7 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
                            test::GetDataBits(format.data_type) /
                            jxl::kBitsPerByte;
   size_t stride = bytes_per_pixel * info.xsize;
-  if (format.align > 1) {
-    stride = jxl::DivCeil(stride, format.align) * format.align;
-  }
+  EXPECT_TRUE(SafeRoundUpTo(stride, format.align, stride));
   auto callback = [&](size_t x, size_t y, size_t num_pixels,
                       const void* pixels_row) {
     memcpy(pixels.data() + stride * y + bytes_per_pixel * x, pixels_row,
@@ -2216,6 +2217,48 @@ TEST(DecodeTest, ExtraBytesAfterCompressedStream) {
     JxlDecoderDestroy(dec);
   }
 }
+
+#if JPEGXL_ENABLE_BOXES
+TEST(DecodeTest, BrobBoxInputIsRestrictedToBoxSize) {
+  const uint8_t box_contents[] = {
+      'o', 'r', 'i', 'g',
+      0x0f, 0x05, 0x80, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
+      0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x03};
+  const uint8_t extra_bytes[] = {0xAA, 0xBB, 0xCC};
+  std::vector<uint8_t> input;
+  input.insert(input.end(), std::begin(box_contents), std::end(box_contents));
+  input.insert(input.end(), std::begin(extra_bytes), std::end(extra_bytes));
+  std::vector<uint8_t> out(32);
+  jxl::JxlBoxContentDecoder decoder;
+  decoder.StartBox(true, false, sizeof(box_contents));
+  uint8_t* next_out = out.data();
+  size_t avail_out = out.size();
+  JxlDecoderStatus status = decoder.Process(
+      input.data(), input.size(), 0, &next_out, &avail_out);
+  EXPECT_EQ(JXL_DEC_BOX_COMPLETE, status);
+  size_t output_size = next_out - out.data();
+  EXPECT_EQ(11u, output_size);
+  EXPECT_EQ(std::string("hello world"), std::string(reinterpret_cast<char*>(out.data()), output_size));
+}
+
+TEST(DecodeTest, BrobBoxTruncatedStreamWithExactBoxSizeReturnsError) {
+  const uint8_t box_contents[] = {
+      'o', 'r', 'i', 'g',
+      0x0f, 0x05, 0x80, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
+      0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x03};
+  std::vector<uint8_t> input;
+  input.insert(input.end(), std::begin(box_contents), std::end(box_contents) - 1);
+
+  std::vector<uint8_t> out(32);
+  jxl::JxlBoxContentDecoder decoder;
+  decoder.StartBox(true, false, input.size());
+  uint8_t* next_out = out.data();
+  size_t avail_out = out.size();
+  JxlDecoderStatus status = decoder.Process(
+      input.data(), input.size(), 0, &next_out, &avail_out);
+  EXPECT_EQ(JXL_DEC_ERROR, status);
+}
+#endif  // JPEGXL_ENABLE_BOXES
 
 TEST(DecodeTest, ExtraBytesAfterCompressedStreamRequireBoxes) {
   size_t xsize = 123;
@@ -5017,8 +5060,7 @@ JXL_TRANSCODE_JPEG_TEST(DecodeTest, JPEGReconstructionTest) {
   std::vector<uint8_t> encoded_jpeg_data;
   ASSERT_TRUE(EncodeJPEGData(memory_manager, jpeg_data_copy, &encoded_jpeg_data,
                              cparams));
-  std::vector<uint8_t> container;
-  jxl::Bytes(jxl::kContainerHeader).AppendTo(container);
+  std::vector<uint8_t> container = jxl::MakeContainerHeader(0);
   jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), encoded_jpeg_data.size(),
                        false, &container);
   jxl::Bytes(encoded_jpeg_data).AppendTo(container);
@@ -5550,6 +5592,51 @@ JXL_BOXES_TEST(DecodeTest, PartialCodestreamBoxTest) {
 
     JxlDecoderDestroy(dec);
   }
+}
+
+// Regression test for out-of-order jxlp box handling (PR #4741). A jxlp box
+// whose index duplicates an already-buffered out-of-order index must be
+// rejected. Before the fix, the second box's payload was silently concatenated
+// onto the first buffered one (and its is_last flag dropped) instead of being
+// flagged as an error, so the decoder kept asking for more input. We therefore
+// keep the input open: without the fix this returns JXL_DEC_NEED_MORE_INPUT,
+// with the fix it returns JXL_DEC_ERROR at the duplicate box.
+JXL_BOXES_TEST(DecodeTest, OutOfOrderJxlpDuplicateIndexTest) {
+  auto append_tag = [](const char* tag, std::vector<uint8_t>* out) {
+    out->insert(out->end(), tag, tag + 4);
+  };
+  std::vector<uint8_t> c;
+
+  // JXL signature box (12 bytes).
+  AppendU32BE(12, &c);
+  append_tag("JXL ", &c);
+  c.insert(c.end(), {0x0D, 0x0A, 0x87, 0x0A});
+
+  // ftyp box declaring file format version 1, which enables out-of-order jxlp.
+  AppendU32BE(20, &c);
+  append_tag("ftyp", &c);
+  append_tag("jxl ", &c);  // major brand
+  AppendU32BE(1, &c);      // minor version = 1
+  append_tag("jxl ", &c);  // compatible brand
+
+  // Two jxlp boxes that both carry out-of-order index 1 (the expected first
+  // index is 0). The first is buffered; the second is a duplicate.
+  for (int i = 0; i < 2; ++i) {
+    AppendU32BE(16, &c);  // box size: 8-byte header + 8-byte contents
+    append_tag("jxlp", &c);
+    AppendU32BE(1, &c);  // jxlp index 1, high bit unset (not the last box)
+    c.insert(c.end(), {0xAA, 0xBB, 0xCC, 0xDD});  // payload
+  }
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, c.data(), c.size()));
+  // Intentionally do not close the input: this distinguishes the rejection
+  // (JXL_DEC_ERROR) from the pre-fix "buffer and wait" (JXL_DEC_NEED_MORE_INPUT)
+  // behavior.
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec));
+  JxlDecoderDestroy(dec);
 }
 
 TEST(DecodeTest, SpotColorTest) {

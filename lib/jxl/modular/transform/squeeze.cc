@@ -8,6 +8,7 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <utility>
