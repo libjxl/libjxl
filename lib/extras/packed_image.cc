@@ -117,16 +117,12 @@ StatusOr<size_t> PackedImage::CalcStride(const JxlPixelFormat& format,
                                          size_t xsize) {
   size_t multiplier = (BitsPerChannel(format.data_type) * format.num_channels /
                        jxl::kBitsPerByte);
-  size_t stride = xsize * multiplier;
-  if ((stride / multiplier) != xsize) {
+  size_t stride;
+  if (!SafeMul(xsize, multiplier, stride)) {
     return JXL_FAILURE("Image too big");
   }
-  if (format.align > 1) {
-    size_t aligned_stride = jxl::DivCeil(stride, format.align) * format.align;
-    if (stride > aligned_stride) {
-      return JXL_FAILURE("Image too big");
-    }
-    stride = aligned_stride;
+  if (!SafeRoundUpTo(stride, format.align, stride)) {
+    return JXL_FAILURE("Image too big");
   }
   return stride;
 }
