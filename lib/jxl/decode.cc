@@ -364,6 +364,11 @@ struct JxlDecoder {
   JxlDecoder() = default;
 
   JxlMemoryManager memory_manager;
+  void Initialize(JxlMemoryManager memory_manager_copy) {
+    memory_manager = memory_manager_copy;
+    codestream_copy = jxl::PaddedBytes(&memory_manager);
+  }
+
   std::unique_ptr<jxl::ThreadPool> thread_pool;
 
   DecoderStage stage;
@@ -525,7 +530,7 @@ struct JxlDecoder {
   // more input bytes to process the next part of the stream. We copy the input
   // data in order to be able to release it all through the API it when
   // returning JXL_DEC_NEED_MORE_INPUT.
-  std::vector<uint8_t> codestream_copy;
+  jxl::PaddedBytes codestream_copy{nullptr};
   // Number of bytes at the end of codestream_copy that were not yet consumed
   // by calling AdvanceInput().
   size_t codestream_unconsumed;
@@ -547,23 +552,39 @@ struct JxlDecoder {
 
   // OOO jxlp payloads keyed by counter: (codestream bytes without 4-byte
   // header, is_last).
-  std::map<uint32_t, std::pair<std::vector<uint8_t>, bool>> jxlp_ooo_buffer;
+  std::map<uint32_t, std::pair<std::unique_ptr<jxl::PaddedBytes>, bool>>
+      jxlp_ooo_buffer;
+  size_t jxlp_ooo_buffer_total;
+  static constexpr size_t kNumBuffersLimit = size_t{1 << 20};
 
   // Index and is_last flag of the jxlp box currently being buffered
   // (valid only while box_stage == kBufferingJxlp).
   uint32_t buffering_jxlp_index;
   bool buffering_jxlp_is_last;
 
+  bool CanAddBuffer(size_t length) const {
+    constexpr size_t kBufferLimit = size_t{1}
+                                    << ((sizeof(size_t) == 4) ? 30 : 48);
+    return ((length < kBufferLimit) &&
+            (length + jxlp_ooo_buffer_total + codestream_copy.size() <
+             kBufferLimit));
+  }
+
   // Injects the next buffered jxlp box (if available) into codestream_copy.
   // Returns true if a box was injected.
-  bool InjectNextBufferedJxlpBox() {
+  jxl::Status InjectNextBufferedJxlpBox(bool& success) {
+    success = false;
     auto it = jxlp_ooo_buffer.find(next_jxlp_index);
-    if (it == jxlp_ooo_buffer.end()) return false;
+    if (it == jxlp_ooo_buffer.end()) return true;
     auto& [data, is_last] = it->second;
-    codestream_copy.insert(codestream_copy.end(), data.begin(), data.end());
+    size_t length = data->size();
+    JXL_RETURN_IF_ERROR(codestream_copy.append(*data));
     if (is_last) last_codestream_seen = true;
     next_jxlp_index++;
     jxlp_ooo_buffer.erase(it);
+    jxlp_ooo_buffer_total -= length;
+    // TODO(eustas): perhaps should be false is 0-length append?
+    success = true;
     return true;
   }
 
@@ -640,8 +661,9 @@ struct JxlDecoder {
   JxlDecoderStatus RequestMoreInput() {
     if (codestream_copy.empty()) {
       size_t avail_codestream = AvailableCodestream();
-      codestream_copy.insert(codestream_copy.end(), next_in,
-                             next_in + avail_codestream);
+      if (!CanAddBuffer(avail_codestream)) return JXL_DEC_ERROR;
+      JXL_API_RETURN_IF_ERROR(
+          codestream_copy.append(next_in, next_in + avail_codestream));
       AdvanceInput(avail_codestream);
     } else {
       AdvanceInput(codestream_unconsumed);
@@ -675,9 +697,9 @@ struct JxlDecoder {
       *span = jxl::Bytes(next_in, avail_codestream);
       return JXL_DEC_SUCCESS;
     } else {
-      codestream_copy.insert(codestream_copy.end(),
-                             next_in + codestream_unconsumed,
-                             next_in + avail_codestream);
+      if (!CanAddBuffer(avail_codestream)) return JXL_DEC_ERROR;
+      JXL_API_RETURN_IF_ERROR(codestream_copy.append(
+          next_in + codestream_unconsumed, next_in + avail_codestream));
       codestream_unconsumed = avail_codestream;
       *span = jxl::Bytes(codestream_copy.data() + codestream_pos,
                          codestream_copy.size() - codestream_pos);
@@ -737,6 +759,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->jxl_file_format_version = 0;
   dec->next_jxlp_index = 0;
   dec->jxlp_ooo_buffer.clear();
+  dec->jxlp_ooo_buffer_total = 0;
   dec->buffering_jxlp_index = 0;
   dec->buffering_jxlp_is_last = false;
   dec->box_out_buffer_set = false;
@@ -827,7 +850,7 @@ JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager) {
   if (!alloc) return nullptr;
   // Placement new constructor on allocated memory
   JxlDecoder* dec = new (alloc) JxlDecoder();
-  dec->memory_manager = local_memory_manager;
+  dec->Initialize(local_memory_manager);
 
   JxlDecoderReset(dec);
 
@@ -1959,8 +1982,13 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         // buffered one via operator[]. Both effects corrupt the reconstructed
         // codestream and let a single index accumulate unbounded data, so a
         // duplicate index must be a hard error (jxlp indices are unique).
-        auto insert_result = dec->jxlp_ooo_buffer.emplace(
-            counter, std::make_pair(std::vector<uint8_t>(), is_last));
+        if (dec->jxlp_ooo_buffer.size() >= JxlDecoder::kNumBuffersLimit) {
+          return JXL_DEC_ERROR;
+        }
+        auto buffer = jxl::make_unique<jxl::PaddedBytes>(&dec->memory_manager);
+        auto entry = std::make_pair(std::move(buffer), is_last);
+        auto insert_result =
+            dec->jxlp_ooo_buffer.emplace(counter, std::move(entry));
         if (!insert_result.second) {
           return JXL_INPUT_ERROR("duplicate jxlp box index %u", counter);
         }
@@ -1986,7 +2014,10 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         if (dec->file_pos == dec->box_contents_end &&
             !dec->box_contents_unbounded) {
           // Physical box exhausted; inject the next buffered OOO box if ready.
-          if (dec->InjectNextBufferedJxlpBox()) continue;
+          bool has_more_data;
+          JXL_API_RETURN_IF_ERROR(
+              dec->InjectNextBufferedJxlpBox(has_more_data));
+          if (has_more_data) continue;
           dec->box_stage = BoxStage::kHeader;
           continue;
         }
@@ -2016,9 +2047,11 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
               ? dec->avail_in
               : std::min<size_t>(dec->avail_in,
                                  dec->box_contents_end - dec->file_pos);
+      if (!dec->CanAddBuffer(remaining)) return JXL_DEC_ERROR;
       auto& entry = dec->jxlp_ooo_buffer[dec->buffering_jxlp_index];
-      entry.first.insert(entry.first.end(), dec->next_in,
-                         dec->next_in + remaining);
+      JXL_API_RETURN_IF_ERROR(
+          entry.first->append(dec->next_in, dec->next_in + remaining));
+      dec->jxlp_ooo_buffer_total += remaining;
       dec->AdvanceInput(remaining);
 
       bool box_done = !dec->box_contents_unbounded &&
