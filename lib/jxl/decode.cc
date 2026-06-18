@@ -574,6 +574,7 @@ struct JxlDecoder {
   jxl::JxlToJpegDecoder jpeg_decoder;
   // Decodes Exif or XMP metadata for JPEG reconstruction
   jxl::JxlBoxContentDecoder metadata_decoder;
+  // TODO(eustas): use AlignedMemory / PaddedBytes for storage.
   std::vector<uint8_t> exif_metadata;
   std::vector<uint8_t> xmp_metadata;
   // must store JPEG reconstruction metadata from the current box
@@ -1687,6 +1688,9 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       if (dec->store_exif == 1 || dec->store_xmp == 1) {
         std::vector<uint8_t>& metadata =
             (dec->store_exif == 1) ? dec->exif_metadata : dec->xmp_metadata;
+        // Just a safeguard to prevent unlimited growth. NB: for JPEG chunks
+        // 65533 bytes enough.
+        constexpr size_t kBlockSizeLimit = 64u << 20;  // 64MiB
         for (;;) {
           if (metadata.empty()) metadata.resize(64);
           uint8_t* orig_next_out = metadata.data() + dec->recon_out_buffer_pos;
@@ -1698,6 +1702,9 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
           size_t produced = next_out - orig_next_out;
           dec->recon_out_buffer_pos += produced;
           if (box_result == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+            if (metadata.size() >= kBlockSizeLimit) {
+              return JXL_INPUT_ERROR("EXIF/XMP box is too large");
+            }
             metadata.resize(metadata.size() * 2);
           } else if (box_result == JXL_DEC_NEED_MORE_INPUT) {
             break;  // box stage handling below will handle this instead
