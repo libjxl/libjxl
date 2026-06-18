@@ -842,9 +842,14 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
     for (size_t y = 0; y < 8; y++) {
       for (size_t x = 0; x < 8; x++) {
         int coeffpos = y * 8 + x;
-        scaled_qtable[kDCTBlockSize * c + 8 * x + y] =
-            (1 << kCFLFixedPointPrecision) * qt[kDCTBlockSize + coeffpos] /
-            qt[kDCTBlockSize * c + coeffpos];
+        int32_t ratio = (1 << kCFLFixedPointPrecision) *
+                        qt[kDCTBlockSize + coeffpos] /
+                        qt[kDCTBlockSize * c + coeffpos];
+        if (ratio > kCFLFixedPointRatioMax) {
+          return JXL_FAILURE(
+              "Ratio of two entries in a JPEG quantization table is too large");
+        }
+        scaled_qtable[kDCTBlockSize * c + 8 * x + y] = ratio;
       }
     }
   }
@@ -904,8 +909,8 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
             for (size_t x = x0; x < x1; ++x) {
               for (size_t coeffpos = 1; coeffpos < kDCTBlockSize; coeffpos++) {
                 const float scaled_m = row_m[x * kDCTBlockSize + coeffpos] *
-                                       scaled_qtable[64 * c + coeffpos] *
-                                       (1.0f / (1 << kCFLFixedPointPrecision));
+                                       (1.0f / (1 << kCFLFixedPointPrecision)) *
+                                       scaled_qtable[64 * c + coeffpos];
                 const float scaled_s =
                     kScale * row_s[x * kDCTBlockSize + coeffpos] +
                     (kOffset - kBase * kScale) * scaled_m;
