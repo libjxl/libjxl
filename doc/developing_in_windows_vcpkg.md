@@ -20,6 +20,7 @@ vcpkg install gtest:x64-windows
 vcpkg install giflib:x64-windows
 vcpkg install libjpeg-turbo:x64-windows
 vcpkg install libpng:x64-windows
+vcpkg install tiff:x64-windows
 vcpkg install zlib:x64-windows
 ```
 

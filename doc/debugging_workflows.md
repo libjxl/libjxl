@@ -53,7 +53,8 @@ apt-get install -y \
   libc6-dev-${ARCH}-cross libgdk-pixbuf2.0-dev:${ARCH} libgif-dev:${ARCH} \
   libgtk2.0-dev:${ARCH} libilmbase-dev:${ARCH} libjpeg-dev:${ARCH} \
   libopenexr-dev:${ARCH} libpng-dev:${ARCH} libstdc++-12-dev-${ARCH}-cross \
-  libstdc++-12-dev:${ARCH} libwebp-dev:${ARCH} ninja-build pkg-config \
+  libstdc++-12-dev:${ARCH} libtiff-dev:${ARCH} libwebp-dev:${ARCH} \
+  ninja-build pkg-config \
   qemu-user-static unzip xdg-utils xvfb
 
 #apt-get install -y binutils-${BUILD_TARGET} gcc-${BUILD_TARGET}
