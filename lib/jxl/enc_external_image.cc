@@ -45,11 +45,11 @@ size_t JxlDataTypeBytes(JxlDataType data_type) {
 
 }  // namespace
 
-Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
-                                      size_t ysize, size_t stride,
-                                      size_t bits_per_sample,
-                                      JxlPixelFormat format, size_t c,
-                                      ThreadPool* pool, ImageF* channel) {
+Status ConvertFromExternalPlaneNoSizeCheck(const uint8_t* data, size_t xsize,
+                                           size_t ysize, size_t stride,
+                                           size_t bits_per_sample,
+                                           JxlPixelFormat format, size_t c,
+                                           ThreadPool* pool, ImageF* channel) {
   if (format.data_type == JXL_TYPE_UINT8) {
     JXL_RETURN_IF_ERROR(bits_per_sample > 0 && bits_per_sample <= 8);
   } else if (format.data_type == JXL_TYPE_UINT16) {
@@ -65,6 +65,11 @@ Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
 
   size_t bytes_per_channel = JxlDataTypeBytes(format.data_type);
   size_t bytes_per_pixel = format.num_channels * bytes_per_channel;
+  size_t bytes_per_row;
+  if (!SafeMul(xsize, bytes_per_pixel, bytes_per_row)) {
+    return JXL_FAILURE("Image dimensions are too large");
+  }
+  JXL_ENSURE(bytes_per_row <= stride);
   size_t pixel_offset = c * bytes_per_channel;
   // Only for uint8/16.
   float scale = 1.0f / ((1ull << bits_per_sample) - 1);
@@ -110,7 +115,7 @@ Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
   JXL_ASSIGN_OR_RETURN(Image3F color,
                        Image3F::Create(memory_manager, xsize, ysize));
   for (size_t c = 0; c < color_channels; ++c) {
-    JXL_RETURN_IF_ERROR(ConvertFromExternalNoSizeCheck(
+    JXL_RETURN_IF_ERROR(ConvertFromExternalPlaneNoSizeCheck(
         data, xsize, ysize, stride, bits_per_sample, format, c, pool,
         &color.Plane(c)));
   }
@@ -125,7 +130,7 @@ Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
   if (has_alpha && ib->HasAlpha()) {
     JXL_ASSIGN_OR_RETURN(ImageF alpha,
                          ImageF::Create(memory_manager, xsize, ysize));
-    JXL_RETURN_IF_ERROR(ConvertFromExternalNoSizeCheck(
+    JXL_RETURN_IF_ERROR(ConvertFromExternalPlaneNoSizeCheck(
         data, xsize, ysize, stride, bits_per_sample, format,
         format.num_channels - 1, pool, &alpha));
     JXL_RETURN_IF_ERROR(ib->SetAlpha(std::move(alpha)));
@@ -177,7 +182,7 @@ Status ConvertFromExternal(const uint8_t* data, size_t size, size_t xsize,
   if (size > row_size * ysize) {
     return JXL_FAILURE("Buffer size is too large");
   }
-  return ConvertFromExternalNoSizeCheck(
+  return ConvertFromExternalPlaneNoSizeCheck(
       data, xsize, ysize, row_size, bits_per_sample, format, c, pool, channel);
 }
 Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,

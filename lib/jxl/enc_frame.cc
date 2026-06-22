@@ -120,12 +120,12 @@ Status ParamsPostInit(CompressParams* p) {
   }
   // Modular has to be squeezed to show progressive HF passes.
   if (p->progressive_mode == Override::kOn ||
-    p->qprogressive_mode == Override::kOn) {
+      p->qprogressive_mode == Override::kOn) {
     p->responsive = 1;
     if (p->IsLossless()) {
       p->qprogressive_mode = Override::kOn;
+    }
   }
-}
   return true;
 }
 
@@ -182,6 +182,7 @@ Status CopyColorChannels(JxlChunkedFrameInputSource input, Rect rect,
                          bool* has_interleaved_alpha) {
   JxlPixelFormat format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
   input.get_color_channels_pixel_format(input.opaque, &format);
+  format.align = 0;  // align must be ignored.
   *has_interleaved_alpha = format.num_channels == 2 || format.num_channels == 4;
   size_t bits_per_sample =
       GetBitDepth(frame_info.image_bit_depth, metadata, format);
@@ -201,7 +202,7 @@ Status CopyColorChannels(JxlChunkedFrameInputSource input, Rect rect,
   }
   const uint8_t* data = reinterpret_cast<const uint8_t*>(buffer.get());
   for (size_t c = 0; c < color_channels; ++c) {
-    JXL_RETURN_IF_ERROR(ConvertFromExternalNoSizeCheck(
+    JXL_RETURN_IF_ERROR(ConvertFromExternalPlaneNoSizeCheck(
         data, rect.xsize(), rect.ysize(), row_offset, bits_per_sample, format,
         c, pool, &color->Plane(c)));
   }
@@ -211,7 +212,7 @@ Status CopyColorChannels(JxlChunkedFrameInputSource input, Rect rect,
   }
   if (alpha) {
     if (*has_interleaved_alpha) {
-      JXL_RETURN_IF_ERROR(ConvertFromExternalNoSizeCheck(
+      JXL_RETURN_IF_ERROR(ConvertFromExternalPlaneNoSizeCheck(
           data, rect.xsize(), rect.ysize(), row_offset, bits_per_sample, format,
           format.num_channels - 1, pool, alpha));
     } else {
@@ -248,7 +249,7 @@ Status CopyExtraChannels(JxlChunkedFrameInputSource input, Rect rect,
     }
     size_t bits_per_sample = GetBitDepth(
         frame_info.image_bit_depth, metadata.extra_channel_info[ec], ec_format);
-    if (!ConvertFromExternalNoSizeCheck(
+    if (!ConvertFromExternalPlaneNoSizeCheck(
             reinterpret_cast<const uint8_t*>(buffer.get()), rect.xsize(),
             rect.ysize(), row_offset, bits_per_sample, ec_format, 0, pool,
             &(*extra_channels)[ec])) {
@@ -1687,7 +1688,8 @@ Status ComputeEncodingData(
         // TODO(Jonnyawsom3): Figure out how to allow local trees for
         // extra channels on VarDCT images without failing tests.
         (!(cparams.responsive == 1 && cparams.IsLossless()) &&
-        cparams.buffering < 3) || !cparams.custom_fixed_tree.empty()) {
+         cparams.buffering < 3) ||
+        !cparams.custom_fixed_tree.empty()) {
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
       JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
     }
@@ -2075,8 +2077,9 @@ JXL_NOINLINE Status EncodeFrameStreaming(
   const bool streaming_output = (output_mode == 1);
   const bool streaming = (output_mode >= 1);
   const bool ooo = (output_mode == 2 && jxlp_counter != nullptr);
-  size_t start_pos =
-      (streaming_output && output_processor) ? output_processor->CurrentPosition() : 0;
+  size_t start_pos = (streaming_output && output_processor)
+                         ? output_processor->CurrentPosition()
+                         : 0;
   const size_t total_sections =
       NumTocEntries(frame_header.ToFrameDimensions().num_groups,
                     dc_group_order.size(), num_passes);
@@ -2098,14 +2101,14 @@ JXL_NOINLINE Status EncodeFrameStreaming(
   }
 
   auto write_jxlp = [&](uint32_t counter, bool is_last,
-                         Span<const uint8_t> data) -> Status {
+                        Span<const uint8_t> data) -> Status {
     uint8_t hdr[kLargeBoxHeaderSize + 4];
     const size_t hdr_size =
         WriteBoxHeader(MakeBoxType("jxlp"), 4 + data.size(),
                        /*unbounded=*/false, /*force_large_box=*/false, hdr);
     StoreBE32(counter | (is_last ? 0x80000000u : 0u), hdr + hdr_size);
-    JXL_RETURN_IF_ERROR(AppendData(*output_processor,
-                                   Span<const uint8_t>(hdr, hdr_size + 4)));
+    JXL_RETURN_IF_ERROR(
+        AppendData(*output_processor, Span<const uint8_t>(hdr, hdr_size + 4)));
     return AppendData(*output_processor, data);
   };
 
@@ -2170,10 +2173,10 @@ JXL_NOINLINE Status EncodeFrameStreaming(
         JXL_RETURN_IF_ERROR(
             output_processor->Seek(start_pos + group_data_offset));
       } else if (ooo) {
-        JXL_RETURN_IF_ERROR(write_jxlp(
-            jxlp_base, /*is_last=*/false,
-            Span<const uint8_t>(frame_header_bytes.data(),
-                                frame_header_bytes.size())));
+        JXL_RETURN_IF_ERROR(
+            write_jxlp(jxlp_base, /*is_last=*/false,
+                       Span<const uint8_t>(frame_header_bytes.data(),
+                                           frame_header_bytes.size())));
         JXL_RETURN_IF_ERROR(
             write_group_section(std::move(*group_codes[0]).TakeBytes()));
       }
@@ -2209,8 +2212,7 @@ JXL_NOINLINE Status EncodeFrameStreaming(
         OutputAcGlobal(*enc_state, frame_header.ToFrameDimensions(), aux_out));
     JXL_RETURN_IF_ERROR(writer->Shrink());
     if (streaming) {
-      JXL_RETURN_IF_ERROR(
-          write_group_section(std::move(*writer).TakeBytes()));
+      JXL_RETURN_IF_ERROR(write_group_section(std::move(*writer).TakeBytes()));
     } else {
       global_group_codes[1 + dc_group_order.size()] = std::move(writer);
     }
@@ -2592,9 +2594,9 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
 
     const auto process_variant = [&](size_t task, size_t) -> Status {
       JxlEncoderOutputProcessorWrapper local_output(memory_manager);
-      JXL_RETURN_IF_ERROR(EncodeFrame(memory_manager, all_params[task],
-                                      frame_info, metadata, frame_data, cms,
-                                      nullptr, &local_output, aux_out, nullptr));
+      JXL_RETURN_IF_ERROR(EncodeFrame(
+          memory_manager, all_params[task], frame_info, metadata, frame_data,
+          cms, nullptr, &local_output, aux_out, nullptr));
       size[task] = local_output.CurrentPosition();
       return true;
     };
@@ -2649,10 +2651,11 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
   if (cparams.ec_resampling < cparams.resampling) {
     cparams.ec_resampling = cparams.resampling;
   }
-  if (cparams.resampling > 1 || frame_info.is_preview
-    // LF frame extra channels not implemented yet, for images with alpha
-    // level 1 doesn't render and level 2 corrupts the image.
-    || metadata->m.num_extra_channels > 0) {
+  if (cparams.resampling > 1 ||
+      frame_info.is_preview
+      // LF frame extra channels not implemented yet, for images with alpha
+      // level 1 doesn't render and level 2 corrupts the image.
+      || metadata->m.num_extra_channels > 0) {
     cparams.progressive_dc = 0;
   }
 

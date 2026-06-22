@@ -203,7 +203,7 @@ struct RenderPipelineTestInputSettings {
 
   bool add_spot_color = false;
 
-  Splines splines;
+  bool has_splines;
 
   JXL_NOINLINE void Reset() {
     input_path.clear();
@@ -213,9 +213,34 @@ struct RenderPipelineTestInputSettings {
     cparams = CompressParams();
     cparams_descr.clear();
     add_spot_color = false;
-    splines.Clear();
+    has_splines = false;
   }
 };
+
+Status CreateTestSplines(std::vector<QuantizedSpline>& quantized_splines,
+                         std::vector<Spline::Point>& starting_points) {
+  quantized_splines.clear();
+  starting_points.clear();
+  const ColorCorrelation color_correlation{};
+  std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
+                                            {10, 40}, {150, 25},  {120, 300}};
+  const Spline spline{control_points,
+                      /*color_dct=*/
+                      {Dct32{0.03125f, 0.00625f, 0.003125f},
+                       Dct32{1.f, 0.321875f}, Dct32{1.f, 0.24375f}},
+                      /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
+  std::vector<Spline> spline_data = {spline};
+  for (const Spline& ospline : spline_data) {
+    JXL_ASSIGN_OR_RETURN(
+        QuantizedSpline qspline,
+        QuantizedSpline::Create(ospline, /*quantization_adjustment=*/0,
+                                color_correlation.YtoXRatio(0),
+                                color_correlation.YtoBRatio(0)));
+    quantized_splines.emplace_back(std::move(qspline));
+    starting_points.push_back(ospline.control_points.front());
+  }
+  return true;
+}
 
 class RenderPipelineTestParam
     : public ::testing::TestWithParam<RenderPipelineTestInputSettings> {};
@@ -270,7 +295,16 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 
   std::vector<uint8_t> compressed;
 
-  config.cparams.custom_splines = config.splines;
+  std::vector<QuantizedSpline> quantized_splines;
+  std::vector<Spline::Point> starting_points;
+  if (config.has_splines) {
+    ASSERT_TRUE(CreateTestSplines(quantized_splines, starting_points));
+    config.cparams.custom_splines = {
+        Span<const QuantizedSpline>(quantized_splines),
+        Span<const Spline::Point>(starting_points)};
+  } else {
+    config.cparams.custom_splines = {};
+  }
   ASSERT_TRUE(test::EncodeFile(config.cparams, io.get(), &compressed, &pool));
 
   auto io_default = jxl::make_unique<CodecInOut>(memory_manager);
@@ -298,31 +332,6 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
           io_default->frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
     }
   }
-}
-
-StatusOr<Splines> CreateTestSplines() {
-  const ColorCorrelation color_correlation{};
-  std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
-                                            {10, 40}, {150, 25},  {120, 300}};
-  const Spline spline{control_points,
-                      /*color_dct=*/
-                      {Dct32{0.03125f, 0.00625f, 0.003125f},
-                       Dct32{1.f, 0.321875f}, Dct32{1.f, 0.24375f}},
-                      /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
-  std::vector<Spline> spline_data = {spline};
-  std::vector<QuantizedSpline> quantized_splines;
-  std::vector<Spline::Point> starting_points;
-  for (const Spline& ospline : spline_data) {
-    JXL_ASSIGN_OR_RETURN(
-        QuantizedSpline qspline,
-        QuantizedSpline::Create(ospline, /*quantization_adjustment=*/0,
-                                color_correlation.YtoXRatio(0),
-                                color_correlation.YtoBRatio(0)));
-    quantized_splines.emplace_back(std::move(qspline));
-    starting_points.push_back(ospline.control_points.front());
-  }
-  return Splines(/*quantization_adjustment=*/0, std::move(quantized_splines),
-                 std::move(starting_points));
 }
 
 std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
@@ -403,7 +412,7 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     {
       s = stub;
       s.cparams_descr = "Splines";
-      JXL_TEST_ASSIGN_OR_DIE(s.splines, CreateTestSplines());
+      s.has_splines = true;
       all_tests.push_back(s);
     }
 

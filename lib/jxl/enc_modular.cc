@@ -720,7 +720,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (cparams_.custom_splines.HasAny()) {
     PassesSharedState& shared = enc_state->shared;
     ImageFeatures& image_features = shared.image_features;
-    image_features.splines = cparams_.custom_splines;
+    image_features.splines.SetData(cparams_.custom_splines);
   }
 
   // Convert ImageBundle to modular Image object
