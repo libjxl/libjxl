@@ -217,3 +217,45 @@ jobs:
         path: |
           build/Testing/Temporary/CTestCostData.txt
         retention-days: 1
+
+  # Compile-only s390x leg that guards #4627. squeeze.cc's big-endian, pre-1.2-Highway
+  # branch is built nowhere else (the other legs use Highway >= 1.2), so this pins to 1.0.7.
+  compile-s390x-old-highway:
+    name: Cross-compiling s390x with Highway 1.0.7 (compile-only)
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
+    runs-on: ubuntu-24.04-arm  # ports.ubuntu.com carries the s390x cross packages
+
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      with:
+        egress-policy: audit
+
+    - name: Checkout the source
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      with:
+        submodules: true
+        fetch-depth: 1
+
+    - name: Pin Highway to 1.0.7
+      run: |
+        git -C third_party/highway fetch --depth 1 origin tag 1.0.7
+        git -C third_party/highway checkout 1.0.7
+
+    - name: Install build deps
+      run: |
+        sudo ARCH=s390x BUILD_TARGET=s390x-linux-gnu \
+          ./tools/scripts/install_deps.sh --cross build
+
+    - name: Build
+      run: |
+        CC=clang CXX=clang++ \
+        BUILD_DIR=build BUILD_TARGET=s390x-linux-gnu \
+        SKIP_TEST=1 TARGETS='libjxl.so libjxl_dec.so' \
+        ./ci.sh release \
+          -DBUILD_TESTING=OFF \
+          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+          -DJPEGXL_ENABLE_JNI=OFF \
+          -DJPEGXL_ENABLE_TOOLS=OFF \
+          -DJPEGXL_ENABLE_OPENEXR=OFF \
+          -DJPEGXL_ENABLE_BENCHMARK=OFF
