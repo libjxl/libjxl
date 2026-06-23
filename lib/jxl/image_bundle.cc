@@ -113,15 +113,11 @@ Status ImageBundle::SetAlpha(ImageF&& alpha) {
   // Must call SetAlphaBits first, otherwise we don't know which channel index
   JXL_ENSURE(eci != nullptr);
   JXL_ENSURE(alpha.xsize() != 0 && alpha.ysize() != 0);
-  if (extra_channels_.size() < metadata_->extra_channel_info.size()) {
-    // TODO(jon): get rid of this case
-    extra_channels_.insert(
-        extra_channels_.begin() + (eci - metadata_->extra_channel_info.data()),
-        std::move(alpha));
-  } else {
-    extra_channels_[eci - metadata_->extra_channel_info.data()] =
-        std::move(alpha);
+  size_t eci_idx = eci - metadata_->extra_channel_info.data();
+  if (eci_idx != extra_channels_.size()) {
+    return JXL_FAILURE("Incorrect SetAlpha call");
   }
+  extra_channels_.emplace_back(std::move(alpha));
   // num_extra_channels is automatically set in visitor
   JXL_RETURN_IF_ERROR(VerifySizes());
   return true;

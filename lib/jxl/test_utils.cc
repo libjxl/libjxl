@@ -349,7 +349,7 @@ std::unique_ptr<jxl::CodecInOut> SomeTestImageToCodecInOut(
       jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels < 3),
       /*bits_per_sample=*/16, format,
       /*pool=*/nullptr,
-      /*ib=*/&io->Main()));
+      /*ib=*/&io->Main(), /*set_alpha=*/true));
   return io;
 }
 
@@ -417,7 +417,7 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
   size_t stride =
       xsize * jxl::DivCeil(GetDataBits(format.data_type) * num_channels,
                            jxl::kBitsPerByte);
-  if (format.align > 1) stride = jxl::RoundUpTo(stride, format.align);
+  Check(SafeRoundUpTo(stride, format.align, stride));
 
   if (format.data_type == JXL_TYPE_UINT8) {
     // Multiplier to bring to 0-1.0 range

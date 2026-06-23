@@ -107,7 +107,7 @@ std::unique_ptr<jxl::CodecInOut> ConvertTestImage(
   }
   EXPECT_TRUE(ConvertFromExternal(jxl::Bytes(buf), xsize, ysize, color_encoding,
                                   /*bits_per_sample=*/bitdepth, pixel_format,
-                                  /*pool=*/nullptr, &io->Main()));
+                                  /*pool=*/nullptr, &io->Main(), has_alpha));
   return io;
 }
 
@@ -480,13 +480,12 @@ TEST(RoundtripTest, FloatFrameRoundtripTest) {
           uint32_t total_extra_channels = has_alpha + extra_channels.size();
           // There's no support (yet) for lossless extra float
           // channels, so we don't test it.
-          if (total_extra_channels == 0 || !lossless) {
-            JxlPixelFormat pixel_format = JxlPixelFormat{
-                num_channels, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
-            VerifyRoundtripCompression<float>(
-                63, 129, pixel_format, pixel_format, lossless, use_container, 1,
-                false, extra_channels);
-          }
+          if (lossless && (total_extra_channels > 0)) continue;
+          JxlPixelFormat pixel_format = JxlPixelFormat{
+              num_channels, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+          VerifyRoundtripCompression<float>(63, 129, pixel_format, pixel_format,
+                                            lossless, use_container, 1, false,
+                                            extra_channels);
         }
       }
     }
