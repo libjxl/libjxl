@@ -109,8 +109,8 @@ Status EncodeImageEXR(const PackedImage& image, const JxlBasicInfo& info,
                       std::vector<uint8_t>* bytes) {
   OpenEXR::setGlobalThreadCount(0);
 
-  const size_t xsize = info.xsize;
-  const size_t ysize = info.ysize;
+  const size_t xsize = image.xsize;
+  const size_t ysize = image.ysize;
   const bool has_alpha = info.alpha_bits > 0;
   const bool alpha_is_premultiplied = FROM_JXL_BOOL(info.alpha_premultiplied);
 
