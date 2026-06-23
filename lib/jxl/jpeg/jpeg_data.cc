@@ -471,6 +471,10 @@ Status SetJPEGDataFromICC(const std::vector<uint8_t>& icc,
     if (jpeg_data->app_marker_type[i] != jpeg::AppMarkerType::kICC) {
       continue;
     }
+    if (jpeg_data->app_data[i].size() < 17) {
+      return JXL_FAILURE("ICC APP marker too small: %" PRIuS,
+                         jpeg_data->app_data[i].size());
+    }
     size_t len = jpeg_data->app_data[i].size() - 17;
     if (icc_pos + len > icc.size()) {
       return JXL_FAILURE(

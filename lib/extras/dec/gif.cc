@@ -265,7 +265,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
       // If we do not have an alpha-channel and a==255 (fully opaque),
       // we can skip setting this pixel-value and rely on
       // "no alpha channel = no transparency".
-      if (a == 255 && !frame->extra_channels.empty()) return true;
+      if (a == 255 && frame->extra_channels.empty()) return true;
       JXL_RETURN_IF_ERROR(ensure_have_alpha(frame));
       static_cast<uint8_t*>(
           frame->extra_channels[0].pixels())[y * frame->color.xsize + x] = a;
@@ -375,7 +375,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
                          y * sub_frame_image.xsize;
         for (size_t x = 0; x < image_rect.xsize(); ++x, ++byte_index) {
           const GifByteType byte = image.RasterBits[byte_index];
-          if (byte > color_map->ColorCount) {
+          if (byte >= color_map->ColorCount) {
             return JXL_FAILURE("GIF color is out of bounds");
           }
           if (byte == gcb.TransparentColor) {

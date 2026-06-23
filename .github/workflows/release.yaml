@@ -41,7 +41,7 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
@@ -66,13 +66,14 @@ jobs:
           libwebp-dev \
           ninja-build \
           pkg-config \
+          tarlz \
           xdg-utils \
         #
         echo "CC=clang" >> $GITHUB_ENV
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         submodules: true
         fetch-depth: 1
@@ -93,15 +94,15 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build
-        tar -zcvf ${ROOT}/jxl-linux-x86_64-static.tar.gz \
+        tarlz -9cvf ${ROOT}/jxl-linux-x86_64-static.tar.lz \
           LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-linux-x86_64-static
-        path: jxl-linux-x86_64-static.tar.gz
-        compression-level: 0
+        path: jxl-linux-x86_64-static.tar.lz
+        archive: false
 
 
 
@@ -132,7 +133,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
@@ -160,7 +161,7 @@ jobs:
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         submodules: true
         fetch-depth: 1
@@ -216,14 +217,14 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build/debs/
-        tar -zcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz *jxl*.*
+        tar -cvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar *jxl*.*
 
     - name: Upload release tarball
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}
-        path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz
-        compression-level: 0
+        path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar
+        archive: false
 
 
   windows_build:
@@ -259,17 +260,17 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+    - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -361,8 +362,8 @@ jobs:
       shell: 'bash'
       if: matrix.upload != 'OFF'
       run: |
-        7z -mx=9 -mfb=273 -mmt=1 -ms=on a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
-        7z -mx=9 a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
+        7z -mx=9 -mfb=273 a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
+        7z -mm=Deflate64 -mfb=257 -mpass=15 -mtp=2 a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
 
     - name: Upload ZIP release 
       if: matrix.upload != 'OFF'
@@ -371,7 +372,7 @@ jobs:
         name: jxl-${{matrix.triplet}}
         path: |
           jxl-${{matrix.triplet}}.zip
-        compression-level: 0
+        archive: false
 
     - name: Upload 7Z release 
       if: matrix.upload != 'OFF'
@@ -380,7 +381,7 @@ jobs:
         name: jxl-${{matrix.triplet}}-7z
         path: |
           jxl-${{matrix.triplet}}.7z
-        compression-level: 0
+        archive: false
 
 
   publish_release_assets:
@@ -393,7 +394,7 @@ jobs:
 
     steps:
     - name: Checkout the source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         submodules: true
         fetch-depth: 1

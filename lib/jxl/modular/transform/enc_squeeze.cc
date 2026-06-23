@@ -6,8 +6,8 @@
 #include "lib/jxl/modular/transform/enc_squeeze.h"
 
 #include <jxl/memory_manager.h>
-#include <stdio.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <utility>

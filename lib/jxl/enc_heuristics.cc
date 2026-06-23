@@ -1042,11 +1042,12 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   JxlMemoryManager* memory_manager = enc_state->memory_manager();
 
   // Find and subtract splines.
-  if (cparams.custom_splines.HasAny()) {
-    image_features.splines = cparams.custom_splines;
+  bool override_splines = cparams.custom_splines.HasAny();
+  if (override_splines) {
+    image_features.splines.SetData(cparams.custom_splines);
   }
   if (!streaming_mode && cparams.speed_tier <= SpeedTier::kSquirrel) {
-    if (!cparams.custom_splines.HasAny()) {
+    if (!override_splines) {
       image_features.splines = FindSplines(*opsin);
     }
     JXL_RETURN_IF_ERROR(image_features.splines.InitializeDrawCache(
