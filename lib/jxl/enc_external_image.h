@@ -20,11 +20,11 @@
 #include "lib/jxl/image_bundle.h"
 
 namespace jxl {
-Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
-                                      size_t ysize, size_t stride,
-                                      size_t bits_per_sample,
-                                      JxlPixelFormat format, size_t c,
-                                      ThreadPool* pool, ImageF* channel);
+Status ConvertFromExternalPlaneNoSizeCheck(const uint8_t* data, size_t xsize,
+                                           size_t ysize, size_t stride,
+                                           size_t bits_per_sample,
+                                           JxlPixelFormat format, size_t c,
+                                           ThreadPool* pool, ImageF* channel);
 
 Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
                                       size_t ysize, size_t stride,

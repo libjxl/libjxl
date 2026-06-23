@@ -4296,13 +4296,15 @@ class FJxlFrameInput {
         bytes_per_pixel_(bitdepth <= 8 ? nb_chans : 2 * nb_chans) {}
 
   JxlChunkedFrameInputSource GetInputSource() {
-    return JxlChunkedFrameInputSource{this, GetDataAt,
-                                      [](void*, const void*) {}};
+    return JxlChunkedFrameInputSource{
+        this, GetColorChannelDataAt,
+        /*release_buffer=*/[](void*, const void*) {}};
   }
 
  private:
-  static const void* GetDataAt(void* opaque, size_t xpos, size_t ypos,
-                               size_t xsize, size_t ysize, size_t* row_offset) {
+  static const void* GetColorChannelDataAt(void* opaque, size_t xpos,
+                                           size_t ypos, size_t xsize,
+                                           size_t ysize, size_t* row_offset) {
     FJxlFrameInput* self = static_cast<FJxlFrameInput*>(opaque);
     *row_offset = self->row_stride_;
     return self->rgba_ + ypos * (*row_offset) + xpos * self->bytes_per_pixel_;
