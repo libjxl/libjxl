@@ -1,5 +1,18 @@
 # Contributing to libjxl
 
+## Contributing with AI
+
+We don't prohibit the use of AI tools to assist with your contributions, but
+we expect you to follow a couple of strict guidelines:
+
+* A human must be present: No autonomous AI bots. A human must evaluate,
+  understand, and actively submit changes.
+* Take full responsibility: You are considered the author of your Pull Request.
+  You take full responsibility for the functionality, quality, and security of
+  all code you submit, regardless of how it was generated. Since you are
+  considered the author of the submitted code, you are expected to abide by
+  [Google's CLA](#contributor-license-agreements).
+
 ## Contributing with bug reports
 
 For security-related issues please see [SECURITY.md](SECURITY.md).
