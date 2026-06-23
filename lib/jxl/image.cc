@@ -10,7 +10,6 @@
 #include <algorithm>  // fill, swap
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/memory_manager_internal.h"
@@ -82,7 +81,7 @@ Status PlaneBase::Allocate(JxlMemoryManager* memory_manager,
   }
 
   size_t total_bytes;
-  if (!SafeMul<size_t>(ysize_, bytes_per_row_, total_bytes)) {
+  if (!SafeMul(ysize_, bytes_per_row_, total_bytes)) {
     return JXL_FAILURE("Image dimensions are too large");
   }
 

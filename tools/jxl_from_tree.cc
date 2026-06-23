@@ -23,8 +23,11 @@
 #include "lib/extras/codec_in_out.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/override.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_fields.h"
@@ -62,9 +65,10 @@ using ::jxl::PassesEncoderState;
 using ::jxl::Predictor;
 using ::jxl::PropertyDecisionNode;
 using ::jxl::QuantizedSpline;
+using ::jxl::Span;
 using ::jxl::Spline;
 using ::jxl::Splines;
-using ::jxl::StatusOr;
+using ::jxl::Status;
 using ::jxl::Tree;
 
 namespace {
@@ -73,9 +77,11 @@ struct SplineData {
   std::vector<Spline> splines;
 };
 
-StatusOr<Splines> SplinesFromSplineData(const SplineData& spline_data) {
-  std::vector<QuantizedSpline> quantized_splines;
-  std::vector<Spline::Point> starting_points;
+Status SplinesFromSplineData(const SplineData& spline_data,
+                             std::vector<QuantizedSpline>& quantized_splines,
+                             std::vector<Spline::Point>& starting_points) {
+  quantized_splines.clear();
+  starting_points.clear();
   quantized_splines.reserve(spline_data.splines.size());
   starting_points.reserve(spline_data.splines.size());
   for (const Spline& spline : spline_data.splines) {
@@ -86,8 +92,7 @@ StatusOr<Splines> SplinesFromSplineData(const SplineData& spline_data) {
     quantized_splines.emplace_back(std::move(qspline));
     starting_points.push_back(spline.control_points.front());
   }
-  return Splines(spline_data.quantization_adjustment,
-                 std::move(quantized_splines), std::move(starting_points));
+  return true;
 }
 
 template <typename F>
@@ -534,8 +539,13 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   cparams.patches = jxl::Override::kOff;
   cparams.already_downsampled = true;
   cparams.custom_fixed_tree = tree;
-  JXL_ASSIGN_OR_RETURN(cparams.custom_splines,
-                       SplinesFromSplineData(spline_data));
+
+  std::vector<QuantizedSpline> quantized_splines;
+  std::vector<Spline::Point> starting_points;
+  JXL_RETURN_IF_ERROR(
+      SplinesFromSplineData(spline_data, quantized_splines, starting_points));
+  cparams.custom_splines = {Span<const QuantizedSpline>(quantized_splines),
+                            Span<const Spline::Point>(starting_points)};
   PaddedBytes compressed{memory_manager};
 
   JXL_RETURN_IF_ERROR(io->CheckMetadata());

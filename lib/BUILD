@@ -185,10 +185,7 @@ cc_library(
     hdrs = libjxl_threads_public_headers + [JXL_THREADS_EXPORT_H],
     compatible_with = DEFAULT_COMPATIBILITY,
     strip_include_prefix = INCLUDES_DIR,
-    deps = [
-        ":base",
-        ":includes",
-    ],
+    deps = [":includes"],
 )
 
 CODEC_FILES = libjxl_codec_apng_sources + libjxl_codec_exr_sources + libjxl_codec_gif_sources + libjxl_codec_jpg_sources + libjxl_codec_jxl_sources + libjxl_codec_npy_sources + libjxl_codec_pgx_sources + libjxl_codec_pnm_sources

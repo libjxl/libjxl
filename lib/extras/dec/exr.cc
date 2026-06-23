@@ -5,6 +5,8 @@
 
 #include "lib/extras/dec/exr.h"
 
+#include <jxl/codestream_header.h>  // JXL_CHANNEL_OPTIONAL
+
 #include <cstdint>
 
 #include "lib/extras/dec/color_hints.h"
@@ -47,6 +49,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
 #include <cstring>
 #include <memory>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -189,239 +192,292 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
     }
   }
 
-  const std::string chPrefix = FindColorLayerPrefix(channels);
-  const std::string chNameR = chPrefix + "R";
-  const std::string chNameG = chPrefix + "G";
-  const std::string chNameB = chPrefix + "B";
-  const std::string chNameA = chPrefix + "A";
-  const OpenEXR::Channel* chR = channels.findChannel(chNameR.c_str());
-  const OpenEXR::Channel* chG = channels.findChannel(chNameG.c_str());
-  const OpenEXR::Channel* chB = channels.findChannel(chNameB.c_str());
-  const OpenEXR::Channel* chA = channels.findChannel(chNameA.c_str());
+  const std::string color_prefix = FindColorLayerPrefix(channels);
+  const std::string ch_name_r = color_prefix + "R";
+  const OpenEXR::Channel* ch_r = channels.findChannel(ch_name_r.c_str());
+  const std::string ch_name_g = color_prefix + "G";
+  const OpenEXR::Channel* ch_g = channels.findChannel(ch_name_g.c_str());
+  const std::string ch_name_b = color_prefix + "B";
+  const OpenEXR::Channel* ch_b = channels.findChannel(ch_name_b.c_str());
+  const std::string ch_name_a = color_prefix + "A";
+  const OpenEXR::Channel* ch_a = channels.findChannel(ch_name_a.c_str());
   // If we don't have RGB (same type) channels, we'll treat the first
   // channel as grayscale.
-  const bool has_rgb = chR != nullptr && chG != nullptr && chB != nullptr &&
-                       chR->type == chG->type && chR->type == chB->type;
-  const OpenEXR::Channel* chBase = has_rgb ? chR : &channels.begin().channel();
-  const std::string chNameBase = has_rgb ? chNameR : channels.begin().name();
+  bool has_rgb = (ch_r != nullptr) && (ch_g != nullptr) && (ch_b != nullptr);
+  bool is_gray = !has_rgb;
+  const OpenEXR::Channel* ch_gray =
+      is_gray ? &channels.begin().channel() : nullptr;
+  const std::string ch_name_gray = is_gray ? channels.begin().name() : "";
 
-  const bool has_alpha =
-      chA != nullptr && chA != chBase && chA->type == chBase->type;
+  const auto color_type = (is_gray ? ch_gray : ch_r)->type;
+  if (has_rgb) {
+    if (ch_g->type != color_type || ch_b->type != color_type) {
+      return JXL_FAILURE(
+          "OpenEXR color channels with different types are not supported yet");
+    }
+  }
+
+  bool has_alpha = (ch_a != nullptr) && (ch_a != ch_gray);
+  if (has_alpha) {
+    if (ch_a->type != color_type) {
+      return JXL_FAILURE(
+          "OpenEXR color channels with different types are not supported yet");
+    }
+  }
 
   const float intensity_target =
       OpenEXR::hasWhiteLuminance(header) ? OpenEXR::whiteLuminance(header) : 0;
 
-  const Imath::Box2i displayWindow = header.displayWindow();
-  const Imath::Box2i dataWindow = header.dataWindow();
-  // displayWindow / dataWindow bounds come straight from the EXR file header
+  const Imath::Box2i display_window = header.displayWindow();
+  const Imath::Box2i data_window = header.dataWindow();
+  // display_window / data_window bounds come straight from the EXR file header
   // and are not otherwise constrained: an arbitrary range of ints is legal in
   // the file format. Reject coordinates outside +/-2^30 so the signed
   // expressions below (`max - min + 1`, `start_y * row_size`,
-  // `dataWindow.min.x + ...`) cannot overflow `int`. JXL level 10 already
+  // `data_window.min.x + ...`) cannot overflow `int`. JXL level 10 already
   // caps image sizes at 2^30, so this is not a real-world limitation.
   constexpr int kEXRCoordBound = 1 << 30;
   auto OutOfRange = [](int v) {
     return v < -kEXRCoordBound || v > kEXRCoordBound;
   };
-  if (OutOfRange(displayWindow.min.x) || OutOfRange(displayWindow.max.x) ||
-      OutOfRange(displayWindow.min.y) || OutOfRange(displayWindow.max.y) ||
-      OutOfRange(dataWindow.min.x) || OutOfRange(dataWindow.max.x) ||
-      OutOfRange(dataWindow.min.y) || OutOfRange(dataWindow.max.y)) {
+  if (OutOfRange(display_window.min.x) || OutOfRange(display_window.max.x) ||
+      OutOfRange(display_window.min.y) || OutOfRange(display_window.max.y) ||
+      OutOfRange(data_window.min.x) || OutOfRange(data_window.max.x) ||
+      OutOfRange(data_window.min.y) || OutOfRange(data_window.max.y)) {
     return JXL_FAILURE("EXR: window coordinates out of range");
   }
-  if (displayWindow.max.x < displayWindow.min.x ||
-      displayWindow.max.y < displayWindow.min.y ||
-      dataWindow.max.x < dataWindow.min.x ||
-      dataWindow.max.y < dataWindow.min.y) {
-    return JXL_FAILURE("EXR: inverted window");
+  // TODO(eustas): empty data_window could be valid use case.
+  if (display_window.isEmpty() || data_window.isEmpty()) {
+    return JXL_FAILURE("EXR: empty window");
   }
   // Size is computed as max - min, but both bounds are inclusive.
-  const int imageWidth = displayWindow.max.x - displayWindow.min.x + 1;
-  const int imageHeight = displayWindow.max.y - displayWindow.min.y + 1;
+  const int image_width = display_window.size().x + 1;
+  const int image_height = display_window.size().y + 1;
 
-  if (!VerifyDimensions<uint32_t>(constraints, imageWidth, imageHeight)) {
+  if (!VerifyDimensions<uint32_t>(constraints, image_width, image_height)) {
     return JXL_FAILURE("image too big");
   }
-  // Apply the same constraints to dataWindow, since its dimensions drive
+
+  // Apply the same constraints to data_window, since its dimensions drive
   // input buffer allocations and per-row pointer arithmetic below.
-  const uint32_t dataWidth = dataWindow.max.x - dataWindow.min.x + 1;
-  const uint32_t dataHeight = dataWindow.max.y - dataWindow.min.y + 1;
-  if (!VerifyDimensions<uint32_t>(constraints, dataWidth, dataHeight)) {
-    return JXL_FAILURE("EXR: dataWindow too big");
+  const uint32_t data_width = data_window.size().x + 1;
+  const uint32_t data_height = data_window.size().y + 1;
+  if (!VerifyDimensions<uint32_t>(constraints, data_width, data_height)) {
+    return JXL_FAILURE("EXR: data_window too big");
   }
 
-  ppf->info.xsize = imageWidth;
-  ppf->info.ysize = imageHeight;
-  ppf->info.num_color_channels = has_rgb ? 3 : 1;
+  // https://www.openexr.com/documentation/ReadingAndWritingImageFiles.pdf
+  // recommends reading the whole file at once.
+  size_t num_pixels;
+  // Width must correspond to data scanlines in file.
+  // TODO(eustas): if projection of data_window on X axis is inside of
+  // projection of display_window, then we can avoid extra memcpy.
+  if (!SafeMul(image_height, data_width, num_pixels)) {
+    return JXL_FAILURE("EXR: image too big");
+  }
 
-  const JxlDataType data_type =
-      chBase->type == OpenEXR::HALF ? JXL_TYPE_FLOAT16 : JXL_TYPE_FLOAT;
+  // Intersect data and display window.
+  const int x1 = std::max(data_window.min.x, display_window.min.x);
+  const int x2 = std::min(data_window.max.x, display_window.max.x);
+  const int y1 = std::max(data_window.min.y, display_window.min.y);
+  const int y2 = std::min(data_window.max.y, display_window.max.y);
+  const int x_span = x2 - x1 + 1;
+  const int y_span = y2 - y1 + 1;
+
+  const auto get_pixel_type = [](OpenEXR::PixelType t) -> JxlDataType {
+    return (t == OpenEXR::HALF) ? JXL_TYPE_FLOAT16 : JXL_TYPE_FLOAT;
+  };
+
+  const auto get_pixel_stride = [](OpenEXR::PixelType t) -> size_t {
+    return (t == OpenEXR::HALF) ? 2 : 4;
+  };
+
+  const auto get_bpp = [](OpenEXR::PixelType t) -> size_t {
+    return (t == OpenEXR::HALF) ? 16 : 32;
+  };
+
+  const auto get_exponent_bits = [](OpenEXR::PixelType t) -> size_t {
+    return (t == OpenEXR::HALF) ? 5 : 8;
+  };
+
+  uint32_t num_color_channels = is_gray ? 1 : 3;
+
+  ppf->info.xsize = image_width;
+  ppf->info.ysize = image_height;
+  ppf->info.num_color_channels = num_color_channels;
+
   const JxlPixelFormat format{
-      /*num_channels=*/ppf->info.num_color_channels + (has_alpha ? 1u : 0u),
-      /*data_type=*/data_type,
+      /*num_channels=*/num_color_channels + (has_alpha ? 1u : 0u),
+      /*data_type=*/get_pixel_type(color_type),
       /*endianness=*/JXL_NATIVE_ENDIAN,
       /*align=*/0,
   };
   ppf->frames.clear();
   // Allocates the frame buffer.
   {
-    JXL_ASSIGN_OR_RETURN(PackedFrame frame,
-                         PackedFrame::Create(imageWidth, imageHeight, format));
+    JXL_ASSIGN_OR_RETURN(
+        PackedFrame frame,
+        PackedFrame::Create(image_width, image_height, format));
     ppf->frames.emplace_back(std::move(frame));
   }
   auto& frame = ppf->frames.back();
 
-  // Allocate extra channel images
-  uint32_t extraCount = 0;
-  size_t extraPixelBytes = 0;
-  std::set<const OpenEXR::Channel*> extraChannels;
+  // Allocate extra channel images.
+  std::set<const OpenEXR::Channel*> ec_set;
+  std::vector<std::vector<char> > ec_data;
   for (OpenEXR::ChannelList::ConstIterator it = channels.begin();
        it != channels.end(); ++it) {
     const std::string name = it.name();
-    if (has_rgb && (name == chNameR || name == chNameG || name == chNameB))
-      continue;
-    if (has_alpha && name == chNameA) continue;
-    if (name == chNameBase) continue;
+    // Skip {RGB|Gray}(A)
+    if (is_gray && (name == ch_name_gray)) continue;
+    if (has_alpha && (name == ch_name_a)) continue;
+    if (has_rgb) {
+      if ((name == ch_name_r) || (name == ch_name_g) || (name == ch_name_b)) {
+        continue;
+      }
+    }
+    const OpenEXR::Channel* ch = &it.channel();
+    OpenEXR::PixelType t = ch->type;
 
-    const bool fp16 = it.channel().type == OpenEXR::HALF;
-    ++extraCount;
-    extraPixelBytes += fp16 ? 2 : 4;
-    extraChannels.insert(&it.channel());
+    ec_set.insert(ch);
+    size_t pixel_stride = get_pixel_stride(t);
+    size_t volume;
+    if (!SafeMul(pixel_stride, num_pixels, volume)) {
+      return JXL_FAILURE("EXR: image too big");
+    }
+    std::vector<char> storage(volume);
+    ec_data.emplace_back(std::move(storage));
 
-    const JxlPixelFormat ec_format{1, fp16 ? JXL_TYPE_FLOAT16 : JXL_TYPE_FLOAT,
-                                   JXL_NATIVE_ENDIAN, 0};
+    const JxlPixelFormat ec_format{/*num_channels=*/1,
+                                   /*data_type=*/get_pixel_type(t),
+                                   /*endianness=*/JXL_NATIVE_ENDIAN,
+                                   /*align=*/0};
     JXL_ASSIGN_OR_RETURN(
         PackedImage ec,
-        PackedImage::Create(imageWidth, imageHeight, ec_format));
+        PackedImage::Create(image_width, image_height, ec_format));
     frame.extra_channels.emplace_back(std::move(ec));
+    JXL_DASSERT(frame.extra_channels.back().pixel_stride() == pixel_stride);
 
     PackedExtraChannel pec = {};
-    pec.ec_info.bits_per_sample = fp16 ? 16 : 32;
-    pec.ec_info.exponent_bits_per_sample = fp16 ? 5 : 8;
+    pec.ec_info.bits_per_sample = get_bpp(t);
+    pec.ec_info.exponent_bits_per_sample = get_exponent_bits(t);
     // TODO: detect channel types (depth etc.) based on naming convention
     pec.ec_info.type = JXL_CHANNEL_OPTIONAL;
     pec.name = name;
     ppf->extra_channels_info.emplace_back(std::move(pec));
   }
-  ppf->info.num_extra_channels = (has_alpha ? 1 : 0) + extraCount;
+  ppf->info.num_extra_channels =
+      (has_alpha ? 1 : 0) + frame.extra_channels.size();
 
-  const int row_size = dataWindow.size().x + 1;
-  // Number of rows to read at a time.
-  // https://www.openexr.com/documentation/ReadingAndWritingImageFiles.pdf
-  // recommends reading the whole file at once.
-  const int y_chunk_size = displayWindow.size().y + 1;
-
-  const size_t colorChannelBytes = chBase->type == OpenEXR::HALF ? 2 : 4;
-  const size_t colorPixelBytes = colorChannelBytes * format.num_channels;
-  size_t input_rows_size;
-  size_t input_extra_rows_size;
-  if (!SafeMul<size_t>(colorPixelBytes, row_size, input_rows_size) ||
-      !SafeMul<size_t>(input_rows_size, y_chunk_size, input_rows_size) ||
-      !SafeMul<size_t>(extraPixelBytes, row_size, input_extra_rows_size) ||
-      !SafeMul<size_t>(input_extra_rows_size, y_chunk_size,
-                       input_extra_rows_size)) {
+  const size_t color_channel_bytes = get_pixel_stride(color_type);
+  const size_t color_pixel_bytes = color_channel_bytes * format.num_channels;
+  size_t color_data_size;
+  if (!SafeMul(color_pixel_bytes, num_pixels, color_data_size)) {
     return JXL_FAILURE("EXR: image too big");
   }
-  std::vector<char> input_rows(input_rows_size);
-  std::vector<char> input_extra_rows(input_extra_rows_size);
-  for (int start_y = std::max(dataWindow.min.y, displayWindow.min.y);
-       start_y <= std::min(dataWindow.max.y, displayWindow.max.y);
-       start_y += y_chunk_size) {
-    // Inclusive.
-    const int end_y = std::min(start_y + y_chunk_size - 1,
-                               std::min(dataWindow.max.y, displayWindow.max.y));
+  // Interleaved RGB{A} / Gray{A}
+  std::vector<char> color_data(color_data_size);
 
+  // If intersection is empty, then image is just zeroes.
+  if (x_span > 0 && y_span > 0) {
     // Setup framebuffer: color/grayscale
     OpenEXR::FrameBuffer fb;
-    // Compute base index in ptrdiff_t to avoid int overflow when
-    // start_y * row_size exceeds 2^31 (this is reachable for valid images
-    // up to JXL level 10's 2^40 pixel limit, e.g. 2^30 wide x 2^10 tall).
-    const ptrdiff_t base_idx =
-        static_cast<ptrdiff_t>(dataWindow.min.x) +
-        static_cast<ptrdiff_t>(start_y) * static_cast<ptrdiff_t>(row_size);
-    char* input_rows_ptr =
-        input_rows.data() -
-        base_idx * static_cast<ptrdiff_t>(colorPixelBytes);
+    size_t x_stride = color_pixel_bytes;
+    size_t y_stride = x_stride * static_cast<size_t>(data_width);
+    char* virtual_image_origin = color_data.data();
+    // Offset to match output to allocation start; when EXR puts pixel at
+    // (data_window.min.x, y1) it goes to 0-th element.
+    virtual_image_origin -=
+        static_cast<ptrdiff_t>(y1) * static_cast<ptrdiff_t>(y_stride);
+    virtual_image_origin -= static_cast<ptrdiff_t>(data_window.min.x) *
+                            static_cast<ptrdiff_t>(x_stride);
     if (has_rgb) {
-      fb.insert(
-          chNameR.c_str(),
-          OpenEXR::Slice(chR->type, input_rows_ptr + colorChannelBytes * 0,
-                         colorPixelBytes, colorPixelBytes * row_size));
-      fb.insert(
-          chNameG.c_str(),
-          OpenEXR::Slice(chG->type, input_rows_ptr + colorChannelBytes * 1,
-                         colorPixelBytes, colorPixelBytes * row_size));
-      fb.insert(
-          chNameB.c_str(),
-          OpenEXR::Slice(chB->type, input_rows_ptr + colorChannelBytes * 2,
-                         colorPixelBytes, colorPixelBytes * row_size));
+      fb.insert(ch_name_r.c_str(),
+                OpenEXR::Slice(color_type,
+                               virtual_image_origin + color_channel_bytes * 0,
+                               x_stride, y_stride));
+      fb.insert(ch_name_g.c_str(),
+                OpenEXR::Slice(color_type,
+                               virtual_image_origin + color_channel_bytes * 1,
+                               x_stride, y_stride));
+      fb.insert(ch_name_b.c_str(),
+                OpenEXR::Slice(color_type,
+                               virtual_image_origin + color_channel_bytes * 2,
+                               x_stride, y_stride));
     } else {
-      fb.insert(
-          chNameBase.c_str(),
-          OpenEXR::Slice(chBase->type, input_rows_ptr + colorChannelBytes * 0,
-                         colorPixelBytes, colorPixelBytes * row_size));
+      fb.insert(ch_name_gray.c_str(),
+                OpenEXR::Slice(color_type,
+                               virtual_image_origin + color_channel_bytes * 0,
+                               x_stride, y_stride));
     }
 
     // Setup framebuffer: alpha
     if (has_alpha) {
-      fb.insert(
-          chNameA.c_str(),
-          OpenEXR::Slice(chA->type,
-                         input_rows_ptr + colorChannelBytes * (has_rgb ? 3 : 1),
-                         colorPixelBytes, colorPixelBytes * row_size));
+      fb.insert(ch_name_a.c_str(),
+                OpenEXR::Slice(color_type,
+                               virtual_image_origin +
+                                   color_channel_bytes * (has_rgb ? 3 : 1),
+                               x_stride, y_stride));
     }
 
     // Setup framebuffer: extra channels
-    char* extra_rows_ptr =
-        input_extra_rows.data() -
-        base_idx * static_cast<ptrdiff_t>(extraPixelBytes);
+    size_t ec_data_idx = 0;
     for (OpenEXR::ChannelList::ConstIterator it = channels.begin();
          it != channels.end(); ++it) {
-      if (extraChannels.find(&it.channel()) == extraChannels.end()) {
+      const OpenEXR::Channel* ch = &it.channel();
+      if (ec_set.find(ch) == ec_set.end()) {
         continue;
       }
-      const size_t size = it.channel().type == OpenEXR::HALF ? 2 : 4;
-      fb.insert(it.name(), OpenEXR::Slice(it.channel().type, extra_rows_ptr,
-                                          size, size * row_size));
-      extra_rows_ptr += size * row_size * (end_y - start_y + 1);
+      auto& ec = ec_data[ec_data_idx++];
+      size_t ec_x_stride = get_pixel_stride(ch->type);
+      size_t ec_y_stride = ec_x_stride * static_cast<size_t>(data_width);
+
+      char* ec_virtual_image_origin = ec.data();
+      // Offset to match output to allocation start; when EXR puts pixel at
+      // (data_window.min.x, y1) it goes to 0-th element.
+      ec_virtual_image_origin -=
+          static_cast<ptrdiff_t>(y1) * static_cast<ptrdiff_t>(ec_y_stride);
+      ec_virtual_image_origin -= static_cast<ptrdiff_t>(data_window.min.x) *
+                                 static_cast<ptrdiff_t>(ec_x_stride);
+
+      fb.insert(it.name(), OpenEXR::Slice(ch->type, ec_virtual_image_origin,
+                                          ec_x_stride, ec_y_stride));
     }
 
     // Read EXR data
     input.setFrameBuffer(fb);
-    input.readPixels(start_y, end_y);
+    input.readPixels(y1, y2);
 
-    // Copy read data into the result image
-    const int exr_x1 = std::max(dataWindow.min.x, displayWindow.min.x);
-    const int exr_x2 = std::min(dataWindow.max.x, displayWindow.max.x);
-    const int exr_x_span = std::max(0, exr_x2 - exr_x1 + 1);
-    if (exr_x_span > 0) {
-      for (int exr_y = start_y; exr_y <= end_y; ++exr_y) {
-        const int image_y = exr_y - displayWindow.min.y;
-        const char* const JXL_RESTRICT input_row =
-            &input_rows[(exr_y - start_y) * colorPixelBytes * row_size];
-        uint8_t* row = static_cast<uint8_t*>(frame.color.pixels()) +
-                       frame.color.stride * image_y;
+    const int x_data = x1 - data_window.min.x;
+    const int x_out = x1 - display_window.min.x;
+    JXL_DASSERT(x_out >= 0);
+    JXL_DASSERT(x_out + x_span <= image_width);
 
-        const char* exr_ptr =
-            input_row + (exr_x1 - dataWindow.min.x) * colorPixelBytes;
-        uint8_t* image_ptr =
-            row + (exr_x1 - displayWindow.min.x) * colorPixelBytes;
-        memcpy(image_ptr, exr_ptr, exr_x_span * colorPixelBytes);
+    // Copy read data into the result image.
+    // TODO(eustas): should we deal with unpopulated pixels?
+    for (int y = y1; y <= y2; ++y) {  // Scanline index
+      const int y_data = y - y1;
+      const int y_out = y - display_window.min.y;
+      JXL_DASSERT(y_out >= 0);
+      JXL_DASSERT(y_out < image_height);
+      const char* const JXL_RESTRICT data_ptr =
+          &color_data[x_data * color_pixel_bytes + y_data * y_stride];
+      uint8_t* pixels = static_cast<uint8_t*>(frame.color.pixels());
+      uint8_t* image_ptr =
+          pixels + x_out * color_pixel_bytes + y_out * frame.color.stride;
+      memcpy(image_ptr, data_ptr, x_span * color_pixel_bytes);
 
-        const char* JXL_RESTRICT input_ec_slice = input_extra_rows.data();
-        for (PackedImage& ec : frame.extra_channels) {
-          const char* const JXL_RESTRICT input_ec_row =
-              input_ec_slice + (exr_y - start_y) * ec.stride;
-          uint8_t* ec_row =
-              static_cast<uint8_t*>(ec.pixels()) + ec.stride * image_y;
-          input_ec_slice += ec.stride * (end_y - start_y + 1);
-
-          const char* exr_ec_ptr =
-              input_ec_row + (exr_x1 - dataWindow.min.x) * ec.pixel_stride();
-          uint8_t* image_ec_ptr =
-              ec_row + (exr_x1 - displayWindow.min.x) * ec.pixel_stride();
-          memcpy(image_ec_ptr, exr_ec_ptr, exr_x_span * ec.pixel_stride());
-        }
+      for (size_t ec_idx = 0; ec_idx < frame.extra_channels.size(); ++ec_idx) {
+        PackedImage& ec = frame.extra_channels[ec_idx];
+        auto& data = ec_data[ec_idx];
+        size_t ec_x_stride = ec.pixel_stride();
+        size_t ec_y_stride = ec_x_stride * data_width;
+        const char* const JXL_RESTRICT ec_data_ptr =
+            &data[x_data * ec_x_stride + y_data * ec_y_stride];
+        uint8_t* ec_pixels = static_cast<uint8_t*>(ec.pixels());
+        uint8_t* ec_image_ptr =
+            ec_pixels + x_out * ec_x_stride + y_out * ec.stride;
+        memcpy(ec_image_ptr, ec_data_ptr, x_span * ec_x_stride);
       }
     }
   }
@@ -446,11 +502,11 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   }
 
   // EXR uses binary16 or binary32 floating point format.
-  ppf->info.bits_per_sample = chBase->type == OpenEXR::HALF ? 16 : 32;
-  ppf->info.exponent_bits_per_sample = chBase->type == OpenEXR::HALF ? 5 : 8;
+  ppf->info.bits_per_sample = get_bpp(color_type);
+  ppf->info.exponent_bits_per_sample = get_exponent_bits(color_type);
   if (has_alpha) {
-    ppf->info.alpha_bits = chA->type == OpenEXR::HALF ? 16 : 32;
-    ppf->info.alpha_exponent_bits = chA->type == OpenEXR::HALF ? 5 : 8;
+    ppf->info.alpha_bits = ppf->info.bits_per_sample;
+    ppf->info.alpha_exponent_bits = ppf->info.exponent_bits_per_sample;
     ppf->info.alpha_premultiplied = JXL_TRUE;
   }
   ppf->info.intensity_target = intensity_target;

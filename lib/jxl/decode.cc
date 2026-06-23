@@ -30,6 +30,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_cache.h"
@@ -131,13 +132,11 @@ JxlSignature ReadSignature(const uint8_t* buf, size_t len, size_t* pos) {
 
   // JPEG XL container
   if (len >= 1 && buf[0] == 0) {
-    if (len < 12) {
+    if (len < jxl::kJxlSignatureBox.size()) {
       return JXL_SIG_NOT_ENOUGH_BYTES;
-    } else if (buf[1] == 0 && buf[2] == 0 && buf[3] == 0xC && buf[4] == 'J' &&
-               buf[5] == 'X' && buf[6] == 'L' && buf[7] == ' ' &&
-               buf[8] == 0xD && buf[9] == 0xA && buf[10] == 0x87 &&
-               buf[11] == 0xA) {
-      *pos += 12;
+    } else if (memcmp(buf, jxl::kJxlSignatureBox.data(),
+                      jxl::kJxlSignatureBox.size()) == 0) {
+      *pos += jxl::kJxlSignatureBox.size();
       return JXL_SIG_CONTAINER;
     } else {
       return JXL_SIG_INVALID;
@@ -1444,21 +1443,21 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
         GetCurrentDimensions(dec, xsize, ysize);
         size_t bits_per_sample = GetBitDepth(
             dec->image_out_bit_depth, dec->metadata.m, dec->image_out_format);
-        dec->frame_dec->SetImageOutput(
+        JXL_API_RETURN_IF_ERROR(dec->frame_dec->SetImageOutput(
             PixelCallback{
                 dec->image_out_init_callback, dec->image_out_run_callback,
                 dec->image_out_destroy_callback, dec->image_out_init_opaque},
             reinterpret_cast<uint8_t*>(dec->image_out_buffer),
             dec->image_out_size, xsize, ysize, dec->image_out_format,
-            bits_per_sample, dec->unpremul_alpha, !dec->keep_orientation);
+            bits_per_sample, dec->unpremul_alpha, !dec->keep_orientation));
         for (size_t i = 0; i < dec->extra_channel_output.size(); ++i) {
           const auto& extra = dec->extra_channel_output[i];
           size_t ec_bits_per_sample =
               GetBitDepth(dec->image_out_bit_depth,
                           dec->metadata.m.extra_channel_info[i], extra.format);
-          dec->frame_dec->AddExtraChannelOutput(extra.buffer, extra.buffer_size,
-                                                xsize, extra.format,
-                                                ec_bits_per_sample);
+          JXL_API_RETURN_IF_ERROR(dec->frame_dec->AddExtraChannelOutput(
+              extra.buffer, extra.buffer_size, xsize, extra.format,
+              ec_bits_per_sample));
         }
       }
 
@@ -1954,10 +1953,19 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         dec->box_stage = BoxStage::kCodestream;
       } else if (dec->jxl_file_format_version >= 1) {
         // Out-of-order box (version 1+): buffer payload for later injection.
+        // Reject a counter that is already buffered: emplace() would be a
+        // no-op (leaving the old is_last in place), and the kBufferingJxlp
+        // stage would then concatenate this box's payload onto the previously
+        // buffered one via operator[]. Both effects corrupt the reconstructed
+        // codestream and let a single index accumulate unbounded data, so a
+        // duplicate index must be a hard error (jxlp indices are unique).
+        auto insert_result = dec->jxlp_ooo_buffer.emplace(
+            counter, std::make_pair(std::vector<uint8_t>(), is_last));
+        if (!insert_result.second) {
+          return JXL_INPUT_ERROR("duplicate jxlp box index %u", counter);
+        }
         dec->buffering_jxlp_index = counter;
         dec->buffering_jxlp_is_last = is_last;
-        dec->jxlp_ooo_buffer.emplace(
-            counter, std::make_pair(std::vector<uint8_t>(), is_last));
         dec->box_stage = BoxStage::kBufferingJxlp;
       } else {
         return JXL_INPUT_ERROR(
@@ -2457,22 +2465,18 @@ static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
   }
   if (num_channels == 0) num_channels = format->num_channels;
   size_t row_bits;
-  if (!jxl::SafeMul<size_t>(xsize, num_channels, row_bits) ||
-      !jxl::SafeMul<size_t>(row_bits, bits, row_bits)) {
+  if (!jxl::SafeMul(xsize, num_channels, row_bits) ||
+      !jxl::SafeMul(row_bits, bits, row_bits)) {
     return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
   size_t row_size = jxl::DivCeil(row_bits, jxl::kBitsPerByte);
   const size_t last_row_size = row_size;
-  if (format->align > 1) {
-    size_t aligned_rows = jxl::DivCeil(row_size, format->align);
-    if (!jxl::SafeMul<size_t>(aligned_rows, format->align, row_size)) {
-      return JXL_API_ERROR(
-          "Image too large for output buffer size calculation");
-    }
+  if (!jxl::SafeRoundUpTo(row_size, format->align, row_size)) {
+    return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
 
   size_t total = 0;
-  if (ysize > 1 && !jxl::SafeMul<size_t>(row_size, ysize - 1, total)) {
+  if (ysize > 1 && !jxl::SafeMul(row_size, ysize - 1, total)) {
     return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
   if (!jxl::SafeAdd<size_t>(total, last_row_size, *min_size)) {
