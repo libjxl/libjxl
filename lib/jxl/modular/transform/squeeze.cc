@@ -94,7 +94,7 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
 #if HWY_IS_LITTLE_ENDIAN
     auto a3 = OddEven(BitCast(d, a3oh), DupOdd(BitCast(d, a3eh)));
 #else  // not little endian
-    auto a3 = OddEven(DupEven(BitCast(d, a3oh)), BitCast(d, a3eh))
+    auto a3 = OddEven(DupEven(BitCast(d, a3oh)), BitCast(d, a3eh));
 #endif  // endianness
 #endif  // hwy version
 
