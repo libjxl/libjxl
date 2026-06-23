@@ -349,7 +349,7 @@ std::unique_ptr<jxl::CodecInOut> SomeTestImageToCodecInOut(
       jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels < 3),
       /*bits_per_sample=*/16, format,
       /*pool=*/nullptr,
-      /*ib=*/&io->Main()));
+      /*ib=*/&io->Main(), /*set_alpha=*/true));
   return io;
 }
 

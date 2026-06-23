@@ -238,7 +238,8 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     const jxl::Span<const uint8_t> span(img_data.data(), img_data.size());
     JXL_RETURN_IF_ERROR(ConvertFromExternal(
         span, spec.width, spec.height, io->metadata.m.color_encoding,
-        io->metadata.m.bit_depth.bits_per_sample, format, nullptr, &ib));
+        io->metadata.m.bit_depth.bits_per_sample, format, nullptr, &ib,
+        has_alpha));
     io->frames.push_back(std::move(ib));
     JXL_ASSIGN_OR_RETURN(
         jxl::extras::PackedFrame packed_frame,

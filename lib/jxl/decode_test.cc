@@ -259,7 +259,8 @@ std::vector<uint8_t> CreateTestJXLCodestream(
   io->metadata.m.color_encoding = color_encoding;
   EXPECT_TRUE(ConvertFromExternal(pixels, xsize, ysize, color_encoding,
                                   /*bits_per_sample=*/16, format,
-                                  /* pool */ nullptr, &io->Main()));
+                                  /* pool */ nullptr, &io->Main(),
+                                  include_alpha));
   std::vector<uint8_t> encoded_jpeg_bytes;
   if (params.jpeg_codestream != nullptr) {
     if (jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {
@@ -1334,7 +1335,7 @@ TEST_P(DecodeTestParam, PixelTest) {
 
     EXPECT_TRUE(ConvertFromExternal(bytes, config.xsize, config.ysize,
                                     color_encoding, 16, format_orig, nullptr,
-                                    &io->Main()));
+                                    &io->Main(), config.include_alpha));
 
     for (uint8_t& pixel : pixels) pixel = 0;
     EXPECT_TRUE(ConvertToExternal(
