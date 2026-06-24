@@ -370,6 +370,10 @@ Status EncodeNoise(const NoiseParams& noise_params, BitWriter* writer,
                    LayerType layer, AuxOut* aux_out) {
   JXL_ENSURE(noise_params.HasAny());
 
+  for (size_t i = 0; i < NoiseParams::kNumNoisePoints; i++) {
+    fprintf(stderr, "Noise LUT[%zu] = %f\n", i, noise_params.lut[i]);
+  }
+
   return writer->WithMaxBits(
       NoiseParams::kNumNoisePoints * 16, layer, aux_out, [&]() -> Status {
         for (float i : noise_params.lut) {
