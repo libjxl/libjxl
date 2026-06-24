@@ -8,7 +8,9 @@
 
 // Shared constants.
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 
 #ifndef JXL_HIGH_PRECISION
 #define JXL_HIGH_PRECISION 1
@@ -26,6 +28,10 @@
 
 namespace jxl {
 // Some enums and typedefs used by more than one header file.
+
+// The 12-byte JXL container signature box (all valid containers start with it).
+constexpr std::array<uint8_t, 12> kJxlSignatureBox = {
+    0x00, 0x00, 0x00, 0x0C, 'J', 'X', 'L', ' ', 0x0D, 0x0A, 0x87, 0x0A};
 
 // Maximum number of passes in an image.
 constexpr size_t kMaxNumPasses = 11;

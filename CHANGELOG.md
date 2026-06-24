@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+ - decoder: support for out-of-order `jxlp` boxes (ftyp minor version 1).
+ - encoder API: `JXL_ENC_FRAME_SETTING_OUTPUT_MODE` frame setting to control
+   how the codestream is written to the output. Mode 0 (default) buffers the
+   output internally and produces a normally ordered, progressively decodable
+   codestream. Mode 1 uses seek-based streaming (reduces peak memory for large
+   images, requires a seekable output stream). Mode 2 uses out-of-order `jxlp`
+   boxes (reduces peak memory without requiring seeking, but requires a decoder
+   that supports ftyp minor version 1).
+
 ### Changed / clarified
  - decoder API: timeframes to successfully invoke `JxlDecoderSetImageOutBuffer`
    and `JxlDecoderSetPreviewOutBuffer` are non-intersecting; it is not possible

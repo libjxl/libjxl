@@ -37,7 +37,7 @@ namespace jxl {
 
 struct ImageFeatures {
   explicit ImageFeatures(JxlMemoryManager* memory_manager_)
-      : patches(memory_manager_) {}
+      : patches(memory_manager_), splines(memory_manager_) {}
   NoiseParams noise_params;
   PatchDictionary patches;
   Splines splines;

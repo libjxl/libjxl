@@ -289,7 +289,7 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   shared.image_features.splines.Clear();
   if (frame_header_.flags & FrameHeader::kSplines) {
     JXL_RETURN_IF_ERROR(shared.image_features.splines.Decode(
-        memory_manager, br, frame_dim_.xsize * frame_dim_.ysize));
+        br, frame_dim_.xsize * frame_dim_.ysize));
   }
   if (frame_header_.flags & FrameHeader::kNoise) {
     JXL_RETURN_IF_ERROR(DecodeNoise(br, &shared.image_features.noise_params));

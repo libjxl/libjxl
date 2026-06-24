@@ -53,7 +53,7 @@ Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
   JxlPixelFormat format = {num_channels, data_type, endianness, 0};
   const Span<const uint8_t> span(pixels, end - pixels);
   return ConvertFromExternal(span, xsize, ysize, c, bits_per_sample, format,
-                             pool, ib);
+                             pool, ib, /*set_alpha=*/true);
 }
 
 struct WebPArgs {
