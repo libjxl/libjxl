@@ -698,7 +698,8 @@ void ComputeNoiseParams(const CompressParams& cparams, bool streaming_mode,
     return;
   }
   if (cparams.photon_noise_iso > 0) {
-    *noise_params = SimulatePhotonNoise(frame_dim.xsize, frame_dim.ysize,
+    FrameDimensions full_frame_dim = frame_header->ToFrameDimensions();
+    *noise_params = SimulatePhotonNoise(full_frame_dim.xsize, full_frame_dim.ysize,
                                         cparams.photon_noise_iso);
   } else if (cparams.manual_noise.size() == NoiseParams::kNumNoisePoints) {
     for (size_t i = 0; i < NoiseParams::kNumNoisePoints; i++) {
