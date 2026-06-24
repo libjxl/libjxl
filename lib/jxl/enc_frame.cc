@@ -695,8 +695,13 @@ void ComputeNoiseParams(const CompressParams& cparams, bool streaming_mode,
                         bool color_is_jpeg, const Image3F& opsin,
                         const FrameDimensions& frame_dim,
                         FrameHeader* frame_header, NoiseParams* noise_params) {
+  if (frame_header->frame_type == FrameType::kDCFrame) {
+    frame_header->flags &= ~FrameHeader::kNoise;
+    return;
+  }
   if (cparams.photon_noise_iso > 0) {
-    *noise_params = SimulatePhotonNoise(frame_dim.xsize, frame_dim.ysize,
+    FrameDimensions full_frame_dim = frame_header->ToFrameDimensions();
+    *noise_params = SimulatePhotonNoise(full_frame_dim.xsize, full_frame_dim.ysize,
                                         cparams.photon_noise_iso);
   } else if (cparams.manual_noise.size() == NoiseParams::kNumNoisePoints) {
     for (size_t i = 0; i < NoiseParams::kNumNoisePoints; i++) {
