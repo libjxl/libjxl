@@ -819,7 +819,7 @@ StatusOr<Image3F> ReconstructImage(
   options.use_slow_render_pipeline = false;
   options.coalescing = false;
   options.render_spotcolors = false;
-  options.render_noise = ((frame_header.flags & FrameHeader::kNoise) != 0);
+  options.render_noise = true;
 
   JXL_RETURN_IF_ERROR(dec_state->PreparePipeline(
       frame_header, &shared.metadata->m, &decoded, options));
@@ -857,7 +857,6 @@ StatusOr<Image3F> ReconstructImage(
   return std::move(*decoded.color());
 }
 
-  
 float ComputeBlockL2Distance(const Image3F& a, const Image3F& b,
                              const ImageF& mask1x1, size_t by, size_t bx) {
   Rect rect(bx * kBlockDim, by * kBlockDim, kBlockDim, kBlockDim, a.xsize(),
@@ -879,8 +878,8 @@ float ComputeBlockL2Distance(const Image3F& a, const Image3F& b,
       float mask = row_mask[x];
       float mask2 = mask * mask;
       for (int i = 0; i < 3; ++i) {
-	float diff = row_a[i][x] - row_b[i][x];
-	err2[i] += mask2 * diff * diff;
+        float diff = row_a[i][x] - row_b[i][x];
+        err2[i] += mask2 * diff * diff;
       }
     }
   }
@@ -941,7 +940,7 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       float* error_row = error_images[val].Row(by);
       for (size_t bx = 0; bx < frame_dim.xsize_blocks; bx++) {
         error_row[bx] = ComputeBlockL2Distance(
-	    orig_opsin, decoded, initial_quant_masking1x1, by, bx);
+            orig_opsin, decoded, initial_quant_masking1x1, by, bx);
       }
     }
   }
@@ -961,7 +960,7 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       for (uint8_t val : epf_steps) {
         float error = error_images[val].Row(by)[bx];
         if (val == 0) {
-	  error *= kFavorNoSmoothing;
+          error *= kFavorNoSmoothing;
         }
         if (error < best_error) {
           best_val = val;
@@ -991,8 +990,9 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
         int context = epf_steps_lut[top_val] * 3 + epf_steps_lut[left_val];
         const auto& ctx_histo = histo[context];
         const int mulix = epf_steps_lut[val] + 3 * context;
-        mul[mulix] = 1.0 / (1.0 + c5 * std::log1p(ctx_histo[val] /
-						  totals[context]) / clamped_butteraugli);
+        mul[mulix] =
+            1.0 / (1.0 + c5 * std::log1p(ctx_histo[val] / totals[context]) /
+                             clamped_butteraugli);
         if (val == 0) {
           mul[mulix] *= c3;
         }
@@ -1045,11 +1045,12 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   JxlMemoryManager* memory_manager = enc_state->memory_manager();
 
   // Find and subtract splines.
-  if (cparams.custom_splines.HasAny()) {
-    image_features.splines = cparams.custom_splines;
+  bool override_splines = cparams.custom_splines.HasAny();
+  if (override_splines) {
+    image_features.splines.SetData(cparams.custom_splines);
   }
   if (!streaming_mode && cparams.speed_tier <= SpeedTier::kSquirrel) {
-    if (!cparams.custom_splines.HasAny()) {
+    if (!override_splines) {
       image_features.splines = FindSplines(*opsin);
     }
     JXL_RETURN_IF_ERROR(image_features.splines.InitializeDrawCache(

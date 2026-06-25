@@ -125,11 +125,6 @@ Status ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
     }
     c.width_in_blocks = MCU_cols * c.h_samp_factor;
     c.height_in_blocks = MCU_rows * c.v_samp_factor;
-    const uint64_t num_blocks =
-        static_cast<uint64_t>(c.width_in_blocks) * c.height_in_blocks;
-    if (mode == JpegReadMode::kReadAll) {
-      c.coeffs.resize(num_blocks * kDCTBlockSize);
-    }
   }
   JXL_JPEG_VERIFY_MARKER_END();
   return true;
@@ -813,6 +808,15 @@ Status ProcessScan(const uint8_t* data, const size_t len,
   if (Al > 10) {
     return JXL_FAILURE("Scan parameter Al=%d is not supported.", Al);
   }
+
+  for (auto& c : jpg->components) {
+    if (c.coeffs.empty()) {
+      const uint64_t num_blocks =
+          static_cast<uint64_t>(c.width_in_blocks) * c.height_in_blocks;
+      c.coeffs.resize(num_blocks * kDCTBlockSize);
+    }
+  }
+
   for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
     for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
       // Handle the restart intervals.
@@ -845,7 +849,9 @@ Status ProcessScan(const uint8_t* data, const size_t len,
           for (int ix = 0; ix < nblocks_x; ++ix) {
             int block_y = mcu_y * nblocks_y + iy;
             int block_x = mcu_x * nblocks_x + ix;
-            int block_idx = block_y * c->width_in_blocks + block_x;
+            size_t block_idx =
+                static_cast<size_t>(block_y) * c->width_in_blocks +
+                static_cast<size_t>(block_x);
             bool reset_state = false;
             int num_zero_runs = 0;
             coeff_t* coeffs = &c->coeffs[block_idx * kDCTBlockSize];
@@ -940,6 +946,7 @@ Status ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
   std::vector<HuffmanTableEntry> dc_huff_lut(lut_size);
   std::vector<HuffmanTableEntry> ac_huff_lut(lut_size);
   bool found_sof = false;
+  bool found_sos = false;
   bool found_dri = false;
   uint16_t scan_progression[kMaxComponents][kDCTBlockSize] = {{0}};
 
@@ -988,6 +995,7 @@ Status ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
                                           scan_progression, is_progressive,
                                           &pos, jpg));
         }
+        found_sos = true;
         break;
       case 0xdb:
         JXL_RETURN_IF_ERROR(ProcessDQT(data, len, &pos, jpg));
@@ -1032,6 +1040,9 @@ Status ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
 
   if (!found_sof) {
     return JXL_FAILURE("Missing SOF marker.");
+  }
+  if (!found_sos) {
+    return JXL_FAILURE("Missing SOS marker.");
   }
 
   // Supplemental checks.

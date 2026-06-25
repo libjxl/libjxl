@@ -3,10 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <jxl/cms.h>
 #include <jxl/encode.h>
-#include <jxl/memory_manager.h>
-#include <jxl/types.h>
 
 #include <cstddef>
 #include <cstdint>

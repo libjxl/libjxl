@@ -5,6 +5,9 @@
 
 #include "lib/extras/dec/pgx.h"
 
+#include <jxl/memory_manager.h>
+
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <string>

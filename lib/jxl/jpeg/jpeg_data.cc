@@ -97,6 +97,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     }
   }
 
+  if (info.num_scans == 0) {
+    return JXL_FAILURE("JPEG: no scans\n");
+  }
+
   // Size of the APP and COM markers.
   if (visitor->IsReading()) {
     app_data.resize(info.num_app_markers);

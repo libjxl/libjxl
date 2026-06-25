@@ -46,7 +46,7 @@ class QuantizedSplineEncoder {
 
 namespace {
 
-void EncodeAllStartingPoints(const std::vector<Spline::Point>& points,
+void EncodeAllStartingPoints(Span<const Spline::Point> points,
                              std::vector<Token>* tokens) {
   int64_t last_x = 0;
   int64_t last_y = 0;
@@ -76,8 +76,7 @@ Status EncodeSplines(const Splines& splines, BitWriter* writer,
                      const HistogramParams& histogram_params, AuxOut* aux_out) {
   JXL_ENSURE(splines.HasAny());
 
-  const std::vector<QuantizedSpline>& quantized_splines =
-      splines.QuantizedSplines();
+  Span<const QuantizedSpline> quantized_splines = splines.QuantizedSplines();
   std::vector<std::vector<Token>> tokens(1);
   tokens[0].emplace_back(static_cast<uint32_t>(kNumSplinesContext),
                          static_cast<uint32_t>(quantized_splines.size() - 1));
@@ -103,7 +102,7 @@ Status EncodeSplines(const Splines& splines, BitWriter* writer,
 
 Splines FindSplines(const Image3F& opsin) {
   // TODO(user): implement spline detection.
-  return {};
+  return Splines{opsin.memory_manager()};
 }
 
 }  // namespace jxl

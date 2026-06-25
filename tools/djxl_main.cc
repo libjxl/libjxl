@@ -9,15 +9,16 @@
 #include <jxl/types.h>
 
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "lib/extras/alpha_blend.h"
 #include "lib/extras/dec/decode.h"
