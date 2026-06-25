@@ -15,8 +15,6 @@
 #include <mutex>
 #include <thread>
 
-#include "lib/jxl/base/compiler_specific.h"
-
 namespace jpegxl {
 
 // static

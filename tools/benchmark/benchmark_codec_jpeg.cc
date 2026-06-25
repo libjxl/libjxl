@@ -8,10 +8,9 @@
 #include <stdio.h>
 // After stddef/stdio
 #include <jxl/types.h>
-#include <stdint.h>
-#include <string.h>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <sstream>

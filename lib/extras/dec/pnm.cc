@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "lib/extras/dec/color_hints.h"
+#include "lib/extras/mmap.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/bits.h"
@@ -87,8 +88,11 @@ class Parser {
 
     *number = 0;
     while (pos_ < end_ && *pos_ >= '0' && *pos_ <= '9') {
-      *number *= 10;
-      *number += *pos_ - '0';
+      const size_t digit = *pos_ - '0';
+      if (!SafeMul(*number, static_cast<size_t>(10), *number) ||
+          !SafeAdd(*number, digit, *number)) {
+        return JXL_FAILURE("PNM: unsigned number too large");
+      }
       ++pos_;
     }
 
