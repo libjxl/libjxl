@@ -332,10 +332,16 @@ class JxlEncoderChunkedFrameAdapter {
     bool SetFromBuffer(const uint8_t* buffer, size_t size,
                        JxlPixelFormat format, size_t x_size, size_t y_size) {
       if (!SetFormatAndDimensions(format, x_size, y_size)) return false;
+      if (ysize_ == 0) return false;
       buffer_ = buffer;
       buffer_size_ = size;
-      const size_t min_buffer_size =
-          stride_ * (ysize_ - 1) + xsize_ * bytes_per_pixel_;
+      size_t min_buffer_size;
+      size_t last_row_size;
+      if (!SafeMul(xsize_, bytes_per_pixel_, last_row_size)) return false;
+      if (!SafeMul(stride_, ysize_ - 1, min_buffer_size)) return false;
+      if (!SafeAdd(min_buffer_size, last_row_size, min_buffer_size)) {
+        return false;
+      }
       return min_buffer_size <= size;
     }
 
@@ -344,7 +350,9 @@ class JxlEncoderChunkedFrameAdapter {
       if (!SetFormatAndDimensions(format, x_size, y_size)) return false;
       JXL_ENSURE(stride_ <= row_offset);
       buffer_ = nullptr;
-      copy_.resize(y_size * stride_);
+      size_t copy_size;
+      if (!SafeMul(y_size, stride_, copy_size)) return false;
+      copy_.resize(copy_size);
       for (size_t y = 0; y < y_size; ++y) {
         memcpy(copy_.data() + y * stride_,
                reinterpret_cast<const uint8_t*>(buffer) + y * row_offset,
