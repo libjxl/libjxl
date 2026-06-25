@@ -69,7 +69,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 #include <csetjmp>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1014,15 +1013,17 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           png_color_8p sig_bits = nullptr;
           // Error is OK -> sig_bits remains nullptr.
           png_get_sBIT(ctx.png_ptr, ctx.info_ptr, &sig_bits);
+          uint8_t bit_depth = png_get_bit_depth(ctx.png_ptr, ctx.info_ptr);
           SetColorData(ppf, png_get_color_type(ctx.png_ptr, ctx.info_ptr),
-                       png_get_bit_depth(ctx.png_ptr, ctx.info_ptr), sig_bits,
+                       bit_depth, sig_bits,
                        png_get_valid(ctx.png_ptr, ctx.info_ptr, PNG_INFO_tRNS));
           num_channels =
               ppf->info.num_color_channels + (ppf->info.alpha_bits ? 1 : 0);
+          JxlDataType data_type =
+              bit_depth > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
           format = {
               /*num_channels=*/num_channels,
-              /*data_type=*/ppf->info.bits_per_sample > 8 ? JXL_TYPE_UINT16
-                                                          : JXL_TYPE_UINT8,
+              /*data_type=*/data_type,
               /*endianness=*/JXL_BIG_ENDIAN,
               /*align=*/0,
           };

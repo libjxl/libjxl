@@ -17,14 +17,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <hwy/targets.h>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <random>
 #include <vector>
 
-#include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/fuzztest.h"
 #include "tools/tracking_memory_manager.h"
 
@@ -38,10 +35,10 @@ constexpr const size_t kStreamingTargetNumberOfChunks = 128;
 using ::jpegxl::tools::kGiB;
 using ::jpegxl::tools::TrackingMemoryManager;
 
-void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
+void CheckImpl(bool ok, const char* condition, const char* file, int line) {
   if (!ok) {
-    fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
-    JXL_CRASH();
+    fprintf(stderr, "Check(%s) failed at %s:%d\n", condition, file, line);
+    __builtin_trap();
   }
 }
 #define Check(OK) CheckImpl((OK), #OK, __FILE__, __LINE__)
@@ -97,7 +94,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
       std::min<size_t>(2, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   auto runner = JxlThreadParallelRunnerMake(memory_manager, num_threads);
 
-  auto mt = jxl::make_unique<std::mt19937>(spec.random_seed);
+  auto mt = std::make_unique<std::mt19937>(spec.random_seed);
   std::exponential_distribution<> dis_streaming(kStreamingTargetNumberOfChunks);
 
   auto dec = JxlDecoderMake(memory_manager);
@@ -333,8 +330,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
       }
       preview_pixels.resize(preview_size);
       if (JXL_DEC_SUCCESS != JxlDecoderSetPreviewOutBuffer(
-                                  dec.get(), &format, preview_pixels.data(),
-                                  preview_pixels.size())) {
+                                 dec.get(), &format, preview_pixels.data(),
+                                 preview_pixels.size())) {
         abort();
       }
     } else if (status == JXL_DEC_PREVIEW_IMAGE) {
@@ -368,7 +365,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size,
           decode_callback_data.called_rows.clear();
         }
         decode_callback_data.called_rows_mutex =
-            jxl::make_unique<std::mutex[]>(decode_callback_data.ysize);
+            std::make_unique<std::mutex[]>(decode_callback_data.ysize);
         decode_callback_data.called_rows.resize(decode_callback_data.ysize);
         for (size_t y = 0; y < decode_callback_data.ysize; ++y) {
           decode_callback_data.called_rows[y].delta.clear();

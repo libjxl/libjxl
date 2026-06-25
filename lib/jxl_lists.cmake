@@ -17,7 +17,6 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/fast_math-inl.h
   jxl/base/float.h
   jxl/base/iaca.h
-  jxl/base/include_jpeglib.h
   jxl/base/matrix_ops.h
   jxl/base/os_macros.h
   jxl/base/override.h
@@ -435,6 +434,7 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/exif.cc
   extras/exif.h
   extras/gain_map.cc
+  extras/include_jpeglib.h
   extras/mmap.cc
   extras/mmap.h
   extras/packed_image.cc

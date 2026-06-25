@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <string>
 #include <utility>
 #include <vector>
 

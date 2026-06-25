@@ -37,10 +37,10 @@ std::unique_ptr<Encoder> GetJPEGEncoder() { return nullptr; }
 #include <vector>
 
 #include "lib/extras/exif.h"
+#include "lib/extras/include_jpeglib.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/include_jpeglib.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 
@@ -331,15 +331,15 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
   if (cinfo.num_components == static_cast<int>(image.format.num_channels) &&
       image.format.data_type == JXL_TYPE_UINT8) {
-    for (size_t y = 0; y < info.ysize; ++y) {
+    for (size_t y = 0; y < image.ysize; ++y) {
       memcpy(row_bytes.data(), pixels + y * image.stride, image.stride);
       JSAMPROW row[] = {row_bytes.data()};
       jpeg_write_scanlines(&cinfo, row, 1);
     }
   } else if (image.format.data_type == JXL_TYPE_UINT8) {
-    for (size_t y = 0; y < info.ysize; ++y) {
+    for (size_t y = 0; y < image.ysize; ++y) {
       const uint8_t* image_row = pixels + y * image.stride;
-      for (size_t x = 0; x < info.xsize; ++x) {
+      for (size_t x = 0; x < image.xsize; ++x) {
         const uint8_t* image_pixel = image_row + x * image.pixel_stride();
         memcpy(&row_bytes[x * cinfo.num_components], image_pixel,
                cinfo.num_components);
@@ -348,9 +348,9 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
       jpeg_write_scanlines(&cinfo, row, 1);
     }
   } else {
-    for (size_t y = 0; y < info.ysize; ++y) {
+    for (size_t y = 0; y < image.ysize; ++y) {
       const uint8_t* image_row = pixels + y * image.stride;
-      for (size_t x = 0; x < info.xsize; ++x) {
+      for (size_t x = 0; x < image.xsize; ++x) {
         const uint8_t* image_pixel = image_row + x * image.pixel_stride();
         for (int c = 0; c < cinfo.num_components; ++c) {
           uint32_t val16 = (image_pixel[2 * c] << 8) + image_pixel[2 * c + 1];
@@ -509,7 +509,7 @@ Status EncodeWithSJpeg(const PackedImage& image, const JxlBasicInfo& info,
     hook->first_iter_slope = params.search_first_iter_slope;
     param.search_hook = hook.get();
   }
-  size_t stride = info.xsize * 3;
+  size_t stride = image.xsize * 3;
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
   std::string output;
   JXL_RETURN_IF_ERROR(
