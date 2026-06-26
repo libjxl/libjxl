@@ -883,6 +883,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     const RectT<uint64_t>& vp = current_frame.viewport;
     size_t xsize = static_cast<size_t>(vp.xsize());
     size_t ysize = static_cast<size_t>(vp.ysize());
+    JXL_ENSURE(ctx.frameRaw.rows.size() <= ysize);
     JXL_ASSIGN_OR_RETURN(PackedImage image,
                          PackedImage::Create(xsize, ysize, format));
     for (size_t y = 0; y < ysize; ++y) {
@@ -967,7 +968,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             /*delay_den=*/png_get_uint_16(payload.data() + 22), raw_viewport,
             static_cast<DisposeOp>(dispose_op), static_cast<BlendOp>(blend_op)};
 
-        if (!raw_viewport.Intersection(image_rect).IsSame(raw_viewport)) {
+        if (!raw_viewport.IsInside(image_rect)) {
           // Cropping happened.
           return JXL_FAILURE("PNG frame is outside of image rect");
         }
