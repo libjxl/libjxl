@@ -509,11 +509,20 @@ Status EncodeWithSJpeg(const PackedImage& image, const JxlBasicInfo& info,
     hook->first_iter_slope = params.search_first_iter_slope;
     param.search_hook = hook.get();
   }
-  size_t stride = image.xsize * 3;
+  const size_t num_channels = image.format.num_channels;
+  if (num_channels != 1 && num_channels != 3) {
+    return JXL_FAILURE("sjpeg supports only grayscale and RGB input");
+  }
+  const size_t stride = image.xsize * num_channels;
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
   std::string output;
-  JXL_RETURN_IF_ERROR(
-      sjpeg::Encode(pixels, image.xsize, image.ysize, stride, param, &output));
+  if (num_channels == 1) {
+    JXL_RETURN_IF_ERROR(sjpeg::EncodeGray(pixels, image.xsize, image.ysize,
+                                          stride, param, &output));
+  } else {
+    JXL_RETURN_IF_ERROR(sjpeg::Encode(pixels, image.xsize, image.ysize, stride,
+                                      param, &output));
+  }
   bytes->assign(
       reinterpret_cast<const uint8_t*>(output.data()),
       reinterpret_cast<const uint8_t*>(output.data() + output.size()));
