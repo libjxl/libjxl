@@ -122,11 +122,6 @@ jobs:
         - debian:bookworm
         - debian:trixie
         - debian:sid
-        include:
-          - os: debian:trixie
-            exclude_debian_packages: libjxl-gimp-plugin
-          - os: debian:sid
-            exclude_debian_packages: libjxl-gimp-plugin
 
     container:
       image: ${{ matrix.os }}
