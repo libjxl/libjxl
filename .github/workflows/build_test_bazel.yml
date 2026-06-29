@@ -41,6 +41,7 @@ jobs:
         with:
           submodules: true
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Patch
         run: |

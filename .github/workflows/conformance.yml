@@ -46,6 +46,8 @@ jobs:
         repository: libjxl/conformance
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
+        persist-credentials: false
+
     - name: Cache
       uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
       with:
@@ -110,6 +112,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 2
+        persist-credentials: false
 
     - name: Install build deps
       run: |
@@ -186,7 +189,8 @@ jobs:
         sparse-checkout: tools/scripts/install_deps.sh
         sparse-checkout-cone-mode: false
         fetch-depth: 1
-  
+        persist-credentials: false
+
     - name: Install deps
       run: |
         sudo ./tools/scripts/install_deps.sh conformance
@@ -216,6 +220,8 @@ jobs:
         repository: libjxl/conformance
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
+        persist-credentials: false
+
     - name: Cache
       uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
       with:

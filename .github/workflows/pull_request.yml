@@ -31,6 +31,9 @@ jobs:
 
     - name: Checkout the source
       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        persist-credentials: false
+
     - name: Check AUTHORS file
       # This is an optional check
       continue-on-error: True
@@ -48,10 +51,13 @@ jobs:
 
     - name: Checkout the source
       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        persist-credentials: false
+
     - name: Install tools
       run: |
         eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-        brew install buildifier typos-cli
+        brew install buildifier typos-cli zizmor
     - name: lint
       run: |
         eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
@@ -68,6 +74,9 @@ jobs:
 
     - name: Checkout the source
       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        persist-credentials: false
+
     - name: bash_test
       run: |
         ./bash_test.sh
