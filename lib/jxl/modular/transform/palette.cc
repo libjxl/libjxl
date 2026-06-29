@@ -116,9 +116,9 @@ Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
                 p_palette, index, /*c=*/c,
                 /*palette_size=*/palette.w, /*onerow=*/onerow,
                 /*bit_depth=*/bit_depth);
+            PredictionResult pred = PredictNoTreeWP(
+                channel.w, p + x, onerow_image, x, y, predictor, &wp_state);
             if (index < static_cast<int32_t>(nb_deltas)) {
-              PredictionResult pred = PredictNoTreeWP(
-                  channel.w, p + x, onerow_image, x, y, predictor, &wp_state);
               val = pred.guess + palette_entry;
             } else {
               val = palette_entry;

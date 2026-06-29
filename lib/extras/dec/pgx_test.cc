@@ -5,6 +5,9 @@
 
 #include "lib/extras/dec/pgx.h"
 
+#include <jxl/memory_manager.h>
+
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -86,6 +89,27 @@ TEST(CodecPGXTest, Test16bits) {
                   eps);
     }
   }
+}
+
+// Crafted PGX with > 19 digit dimension: without the ParseUnsigned overflow
+// guard, the size_t multiplication during ASCII parsing silently wraps. The
+// decoder must reject this before any size arithmetic runs.
+TEST(CodecPGXTest, RejectsDimensionsThatOverflowParseUnsigned) {
+  std::string pgx = "PG ML + 8 99999999999999999999999 2\np";
+  PackedPixelFile ppf;
+  EXPECT_FALSE(DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(), &ppf));
+}
+
+// Crafted PGX whose individual dimensions fit in size_t but whose product
+// xsize*ysize wraps. Without SafeMul on the data-size check, the data-too-
+// small test can be bypassed and the decoder relies entirely on
+// VerifyDimensions to catch it. With SafeMul, the parser rejects up front.
+TEST(CodecPGXTest, RejectsDimensionProductOverflow) {
+  // 2^33 * 2^33 = 2^66, wraps to 0 in size_t (on 64-bit). On 32-bit either
+  // dimension alone already overflows ParseUnsigned and is rejected there.
+  std::string pgx = "PG ML + 8 8589934592 8589934592\n";
+  PackedPixelFile ppf;
+  EXPECT_FALSE(DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(), &ppf));
 }
 
 }  // namespace

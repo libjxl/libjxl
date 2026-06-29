@@ -97,6 +97,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     }
   }
 
+  if (info.num_scans == 0) {
+    return JXL_FAILURE("JPEG: no scans\n");
+  }
+
   // Size of the APP and COM markers.
   if (visitor->IsReading()) {
     app_data.resize(info.num_app_markers);
@@ -470,6 +474,10 @@ Status SetJPEGDataFromICC(const std::vector<uint8_t>& icc,
   for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
     if (jpeg_data->app_marker_type[i] != jpeg::AppMarkerType::kICC) {
       continue;
+    }
+    if (jpeg_data->app_data[i].size() < 17) {
+      return JXL_FAILURE("ICC APP marker too small: %" PRIuS,
+                         jpeg_data->app_data[i].size());
     }
     size_t len = jpeg_data->app_data[i].size() - 17;
     if (icc_pos + len > icc.size()) {

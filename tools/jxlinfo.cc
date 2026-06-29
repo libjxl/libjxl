@@ -5,10 +5,13 @@
 
 // This example prints information from the main codestream header.
 
+#include <jxl/codestream_header.h>
 #include <jxl/color_encoding.h>
 #include <jxl/compressed_icc.h>
 #include <jxl/decode.h>
 #include <jxl/gain_map.h>
+#include <jxl/memory_manager.h>
+#include <jxl/types.h>
 
 #include <array>
 #include <cinttypes>  // PRIu64

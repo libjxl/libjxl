@@ -17,6 +17,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
@@ -119,7 +120,9 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
                                            PipelineOptions options) {
   JxlMemoryManager* memory_manager = this->memory_manager();
   size_t num_c = 3 + frame_header.nonserialized_metadata->m.num_extra_channels;
-  size_t num_tmp_c = options.render_noise ? 3 : 0;
+  bool render_noise =
+      (options.render_noise && (frame_header.flags & FrameHeader::kNoise) != 0);
+  size_t num_tmp_c = render_noise ? 3 : 0;
 
   if (frame_header.CanBeReferenced()) {
     // Necessary so that SetInputSizes() can allocate output buffers as needed.
@@ -210,7 +213,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
   // Starting from this line all the stages considered to have zero xextra.
   // Upsampling does not have xextra as well (even if it happens before
   // splines/patches for EC).
-  if (options.render_noise) {
+  if (render_noise) {
     JXL_RETURN_IF_ERROR(builder.AddStage(GetConvolveNoiseStage(num_c)));
     JXL_RETURN_IF_ERROR(builder.AddStage(GetAddNoiseStage(
         shared->image_features.noise_params, shared->cmap.base(), num_c)));
