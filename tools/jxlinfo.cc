@@ -20,7 +20,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <limits>
 #include <vector>
 
 template <size_t N, typename E>
@@ -413,32 +412,13 @@ static int PrintBasicInfo(FILE* file, int verbose) {
       }
     } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
       const size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
-      if (box_index > box_data.size() ||
-          remaining > box_data.size() - box_index) {
-        box_data.clear();
-        box_index = 0;
-        fprintf(stderr, "Invalid box buffer state\n");
-        break;
-      }
-      box_index += box_data.size() - box_index - remaining;
-      if (box_index >
-          std::numeric_limits<size_t>::max() - chunk_size) {
-        box_data.clear();
-        box_index = 0;
-        fprintf(stderr, "Box size overflow\n");
-        break;
-      }
-      box_data.resize(box_index + chunk_size);
+      box_index = box_data.size() - remaining;
+      box_data.resize(box_data.size() + chunk_size);
       JxlDecoderSetBoxBuffer(dec, box_data.data() + box_index,
                              box_data.size() - box_index);
     } else if (status == JXL_DEC_BOX_COMPLETE) {
       if (!strncmp(box_type, "jhgm", 4)) {
         size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
-        if (box_index > box_data.size() ||
-            remaining > box_data.size() - box_index) {
-          fprintf(stderr, "Invalid box buffer state\n");
-          break;
-        }
         box_data.resize(box_data.size() - remaining);
         JxlGainMapBundle gain_map_bundle;
         size_t bytes_read;
