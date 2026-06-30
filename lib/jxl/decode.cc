@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <map>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -29,6 +30,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_cache.h"
@@ -130,13 +132,11 @@ JxlSignature ReadSignature(const uint8_t* buf, size_t len, size_t* pos) {
 
   // JPEG XL container
   if (len >= 1 && buf[0] == 0) {
-    if (len < 12) {
+    if (len < jxl::kJxlSignatureBox.size()) {
       return JXL_SIG_NOT_ENOUGH_BYTES;
-    } else if (buf[1] == 0 && buf[2] == 0 && buf[3] == 0xC && buf[4] == 'J' &&
-               buf[5] == 'X' && buf[6] == 'L' && buf[7] == ' ' &&
-               buf[8] == 0xD && buf[9] == 0xA && buf[10] == 0x87 &&
-               buf[11] == 0xA) {
-      *pos += 12;
+    } else if (memcmp(buf, jxl::kJxlSignatureBox.data(),
+                      jxl::kJxlSignatureBox.size()) == 0) {
+      *pos += jxl::kJxlSignatureBox.size();
       return JXL_SIG_CONTAINER;
     } else {
       return JXL_SIG_INVALID;
@@ -213,6 +213,7 @@ enum class BoxStage : uint32_t {
   kSkip,        // Box whose contents are skipped
   kCodestream,  // Handling codestream box contents, or non-container stream
   kPartialCodestream,  // Handling the extra header of partial codestream box
+  kBufferingJxlp,      // Reading an out-of-order jxlp box payload into buffer
   kJpegRecon,          // Handling jpeg reconstruction box
 };
 
@@ -363,6 +364,11 @@ struct JxlDecoder {
   JxlDecoder() = default;
 
   JxlMemoryManager memory_manager;
+  void Initialize(JxlMemoryManager memory_manager_copy) {
+    memory_manager = memory_manager_copy;
+    codestream_copy = jxl::PaddedBytes(&memory_manager);
+  }
+
   std::unique_ptr<jxl::ThreadPool> thread_pool;
 
   DecoderStage stage;
@@ -524,7 +530,7 @@ struct JxlDecoder {
   // more input bytes to process the next part of the stream. We copy the input
   // data in order to be able to release it all through the API it when
   // returning JXL_DEC_NEED_MORE_INPUT.
-  std::vector<uint8_t> codestream_copy;
+  jxl::PaddedBytes codestream_copy{nullptr};
   // Number of bytes at the end of codestream_copy that were not yet consumed
   // by calling AdvanceInput().
   size_t codestream_unconsumed;
@@ -538,6 +544,50 @@ struct JxlDecoder {
 
   BoxStage box_stage;
 
+  // ftyp minor-version: 0 = jxlp must be in order; 1 = OOO jxlp allowed.
+  uint32_t jxl_file_format_version;
+
+  // Counter of the next expected jxlp box; earlier-arriving boxes are buffered.
+  uint32_t next_jxlp_index;
+
+  // OOO jxlp payloads keyed by counter: (codestream bytes without 4-byte
+  // header, is_last).
+  std::map<uint32_t, std::pair<std::unique_ptr<jxl::PaddedBytes>, bool>>
+      jxlp_ooo_buffer;
+  size_t jxlp_ooo_buffer_total;
+  static constexpr size_t kNumBuffersLimit = size_t{1 << 20};
+
+  // Index and is_last flag of the jxlp box currently being buffered
+  // (valid only while box_stage == kBufferingJxlp).
+  uint32_t buffering_jxlp_index;
+  bool buffering_jxlp_is_last;
+
+  bool CanAddBuffer(size_t length) const {
+    constexpr size_t kBufferLimit = size_t{1}
+                                    << ((sizeof(size_t) == 4) ? 30 : 48);
+    return ((length < kBufferLimit) &&
+            (length + jxlp_ooo_buffer_total + codestream_copy.size() <
+             kBufferLimit));
+  }
+
+  // Injects the next buffered jxlp box (if available) into codestream_copy.
+  // Returns true if a box was injected.
+  jxl::Status InjectNextBufferedJxlpBox(bool& success) {
+    success = false;
+    auto it = jxlp_ooo_buffer.find(next_jxlp_index);
+    if (it == jxlp_ooo_buffer.end()) return true;
+    auto& [data, is_last] = it->second;
+    size_t length = data->size();
+    JXL_RETURN_IF_ERROR(codestream_copy.append(*data));
+    if (is_last) last_codestream_seen = true;
+    next_jxlp_index++;
+    jxlp_ooo_buffer.erase(it);
+    jxlp_ooo_buffer_total -= length;
+    // TODO(eustas): perhaps should be false is 0-length append?
+    success = true;
+    return true;
+  }
+
 #if JPEGXL_ENABLE_BOXES
   jxl::JxlBoxContentDecoder box_content_decoder;
 #endif
@@ -545,6 +595,7 @@ struct JxlDecoder {
   jxl::JxlToJpegDecoder jpeg_decoder;
   // Decodes Exif or XMP metadata for JPEG reconstruction
   jxl::JxlBoxContentDecoder metadata_decoder;
+  // TODO(eustas): use AlignedMemory / PaddedBytes for storage.
   std::vector<uint8_t> exif_metadata;
   std::vector<uint8_t> xmp_metadata;
   // must store JPEG reconstruction metadata from the current box
@@ -611,8 +662,9 @@ struct JxlDecoder {
   JxlDecoderStatus RequestMoreInput() {
     if (codestream_copy.empty()) {
       size_t avail_codestream = AvailableCodestream();
-      codestream_copy.insert(codestream_copy.end(), next_in,
-                             next_in + avail_codestream);
+      if (!CanAddBuffer(avail_codestream)) return JXL_DEC_ERROR;
+      JXL_API_RETURN_IF_ERROR(
+          codestream_copy.append(next_in, next_in + avail_codestream));
       AdvanceInput(avail_codestream);
     } else {
       AdvanceInput(codestream_unconsumed);
@@ -646,9 +698,9 @@ struct JxlDecoder {
       *span = jxl::Bytes(next_in, avail_codestream);
       return JXL_DEC_SUCCESS;
     } else {
-      codestream_copy.insert(codestream_copy.end(),
-                             next_in + codestream_unconsumed,
-                             next_in + avail_codestream);
+      if (!CanAddBuffer(avail_codestream)) return JXL_DEC_ERROR;
+      JXL_API_RETURN_IF_ERROR(codestream_copy.append(
+          next_in + codestream_unconsumed, next_in + avail_codestream));
       codestream_unconsumed = avail_codestream;
       *span = jxl::Bytes(codestream_copy.data() + codestream_pos,
                          codestream_copy.size() - codestream_pos);
@@ -705,6 +757,12 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   memset(dec->box_decoded_type, 0, sizeof(dec->box_decoded_type));
   dec->box_event = false;
   dec->box_stage = BoxStage::kHeader;
+  dec->jxl_file_format_version = 0;
+  dec->next_jxlp_index = 0;
+  dec->jxlp_ooo_buffer.clear();
+  dec->jxlp_ooo_buffer_total = 0;
+  dec->buffering_jxlp_index = 0;
+  dec->buffering_jxlp_is_last = false;
   dec->box_out_buffer_set = false;
   dec->box_out_buffer_set_current_box = false;
   dec->box_out_buffer = nullptr;
@@ -793,7 +851,7 @@ JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager) {
   if (!alloc) return nullptr;
   // Placement new constructor on allocated memory
   JxlDecoder* dec = new (alloc) JxlDecoder();
-  dec->memory_manager = local_memory_manager;
+  dec->Initialize(local_memory_manager);
 
   JxlDecoderReset(dec);
 
@@ -1409,21 +1467,21 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
         GetCurrentDimensions(dec, xsize, ysize);
         size_t bits_per_sample = GetBitDepth(
             dec->image_out_bit_depth, dec->metadata.m, dec->image_out_format);
-        dec->frame_dec->SetImageOutput(
+        JXL_API_RETURN_IF_ERROR(dec->frame_dec->SetImageOutput(
             PixelCallback{
                 dec->image_out_init_callback, dec->image_out_run_callback,
                 dec->image_out_destroy_callback, dec->image_out_init_opaque},
             reinterpret_cast<uint8_t*>(dec->image_out_buffer),
             dec->image_out_size, xsize, ysize, dec->image_out_format,
-            bits_per_sample, dec->unpremul_alpha, !dec->keep_orientation);
+            bits_per_sample, dec->unpremul_alpha, !dec->keep_orientation));
         for (size_t i = 0; i < dec->extra_channel_output.size(); ++i) {
           const auto& extra = dec->extra_channel_output[i];
           size_t ec_bits_per_sample =
               GetBitDepth(dec->image_out_bit_depth,
                           dec->metadata.m.extra_channel_info[i], extra.format);
-          dec->frame_dec->AddExtraChannelOutput(extra.buffer, extra.buffer_size,
-                                                xsize, extra.format,
-                                                ec_bits_per_sample);
+          JXL_API_RETURN_IF_ERROR(dec->frame_dec->AddExtraChannelOutput(
+              extra.buffer, extra.buffer_size, xsize, extra.format,
+              ec_bits_per_sample));
         }
       }
 
@@ -1653,6 +1711,9 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       if (dec->store_exif == 1 || dec->store_xmp == 1) {
         std::vector<uint8_t>& metadata =
             (dec->store_exif == 1) ? dec->exif_metadata : dec->xmp_metadata;
+        // Just a safeguard to prevent unlimited growth. NB: for JPEG chunks
+        // 65533 bytes enough.
+        constexpr size_t kBlockSizeLimit = 64u << 20;  // 64MiB
         for (;;) {
           if (metadata.empty()) metadata.resize(64);
           uint8_t* orig_next_out = metadata.data() + dec->recon_out_buffer_pos;
@@ -1664,6 +1725,9 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
           size_t produced = next_out - orig_next_out;
           dec->recon_out_buffer_pos += produced;
           if (box_result == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+            if (metadata.size() >= kBlockSizeLimit) {
+              return JXL_INPUT_ERROR("EXIF/XMP box is too large");
+            }
             metadata.resize(metadata.size() * 2);
           } else if (box_result == JXL_DEC_NEED_MORE_INPUT) {
             break;  // box stage handling below will handle this instead
@@ -1881,11 +1945,18 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       if (dec->box_contents_size < 12) {
         return JXL_INPUT_ERROR("file type box too small");
       }
-      if (dec->avail_in < 4) return JXL_DEC_NEED_MORE_INPUT;
+      if (dec->avail_in < 8) return JXL_DEC_NEED_MORE_INPUT;
       if (memcmp(dec->next_in, "jxl ", 4) != 0) {
         return JXL_INPUT_ERROR("file type box major brand must be \"jxl \"");
       }
-      dec->AdvanceInput(4);
+      uint32_t version = LoadBE32(dec->next_in + 4);
+      if (version > 1) {
+        return JXL_INPUT_ERROR(
+            "unknown jxl file format version %u (known versions: 0, 1)",
+            version);
+      }
+      dec->jxl_file_format_version = version;
+      dec->AdvanceInput(8);
       dec->box_stage = BoxStage::kSkip;
     } else if (dec->box_stage == BoxStage::kPartialCodestream) {
       if (dec->last_codestream_seen) {
@@ -1896,14 +1967,47 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       if (!dec->box_contents_unbounded && dec->box_contents_size < 4) {
         return JXL_INPUT_ERROR("jxlp box too small to contain index");
       }
-      size_t jxlp_index = LoadBE32(dec->next_in);
-      // The high bit of jxlp_index indicates whether this is the last
-      // jxlp box.
-      if (jxlp_index & 0x80000000) {
-        dec->last_codestream_seen = true;
+      uint32_t jxlp_index = LoadBE32(dec->next_in);
+      uint32_t counter = jxlp_index & 0x7FFFFFFF;
+      bool is_last = (jxlp_index & 0x80000000) != 0;
+
+      if (counter < dec->next_jxlp_index) {
+        return JXL_INPUT_ERROR(
+            "jxlp box index %u is a duplicate (already processed)", counter);
       }
-      dec->AdvanceInput(4);
-      dec->box_stage = BoxStage::kCodestream;
+      dec->AdvanceInput(4);  // consume the 4-byte jxlp counter header
+
+      if (counter == dec->next_jxlp_index) {
+        dec->next_jxlp_index++;
+        if (is_last) dec->last_codestream_seen = true;
+        dec->box_stage = BoxStage::kCodestream;
+      } else if (dec->jxl_file_format_version >= 1) {
+        // Out-of-order box (version 1+): buffer payload for later injection.
+        // Reject a counter that is already buffered: emplace() would be a
+        // no-op (leaving the old is_last in place), and the kBufferingJxlp
+        // stage would then concatenate this box's payload onto the previously
+        // buffered one via operator[]. Both effects corrupt the reconstructed
+        // codestream and let a single index accumulate unbounded data, so a
+        // duplicate index must be a hard error (jxlp indices are unique).
+        if (dec->jxlp_ooo_buffer.size() >= JxlDecoder::kNumBuffersLimit) {
+          return JXL_DEC_ERROR;
+        }
+        auto buffer = jxl::make_unique<jxl::PaddedBytes>(&dec->memory_manager);
+        auto entry = std::make_pair(std::move(buffer), is_last);
+        auto insert_result =
+            dec->jxlp_ooo_buffer.emplace(counter, std::move(entry));
+        if (!insert_result.second) {
+          return JXL_INPUT_ERROR("duplicate jxlp box index %u", counter);
+        }
+        dec->buffering_jxlp_index = counter;
+        dec->buffering_jxlp_is_last = is_last;
+        dec->box_stage = BoxStage::kBufferingJxlp;
+      } else {
+        return JXL_INPUT_ERROR(
+            "jxlp box index %u is out of order (expected %u); out-of-order "
+            "jxlp boxes require file format version 1 in the ftyp box",
+            counter, dec->next_jxlp_index);
+      }
     } else if (dec->box_stage == BoxStage::kCodestream) {
       JxlDecoderStatus status = jxl::JxlDecoderProcessCodestream(dec);
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
@@ -1916,6 +2020,11 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       if (status == JXL_DEC_NEED_MORE_INPUT) {
         if (dec->file_pos == dec->box_contents_end &&
             !dec->box_contents_unbounded) {
+          // Physical box exhausted; inject the next buffered OOO box if ready.
+          bool has_more_data;
+          JXL_API_RETURN_IF_ERROR(
+              dec->InjectNextBufferedJxlpBox(has_more_data));
+          if (has_more_data) continue;
           dec->box_stage = BoxStage::kHeader;
           continue;
         }
@@ -1939,6 +2048,26 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         }
       }
       return status;
+    } else if (dec->box_stage == BoxStage::kBufferingJxlp) {
+      size_t remaining =
+          dec->box_contents_unbounded
+              ? dec->avail_in
+              : std::min<size_t>(dec->avail_in,
+                                 dec->box_contents_end - dec->file_pos);
+      if (!dec->CanAddBuffer(remaining)) return JXL_DEC_ERROR;
+      auto& entry = dec->jxlp_ooo_buffer[dec->buffering_jxlp_index];
+      JXL_API_RETURN_IF_ERROR(
+          entry.first->append(dec->next_in, dec->next_in + remaining));
+      dec->jxlp_ooo_buffer_total += remaining;
+      dec->AdvanceInput(remaining);
+
+      bool box_done = !dec->box_contents_unbounded &&
+                      dec->file_pos >= dec->box_contents_end;
+      if (!box_done) {
+        return JXL_DEC_NEED_MORE_INPUT;
+      }
+      // Box fully buffered; parse the next box header.
+      dec->box_stage = BoxStage::kHeader;
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
     } else if (dec->box_stage == BoxStage::kJpegRecon) {
       if (!dec->jpeg_decoder.IsParsingBox()) {
@@ -2376,22 +2505,18 @@ static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
   }
   if (num_channels == 0) num_channels = format->num_channels;
   size_t row_bits;
-  if (!jxl::SafeMul<size_t>(xsize, num_channels, row_bits) ||
-      !jxl::SafeMul<size_t>(row_bits, bits, row_bits)) {
+  if (!jxl::SafeMul(xsize, num_channels, row_bits) ||
+      !jxl::SafeMul(row_bits, bits, row_bits)) {
     return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
   size_t row_size = jxl::DivCeil(row_bits, jxl::kBitsPerByte);
   const size_t last_row_size = row_size;
-  if (format->align > 1) {
-    size_t aligned_rows = jxl::DivCeil(row_size, format->align);
-    if (!jxl::SafeMul<size_t>(aligned_rows, format->align, row_size)) {
-      return JXL_API_ERROR(
-          "Image too large for output buffer size calculation");
-    }
+  if (!jxl::SafeRoundUpTo(row_size, format->align, row_size)) {
+    return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
 
   size_t total = 0;
-  if (ysize > 1 && !jxl::SafeMul<size_t>(row_size, ysize - 1, total)) {
+  if (ysize > 1 && !jxl::SafeMul(row_size, ysize - 1, total)) {
     return JXL_API_ERROR("Image too large for output buffer size calculation");
   }
   if (!jxl::SafeAdd<size_t>(total, last_row_size, *min_size)) {
@@ -2707,7 +2832,7 @@ JxlDecoderStatus JxlDecoderSetOutputColorProfile(
   }
   if ((!dec->passes_state->output_encoding_info.cms_set) &&
       (icc_data != nullptr ||
-      (!dec->image_metadata.xyb_encoded && !same_encoding))) {
+       (!dec->image_metadata.xyb_encoded && !same_encoding))) {
     return JXL_API_ERROR(
         "must set color management system via JxlDecoderSetCms");
   }

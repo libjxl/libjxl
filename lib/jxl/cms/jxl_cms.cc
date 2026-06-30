@@ -10,6 +10,8 @@
 #endif
 
 #include <jxl/cms_interface.h>
+#include <jxl/color_encoding.h>
+#include <jxl/types.h>
 
 #include <algorithm>
 #include <array>
@@ -18,16 +20,20 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/cms/jxl_cms.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/cms/jxl_cms_internal.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -97,18 +103,25 @@ const size_t kX = 0;  // pixel index, multiplied by 3 for RGB
 // xform_src = UndoGammaCompression(buf_src).
 Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src,
                        size_t buf_size) {
+  HWY_FULL(float) df;
+  size_t tail = buf_size % Lanes(df);
+  size_t vec_buf_end = buf_size - tail;
   switch (t->preprocess) {
     case ExtraTF::kNone:
       JXL_ENSURE(false);  // unreachable
       break;
 
     case ExtraTF::kPQ: {
-      HWY_FULL(float) df;
       TF_PQ tf_pq(t->intensity_target);
-      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
+      for (size_t i = 0; i < vec_buf_end; i += Lanes(df)) {
         const auto val = Load(df, buf_src + i);
         const auto result = tf_pq.DisplayFromEncoded(df, val);
         Store(result, df, xform_src + i);
+      }
+      if (tail != 0) {
+        const auto val = LoadN(df, buf_src + vec_buf_end, tail);
+        const auto result = tf_pq.DisplayFromEncoded(df, val);
+        StoreN(result, df, xform_src + vec_buf_end, tail);
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("pre in %.4f %.4f %.4f undoPQ %.4f %.4f %.4f\n", buf_src[3 * kX],
@@ -135,11 +148,15 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src,
       break;
 
     case ExtraTF::kSRGB:
-      HWY_FULL(float) df;
-      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
+      for (size_t i = 0; i < vec_buf_end; i += Lanes(df)) {
         const auto val = Load(df, buf_src + i);
         const auto result = TF_SRGB().DisplayFromEncoded(val);
         Store(result, df, xform_src + i);
+      }
+      if (tail != 0) {
+        const auto val = LoadN(df, buf_src + vec_buf_end, tail);
+        const auto result = TF_SRGB().DisplayFromEncoded(val);
+        StoreN(result, df, xform_src + vec_buf_end, tail);
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("pre in %.4f %.4f %.4f undoSRGB %.4f %.4f %.4f\n", buf_src[3 * kX],
@@ -153,17 +170,24 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src,
 
 // Applies gamma compression in-place.
 Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst, size_t buf_size) {
+  HWY_FULL(float) df;
+  size_t tail = buf_size % Lanes(df);
+  size_t vec_buf_end = buf_size - tail;
   switch (t->postprocess) {
     case ExtraTF::kNone:
       JXL_DEBUG_ABORT("Unreachable");
       break;
     case ExtraTF::kPQ: {
-      HWY_FULL(float) df;
       TF_PQ tf_pq(t->intensity_target);
-      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
+      for (size_t i = 0; i < vec_buf_end; i += Lanes(df)) {
         const auto val = Load(df, buf_dst + i);
         const auto result = tf_pq.EncodedFromDisplay(df, val);
         Store(result, df, buf_dst + i);
+      }
+      if (tail != 0) {
+        const auto val = LoadN(df, buf_dst + vec_buf_end, tail);
+        const auto result = tf_pq.EncodedFromDisplay(df, val);
+        StoreN(result, df, buf_dst + vec_buf_end, tail);
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("after PQ enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
@@ -186,11 +210,15 @@ Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst, size_t buf_size) {
 #endif
       break;
     case ExtraTF::kSRGB:
-      HWY_FULL(float) df;
-      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
+      for (size_t i = 0; i < vec_buf_end; i += Lanes(df)) {
         const auto val = Load(df, buf_dst + i);
         const auto result = TF_SRGB().EncodedFromDisplay(df, val);
         Store(result, df, buf_dst + i);
+      }
+      if (tail != 0) {
+        const auto val = LoadN(df, buf_dst + vec_buf_end, tail);
+        const auto result = TF_SRGB().EncodedFromDisplay(df, val);
+        StoreN(result, df, buf_dst + vec_buf_end, tail);
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("after SRGB enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
@@ -251,13 +279,20 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
     }  // else: in-place, no need to copy
   } else {
 #if JPEGXL_ENABLE_SKCMS
+    float* xform_dst = (t->channels_dst == 1) ? t->buf_dst[thread] : buf_dst;
     JXL_ENSURE(
         skcms_Transform(xform_src,
                         (t->channels_src == 4 ? skcms_PixelFormat_RGBA_ffff
                                               : skcms_PixelFormat_RGB_fff),
-                        skcms_AlphaFormat_Opaque, &t->profile_src, buf_dst,
+                        skcms_AlphaFormat_Opaque, &t->profile_src, xform_dst,
                         skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
                         &t->profile_dst, xsize));
+    if (t->channels_dst == 1) {
+      // Contract back from 3 to 1 channel, this time forward.
+      for (size_t x = 0; x < xsize; ++x) {
+        buf_dst[x] = xform_dst[x * 3];
+      }
+    }
 #else   // JPEGXL_ENABLE_SKCMS
     cmsDoTransform(t->lcms_transform, xform_src, buf_dst,
                    static_cast<cmsUInt32Number>(xsize));
@@ -267,17 +302,6 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
   printf("xform skip%d: %.4f %.4f %.4f (%p) -> (%p) %.4f %.4f %.4f\n",
          t->skip_lcms, in0, in1, in2, xform_src, buf_dst, buf_dst[3 * kX],
          buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
-#endif
-
-#if JPEGXL_ENABLE_SKCMS
-  if (t->channels_dst == 1 && !t->skip_lcms) {
-    // Contract back from 3 to 1 channel, this time forward.
-    float* grayscale_buf_dst = t->buf_dst[thread];
-    for (size_t x = 0; x < xsize; ++x) {
-      grayscale_buf_dst[x] = buf_dst[x * 3];
-    }
-    buf_dst = grayscale_buf_dst;
-  }
 #endif
 
   if (t->postprocess != ExtraTF::kNone) {

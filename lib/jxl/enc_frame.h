@@ -92,13 +92,14 @@ Status ParamsPostInit(CompressParams* p);
 // be processed in parallel by `pool`. metadata is the ImageMetadata encoded in
 // the codestream, and must be used for the FrameHeaders, do not use
 // ib.metadata.
+// For output_mode 2, jxlp_counter tracks written jxlp box indices (in/out).
 Status EncodeFrame(JxlMemoryManager* memory_manager,
                    const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
                    JxlEncoderChunkedFrameAdapter& frame_data,
                    const JxlCmsInterface& cms, ThreadPool* pool,
                    JxlEncoderOutputProcessorWrapper* output_processor,
-                   AuxOut* aux_out);
+                   AuxOut* aux_out, uint32_t* jxlp_counter);
 
 Status EncodeFrame(JxlMemoryManager* memory_manager,
                    const CompressParams& cparams_orig,

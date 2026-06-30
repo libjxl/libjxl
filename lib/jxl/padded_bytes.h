@@ -79,7 +79,11 @@ class PaddedBytes {
   Status reserve(size_t capacity) {
     if (capacity <= capacity_) return true;
 
-    size_t new_capacity = std::max(capacity, 3 * capacity_ / 2);
+    size_t new_capacity;
+    if (!SafeAdd(capacity_, capacity_ / 2, new_capacity)) {
+      return JXL_FAILURE("PaddedBytes reserve: capacity overflow");
+    }
+    new_capacity = std::max(capacity, new_capacity);
 
     return change_capacity(new_capacity);
   }
@@ -158,9 +162,13 @@ class PaddedBytes {
   }
 
   Status append(const uint8_t* begin, const uint8_t* end) {
-    if (end - begin > 0) {
+    if (end > begin) {
       size_t old_size = size();
-      JXL_RETURN_IF_ERROR(resize(size() + (end - begin)));
+      size_t new_size;
+      if (!SafeAdd(old_size, static_cast<size_t>(end - begin), new_size)) {
+        return JXL_FAILURE("PaddedBytes append: overflow");
+      }
+      JXL_RETURN_IF_ERROR(resize(new_size));
       memcpy(data() + old_size, begin, end - begin);
     }
     return true;
@@ -183,9 +191,13 @@ class PaddedBytes {
     new_capacity = std::max<size_t>(64, new_capacity);
 
     // BitWriter writes up to 7 bytes past the end.
+    size_t padded_capacity;
+    if (!SafeAdd(new_capacity, static_cast<size_t>(8), padded_capacity)) {
+      return JXL_FAILURE("PaddedBytes capacity too large");
+    }
     JXL_ASSIGN_OR_RETURN(
         AlignedMemory new_data,
-        AlignedMemory::Create(memory_manager_, new_capacity + 8));
+        AlignedMemory::Create(memory_manager_, padded_capacity));
 
     if (data_.address<void>() == nullptr) {
       // First allocation: ensure first byte is initialized (won't be copied).

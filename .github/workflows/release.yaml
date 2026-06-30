@@ -41,7 +41,7 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
@@ -66,16 +66,18 @@ jobs:
           libwebp-dev \
           ninja-build \
           pkg-config \
+          tarlz \
           xdg-utils \
         #
         echo "CC=clang" >> $GITHUB_ENV
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 1
+        persist-credentials: false
 
     - name: Build
       run: |
@@ -93,15 +95,15 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build
-        tar -zcvf ${ROOT}/jxl-linux-x86_64-static.tar.gz \
+        tarlz -9cvf ${ROOT}/jxl-linux-x86_64-static.tar.lz \
           LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-linux-x86_64-static
-        path: jxl-linux-x86_64-static.tar.gz
-        compression-level: 0
+        path: jxl-linux-x86_64-static.tar.lz
+        archive: false
 
 
 
@@ -121,18 +123,13 @@ jobs:
         - debian:bookworm
         - debian:trixie
         - debian:sid
-        include:
-          - os: debian:trixie
-            exclude_debian_packages: libjxl-gimp-plugin
-          - os: debian:sid
-            exclude_debian_packages: libjxl-gimp-plugin
 
     container:
       image: ${{ matrix.os }}
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
@@ -160,10 +157,11 @@ jobs:
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 1
+        persist-credentials: false
 
     - name: Stamp non-release versions
       # Stamps the built package with the commit date as part of the version
@@ -216,14 +214,14 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build/debs/
-        tar -zcvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz *jxl*.*
+        tar -cvf ${ROOT}/jxl-debs-amd64-${ARTIFACT_SUFFIX}.tar *jxl*.*
 
     - name: Upload release tarball
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}
-        path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar.gz
-        compression-level: 0
+        path: jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar
+        archive: false
 
 
   windows_build:
@@ -259,24 +257,28 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 2
+        persist-credentials: false
 
-    - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+    - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+      if: github.event_name != 'release'
       id: cache-vcpkg
       with:
         path: vcpkg
         key: release-${{ runner.os }}-vcpkg-${{ env.VCPKG_VERSION }}-${{ matrix.triplet }}
+        # TODO(eustas): remove when https://github.com/zizmorcore/zizmor/issues/2071 is fixed
+        lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
 
     - name: Download vcpkg
-      if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+      if: github.event_name == 'release' || steps.cache-vcpkg.outputs.cache-hit != 'true'
       # wget doesn't seem to work under bash.
       shell: 'powershell'
       run: |
@@ -284,7 +286,7 @@ jobs:
            https://github.com/microsoft/vcpkg/archive/refs/tags/${{ env.VCPKG_VERSION }}.zip `
           -O vcpkg.zip
     - name: Bootstrap vcpkg
-      if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+      if: github.event_name == 'release' || steps.cache-vcpkg.outputs.cache-hit != 'true'
       shell: 'bash'
       run: |
         set -x
@@ -314,7 +316,7 @@ jobs:
           -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
           -DJPEGXL_ENABLE_TOOLS='ON' \
           -DBUILD_TESTING=OFF \
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
           -DCMAKE_INSTALL_PREFIX=`pwd`/${PREFIX} \
           -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
@@ -329,12 +331,12 @@ jobs:
       shell: 'bash'
       run: |
         set -x
-        cmake --build build --config ${{ env.BUILD_TYPE }}
+        cmake --build build --config ${BUILD_TYPE}
     - name: Install
       shell: 'bash'
       run: |
         set -x
-        cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+        cmake --build build --config ${BUILD_TYPE} --target install
         mkdir ${PREFIX}/licenses
         for pkg in giflib libjpeg-turbo libpng libwebp zlib; do
           cp vcpkg/installed/${{matrix.triplet}}/share/${pkg}/copyright \
@@ -361,8 +363,8 @@ jobs:
       shell: 'bash'
       if: matrix.upload != 'OFF'
       run: |
-        7z -mx=9 -mfb=273 -mmt=1 -ms=on a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
-        7z -mx=9 a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
+        7z -mx=9 -mfb=273 a jxl-${{matrix.triplet}}.7z ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
+        7z -mm=Deflate64 -mfb=257 -mpass=15 -mtp=2 a jxl-${{matrix.triplet}}.zip ${PREFIX}/bin ${PREFIX}/include ${PREFIX}/lib ${PREFIX}/licenses
 
     - name: Upload ZIP release 
       if: matrix.upload != 'OFF'
@@ -371,7 +373,7 @@ jobs:
         name: jxl-${{matrix.triplet}}
         path: |
           jxl-${{matrix.triplet}}.zip
-        compression-level: 0
+        archive: false
 
     - name: Upload 7Z release 
       if: matrix.upload != 'OFF'
@@ -380,7 +382,7 @@ jobs:
         name: jxl-${{matrix.triplet}}-7z
         path: |
           jxl-${{matrix.triplet}}.7z
-        compression-level: 0
+        archive: false
 
 
   publish_release_assets:
@@ -393,10 +395,11 @@ jobs:
 
     steps:
     - name: Checkout the source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 1
+        persist-credentials: false
 
     - name: Download all artifacts
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -407,5 +410,6 @@ jobs:
     - name: Publish assets
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_EVENT_RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
       run: |
-        gh release upload ${{ github.event.release.tag_name }} ./release_assets/*
+        gh release upload ${GITHUB_EVENT_RELEASE_TAG_NAME} ./release_assets/*

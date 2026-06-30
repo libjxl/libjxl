@@ -10,7 +10,6 @@
 #include <algorithm>  // fill, swap
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/memory_manager_internal.h"
@@ -68,12 +67,15 @@ PlaneBase::PlaneBase(const uint32_t xsize, const uint32_t ysize,
       ysize_(ysize),
       orig_xsize_(xsize),
       orig_ysize_(ysize),
-      bytes_per_row_(BytesPerRow(xsize_, sizeof_t)),
+      bytes_per_row_(0),
       sizeof_t_(sizeof_t) {}
 
 Status PlaneBase::Allocate(JxlMemoryManager* memory_manager,
                            size_t pre_padding) {
   JXL_ENSURE(bytes_.address<void>() == nullptr);
+  JXL_ENSURE(bytes_per_row_ == 0);
+
+  JXL_ASSIGN_OR_RETURN(bytes_per_row_, BytesPerRow(xsize_, sizeof_t_));
 
   // Dimensions can be zero, e.g. for lazily-allocated images. Only allocate
   // if nonzero, because "zero" bytes still have padding/bookkeeping overhead.
@@ -82,7 +84,7 @@ Status PlaneBase::Allocate(JxlMemoryManager* memory_manager,
   }
 
   size_t total_bytes;
-  if (!SafeMul<size_t>(ysize_, bytes_per_row_, total_bytes)) {
+  if (!SafeMul(ysize_, bytes_per_row_, total_bytes)) {
     return JXL_FAILURE("Image dimensions are too large");
   }
 
