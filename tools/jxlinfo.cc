@@ -413,6 +413,10 @@ static int PrintBasicInfo(FILE* file, int verbose) {
     } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
       const size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
       box_index = box_data.size() - remaining;
+      if (box_data.size() > SIZE_MAX - chunk_size) {
+        fprintf(stderr, "Box size overflow\n");
+        break;
+      }
       box_data.resize(box_data.size() + chunk_size);
       JxlDecoderSetBoxBuffer(dec, box_data.data() + box_index,
                              box_data.size() - box_index);
