@@ -182,7 +182,7 @@ struct CompressParams {
   Tree custom_fixed_tree;
   // If not empty, these custom splines will be used instead of the computed
   // ones. Used in jxl_from_tee tool.
-  Splines custom_splines;
+  SplineDataView custom_splines{};
   // If not null, overrides progressive mode settings. Used in decode_test.
   const ProgressiveMode* custom_progressive_mode = nullptr;
 

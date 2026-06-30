@@ -240,22 +240,28 @@ class JxlEncoderChunkedFrameAdapter {
       JxlPixelFormat format{4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
       input_source_.get_color_channels_pixel_format(input_source_.opaque,
                                                     &format);
+      format.align = 0;  // .align must be ignored
       size_t row_offset;
       {
         auto buffer =
             GetColorBuffer(input_source_, 0, 0, xsize, ysize, &row_offset);
         if (!buffer) return false;
-        channels_[0].CopyFromBuffer(buffer.get(), format, xsize, ysize,
-                                    row_offset);
+        if (!channels_[0].CopyFromBuffer(buffer.get(), format, xsize, ysize,
+                                         row_offset)) {
+          return false;
+        }
       }
       for (size_t ec = 0; ec + 1 < channels_.size(); ++ec) {
         input_source_.get_extra_channel_pixel_format(input_source_.opaque, ec,
                                                      &format);
+        format.align = 0;  // .align must be ignored
         auto buffer = GetExtraChannelBuffer(input_source_, ec, 0, 0, xsize,
                                             ysize, &row_offset);
         if (!buffer) continue;
-        channels_[1 + ec].CopyFromBuffer(buffer.get(), format, xsize, ysize,
-                                         row_offset);
+        if (!channels_[1 + ec].CopyFromBuffer(buffer.get(), format, xsize,
+                                              ysize, row_offset)) {
+          return false;
+        }
       }
       has_input_source_ = false;
     } else {
@@ -311,38 +317,45 @@ class JxlEncoderChunkedFrameAdapter {
     size_t stride_;
     std::vector<uint8_t> copy_;
 
-    void SetFormatAndDimensions(JxlPixelFormat format, size_t x_size,
+    bool SetFormatAndDimensions(JxlPixelFormat format, size_t x_size,
                                 size_t y_size) {
       format_ = format;
       xsize_ = x_size;
       ysize_ = y_size;
       bytes_per_pixel_ = BytesPerPixel(format_);
-      const size_t last_row_size = xsize_ * bytes_per_pixel_;
-      const size_t align = format_.align;
-      stride_ = (align > 1 ? jxl::DivCeil(last_row_size, align) * align
-                           : last_row_size);
+      size_t last_row_size;
+      if (!SafeMul(xsize_, bytes_per_pixel_, last_row_size)) return false;
+      if (!SafeRoundUpTo(last_row_size, format_.align, stride_)) return false;
+      size_t total_size;
+      if (!SafeMul(ysize_, stride_, total_size)) return false;
+      return true;
     }
 
     bool SetFromBuffer(const uint8_t* buffer, size_t size,
                        JxlPixelFormat format, size_t x_size, size_t y_size) {
-      SetFormatAndDimensions(format, x_size, y_size);
+      if (!SetFormatAndDimensions(format, x_size, y_size)) return false;
+      if (ysize_ == 0) return false;
       buffer_ = buffer;
       buffer_size_ = size;
+      // Safe: SetFormatAndDimensions() checked ysize_ * stride_.
       const size_t min_buffer_size =
           stride_ * (ysize_ - 1) + xsize_ * bytes_per_pixel_;
       return min_buffer_size <= size;
     }
 
-    void CopyFromBuffer(const void* buffer, JxlPixelFormat format,
+    bool CopyFromBuffer(const void* buffer, JxlPixelFormat format,
                         size_t x_size, size_t y_size, size_t row_offset) {
-      SetFormatAndDimensions(format, x_size, y_size);
+      if (!SetFormatAndDimensions(format, x_size, y_size)) return false;
+      JXL_ENSURE(stride_ <= row_offset);
       buffer_ = nullptr;
+      // Safe: SetFormatAndDimensions() checked y_size * stride_.
       copy_.resize(y_size * stride_);
       for (size_t y = 0; y < y_size; ++y) {
         memcpy(copy_.data() + y * stride_,
                reinterpret_cast<const uint8_t*>(buffer) + y * row_offset,
                stride_);
       }
+      return true;
     }
 
     void CopyBuffer() {

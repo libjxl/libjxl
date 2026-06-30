@@ -67,10 +67,11 @@ jobs:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 1
+        persist-credentials: false
 
     - name: Install build deps
       run: |
@@ -139,7 +140,8 @@ jobs:
 
     env:
       UPLOAD_TEST_COST: false
-      LAST_SHARD: ${{ false && 1 || matrix.last_shard}}
+      # Set to 1 for calculating test cost.
+      LAST_SHARD: ${{ matrix.last_shard }}
       # Run the tests on push and when requested in pull_request.
       WILL_RUN_TESTS: ${{ (github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
 
@@ -150,11 +152,12 @@ jobs:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 1
-    
+        persist-credentials: false
+
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       with:
@@ -178,7 +181,7 @@ jobs:
 
     - name: Cache SDE
       if: ${{ matrix.arch == 'i686' }}
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
       with:
         path: ${{ github.workspace }}/sde
         key: sde-${{ env.SDE_ID }}
@@ -206,7 +209,7 @@ jobs:
         chmod +x `cat executable.lst`
         BUILD_DIR=build \
         ${EMULATOR} ./ci.sh test \
-          -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
+          -I ${{ matrix.shard_number }},,${LAST_SHARD} \
           -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper)'
 
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -217,3 +220,46 @@ jobs:
         path: |
           build/Testing/Temporary/CTestCostData.txt
         retention-days: 1
+
+  # Compile-only s390x leg that guards #4627. squeeze.cc's big-endian, pre-1.2-Highway
+  # branch is built nowhere else (the other legs use Highway >= 1.2), so this pins to 1.0.7.
+  compile-s390x-old-highway:
+    name: Cross-compiling s390x with Highway 1.0.7 (compile-only)
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
+    runs-on: ubuntu-24.04-arm  # ports.ubuntu.com carries the s390x cross packages
+
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      with:
+        egress-policy: audit
+
+    - name: Checkout the source
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        submodules: true
+        fetch-depth: 1
+        persist-credentials: false
+
+    - name: Pin Highway to 1.0.7
+      run: |
+        git -C third_party/highway fetch --depth 1 origin tag 1.0.7
+        git -C third_party/highway checkout 1.0.7
+
+    - name: Install build deps
+      run: |
+        sudo ARCH=s390x BUILD_TARGET=s390x-linux-gnu \
+          ./tools/scripts/install_deps.sh --cross build
+
+    - name: Build
+      run: |
+        CC=clang CXX=clang++ \
+        BUILD_DIR=build BUILD_TARGET=s390x-linux-gnu \
+        SKIP_TEST=1 TARGETS='libjxl.so libjxl_dec.so' \
+        ./ci.sh release \
+          -DBUILD_TESTING=OFF \
+          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+          -DJPEGXL_ENABLE_JNI=OFF \
+          -DJPEGXL_ENABLE_TOOLS=OFF \
+          -DJPEGXL_ENABLE_OPENEXR=OFF \
+          -DJPEGXL_ENABLE_BENCHMARK=OFF

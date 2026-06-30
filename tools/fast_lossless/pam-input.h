@@ -62,8 +62,11 @@ class Parser {
 
     *number = 0;
     while (pos_ < end_ && *pos_ >= '0' && *pos_ <= '9') {
-      *number *= 10;
-      *number += *pos_ - '0';
+      const size_t digit = *pos_ - '0';
+      if (*number > (SIZE_MAX - digit) / 10) {
+        return error_msg("PNM: unsigned number too large");
+      }
+      *number = *number * 10 + digit;
       ++pos_;
     }
 

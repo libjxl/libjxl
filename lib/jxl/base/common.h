@@ -44,12 +44,10 @@ static inline bool SafeAdd(const U a, const U b, U& sum) {
   return sum >= a;  // no need to check b - either sum >= both or < both.
 }
 
-template <typename U,
-          class = typename std::enable_if<std::is_unsigned<U>::value>::type>
-static inline bool SafeMul(const U a, const U b, U& product) {
+static inline bool SafeMul(size_t a, size_t b, size_t& product) {
   product = 0;
   if (a == 0 || b == 0) return true;
-  if (b > (std::numeric_limits<U>::max() / a)) return false;
+  if (b > (std::numeric_limits<size_t>::max() / a)) return false;
   product = a * b;
   return true;
 }
@@ -77,6 +75,20 @@ constexpr inline T1 DivCeil(T1 a, T2 b) {
 // Works for any `align`; if a power of two, compiler emits ADD+AND.
 constexpr inline size_t RoundUpTo(size_t what, size_t align) {
   return DivCeil(what, align) * align;
+}
+
+// `align <= 1` means no rounding.
+static inline bool SafeRoundUpTo(size_t what, size_t align, size_t& result) {
+  if (align < 2) {
+    result = what;
+    return true;
+  }
+  size_t reminder = what % align;
+  if (reminder == 0) {
+    result = what;
+    return true;
+  }
+  return SafeAdd(what, align - reminder, result);
 }
 
 constexpr double kPi = 3.14159265358979323846264338327950288;

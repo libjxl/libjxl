@@ -73,10 +73,11 @@ jobs:
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 1
+        persist-credentials: false
 
     - name: Build
       run: |
@@ -122,11 +123,6 @@ jobs:
         - debian:bookworm
         - debian:trixie
         - debian:sid
-        include:
-          - os: debian:trixie
-            exclude_debian_packages: libjxl-gimp-plugin
-          - os: debian:sid
-            exclude_debian_packages: libjxl-gimp-plugin
 
     container:
       image: ${{ matrix.os }}
@@ -161,10 +157,11 @@ jobs:
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 1
+        persist-credentials: false
 
     - name: Stamp non-release versions
       # Stamps the built package with the commit date as part of the version
@@ -217,7 +214,7 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build/debs/
-        tar -cvf ${ROOT}/jxl-debs-amd64-${{ env.ARTIFACT_SUFFIX }}.tar *jxl*.*
+        tar -cvf ${ROOT}/jxl-debs-amd64-${ARTIFACT_SUFFIX}.tar *jxl*.*
 
     - name: Upload release tarball
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -265,19 +262,23 @@ jobs:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 2
+        persist-credentials: false
 
-    - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+    - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+      if: github.event_name != 'release'
       id: cache-vcpkg
       with:
         path: vcpkg
         key: release-${{ runner.os }}-vcpkg-${{ env.VCPKG_VERSION }}-${{ matrix.triplet }}
+        # TODO(eustas): remove when https://github.com/zizmorcore/zizmor/issues/2071 is fixed
+        lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
 
     - name: Download vcpkg
-      if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+      if: github.event_name == 'release' || steps.cache-vcpkg.outputs.cache-hit != 'true'
       # wget doesn't seem to work under bash.
       shell: 'powershell'
       run: |
@@ -285,7 +286,7 @@ jobs:
            https://github.com/microsoft/vcpkg/archive/refs/tags/${{ env.VCPKG_VERSION }}.zip `
           -O vcpkg.zip
     - name: Bootstrap vcpkg
-      if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+      if: github.event_name == 'release' || steps.cache-vcpkg.outputs.cache-hit != 'true'
       shell: 'bash'
       run: |
         set -x
@@ -315,7 +316,7 @@ jobs:
           -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
           -DJPEGXL_ENABLE_TOOLS='ON' \
           -DBUILD_TESTING=OFF \
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
           -DCMAKE_INSTALL_PREFIX=`pwd`/${PREFIX} \
           -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
@@ -330,12 +331,12 @@ jobs:
       shell: 'bash'
       run: |
         set -x
-        cmake --build build --config ${{ env.BUILD_TYPE }}
+        cmake --build build --config ${BUILD_TYPE}
     - name: Install
       shell: 'bash'
       run: |
         set -x
-        cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+        cmake --build build --config ${BUILD_TYPE} --target install
         mkdir ${PREFIX}/licenses
         for pkg in giflib libjpeg-turbo libpng libwebp zlib; do
           cp vcpkg/installed/${{matrix.triplet}}/share/${pkg}/copyright \
@@ -394,10 +395,11 @@ jobs:
 
     steps:
     - name: Checkout the source
-      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 1
+        persist-credentials: false
 
     - name: Download all artifacts
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -408,5 +410,6 @@ jobs:
     - name: Publish assets
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_EVENT_RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
       run: |
-        gh release upload ${{ github.event.release.tag_name }} ./release_assets/*
+        gh release upload ${GITHUB_EVENT_RELEASE_TAG_NAME} ./release_assets/*

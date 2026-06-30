@@ -2923,8 +2923,12 @@ constexpr uint8_t MoreThan14Bits::kMinRawLength[];
 constexpr uint8_t MoreThan14Bits::kMaxRawLength[];
 
 bool PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
+                           size_t max_encoded_bits_per_sample,
                            const PrefixCode code[4], BitWriter* output) {
-  if (!output->Allocate(100000 + (is_single_group ? width * height * 16 : 0))) {
+  if (!output->Allocate(100000 +
+                        (is_single_group
+                             ? width * height * max_encoded_bits_per_sample
+                             : 0))) {
     return false;
   }
   // No patches, spline or noise.
@@ -3004,9 +3008,10 @@ bool PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
 }
 
 bool PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
-                     size_t nb_chans, const PrefixCode code[4],
-                     BitWriter* output) {
-  if (!PrepareDCGlobalCommon(is_single_group, width, height, code, output)) {
+                     size_t max_encoded_bits_per_sample, size_t nb_chans,
+                     const PrefixCode code[4], BitWriter* output) {
+  if (!PrepareDCGlobalCommon(is_single_group, width, height,
+                             max_encoded_bits_per_sample, code, output)) {
     return false;
   }
   if (nb_chans > 2) {
@@ -3669,10 +3674,12 @@ void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
 }
 
 bool PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
-                            size_t nb_chans, const PrefixCode code[4],
+                            size_t max_encoded_bits_per_sample, size_t nb_chans,
+                            const PrefixCode code[4],
                             const std::vector<uint32_t>& palette,
                             size_t pcolors, BitWriter* output) {
-  if (!PrepareDCGlobalCommon(is_single_group, width, height, code, output)) {
+  if (!PrepareDCGlobalCommon(is_single_group, width, height,
+                             max_encoded_bits_per_sample, code, output)) {
     return false;
   }
   output->Write(2, 0b01);     // 1 transform
@@ -3993,13 +4000,15 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
   frame_state->group_data = std::vector<std::array<BitWriter, 4>>(num_groups);
   frame_state->group_sizes.resize(num_groups);
   if (collided) {
-    if (!PrepareDCGlobal(onegroup, width, height, nb_chans, frame_state->hcode,
-                         &frame_state->group_data[0][0])) {
+    if (!PrepareDCGlobal(onegroup, width, height,
+                         bitdepth.MaxEncodedBitsPerSample(), nb_chans,
+                         frame_state->hcode, &frame_state->group_data[0][0])) {
       delete frame_state;
       return nullptr;
     }
   } else {
-    if (!PrepareDCGlobalPalette(onegroup, width, height, nb_chans,
+    if (!PrepareDCGlobalPalette(onegroup, width, height,
+                                bitdepth.MaxEncodedBitsPerSample(), nb_chans,
                                 frame_state->hcode, palette, pcolors,
                                 &frame_state->group_data[0][0])) {
       delete frame_state;
@@ -4287,13 +4296,15 @@ class FJxlFrameInput {
         bytes_per_pixel_(bitdepth <= 8 ? nb_chans : 2 * nb_chans) {}
 
   JxlChunkedFrameInputSource GetInputSource() {
-    return JxlChunkedFrameInputSource{this, GetDataAt,
-                                      [](void*, const void*) {}};
+    return JxlChunkedFrameInputSource{
+        this, GetColorChannelDataAt,
+        /*release_buffer=*/[](void*, const void*) {}};
   }
 
  private:
-  static const void* GetDataAt(void* opaque, size_t xpos, size_t ypos,
-                               size_t xsize, size_t ysize, size_t* row_offset) {
+  static const void* GetColorChannelDataAt(void* opaque, size_t xpos,
+                                           size_t ypos, size_t xsize,
+                                           size_t ysize, size_t* row_offset) {
     FJxlFrameInput* self = static_cast<FJxlFrameInput*>(opaque);
     *row_offset = self->row_stride_;
     return self->rgba_ + ypos * (*row_offset) + xpos * self->bytes_per_pixel_;
