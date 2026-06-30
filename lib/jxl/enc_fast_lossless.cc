@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -249,10 +250,11 @@ FJXL_INLINE size_t AddBits(uint32_t count, uint64_t bits, uint8_t* data_buf,
 }
 
 struct BitWriter {
-  void Allocate(size_t maximum_bit_size) {
+  bool Allocate(size_t maximum_bit_size) {
     assert(data == nullptr);
     // Leave some padding.
     data.reset(static_cast<uint8_t*>(malloc(maximum_bit_size / 8 + 64)));
+    return data != nullptr;
   }
 
   void Write(uint32_t count, uint64_t bits) {
@@ -734,10 +736,10 @@ size_t JxlFastLosslessMaxRequiredOutput(
   return JxlFastLosslessOutputSize(frame) + 32;
 }
 
-void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
+bool JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
                                   int add_image_header, int is_last) {
   BitWriter* output = &frame->header;
-  output->Allocate(1000 + frame->group_sizes.size() * 32);
+  if (!output->Allocate(1000 + frame->group_sizes.size() * 32)) return false;
 
   bool have_alpha = (frame->nb_chans == 2 || frame->nb_chans == 4);
 
@@ -875,6 +877,7 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
     output->Write(kTOCBits[bucket] - 2, group_size - kGroupSizeOffset[bucket]);
   }
   output->ZeroPadToByte();  // Groups are byte-aligned.
+  return true;
 }
 
 #if !FJXL_STANDALONE
@@ -2919,9 +2922,15 @@ struct MoreThan14Bits {
 constexpr uint8_t MoreThan14Bits::kMinRawLength[];
 constexpr uint8_t MoreThan14Bits::kMaxRawLength[];
 
-void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
+bool PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
+                           size_t max_encoded_bits_per_sample,
                            const PrefixCode code[4], BitWriter* output) {
-  output->Allocate(100000 + (is_single_group ? width * height * 16 : 0));
+  if (!output->Allocate(100000 +
+                        (is_single_group
+                             ? width * height * max_encoded_bits_per_sample
+                             : 0))) {
+    return false;
+  }
   // No patches, spline or noise.
   output->Write(1, 1);  // default DC dequantization factors (?)
   output->Write(1, 1);  // use global tree / histograms
@@ -2995,12 +3004,16 @@ void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
   // Group header for global modular image.
   output->Write(1, 1);  // Global tree
   output->Write(1, 1);  // All default wp
+  return true;
 }
 
-void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
-                     size_t nb_chans, const PrefixCode code[4],
-                     BitWriter* output) {
-  PrepareDCGlobalCommon(is_single_group, width, height, code, output);
+bool PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
+                     size_t max_encoded_bits_per_sample, size_t nb_chans,
+                     const PrefixCode code[4], BitWriter* output) {
+  if (!PrepareDCGlobalCommon(is_single_group, width, height,
+                             max_encoded_bits_per_sample, code, output)) {
+    return false;
+  }
   if (nb_chans > 2) {
     output->Write(2, 0b01);     // 1 transform
     output->Write(2, 0b00);     // RCT
@@ -3012,6 +3025,7 @@ void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
   if (!is_single_group) {
     output->ZeroPadToByte();
   }
+  return true;
 }
 
 template <typename BitDepth>
@@ -3496,14 +3510,16 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
 }
 
 template <typename BitDepth>
-void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
+bool WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
                     size_t ys, size_t row_stride, bool is_single_group,
                     BitDepth bitdepth, size_t nb_chans, bool big_endian,
                     const PrefixCode code[4],
                     std::array<BitWriter, 4>& output) {
   for (size_t i = 0; i < nb_chans; i++) {
     if (is_single_group && i == 0) continue;
-    output[i].Allocate(xs * ys * bitdepth.MaxEncodedBitsPerSample() + 4);
+    if (!output[i].Allocate(xs * ys * bitdepth.MaxEncodedBitsPerSample() + 4)) {
+      return false;
+    }
   }
   if (!is_single_group) {
     // Group header for modular image.
@@ -3525,6 +3541,7 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
   ProcessImageArea<ChannelRowProcessor<ChunkEncoder<BitDepth>, BitDepth>>(
       rgba, x0, y0, xs, 0, ys, row_stride, bitdepth, nb_chans, big_endian,
       row_encoders);
+  return true;
 }
 
 constexpr int kHashExp = 16;
@@ -3592,13 +3609,13 @@ void ProcessImageAreaPalette(const unsigned char* rgba, size_t x0, size_t y0,
   row_encoder.Finalize();
 }
 
-void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
+bool WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
                            size_t xs, size_t ys, size_t row_stride,
                            bool is_single_group, const PrefixCode code[4],
                            const int16_t* lookup, size_t nb_chans,
                            BitWriter& output) {
   if (!is_single_group) {
-    output.Allocate(16 * xs * ys + 4);
+    if (!output.Allocate(16 * xs * ys + 4)) return false;
     // Group header for modular image.
     // When the image is single-group, the global modular image is the one
     // that contains the pixel data, and there is no group header.
@@ -3617,6 +3634,7 @@ void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
   ProcessImageAreaPalette<
       ChannelRowProcessor<ChunkEncoder<UpTo8Bits>, UpTo8Bits>>(
       rgba, x0, y0, xs, 0, ys, row_stride, lookup, nb_chans, &row_encoder);
+  return true;
 }
 
 template <typename BitDepth>
@@ -3655,11 +3673,15 @@ void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
   }
 }
 
-void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
-                            size_t nb_chans, const PrefixCode code[4],
+bool PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
+                            size_t max_encoded_bits_per_sample, size_t nb_chans,
+                            const PrefixCode code[4],
                             const std::vector<uint32_t>& palette,
                             size_t pcolors, BitWriter* output) {
-  PrepareDCGlobalCommon(is_single_group, width, height, code, output);
+  if (!PrepareDCGlobalCommon(is_single_group, width, height,
+                             max_encoded_bits_per_sample, code, output)) {
+    return false;
+  }
   output->Write(2, 0b01);     // 1 transform
   output->Write(2, 0b01);     // Palette
   output->Write(5, 0b00000);  // Starting from ch 0
@@ -3728,6 +3750,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   if (!is_single_group) {
     output->ZeroPadToByte();
   }
+  return true;
 }
 
 template <size_t nb_chans>
@@ -3785,6 +3808,7 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
       // TODO(szabadka): Add RAII wrapper around this.
       const void* buffer = input.get_color_channel_data_at(input.opaque, x0, y0,
                                                            xs, ys, &stride);
+      if (buffer == nullptr) return nullptr;
       auto rgba = reinterpret_cast<const unsigned char*>(buffer);
       for (size_t y = 0; y < ys && !collided; y++) {
         const unsigned char* r = rgba + stride * y;
@@ -3869,17 +3893,22 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
     size_t stride;
     const void* buffer =
         input.get_color_channel_data_at(input.opaque, x0, y0, xs, ys, &stride);
+    if (buffer == nullptr) {
+      return false;
+    }
     auto rgba = reinterpret_cast<const unsigned char*>(buffer);
     int y_begin_group =
         std::max<ptrdiff_t>(
             0, static_cast<ptrdiff_t>(ys) - static_cast<ptrdiff_t>(num_rows)) /
         2;
-    int y_count = std::min<int>(num_rows, ys - y_begin_group);
+    int y_count =
+        std::max<int>(0, std::min<int>(num_rows, ys - y_begin_group - 1));
     int x_max = xs / kChunkSize * kChunkSize;
     CollectSamples(rgba, 0, y_begin_group, x_max, stride, y_count, raw_counts,
                    lz77_counts, onegroup, !collided, bitdepth, nb_chans,
                    big_endian, lookup.data());
     input.release_buffer(input.opaque, buffer);
+    return true;
   };
 
   // TODO(veluca): that `64` is an arbitrary constant, meant to correspond to
@@ -3892,13 +3921,17 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
       size_t y0 = yg * 256;
       size_t ys = std::min<size_t>(height - y0, 256);
       size_t num_rows = 2 * effort * ys / 256;
-      sample_rows(xg, yg, num_rows);
+      if (!sample_rows(xg, yg, num_rows)) {
+        return nullptr;
+      }
     }
   } else {
     // sample the middle (effort * 2 * num_groups) rows of the center group
     // (possibly all of them).
-    sample_rows((num_groups_x - 1) / 2, (num_groups_y - 1) / 2,
-                2 * effort * num_groups_x * num_groups_y);
+    if (!sample_rows((num_groups_x - 1) / 2, (num_groups_y - 1) / 2,
+                     2 * effort * num_groups_x * num_groups_y)) {
+      return nullptr;
+    }
   }
 
   // TODO(veluca): can probably improve this and make it bitdepth-dependent.
@@ -3942,6 +3975,7 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
   }
 
   JxlFastLosslessFrameState* frame_state = new JxlFastLosslessFrameState();
+  if (!frame_state) return nullptr;
   for (size_t i = 0; i < 4; i++) {
     frame_state->hcode[i] = PrefixCode(bitdepth, raw_counts[i], lz77_counts[i]);
   }
@@ -3966,12 +4000,20 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
   frame_state->group_data = std::vector<std::array<BitWriter, 4>>(num_groups);
   frame_state->group_sizes.resize(num_groups);
   if (collided) {
-    PrepareDCGlobal(onegroup, width, height, nb_chans, frame_state->hcode,
-                    &frame_state->group_data[0][0]);
+    if (!PrepareDCGlobal(onegroup, width, height,
+                         bitdepth.MaxEncodedBitsPerSample(), nb_chans,
+                         frame_state->hcode, &frame_state->group_data[0][0])) {
+      delete frame_state;
+      return nullptr;
+    }
   } else {
-    PrepareDCGlobalPalette(onegroup, width, height, nb_chans,
-                           frame_state->hcode, palette, pcolors,
-                           &frame_state->group_data[0][0]);
+    if (!PrepareDCGlobalPalette(onegroup, width, height,
+                                bitdepth.MaxEncodedBitsPerSample(), nb_chans,
+                                frame_state->hcode, palette, pcolors,
+                                &frame_state->group_data[0][0])) {
+      delete frame_state;
+      return nullptr;
+    }
   }
   frame_state->group_sizes[0] = SectionSize(frame_state->group_data[0]);
   if (!onegroup) {
@@ -3990,7 +4032,10 @@ jxl::Status LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
                       JxlEncoderOutputProcessorWrapper* output_processor) {
 #if !FJXL_STANDALONE
   if (frame_state->process_done) {
-    JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0, is_last);
+    if (!JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0,
+                                      is_last)) {
+      return JXL_FAILURE("Allocation failed");
+    };
     if (output_processor) {
       JXL_RETURN_IF_ERROR(
           JxlFastLosslessOutputFrame(frame_state, output_processor));
@@ -4021,6 +4066,7 @@ jxl::Status LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
       local_frame_state.group_data =
           std::vector<std::array<BitWriter, 4>>(num_groups);
     }
+    std::atomic<uint32_t> has_error{0};
     auto run_one = [&](size_t i) {
       size_t g = offset + i;
       size_t xg = g % frame_state->num_groups_x;
@@ -4036,21 +4082,30 @@ jxl::Status LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
       JxlChunkedFrameInputSource input = frame_state->input;
       const void* buffer = input.get_color_channel_data_at(input.opaque, x0, y0,
                                                            xs, ys, &stride);
+      if (buffer == nullptr) {
+        has_error = 1;
+        return;
+      }
       const unsigned char* rgba =
           reinterpret_cast<const unsigned char*>(buffer);
 
       auto& gd = streaming ? local_frame_state.group_data[i]
                            : frame_state->group_data[group_id];
+      bool ok;
       if (frame_state->collided) {
-        WriteACSection(rgba, 0, 0, xs, ys, stride, onegroup, bitdepth,
-                       frame_state->nb_chans, frame_state->big_endian,
-                       frame_state->hcode, gd);
+        ok = WriteACSection(rgba, 0, 0, xs, ys, stride, onegroup, bitdepth,
+                            frame_state->nb_chans, frame_state->big_endian,
+                            frame_state->hcode, gd);
       } else {
-        WriteACSectionPalette(rgba, 0, 0, xs, ys, stride, onegroup,
-                              frame_state->hcode, frame_state->lookup.data(),
-                              frame_state->nb_chans, gd[0]);
+        ok = WriteACSectionPalette(
+            rgba, 0, 0, xs, ys, stride, onegroup, frame_state->hcode,
+            frame_state->lookup.data(), frame_state->nb_chans, gd[0]);
       }
-      frame_state->group_sizes[group_id] = SectionSize(gd);
+      if (ok) {
+        frame_state->group_sizes[group_id] = SectionSize(gd);
+      } else {
+        has_error = 1;
+      }
       input.release_buffer(input.opaque, buffer);
     };
     runner(
@@ -4059,6 +4114,7 @@ jxl::Status LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
           (*reinterpret_cast<decltype(&run_one)>(r))(i);
         },
         num_groups);
+    if (has_error) return JXL_FAILURE("Allocation failed");
 #if !FJXL_STANDALONE
     if (streaming) {
       local_frame_state.nb_chans = frame_state->nb_chans;
@@ -4082,7 +4138,10 @@ jxl::Status LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
       frame_state->group_data[0][0].Write(8, 0);
     }
     frame_state->group_sizes[0] += padding;
-    JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0, is_last);
+    if (!JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0,
+                                      is_last)) {
+      return JXL_FAILURE("Allocation failed");
+    }
     assert(frame_state->ac_group_data_offset ==
            JxlFastLosslessOutputSize(frame_state));
     JXL_RETURN_IF_ERROR(
@@ -4090,7 +4149,10 @@ jxl::Status LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
     JXL_RETURN_IF_ERROR(output_processor->Seek(end_pos));
   } else if (output_processor) {
     assert(onegroup);
-    JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0, is_last);
+    if (!JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0,
+                                      is_last)) {
+      return JXL_FAILURE("Allocation failed");
+    }
     if (output_processor) {
       JXL_RETURN_IF_ERROR(
           JxlFastLosslessOutputFrame(frame_state, output_processor));
@@ -4234,13 +4296,15 @@ class FJxlFrameInput {
         bytes_per_pixel_(bitdepth <= 8 ? nb_chans : 2 * nb_chans) {}
 
   JxlChunkedFrameInputSource GetInputSource() {
-    return JxlChunkedFrameInputSource{this, GetDataAt,
-                                      [](void*, const void*) {}};
+    return JxlChunkedFrameInputSource{
+        this, GetColorChannelDataAt,
+        /*release_buffer=*/[](void*, const void*) {}};
   }
 
  private:
-  static const void* GetDataAt(void* opaque, size_t xpos, size_t ypos,
-                               size_t xsize, size_t ysize, size_t* row_offset) {
+  static const void* GetColorChannelDataAt(void* opaque, size_t xpos,
+                                           size_t ypos, size_t xsize,
+                                           size_t ysize, size_t* row_offset) {
     FJxlFrameInput* self = static_cast<FJxlFrameInput*>(opaque);
     *row_offset = self->row_stride_;
     return self->rgba_ + ypos * (*row_offset) + xpos * self->bytes_per_pixel_;
@@ -4260,12 +4324,17 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
   auto* frame_state = JxlFastLosslessPrepareFrame(
       input.GetInputSource(), width, height, nb_chans, bitdepth, big_endian,
       effort, /*oneshot=*/true);
+  if (!frame_state) return 0;
   if (!JxlFastLosslessProcessFrame(frame_state, /*is_last=*/true, runner_opaque,
                                    runner, nullptr)) {
+    JxlFastLosslessFreeFrameState(frame_state);
     return 0;
   }
-  JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/1,
-                               /*is_last=*/1);
+  if (!JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/1,
+                                    /*is_last=*/1)) {
+    JxlFastLosslessFreeFrameState(frame_state);
+    return 0;
+  }
   size_t output_size = JxlFastLosslessMaxRequiredOutput(frame_state);
   *output = (unsigned char*)malloc(output_size);
   if (*output == NULL) {

@@ -5,7 +5,9 @@
 
 #include "lib/jxl/modular/transform/enc_rct.h"
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"

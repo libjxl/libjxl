@@ -139,9 +139,9 @@ class RenderPipelineStage {
   // nonzero, `temp` will point to an HWY-aligned buffer of at least that number
   // of floats; concurrent calls will have different buffers.
   virtual Status ProcessRow(const RowInfo& input_rows,
-                            const RowInfo& output_rows, size_t xextra,
-                            size_t xsize, size_t xpos, size_t ypos,
-                            size_t thread_id) const = 0;
+                            const RowInfo& output_rows, size_t xextra_left,
+                            size_t xextra_right, size_t xsize, size_t xpos,
+                            size_t ypos, size_t thread_id) const = 0;
 
   // How each channel will be processed. Channels are numbered starting from
   // color channels (always 3) and followed by all other channels.

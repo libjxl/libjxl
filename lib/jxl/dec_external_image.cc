@@ -34,6 +34,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/sanitizers.h"
+#include "lib/jxl/base/span.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -236,22 +237,28 @@ namespace {
 using StoreFuncType = void(uint32_t value, uint8_t* dest);
 template <StoreFuncType StoreFunc>
 void StoreUintRow(uint32_t* JXL_RESTRICT* rows_u32, size_t num_channels,
-                  size_t xsize, size_t bytes_per_sample,
-                  uint8_t* JXL_RESTRICT out) {
+                  size_t xsize, size_t bytes_per_sample, Span<uint8_t> out) {
+  // The output row `out` is a bounds-carrying view of exactly the validated
+  // scanline (`row_size` bytes). The highest byte written below is
+  // `num_channels * xsize * bytes_per_sample - 1`; assert it fits so the
+  // destination-buffer safety (guaranteed up the call stack by SafeMul/SafeAdd
+  // on stride/out_size) is also verifiable locally at the write site.
+  JXL_DASSERT(num_channels * xsize * bytes_per_sample <= out.size());
   for (size_t x = 0; x < xsize; ++x) {
     for (size_t c = 0; c < num_channels; c++) {
       StoreFunc(rows_u32[c][x],
-                out + (num_channels * x + c) * bytes_per_sample);
+                &out[(num_channels * x + c) * bytes_per_sample]);
     }
   }
 }
 
 template <void(StoreFunc)(float, uint8_t*)>
 void StoreFloatRow(const float* JXL_RESTRICT* rows_in, size_t num_channels,
-                   size_t xsize, uint8_t* JXL_RESTRICT out) {
+                   size_t xsize, Span<uint8_t> out) {
+  JXL_DASSERT(num_channels * xsize * sizeof(float) <= out.size());
   for (size_t x = 0; x < xsize; ++x) {
     for (size_t c = 0; c < num_channels; c++) {
-      StoreFunc(rows_in[c][x], out + (num_channels * x + c) * sizeof(float));
+      StoreFunc(rows_in[c][x], &out[(num_channels * x + c) * sizeof(float)]);
     }
   }
 }
@@ -316,14 +323,18 @@ Status ConvertChannelsToExternal(const ImageF* in_channels[],
   // First channel may not be nullptr.
   size_t xsize = channels[0]->xsize();
   size_t ysize = channels[0]->ysize();
-  if (stride < bytes_per_pixel * xsize) {
+  size_t row_size;
+  if (!SafeMul(bytes_per_pixel, xsize, row_size) || stride < row_size) {
     return JXL_FAILURE("stride is smaller than scanline width in bytes: %" PRIuS
                        " vs %" PRIuS,
-                       stride, bytes_per_pixel * xsize);
+                       stride, row_size);
   }
-  if (!out_callback.IsPresent() &&
-      out_size < (ysize - 1) * stride + bytes_per_pixel * xsize) {
-    return JXL_FAILURE("out_size is too small to store image");
+  if (!out_callback.IsPresent()) {
+    size_t total_size;
+    if (!SafeMul(ysize - 1, stride, total_size) ||
+        !SafeAdd(total_size, row_size, total_size) || out_size < total_size) {
+      return JXL_FAILURE("out_size is too small to store image");
+    }
   }
 
   const bool little_endian =
@@ -369,9 +380,13 @@ Status ConvertChannelsToExternal(const ImageF* in_channels[],
             out_callback.IsPresent()
                 ? row_out_callback[thread].data()
                 : &(reinterpret_cast<uint8_t*>(out_image))[stride * y];
+        // Bounds-carrying view of exactly the validated scanline.
+        Span<uint8_t> out_span(row_out, row_size);
         // interleave the one scanline
-        hwy::float16_t* row_f16_out =
-            reinterpret_cast<hwy::float16_t*>(row_out);
+        Span<hwy::float16_t> row_f16_out(
+            reinterpret_cast<hwy::float16_t*>(row_out),
+            row_size / sizeof(hwy::float16_t));
+        JXL_DASSERT(xsize * num_channels <= row_f16_out.size());
         for (size_t x = 0; x < xsize; x++) {
           for (size_t c = 0; c < num_channels; c++) {
             row_f16_out[x * num_channels + c] = row_f16[c][x];
@@ -380,7 +395,7 @@ Status ConvertChannelsToExternal(const ImageF* in_channels[],
         if (swap_endianness) {
           size_t size = xsize * num_channels * 2;
           for (size_t i = 0; i < size; i += 2) {
-            std::swap(row_out[i + 0], row_out[i + 1]);
+            std::swap(out_span[i + 0], out_span[i + 1]);
           }
         }
         if (out_callback.IsPresent()) {
@@ -402,14 +417,15 @@ Status ConvertChannelsToExternal(const ImageF* in_channels[],
             out_callback.IsPresent()
                 ? row_out_callback[thread].data()
                 : &(reinterpret_cast<uint8_t*>(out_image))[stride * y];
+        Span<uint8_t> out_span(row_out, row_size);
         const float* JXL_RESTRICT row_in[kConvertMaxChannels];
         for (size_t c = 0; c < num_channels; c++) {
           row_in[c] = channels[c] ? channels[c]->Row(y) : ones.Row(0);
         }
         if (little_endian) {
-          StoreFloatRow<StoreLEFloat>(row_in, num_channels, xsize, row_out);
+          StoreFloatRow<StoreLEFloat>(row_in, num_channels, xsize, out_span);
         } else {
-          StoreFloatRow<StoreBEFloat>(row_in, num_channels, xsize, row_out);
+          StoreFloatRow<StoreBEFloat>(row_in, num_channels, xsize, out_span);
         }
         if (out_callback.IsPresent()) {
           out_callback.run(out_run_opaque.get(), thread, 0, y, xsize, row_out);
@@ -440,6 +456,7 @@ Status ConvertChannelsToExternal(const ImageF* in_channels[],
           out_callback.IsPresent()
               ? row_out_callback[thread].data()
               : &(reinterpret_cast<uint8_t*>(out_image))[stride * y];
+      Span<uint8_t> out_span(row_out, row_size);
       const float* JXL_RESTRICT row_in[kConvertMaxChannels];
       for (size_t c = 0; c < num_channels; c++) {
         row_in[c] = channels[c] ? channels[c]->Row(y) : ones.Row(0);
@@ -454,12 +471,12 @@ Status ConvertChannelsToExternal(const ImageF* in_channels[],
         (row_in[c], row_u32[c], xsize, mul, bits_per_sample);
       }
       if (bits_per_sample <= 8) {
-        StoreUintRow<Store8>(row_u32, num_channels, xsize, 1, row_out);
+        StoreUintRow<Store8>(row_u32, num_channels, xsize, 1, out_span);
       } else {
         if (little_endian) {
-          StoreUintRow<StoreLE16>(row_u32, num_channels, xsize, 2, row_out);
+          StoreUintRow<StoreLE16>(row_u32, num_channels, xsize, 2, out_span);
         } else {
-          StoreUintRow<StoreBE16>(row_u32, num_channels, xsize, 2, row_out);
+          StoreUintRow<StoreBE16>(row_u32, num_channels, xsize, 2, out_span);
         }
       }
       if (out_callback.IsPresent()) {

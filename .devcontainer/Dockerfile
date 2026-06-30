@@ -9,7 +9,7 @@ RUN apt update
 RUN apt install -y cmake clang doxygen g++ extra-cmake-modules \
   libgif-dev libjpeg-dev ninja-build libgoogle-perftools-dev \
   graphviz
-RUN apt install -y qt6-base-dev libwebp-dev libgimp2.0-dev libopenexr-dev \
+RUN apt install -y qt6-base-dev libwebp-dev libopenexr-dev \
   libgtest-dev libgmock-dev libbenchmark-dev libbenchmark-tools
 RUN apt install -y git
 

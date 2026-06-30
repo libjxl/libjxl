@@ -5,9 +5,15 @@
 
 #include "lib/jxl/enc_modular_simd.h"
 
+#include <jxl/memory_manager.h>
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans_params.h"
