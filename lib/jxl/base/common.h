@@ -56,7 +56,7 @@ static inline bool SubOverflow(const int32_t a, const int32_t b, int32_t& c) {
   // Clang 3.8+ / GCC 5.1+
 #if JXL_COMPILER_GCC || JXL_COMPILER_CLANG
   return __builtin_sub_overflow(a, b, &c);
-#elif JXL_COMPILER_MSVC >= 1937
+#elif JXL_COMPILER_MSVC >= 1937 && (defined(_M_AMD64) || defined(_M_IX86))
   return _sub_overflow_i32(/*carry*/ 0, a, b, &c);
 #else
   uint32_t ua = static_cast<uint32_t>(a);
