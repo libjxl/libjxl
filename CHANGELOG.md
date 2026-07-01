@@ -125,7 +125,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `JxlEncoderAddChunkedFrame` incorrectly called `JxlEncoderCloseInput`
   instead of `JxlEncoderCloseFrames`, resulting in corrupted files when
   trying to add more boxes. (#4466)
-- Noise is no longer rendered on LF frames. (#4514)
 - Float16 values roundtrip more accurately. (#4461)
 - JXL input to cjxl no longer gets double orientation applied and also now
   keeps frame names. (#4374, #4561)
