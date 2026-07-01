@@ -232,10 +232,11 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   const Imath::Box2i data_window = header.dataWindow();
   // display_window / data_window bounds come straight from the EXR file header
   // and are not otherwise constrained: an arbitrary range of ints is legal in
-  // the file format. Reject coordinates outside +/-2^30 so the signed
-  // expressions below (`max - min + 1`, `start_y * row_size`,
-  // `data_window.min.x + ...`) cannot overflow `int`. JXL level 10 already
-  // caps image sizes at 2^30, so this is not a real-world limitation.
+  // the file format. Reject coordinates outside +/-2^30 to keep the pointer
+  // arithmetic below sane. JXL level 10 already caps image sizes at 2^30, so
+  // this is not a real-world limitation. The inclusive window sizes are still
+  // computed in 64 bits, because the span of two in-range coordinates can
+  // reach 2^31, which does not fit in `int`.
   constexpr int kEXRCoordBound = 1 << 30;
   auto OutOfRange = [](int v) {
     return v < -kEXRCoordBound || v > kEXRCoordBound;
@@ -250,9 +251,13 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   if (display_window.isEmpty() || data_window.isEmpty()) {
     return JXL_FAILURE("EXR: empty window");
   }
-  // Size is computed as max - min, but both bounds are inclusive.
-  const int image_width = display_window.size().x + 1;
-  const int image_height = display_window.size().y + 1;
+  // Size is computed as max - min, but both bounds are inclusive. Compute in
+  // 64 bits: `Box2i::size()` subtracts two `int` coordinates, which overflows
+  // when the (in-range) span reaches 2^31.
+  const int64_t image_width =
+      static_cast<int64_t>(display_window.max.x) - display_window.min.x + 1;
+  const int64_t image_height =
+      static_cast<int64_t>(display_window.max.y) - display_window.min.y + 1;
 
   if (!VerifyDimensions<uint32_t>(constraints, image_width, image_height)) {
     return JXL_FAILURE("image too big");
@@ -260,8 +265,10 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
 
   // Apply the same constraints to data_window, since its dimensions drive
   // input buffer allocations and per-row pointer arithmetic below.
-  const uint32_t data_width = data_window.size().x + 1;
-  const uint32_t data_height = data_window.size().y + 1;
+  const int64_t data_width =
+      static_cast<int64_t>(data_window.max.x) - data_window.min.x + 1;
+  const int64_t data_height =
+      static_cast<int64_t>(data_window.max.y) - data_window.min.y + 1;
   if (!VerifyDimensions<uint32_t>(constraints, data_width, data_height)) {
     return JXL_FAILURE("EXR: data_window too big");
   }
@@ -471,7 +478,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
         PackedImage& ec = frame.extra_channels[ec_idx];
         auto& data = ec_data[ec_idx];
         size_t ec_x_stride = ec.pixel_stride();
-        size_t ec_y_stride = ec_x_stride * data_width;
+        size_t ec_y_stride = ec_x_stride * static_cast<size_t>(data_width);
         const char* const JXL_RESTRICT ec_data_ptr =
             &data[x_data * ec_x_stride + y_data * ec_y_stride];
         uint8_t* ec_pixels = static_cast<uint8_t*>(ec.pixels());

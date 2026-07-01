@@ -60,6 +60,7 @@ jobs:
         with:
           submodules: true
           fetch-depth: 1
+          persist-credentials: false
 
       - uses: msys2/setup-msys2@07aeda7763550b267746a772dcea5e5ac3340b36 # v2
         with:
