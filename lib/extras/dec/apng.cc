@@ -1024,8 +1024,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
               /*endianness=*/JXL_BIG_ENDIAN,
               /*align=*/0,
           };
-          bytes_per_pixel =
-              num_channels * (format.data_type == JXL_TYPE_UINT16 ? 2 : 1);
+          size_t bytes_per_sample =
+              (format.data_type == JXL_TYPE_UINT16) ? 2 : 1;
+          bytes_per_pixel = bytes_per_sample * num_channels;
           size_t row_bytes;
           size_t total_bytes;
           if (!SafeMul(image_rect.xsize(), bytes_per_pixel, row_bytes) ||
@@ -1239,9 +1240,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         for (size_t y = 0; y < ysize; y++) {
           JXL_RETURN_IF_ERROR(
               PackedImage::ValidateDataType(new_data.format.data_type));
-          size_t pixel_stride =
-              PackedImage::BitsPerChannel(new_data.format.data_type) *
-              new_data.format.num_channels / 8;
+          size_t bytes_per_sample =
+              PackedImage::BitsPerChannel(new_data.format.data_type) / 8;
+          size_t pixel_stride = bytes_per_sample * new_data.format.num_channels;
           memcpy(
               static_cast<uint8_t*>(new_data.pixels()) +
                   new_data.stride * (y + y0 - py0) + pixel_stride * (x0 - px0),
