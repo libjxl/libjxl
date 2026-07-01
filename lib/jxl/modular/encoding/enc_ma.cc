@@ -49,7 +49,7 @@ const HWY_FULL(float) df;
 const HWY_FULL(int32_t) di;
 // Pad array size for use in EstimateBits.
 size_t Padded(size_t x) {
-  static_assert(Lanes(df) == Lanes(di));
+  JXL_DASSERT(Lanes(df) == Lanes(di));
   return RoundUpTo(x, Lanes(df));
 }
 
