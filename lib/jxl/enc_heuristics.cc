@@ -36,6 +36,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
+#include "lib/jxl/enc_Knuth_partition.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_group.h"
 #include "lib/jxl/dec_noise.h"
@@ -110,7 +111,7 @@ void FindBestBlockEntropyModel(const CompressParams& cparams, const ImageI& rqf,
       }
     }
 
-    size_t qf_counts[256] = {};
+    std::array<size_t, 256> qf_counts = {};
     size_t qf_ord_counts[kNumOrders][256] = {};
     size_t ord_counts[kNumOrders] = {};
   };
@@ -124,33 +125,16 @@ void FindBestBlockEntropyModel(const CompressParams& cparams, const ImageI& rqf,
   std::vector<uint32_t>& qft = block_ctx_map->qf_thresholds;
   qft.clear();
   // Divide the quant field in up to num_qf_segments segments.
-  size_t cumsum = 0;
-  size_t next = 1;
-  size_t last_cut = 256;
-  size_t cut = tot * next / num_qf_segments;
-  for (uint32_t j = 0; j < 256; j++) {
-    cumsum += counters->qf_counts[j];
-    if (cumsum > cut) {
-      if (j != 0) {
-        qft.push_back(j);
-      }
-      last_cut = j;
-      while (cumsum > cut) {
-        next++;
-        cut = tot * next / num_qf_segments;
-      }
-    } else if (next > qft.size() + 1) {
-      if (j - 1 == last_cut && j != 0) {
-        qft.push_back(j);
-      }
-    }
+  for (int32_t threshold :
+       QuantizeHistogram(counters->qf_counts, num_qf_segments, 1)) {
+    qft.push_back(static_cast<uint32_t>(threshold));
   }
 
   // Count the occurrences of each segment.
   std::vector<size_t> counts(kNumOrders * (qft.size() + 1));
   size_t qft_pos = 0;
   for (size_t j = 0; j < 256; j++) {
-    if (qft_pos < qft.size() && j == qft[qft_pos]) {
+    if (qft_pos < qft.size() && j >= qft[qft_pos]) {
       qft_pos++;
     }
     for (size_t i = 0; i < kNumOrders; i++) {

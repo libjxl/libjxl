@@ -83,7 +83,7 @@ static JXL_INLINE size_t ZeroDensityContext(size_t nonzeros_left, size_t k,
 }
 
 struct BlockCtxMap {
-  std::vector<int> dc_thresholds[3];
+  std::vector<int32_t> dc_thresholds[3];
   std::vector<uint32_t> qf_thresholds;
   std::vector<uint8_t> ctx_map;
   size_t num_ctxs, num_dc_ctxs;
