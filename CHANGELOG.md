@@ -24,19 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the decoder. (#4390)
 - tools: added support for `ProPhoto` (#4824) and `Adobe98` / `AdobeRGB`
   (#4199) color space names in CLI arguments (`cjxl` / `djxl`).
-- decoder API: support for out-of-order `jxlp` boxes (ftyp minor version 1)
-  (#4741).
+- decoder API: support for out-of-order `jxlp` boxes (ftyp minor version 1).
+  (#4741)
 - encoder API: `JXL_ENC_FRAME_SETTING_OUTPUT_MODE` frame setting to control how
   the codestream is written to the output. Mode 0 (default) buffers the output
   internally and produces a normally ordered, progressively decodable
   codestream. Mode 1 uses seek-based streaming (reduces peak memory for large
   images, requires a seekable output stream). Mode 2 uses out-of-order `jxlp`
   boxes (reduces peak memory without requiring seeking, but requires a decoder
-  that supports ftyp minor version 1) (#4745).
+  that supports ftyp minor version 1). (#4745)
 
 ### Changed
 
-- Major overhaul for faster decoding and progressive lossless (#4201, #4641)
+- Major overhaul for faster decoding and progressive lossless. (#4201, #4641,
+  #4811)
   - Progressive lossless images are around 30-40% smaller and are now
     multithreaded increasing encoding performance by 2-5x.
   - Lossless images with faster decoding are now 30-80% smaller and their
@@ -59,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (#4449)
   - Migrated Windows release builds to use `clang-cl`, which improves
     performance across the board. (#4529)
+  - Improved use of SIMD in tree construction hot loop. (#4720)
+  - Improved spline caching. (#4857)
+  - Postponed JPEG coeffs allocation until first SOS. (#4863)
 - The default buffering level in the CLI has been changed to `2`, greatly
   improving encoding performance for images under 2048x2048. Additionally,
   output is buffered by default to allow basic progressive loading. (#4635,
@@ -85,37 +89,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When lossy encoding, resampling 2 is now enabled at distance 10, and is up to
   10x faster below effort 10 by using a faster downsampling method. (#4147)
 - Faster PNG compression. (#3819)
-- decoder API: documented that at most one preview image exists in a codestream
-  (#4671).
+- decoder API: documented that at most one preview image exists in a
+  codestream.
+  (#4671)
 - encoder API: corrected documentation for box size header in
   `JxlEncoderAddBox` (0 means box extends to end of file, 1 means 64-bit size
-  follows) (#4081).
+  follows). (#4081)
 - Performance & memory: tracked memory for temporary box/codestream storage
   (#4852) and reduced allocation overhead in `ValidateTree` (#4851) and low
-  memory rendering pipeline (#4495, #4496).
-- Quality: improved HDR behavior at effort 8+ (#3885).
-- tools: `jxlinfo` rewritten in C++ with human-friendly output formatting
-  (#4300).
+  memory rendering pipeline. (#4495, #4496)
+- Quality: improved HDR behavior at effort 8+. (#3885)
+- tools: `jxlinfo` rewritten in C++ with human-friendly output formatting.
+  (#4300)
 - tools: image viewers now perform CMS color transforms in parallel across
-  threads (#4326).
+  threads. (#4326)
 
 ### Deprecated
 
 - encoder API: `JXL_ENC_FRAME_SETTING_BUFFERING` mode 3 is deprecated; output
-  buffering should now be controlled via `JXL_ENC_FRAME_SETTING_OUTPUT_MODE`
-  (#4745).
+  buffering should now be controlled via `JXL_ENC_FRAME_SETTING_OUTPUT_MODE`.
+  (#4745)
 
 ### Removed
 
 - The `jpegli` codebase has been removed as it is now maintained as a separate
-  project at [google/jpegli](https://github.com/google/jpegli) (#4657).
-- Dropped GIMP plugin (`libjxl-gimp-plugin`) (#4875).
+  project at [google/jpegli](https://github.com/google/jpegli). (#4657)
+- Dropped GIMP plugin (`libjxl-gimp-plugin`). (#4875)
 
 ### Fixed
 
-- Allows -E to be used in jpeg-transcoding again (#4729)
+- Allows -E to be used in jpeg-transcoding again. (#4729)
 - Fixed an issue where Lossy Delta Palette encoding failed on images larger
   than 2048x2048. (#4201)
+- Fixed Delta Palette with Weighted Predictor decoding. (#4837)
 - `JxlEncoderAddChunkedFrame` incorrectly called `JxlEncoderCloseInput`
   instead of `JxlEncoderCloseFrames`, resulting in corrupted files when
   trying to add more boxes. (#4466)
@@ -136,24 +142,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Progressive VarDCT encoding would create non-progressive files. (#4223)
 - Extremely tall/wide images failed to encode using modular. (#3937, #4308)
 - Empty DHT markers no longer cause JPEG transcoding to fail. (#2704)
-- Fixed photon noise encoding for progressive images (#4866).
-- Correctly handled mistakenly set "interleaved" alpha (#4862).
-- Fixed grayscale over-read in `EncodeWithSJpeg` (#4871).
-- Fixed `djxl` `SelectFormat` failure when converting grayscale images to PPM
-  (#4691).
+- Fixed photon noise encoding for progressive images. (#4866)
+- Correctly handled mistakenly set "interleaved" alpha. (#4862)
+- Fixed grayscale over-read in `EncodeWithSJpeg`. (#4871)
+- Fixed `djxl` `SelectFormat` failure when converting grayscale images to PPM.
+  (#4691)
 - Fixed segmentation fault when attempting to open non-existing input files in
-  CLI tools (#4846).
-- Fixed GIF always being decoded as RGBA (#4849).
-- Fixed PNG color space information reading (#4598).
+  CLI tools. (#4846)
+- Fixed GIF always being decoded as RGBA. (#4849)
+- Added a warning when an unsupported GIF disposal mode is encountered. (#3918)
+- Fixed PNG color space information reading. (#4598)
+- Fixed MSVC ARM64 build and restricted `_sub_overflow_i32` to x86/x64. (#4877)
+- Corrected specialized decoding path for fast lossless. (#4836)
+- Rejected duplicate out-of-order `jxlp` indices. (#4814)
+- Used `png_bit_depth` to correctly determine pixel layout. (#4854)
+- Fixed memory leak in `GetContext()` in `jxl_cms.cc`. (#4663)
+- Fixed stdin evaluation if file `-` exists. (#4668)
+- Fixed JXL primary color representation detection. (#4618)
 
 ### Security
 
 - Extensive security and hardening fixes across the core decoder/encoder, box
   buffers, and plugins (EXR, GIF, APNG/PNG, PAM/PNM/PGX). This includes fixes
   for integer overflows/underflows, out-of-bounds reads/writes, buffer
-  overflows, and null pointer guards (#4629, #4631, #4646, #4683, #4685, #4722,
-  #4746, #4758, #4764, #4766, #4773, #4775, #4777, #4778, #4788, #4791, #4792,
-  #4795, #4797, #4839, #4840, #4850, #4855, #4870, #4874).
+  overflows, and null pointer guards. (#4629, #4631, #4646, #4683, #4685,
+  #4687, #4688, #4722, #4746, #4758, #4764, #4766, #4773, #4775, #4777,
+  #4778, #4788, #4791, #4792, #4795, #4797, #4799, #4808, #4839, #4840,
+  #4850, #4855, #4870, #4874)
 
 ## [0.11.2] - 2026-02-10
 
@@ -207,7 +222,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - bugs in (lossless) encoding (#3367, #3359 and #3386)
-- re-enable installation of MIME file (#3375)
+- re-enable installation of MIME file. (#3375)
 - bugs in streaming mode (#3379 and #3380)
 
 ## [0.10.1] - 2024-02-28
@@ -216,7 +231,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - reduce allocations (#3336 and #3339),
   fixing a significant speed regression present since 0.9.0
-- bug in streaming encoding (#3331)
+- bug in streaming encoding. (#3331)
 
 ## [0.10.0] - 2024-02-21
 
@@ -263,11 +278,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF`
   - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP`
   - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF`
-- encoder API: new function `JxlEncoderSetUpsamplingMode` to change the upsampling
+- encoder API: new function `JxlEncoderSetUpsamplingMode` to change the
+  upsampling
   method, e.g. to use nearest-neighbor upsampling for pixel art
 - decoder API: implemented `JxlDecoderSetOutputColorProfile` and
   `JxlDecoderSetCms` to enable decoding to desired colorspace.
-- cjxl can now be used to explicitly add/update/strip Exif/XMP/JUMBF metadata using
+- cjxl can now be used to explicitly add/update/strip Exif/XMP/JUMBF metadata
+  using
   the decoder-hints syntax, e.g. `cjxl input.ppm -x exif=input.exif output.jxl`
 - djxl can now be used to extract Exif/XMP/JUMBF metadata
 - encoder API: new function `JxlEncoderDistanceFromQuality` for convenience to
@@ -280,8 +297,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `JxlDecoderDefaultPixelFormat`, `JxlEncoderOptionsSetLossless`,
   `JxlEncoderOptionsSetEffort`, `JxlEncoderOptionsSetDecodingSpeed`,
   `JxlEncoderOptionsSetDistance`, `JxlEncoderOptionsCreate`, as well as
-  the deprecated enumerator values `JXL_DEC_EXTENSIONS`, `JXL_ENC_NOT_SUPPORTED`,
-  `JXL_TYPE_BOOLEAN`, `JXL_TYPE_UINT32`, and deprecated type `JxlEncoderOptions`.
+  the deprecated enumerator values `JXL_DEC_EXTENSIONS`,
+  `JXL_ENC_NOT_SUPPORTED`, `JXL_TYPE_BOOLEAN`, `JXL_TYPE_UINT32`, and
+  deprecated type `JxlEncoderOptions`.
 - decoder API: the signature of `JxlDecoderGetColorAsEncodedProfile`,
   `JxlDecoderGetICCProfileSize`, and `JxlDecoderGetColorAsICCProfile`
   changed: a deprecated unused argument was removed.
@@ -289,21 +307,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed / clarified
 
 - changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
-- fixed how large boxes are decoded (#2958)
-- fixed encoding files with unreadable patches (#3042, #3046)
+- fixed how large boxes are decoded. (#2958)
+- fixed encoding files with unreadable patches. (#3042, #3046)
 
 ## [0.8.2] - 2023-06-14
 
 ### Changed
 
-- Security: Fix an integer underflow bug in patch decoding (#2551- CVE-2023-35790).
+- Security: Fix an integer underflow bug in patch decoding (#2551-
+  CVE-2023-35790).
 
 ## [0.8.1] - 2023-02-03
 
 ### Changed
 
-- Allow fast-lossless for 16-bit float input (#2093)
-- Fix bug in palette (#2120)
+- Allow fast-lossless for 16-bit float input. (#2093)
+- Fix bug in palette. (#2120)
 - Security: Fix OOB read in exif.h (#2101 - [CVE-2023-0645](https://www.cve.org/cverecord?id=CVE-2023-0645))
 
 ## [0.8.0] - 2023-01-18
@@ -438,8 +457,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [CVE-2021-22563](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-22563))
 - Security: Fix OOB copy (read/write) in out-of-order/multi-threaded decoding
   (#708 - [CVE-2021-22564](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-22564))
-- Fix segfault in `djxl` tool with `--allow_partial_files` flag (#781).
-- Fix border in extra channels when using upsampling (#796)
+- Fix segfault in `djxl` tool with `--allow_partial_files` flag. (#781)
+- Fix border in extra channels when using upsampling. (#796)
 
 ## [0.6] - 2021-10-04
 
@@ -473,7 +492,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not decode with the old decoder. In particular this will happen when using
   cjxl with PFM, EXR, or floating point PSD input, and a combination of XYB
   and modular mode is used (which caused an encoder error before), e.g.
-  using options like `-m -q 80` (lossy modular), `-d 4.5` or `--progressive_dc=1`
+  using options like `-m -q 80` (lossy modular), `-d 4.5` or
+  `--progressive_dc=1`
   (modular DC frame), or default lossy encoding on an image where patches
   end up being used. There is no problem when using cjxl with PNG, JPEG, GIF,
   APNG, PPM, PGM, PGX, or integer (8-bit or 16-bit) PSD input.
@@ -565,7 +585,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a (flag-protected) non-high-precision mode with better speed.
 - Significantly speed up the PQ EOTF.
 - Allow optional HDR tone mapping in djxl (--tone_map, --display_nits).
-- Change the behavior of djxl -j to make it consistent with cjxl (#153).
+- Change the behavior of djxl -j to make it consistent with cjxl. (#153)
 - Improve image quality.
 - Improve EXIF handling.
 
