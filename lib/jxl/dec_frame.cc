@@ -270,11 +270,11 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   PassesSharedState& shared = dec_state_->shared_storage;
   JxlMemoryManager* memory_manager = shared.memory_manager;
   if (frame_header_.flags & FrameHeader::kPatches) {
-    bool uses_extra_channels = false;
+    bool uses_extra_channels;
     JXL_RETURN_IF_ERROR(shared.image_features.patches.Decode(
         memory_manager, br, frame_dim_.xsize_padded, frame_dim_.ysize_padded,
         shared.metadata->m.num_extra_channels, &uses_extra_channels));
-    if (uses_extra_channels && frame_header_.upsampling != 1) {
+    if (frame_header_.upsampling != 1) {
       for (size_t ecups : frame_header_.extra_channel_upsampling) {
         if (ecups != frame_header_.upsampling) {
           return JXL_FAILURE(

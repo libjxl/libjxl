@@ -1638,8 +1638,8 @@ size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec) {
 // at least. JXL_DEC_ERROR if the box header is invalid.
 static JxlDecoderStatus ParseBoxHeader(const uint8_t* in, size_t size,
                                        size_t pos, size_t file_pos,
-                                       JxlBoxType type, uint64_t* box_size,
-                                       uint64_t* header_size) {
+                                       JxlBoxType type, size_t* box_size,
+                                       size_t* header_size) {
   if (OutOfBounds(pos, 8, size)) {
     *header_size = 8;
     return JXL_DEC_NEED_MORE_INPUT;
@@ -1653,8 +1653,12 @@ static JxlDecoderStatus ParseBoxHeader(const uint8_t* in, size_t size,
   if (*box_size == 1) {
     *header_size = 16;
     if (OutOfBounds(pos, 8, size)) return JXL_DEC_NEED_MORE_INPUT;
-    *box_size = LoadBE64(in + pos);
+    uint64_t box_size_64 = LoadBE64(in + pos);
     pos += 8;
+    *box_size = static_cast<size_t>(box_size_64);
+    if (box_size_64 != static_cast<uint64_t>(*box_size)) {
+      return JXL_INPUT_ERROR("Box size overflow");
+    }
   }
   *header_size = pos - box_start;
   if (*box_size > 0 && *box_size < *header_size) {
@@ -1836,8 +1840,8 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         return JXL_DEC_SUCCESS;
       }
 
-      uint64_t box_size;
-      uint64_t header_size;
+      size_t box_size;
+      size_t header_size;
       JxlDecoderStatus status =
           ParseBoxHeader(dec->next_in, dec->avail_in, 0, dec->file_pos,
                          dec->box_type, &box_size, &header_size);

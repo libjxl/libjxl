@@ -24,7 +24,7 @@ class FrameDecoder;
 // size) times 2: this is realized when using Gaborish + EPF + upsampling +
 // chroma subsampling.
 #if JXL_ARCH_ARM
-constexpr size_t kRenderPipelineXOffset = 16;
+constexpr size_t kRenderPipelineXOffset = 24;
 #else
 constexpr size_t kRenderPipelineXOffset = 32;
 #endif
