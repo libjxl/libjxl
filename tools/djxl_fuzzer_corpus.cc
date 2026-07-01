@@ -257,9 +257,8 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     // If this image is supposed to be a reconstructible JPEG, collect the JPEG
     // metadata and encode it in the beginning of the compressed bytes.
     std::vector<uint8_t> jpeg_bytes;
-    io->jpeg_quality = 70;
     auto encoder = jxl::extras::GetJPEGEncoder();
-    encoder->SetOption("quality", "70");
+    encoder->SetOption("q", "70");
     jxl::extras::EncodedImage encoded;
     JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, nullptr));
     jpeg_bytes = encoded.bitstreams[0];
