@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 env:
-  CONFORMANCE_REPO_HASH: a3ee00672dd1b58c2b5a7d5e8b9e4a7b9e53ec1e
+  CONFORMANCE_REPO_HASH: 4bf053529c7cefd2951be453475bb3dccc7e7be8
   LIBJXL_VERSION: "0.12.0"
   LIBJXL_ABI_VERSION: "0.12"
   SDE_ID: "813591"
@@ -36,18 +36,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
     - name: Checkout the conformance source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         repository: libjxl/conformance
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
+        persist-credentials: false
+
     - name: Cache
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
@@ -101,15 +103,16 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
     - name: Checkout the jxl source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         submodules: true
         fetch-depth: 2
+        persist-credentials: false
 
     - name: Install build deps
       run: |
@@ -121,7 +124,7 @@ jobs:
         echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
     - name: ccache
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -151,7 +154,7 @@ jobs:
         cp build/lib/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
         cp build/lib/libjxl_cms.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
         cp build/lib/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-    - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: conformance_binary-${{ matrix.name }}
         path: |
@@ -176,24 +179,25 @@ jobs:
         target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN, SVE2_128, SVE2, SVE, NEON_WITHOUT_AES]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
     - name: Checkout install_deps.sh
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         sparse-checkout: tools/scripts/install_deps.sh
         sparse-checkout-cone-mode: false
         fetch-depth: 1
-  
+        persist-credentials: false
+
     - name: Install deps
       run: |
         sudo ./tools/scripts/install_deps.sh conformance
 
     - name: Cache SDE
       if: ${{ matrix.target == 'AVX3' }}
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
       with:
         path: ${{ github.workspace }}/sde
         key: sde-${{ env.SDE_ID }}
@@ -211,20 +215,22 @@ jobs:
         cd ..
 
     - name: Checkout the conformance source
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         repository: libjxl/conformance
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
+        persist-credentials: false
+
     - name: Cache
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests

@@ -289,7 +289,7 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   shared.image_features.splines.Clear();
   if (frame_header_.flags & FrameHeader::kSplines) {
     JXL_RETURN_IF_ERROR(shared.image_features.splines.Decode(
-        memory_manager, br, frame_dim_.xsize * frame_dim_.ysize));
+        br, frame_dim_.xsize * frame_dim_.ysize));
   }
   if (frame_header_.flags & FrameHeader::kNoise) {
     JXL_RETURN_IF_ERROR(DecodeNoise(br, &shared.image_features.noise_params));
@@ -542,10 +542,7 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id, PassesReaders& br,
   }
   decoded_passes_per_ac_group_[ac_group_id] += num_passes;
 
-  const bool render_noise =
-      ((frame_header_.flags & FrameHeader::kNoise) != 0) &&
-      (frame_header_.dc_level == 0);
-  if (render_noise) {
+  if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
     PrepareNoiseInput(*dec_state_, frame_dim_, frame_header_, ac_group_id,
                       thread);
   }
@@ -660,15 +657,12 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
                                   "DecodeDCGroup"));
   }
 
-  const bool render_noise =
-      ((frame_header_.flags & FrameHeader::kNoise) != 0) &&
-      (frame_header_.dc_level == 0);
   if (!HasDcGroupToDecode() && !finalized_dc_) {
     PassesDecoderState::PipelineOptions pipeline_options;
     pipeline_options.use_slow_render_pipeline = use_slow_rendering_pipeline_;
     pipeline_options.coalescing = coalescing_;
     pipeline_options.render_spotcolors = render_spotcolors_;
-    pipeline_options.render_noise = render_noise;
+    pipeline_options.render_noise = true;
     JXL_RETURN_IF_ERROR(dec_state_->PreparePipeline(
         frame_header_, &frame_header_.nonserialized_metadata->m, decoded_,
         pipeline_options));

@@ -17,7 +17,6 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/fast_math-inl.h
   jxl/base/float.h
   jxl/base/iaca.h
-  jxl/base/include_jpeglib.h
   jxl/base/matrix_ops.h
   jxl/base/os_macros.h
   jxl/base/override.h
@@ -60,13 +59,6 @@ set(JPEGXL_INTERNAL_CODEC_EXR_SOURCES
 set(JPEGXL_INTERNAL_CODEC_GIF_SOURCES
   extras/dec/gif.cc
   extras/dec/gif.h
-)
-
-set(JPEGXL_INTERNAL_CODEC_JPEGLI_SOURCES
-  extras/dec/jpegli.cc
-  extras/dec/jpegli.h
-  extras/enc/jpegli.cc
-  extras/enc/jpegli.h
 )
 
 set(JPEGXL_INTERNAL_CODEC_JPG_SOURCES
@@ -442,6 +434,7 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/exif.cc
   extras/exif.h
   extras/gain_map.cc
+  extras/include_jpeglib.h
   extras/mmap.cc
   extras/mmap.h
   extras/packed_image.cc
@@ -458,92 +451,6 @@ set(JPEGXL_INTERNAL_GBENCH_SOURCES
   jxl/enc_external_image_gbench.cc
   jxl/splines_gbench.cc
   jxl/tf_gbench.cc
-)
-
-set(JPEGXL_INTERNAL_JPEGLI_LIBJPEG_HELPER_FILES
-  jpegli/libjpeg_test_util.cc
-  jpegli/libjpeg_test_util.h
-)
-
-set(JPEGXL_INTERNAL_JPEGLI_SOURCES
-  jpegli/adaptive_quantization.cc
-  jpegli/adaptive_quantization.h
-  jpegli/bit_writer.cc
-  jpegli/bit_writer.h
-  jpegli/bitstream.cc
-  jpegli/bitstream.h
-  jpegli/color_quantize.cc
-  jpegli/color_quantize.h
-  jpegli/color_transform.cc
-  jpegli/color_transform.h
-  jpegli/common.cc
-  jpegli/common.h
-  jpegli/common_internal.h
-  jpegli/dct-inl.h
-  jpegli/decode.cc
-  jpegli/decode.h
-  jpegli/decode_internal.h
-  jpegli/decode_marker.cc
-  jpegli/decode_marker.h
-  jpegli/decode_scan.cc
-  jpegli/decode_scan.h
-  jpegli/destination_manager.cc
-  jpegli/downsample.cc
-  jpegli/downsample.h
-  jpegli/encode.cc
-  jpegli/encode.h
-  jpegli/encode_finish.cc
-  jpegli/encode_finish.h
-  jpegli/encode_internal.h
-  jpegli/encode_streaming.cc
-  jpegli/encode_streaming.h
-  jpegli/entropy_coding-inl.h
-  jpegli/entropy_coding.cc
-  jpegli/entropy_coding.h
-  jpegli/error.cc
-  jpegli/error.h
-  jpegli/huffman.cc
-  jpegli/huffman.h
-  jpegli/idct.cc
-  jpegli/idct.h
-  jpegli/input.cc
-  jpegli/input.h
-  jpegli/memory_manager.cc
-  jpegli/memory_manager.h
-  jpegli/quant.cc
-  jpegli/quant.h
-  jpegli/render.cc
-  jpegli/render.h
-  jpegli/simd.cc
-  jpegli/simd.h
-  jpegli/source_manager.cc
-  jpegli/transpose-inl.h
-  jpegli/types.h
-  jpegli/upsample.cc
-  jpegli/upsample.h
-)
-
-set(JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES
-  jpegli/fuzztest.h
-  jpegli/test_params.h
-  jpegli/test_utils-inl.h
-  jpegli/test_utils.cc
-  jpegli/test_utils.h
-)
-
-set(JPEGXL_INTERNAL_JPEGLI_TESTS
-  jpegli/decode_api_test.cc
-  jpegli/encode_api_test.cc
-  jpegli/error_handling_test.cc
-  jpegli/input_suspension_test.cc
-  jpegli/output_suspension_test.cc
-  jpegli/source_manager_test.cc
-  jpegli/streaming_test.cc
-  jpegli/transcode_api_test.cc
-)
-
-set(JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES
-  jpegli/libjpeg_wrapper.cc
 )
 
 set(JPEGXL_INTERNAL_PUBLIC_HEADERS
@@ -585,7 +492,6 @@ set(JPEGXL_INTERNAL_TESTS
   extras/dec/color_description_test.cc
   extras/dec/pgx_test.cc
   extras/gain_map_test.cc
-  extras/jpegli_test.cc
   jxl/ac_strategy_test.cc
   jxl/alpha_test.cc
   jxl/ans_common_test.cc

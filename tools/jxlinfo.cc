@@ -5,10 +5,13 @@
 
 // This example prints information from the main codestream header.
 
+#include <jxl/codestream_header.h>
 #include <jxl/color_encoding.h>
 #include <jxl/compressed_icc.h>
 #include <jxl/decode.h>
 #include <jxl/gain_map.h>
+#include <jxl/memory_manager.h>
+#include <jxl/types.h>
 
 #include <array>
 #include <cinttypes>  // PRIu64
@@ -88,8 +91,7 @@ static int PrintBasicInfo(FILE* file, int verbose) {
   size_t data_size = 0;
   // In how large chunks to read from the file and try decoding the basic info.
   const size_t chunk_size = 2048;
-  uint8_t* box_data = nullptr;
-  size_t box_size = 0;
+  std::vector<uint8_t> box_data;
   size_t box_index = 0;
   JxlBoxType box_type = {0};
 
@@ -402,38 +404,30 @@ static int PrintBasicInfo(FILE* file, int verbose) {
                " compressed bytes\n",
                box_type, size);
       } else if (!strncmp(box_type, "jhgm", 4)) {
-        box_data = reinterpret_cast<uint8_t*>(malloc(chunk_size));
-        if (box_data == nullptr) {
-          fprintf(stderr, "Memory reallocation failed\n");
-          break;
-        }
-        box_size = chunk_size;
-        JxlDecoderSetBoxBuffer(dec, box_data, box_size);
+        box_data.resize(chunk_size);
+        JxlDecoderSetBoxBuffer(dec, box_data.data(), box_data.size());
       } else {
         printf("Unknown box:\n  type: \"%.4s\"\n  size: %" PRIu64 "\n",
                box_type, size);
       }
     } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
       const size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
-      box_size += chunk_size;
-      box_index += chunk_size - remaining;
-      uint8_t* temp = reinterpret_cast<uint8_t*>(realloc(box_data, box_size));
-      if (temp == nullptr) {
-        box_size = 0;
-        box_index = 0;
-        fprintf(stderr, "Memory reallocation failed\n");
+      box_index = box_data.size() - remaining;
+      if (box_data.size() > SIZE_MAX - chunk_size) {
+        fprintf(stderr, "Box size overflow\n");
         break;
       }
-      box_data = temp;
-      JxlDecoderSetBoxBuffer(dec, box_data + box_index, box_size - box_index);
+      box_data.resize(box_data.size() + chunk_size);
+      JxlDecoderSetBoxBuffer(dec, box_data.data() + box_index,
+                             box_data.size() - box_index);
     } else if (status == JXL_DEC_BOX_COMPLETE) {
       if (!strncmp(box_type, "jhgm", 4)) {
         size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
-        box_size -= remaining;
+        box_data.resize(box_data.size() - remaining);
         JxlGainMapBundle gain_map_bundle;
         size_t bytes_read;
-        if (!JxlGainMapReadBundle(&gain_map_bundle, box_data, box_size,
-                                  &bytes_read)) {
+        if (!JxlGainMapReadBundle(&gain_map_bundle, box_data.data(),
+                                  box_data.size(), &bytes_read)) {
           fprintf(stderr, "Invalid gain map box found\n");
         } else {
           uint8_t* icc = nullptr;
@@ -462,9 +456,7 @@ static int PrintBasicInfo(FILE* file, int verbose) {
           }
           free(icc);
         }
-        free(box_data);
-        box_data = nullptr;
-        box_size = 0;
+        box_data.clear();
         box_index = 0;
       } else {
         fprintf(
@@ -484,7 +476,6 @@ static int PrintBasicInfo(FILE* file, int verbose) {
            (info.animation.num_loops ? "" : " (looping)"));
   }
   JxlDecoderDestroy(dec);
-  if (box_data != nullptr) free(box_data);
   if (data != nullptr) free(data);
 
   return seen_basic_info;

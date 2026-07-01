@@ -332,9 +332,9 @@ class WriteToOutputStage : public RenderPipelineStage {
   }
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
-    JXL_ENSURE(xextra == 0);
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
+    JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
     JXL_ENSURE(main_.run_opaque_ || main_.buffer_);
     if (ypos >= height_) return true;
     if (xpos >= width_) return true;
@@ -766,19 +766,17 @@ class WriteToImageBundleStage : public RenderPipelineStage {
   }
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
+    JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
     for (size_t c = 0; c < 3; c++) {
-      memcpy(image_bundle_->color()->PlaneRow(c, ypos) + xpos - xextra,
-             GetInputRow(input_rows, c, 0) - xextra,
-             sizeof(float) * (xsize + 2 * xextra));
+      memcpy(image_bundle_->color()->PlaneRow(c, ypos) + xpos,
+             GetInputRow(input_rows, c, 0), sizeof(float) * xsize);
     }
     for (size_t ec = 0; ec < image_bundle_->extra_channels().size(); ec++) {
-      JXL_ENSURE(image_bundle_->extra_channels()[ec].xsize() >=
-                 xpos + xsize + xextra);
-      memcpy(image_bundle_->extra_channels()[ec].Row(ypos) + xpos - xextra,
-             GetInputRow(input_rows, 3 + ec, 0) - xextra,
-             sizeof(float) * (xsize + 2 * xextra));
+      JXL_ENSURE(image_bundle_->extra_channels()[ec].xsize() >= xpos + xsize);
+      memcpy(image_bundle_->extra_channels()[ec].Row(ypos) + xpos - xextra_left,
+             GetInputRow(input_rows, 3 + ec, 0), sizeof(float) * xsize);
     }
     return true;
   }
@@ -815,12 +813,12 @@ class WriteToImage3FStage : public RenderPipelineStage {
   }
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
+    JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
     for (size_t c = 0; c < 3; c++) {
-      memcpy(image_->PlaneRow(c, ypos) + xpos - xextra,
-             GetInputRow(input_rows, c, 0) - xextra,
-             sizeof(float) * (xsize + 2 * xextra));
+      memcpy(image_->PlaneRow(c, ypos) + xpos, GetInputRow(input_rows, c, 0),
+             sizeof(float) * xsize);
     }
     return true;
   }

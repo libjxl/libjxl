@@ -97,6 +97,8 @@ target_include_directories(jxl_base BEFORE INTERFACE
   ${PROJECT_SOURCE_DIR}
   ${JXL_HWY_INCLUDE_DIRS}
 )
+target_compile_definitions(jxl_base INTERFACE
+  "$<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:JXL_STATIC_DEFINE>")
 
 # On android, link with log to use android-related log functions.
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
@@ -240,11 +242,6 @@ else()
   list(APPEND CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
   check_c_source_compiles("int main(){return 0;}" LINKER_SUPPORT_EXCLUDE_LIBS)
   list(REMOVE_ITEM CMAKE_REQUIRED_LINK_OPTIONS ${LINKER_EXCLUDE_LIBS_FLAG})
-endif()
-
-if(NOT BUILD_SHARED_LIBS)
-  target_compile_definitions(jxl PUBLIC -DJXL_STATIC_DEFINE)
-  target_compile_definitions(jxl_dec PUBLIC -DJXL_STATIC_DEFINE)
 endif()
 
 # Add a jxl.version file as a version script to tag symbols with the

@@ -35,16 +35,19 @@ class HorizontalChromaUpsamplingStage : public RenderPipelineStage {
         c_(channel) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     HWY_FULL(float) df;
-    xextra = RoundUpTo(xextra, Lanes(df));
+    ptrdiff_t x_start =
+        -static_cast<ptrdiff_t>(RoundUpTo(xextra_left, Lanes(df)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra_right);
+
     auto threefour = Set(df, 0.75f);
     auto onefour = Set(df, 0.25f);
     const float* row_in = GetInputRow(input_rows, c_, 0);
     float* row_out = GetOutputRow(output_rows, c_, 0);
-    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-         x += Lanes(df)) {
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(df)) {
+      // TODO(eustas): why unaligned?
       auto current = Mul(LoadU(df, row_in + x), threefour);
       auto prev = LoadU(df, row_in + x - 1);
       auto next = LoadU(df, row_in + x + 1);
@@ -74,10 +77,13 @@ class VerticalChromaUpsamplingStage : public RenderPipelineStage {
         c_(channel) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     HWY_FULL(float) df;
-    xextra = RoundUpTo(xextra, Lanes(df));
+    ptrdiff_t x_start =
+        -static_cast<ptrdiff_t>(RoundUpTo(xextra_left, Lanes(df)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra_right);
+
     auto threefour = Set(df, 0.75f);
     auto onefour = Set(df, 0.25f);
     const float* row_top = GetInputRow(input_rows, c_, -1);
@@ -85,8 +91,8 @@ class VerticalChromaUpsamplingStage : public RenderPipelineStage {
     const float* row_bot = GetInputRow(input_rows, c_, 1);
     float* row_out0 = GetOutputRow(output_rows, c_, 0);
     float* row_out1 = GetOutputRow(output_rows, c_, 1);
-    for (ptrdiff_t x = -xextra; x < static_cast<ptrdiff_t>(xsize + xextra);
-         x += Lanes(df)) {
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(df)) {
+      // TODO(eustas): why unaligned?
       auto it = LoadU(df, row_top + x);
       auto im = LoadU(df, row_mid + x);
       auto ib = LoadU(df, row_bot + x);

@@ -1257,6 +1257,13 @@ cmd_lint() {
     echo -e "${TEXT_BOLD_PURPLE}SKIPPED:${TEXT_RESET} typos not installed; try: cargo install typos-cli"
   fi
 
+  # It is ok, if zizmor is not installed.
+  if which typos >/dev/null; then
+    zizmor "${MYDIR}/.github/workflows/"
+  else
+    echo -e "${TEXT_BOLD_PURPLE}SKIPPED:${TEXT_RESET} typos not installed; try: cargo install typos-cli"
+  fi
+
   local installed=()
   local clang_patch
   local clang_format

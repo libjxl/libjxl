@@ -52,7 +52,6 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
@@ -251,6 +250,7 @@ float EstimateWPCost(const Image& img, size_t i) {
     const ptrdiff_t onerow = ch.plane.PixelsPerRow();
     weighted::State wp_state(wp_header, ch.w, ch.h);
     Properties properties(1);
+    bool unhealthy = false;
     for (size_t y = 0; y < ch.h; y++) {
       const pixel_type* JXL_RESTRICT r = ch.Row(y);
       for (size_t x = 0; x < ch.w; x++) {
@@ -268,7 +268,8 @@ float EstimateWPCost(const Image& img, size_t i) {
         for (int c : cutoffs) {
           ctx += (c >= properties[0]) ? 1 : 0;
         }
-        pixel_type res = r[x] - guess;
+        pixel_type res;
+        unhealthy |= SubOverflow(r[x], guess, res);
         uint32_t token;
         uint32_t nbits;
         uint32_t bits;
@@ -277,6 +278,10 @@ float EstimateWPCost(const Image& img, size_t i) {
         extra_bits += nbits;
         wp_state.UpdateErrors(r[x], x, y, ch.w);
       }
+    }
+    if (unhealthy) {
+      // Force this predictor option to be rejected by the cost selector.
+      return std::numeric_limits<float>::max();
     }
     for (auto& h : histo) {
       histo_cost += h.ShannonEntropy();
@@ -552,37 +557,42 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
         cparams_.options.max_properties,
         static_cast<int>(
             frame_header.nonserialized_metadata->m.num_extra_channels) +
-            (frame_header.encoding == FrameEncoding::kModular ? 2 : -1));
+            (frame_header.nonserialized_metadata->m.color_encoding.IsGray() ? 0 : 2));
     switch (cparams_.speed_tier) {
       case SpeedTier::kHare:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 4);
-        cparams_.options.max_property_values = 24;
+        cparams_.options.max_property_values = 48;
+        cparams_.options.nb_repeats *= 0.5f;
         break;
       case SpeedTier::kWombat:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 5);
-        cparams_.options.max_property_values = 32;
+        cparams_.options.max_property_values = 64;
+        cparams_.options.nb_repeats *= 0.7f;
         break;
       case SpeedTier::kSquirrel:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 7);
-        cparams_.options.max_property_values = 48;
+        cparams_.options.max_property_values = 96;
         break;
       case SpeedTier::kKitten:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 10);
-        cparams_.options.max_property_values = 96;
+        cparams_.options.max_property_values = 128;
+        cparams_.options.nb_repeats *= 1.1f;
         break;
       case SpeedTier::kGlacier:
       case SpeedTier::kTortoise:
         cparams_.options.splitting_heuristics_properties = prop_order;
         cparams_.options.max_property_values = 256;
+        cparams_.options.nb_repeats *= 1.3f;
         break;
       default:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 3);
-        cparams_.options.max_property_values = 16;
+        cparams_.options.max_property_values = 32;
+        cparams_.options.nb_repeats *= 0.3f;
         break;
     }
     if (cparams_.speed_tier > SpeedTier::kTortoise) {
@@ -599,6 +609,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       }
     }
   }
+  cparams_.options.nb_repeats = std::min(1.0f, cparams_.options.nb_repeats);
 
   if ((cparams_.options.predictor == Predictor::Average0 ||
        cparams_.options.predictor == Predictor::Average1 ||
@@ -709,7 +720,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (cparams_.custom_splines.HasAny()) {
     PassesSharedState& shared = enc_state->shared;
     ImageFeatures& image_features = shared.image_features;
-    image_features.splines = cparams_.custom_splines;
+    image_features.splines.SetData(cparams_.custom_splines);
   }
 
   // Convert ImageBundle to modular Image object
@@ -882,7 +893,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
     channel_colors_percent = cparams_.channel_colors_pre_transform_percent;
   }
-  if (!groupwise) {
+  if (!groupwise &&
+     (!(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
     JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams_,
                                      channel_colors_percent, pool));
   }
@@ -1412,14 +1424,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // Local palette transforms
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
-    if (cparams.butteraugli_distance == 0.f && !cparams.lossy_palette &&
-        cparams.speed_tier < SpeedTier::kCheetah) {
+    if (cparams_.ModularPartIsLossless() && !cparams.responsive &&
+        !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
-      if (!(cparams.responsive &&
-            (cparams.decoding_speed_tier >= 1 || cparams.IsLossless()))) {
         channel_color_percent = cparams.channel_colors_percent;
-      }
       JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams,
                                        channel_color_percent));
     }
@@ -1544,7 +1553,8 @@ int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
   svalue -= pred.guess;
   if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
   int residual = 0;
-  if (svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
+  if (std::isnan(svalue) ||
+      svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
       svalue < static_cast<float>(std::numeric_limits<int>::min())) {
     *has_outliers = true;
   } else {

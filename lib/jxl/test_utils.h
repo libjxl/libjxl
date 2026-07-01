@@ -64,7 +64,7 @@ class ThreadPool;
 namespace test {
 
 // Don't use this directly!
-void CheckImpl(bool ok, const char* conndition, const char* file, int line);
+void CheckImpl(bool ok, const char* condition, const char* file, int line);
 
 #define JXL_TEST_ASSIGN_OR_DIE(lhs, statusor) \
   PRIVATE_JXL_TEST_ASSIGN_OR_DIE_IMPL(        \

@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -394,6 +395,9 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
 TEST(CodecTest, TestPNM) {
   size_t u = 77777;  // Initialized to wrong value.
   double d = 77.77;
+  const std::string max_unsigned =
+      std::to_string(std::numeric_limits<size_t>::max());
+
 // Failing to parse invalid strings results in a crash if `JXL_CRASH_ON_ERROR`
 // is defined and hence the tests fail. Therefore we only run these tests if
 // `JXL_CRASH_ON_ERROR` is not defined.
@@ -402,6 +406,8 @@ TEST(CodecTest, TestPNM) {
   ASSERT_FALSE(PnmParseUnsigned(MakeSpan("+"), &u));
   ASSERT_FALSE(PnmParseUnsigned(MakeSpan("-"), &u));
   ASSERT_FALSE(PnmParseUnsigned(MakeSpan("A"), &u));
+  const std::string overflowing_unsigned = max_unsigned + "0";
+  ASSERT_FALSE(PnmParseUnsigned(MakeSpan(overflowing_unsigned.c_str()), &u));
 
   ASSERT_FALSE(PnmParseSigned(MakeSpan(""), &d));
   ASSERT_FALSE(PnmParseSigned(MakeSpan("+"), &d));
@@ -413,6 +419,9 @@ TEST(CodecTest, TestPNM) {
 
   ASSERT_TRUE(PnmParseUnsigned(MakeSpan("32"), &u));
   ASSERT_TRUE(u == 32);
+
+  ASSERT_TRUE(PnmParseUnsigned(MakeSpan(max_unsigned.c_str()), &u));
+  ASSERT_TRUE(u == std::numeric_limits<size_t>::max());
 
   ASSERT_TRUE(PnmParseSigned(MakeSpan("1"), &d));
   ASSERT_TRUE(d == 1.0);
@@ -460,6 +469,68 @@ TEST(CodecTest, FormatNegotiation) {
   // 16 is the smallest accepted format that can accommodate the 12-bit data.
   EXPECT_EQ(format.data_type, JXL_TYPE_UINT16);
 }
+
+TEST(CodecTest, FormatNegotiationGrayscalePromotion) {
+  const std::vector<JxlPixelFormat> accepted_formats = {
+      {/*num_channels=*/3,
+       /*data_type=*/JXL_TYPE_UINT8,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+      {/*num_channels=*/3,
+       /*data_type=*/JXL_TYPE_UINT16,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+  };
+
+  JxlBasicInfo info;
+  JxlEncoderInitBasicInfo(&info);
+  info.bits_per_sample = 8;
+  info.num_color_channels = 1;
+
+  JxlPixelFormat format;
+  ASSERT_TRUE(SelectFormat(accepted_formats, info, &format));
+  EXPECT_EQ(format.num_channels, 3u);
+  EXPECT_EQ(format.data_type, JXL_TYPE_UINT8);
+}
+
+TEST(CodecTest, FormatNegotiationGrayAlphaPromotion) {
+  const std::vector<JxlPixelFormat> accepted_formats = {
+      {/*num_channels=*/3,
+       /*data_type=*/JXL_TYPE_UINT8,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+  };
+
+  JxlBasicInfo info;
+  JxlEncoderInitBasicInfo(&info);
+  info.bits_per_sample = 8;
+  info.num_color_channels = 1;
+  info.alpha_bits = 8;
+
+  JxlPixelFormat format;
+  ASSERT_TRUE(SelectFormat(accepted_formats, info, &format));
+  EXPECT_EQ(format.num_channels, 3u);
+  EXPECT_EQ(format.data_type, JXL_TYPE_UINT8);
+}
+
+#if (!JXL_CRASH_ON_ERROR)
+TEST(CodecTest, FormatNegotiationGrayscaleNoMatch) {
+  const std::vector<JxlPixelFormat> accepted_formats = {
+      {/*num_channels=*/5,
+       /*data_type=*/JXL_TYPE_UINT8,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+  };
+
+  JxlBasicInfo info;
+  JxlEncoderInitBasicInfo(&info);
+  info.bits_per_sample = 8;
+  info.num_color_channels = 1;
+
+  JxlPixelFormat format;
+  EXPECT_FALSE(SelectFormat(accepted_formats, info, &format));
+}
+#endif
 
 TEST(CodecTest, EncodeToPNG) {
   ThreadPool* const pool = nullptr;

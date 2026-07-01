@@ -69,7 +69,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 #include <csetjmp>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -247,7 +246,7 @@ Status DecodeGamaChunk(Bytes payload, JxlColorEncoding* color_encoding) {
   return true;
 }
 
-/** Extract information from 'cHTM' chunk. */
+/** Extract information from 'cHRM' chunk. */
 Status DecodeChrmChunk(Bytes payload, JxlColorEncoding* color_encoding) {
   if (payload.size() != 32) return JXL_FAILURE("Wrong cHRM size");
   const uint8_t* data = payload.data();
@@ -755,13 +754,15 @@ void SetColorData(PackedPixelFile* ppf, uint8_t color_type, uint8_t bit_depth,
 }
 
 // Color profile chunks: cICP has the highest priority, followed by
-// iCCP and sRGB (which shouldn't co-exist, but if they do, we use
-// iCCP), followed finally by gAMA and cHRM.
+// iCCP, followed by sRGB, followed finally by gAMA and cHRM.
 enum class ColorInfoType {
   NONE = 0,
-  GAMA_OR_CHRM = 1,
-  ICCP_OR_SRGB = 2,
-  CICP = 3
+  GAMA = 1,
+  CHRM = 2,
+  GAMA_AND_CHRM = 3,
+  SRGB = 4,
+  ICCP = 5,
+  CICP = 6
 };
 
 }  // namespace
@@ -882,6 +883,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     const RectT<uint64_t>& vp = current_frame.viewport;
     size_t xsize = static_cast<size_t>(vp.xsize());
     size_t ysize = static_cast<size_t>(vp.ysize());
+    JXL_ENSURE(ctx.frameRaw.rows.size() <= ysize);
     JXL_ASSIGN_OR_RETURN(PackedImage image,
                          PackedImage::Create(xsize, ysize, format));
     for (size_t y = 0; y < ysize; ++y) {
@@ -966,7 +968,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             /*delay_den=*/png_get_uint_16(payload.data() + 22), raw_viewport,
             static_cast<DisposeOp>(dispose_op), static_cast<BlendOp>(blend_op)};
 
-        if (!raw_viewport.Intersection(image_rect).IsSame(raw_viewport)) {
+        if (!raw_viewport.IsInside(image_rect)) {
           // Cropping happened.
           return JXL_FAILURE("PNG frame is outside of image rect");
         }
@@ -1008,27 +1010,29 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           png_color_8p sig_bits = nullptr;
           // Error is OK -> sig_bits remains nullptr.
           png_get_sBIT(ctx.png_ptr, ctx.info_ptr, &sig_bits);
+          uint8_t bit_depth = png_get_bit_depth(ctx.png_ptr, ctx.info_ptr);
           SetColorData(ppf, png_get_color_type(ctx.png_ptr, ctx.info_ptr),
-                       png_get_bit_depth(ctx.png_ptr, ctx.info_ptr), sig_bits,
+                       bit_depth, sig_bits,
                        png_get_valid(ctx.png_ptr, ctx.info_ptr, PNG_INFO_tRNS));
           num_channels =
               ppf->info.num_color_channels + (ppf->info.alpha_bits ? 1 : 0);
+          JxlDataType data_type =
+              bit_depth > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
           format = {
               /*num_channels=*/num_channels,
-              /*data_type=*/ppf->info.bits_per_sample > 8 ? JXL_TYPE_UINT16
-                                                          : JXL_TYPE_UINT8,
+              /*data_type=*/data_type,
               /*endianness=*/JXL_BIG_ENDIAN,
               /*align=*/0,
           };
           bytes_per_pixel =
               num_channels * (format.data_type == JXL_TYPE_UINT16 ? 2 : 1);
-          // TODO(eustas): ensure multiplication is safe
-          uint64_t row_bytes =
-              static_cast<uint64_t>(image_rect.xsize()) * bytes_per_pixel;
-          uint64_t max_rows = std::numeric_limits<size_t>::max() / row_bytes;
-          if (image_rect.ysize() > max_rows) {
+          size_t row_bytes;
+          size_t total_bytes;
+          if (!SafeMul(image_rect.xsize(), bytes_per_pixel, row_bytes) ||
+              !SafeMul(row_bytes, image_rect.ysize(), total_bytes)) {
             return JXL_FAILURE("Image too big.");
           }
+          (void)total_bytes;  // Calculated only for check.
           // TODO(eustas): drop frameRaw
           JXL_RETURN_IF_ERROR(
               ctx.frameRaw.Resize(row_bytes, image_rect.ysize()));
@@ -1068,8 +1072,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
       case MakeTag('c', 'I', 'C', 'P'):
         if (color_info_type == ColorInfoType::CICP) {
-          JXL_DEBUG_V(2, "Excessive colorspace definition; cICP chunk ignored");
-          continue;
+          return JXL_FAILURE("Repeated cICP chunk");
         }
         JXL_RETURN_IF_ERROR(DecodeCicpChunk(payload, &ppf->color_encoding));
         ppf->icc.clear();
@@ -1079,10 +1082,10 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         continue;
 
       case MakeTag('i', 'C', 'C', 'P'): {
-        if (color_info_type == ColorInfoType::ICCP_OR_SRGB) {
-          return JXL_FAILURE("Repeated iCCP / sRGB chunk");
+        if (color_info_type == ColorInfoType::ICCP) {
+          return JXL_FAILURE("Repeated iCCP chunk");
         }
-        if (color_info_type > ColorInfoType::ICCP_OR_SRGB) {
+        if (color_info_type > ColorInfoType::ICCP) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; iCCP chunk ignored");
           continue;
         }
@@ -1105,38 +1108,50 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         }
         ppf->icc.assign(profile, profile + profile_len);
         ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
-        color_info_type = ColorInfoType::ICCP_OR_SRGB;
+        color_info_type = ColorInfoType::ICCP;
         continue;
       }
 
       case MakeTag('s', 'R', 'G', 'B'):
-        if (color_info_type == ColorInfoType::ICCP_OR_SRGB) {
-          return JXL_FAILURE("Repeated iCCP / sRGB chunk");
+        if (color_info_type == ColorInfoType::SRGB) {
+          return JXL_FAILURE("Repeated sRGB chunk");
         }
-        if (color_info_type > ColorInfoType::ICCP_OR_SRGB) {
+        if (color_info_type > ColorInfoType::SRGB) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; sRGB chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeSrgbChunk(payload, &ppf->color_encoding));
-        color_info_type = ColorInfoType::ICCP_OR_SRGB;
+        color_info_type = ColorInfoType::SRGB;
         continue;
 
       case MakeTag('g', 'A', 'M', 'A'):
-        if (color_info_type >= ColorInfoType::GAMA_OR_CHRM) {
+        if (color_info_type == ColorInfoType::GAMA ||
+            color_info_type == ColorInfoType::GAMA_AND_CHRM) {
+          return JXL_FAILURE("Repeated gAMA chunk");
+        }
+        if (color_info_type > ColorInfoType::GAMA_AND_CHRM) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; gAMA chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeGamaChunk(payload, &ppf->color_encoding));
-        color_info_type = ColorInfoType::GAMA_OR_CHRM;
+        color_info_type = color_info_type == ColorInfoType::CHRM
+                              ? ColorInfoType::GAMA_AND_CHRM
+                              : ColorInfoType::GAMA;
         continue;
 
       case MakeTag('c', 'H', 'R', 'M'):
-        if (color_info_type >= ColorInfoType::GAMA_OR_CHRM) {
+        if (color_info_type == ColorInfoType::CHRM ||
+            color_info_type == ColorInfoType::GAMA_AND_CHRM) {
+          return JXL_FAILURE("Repeated cHRM chunk");
+        }
+        if (color_info_type > ColorInfoType::GAMA_AND_CHRM) {
           JXL_DEBUG_V(2, "Excessive colorspace definition; cHRM chunk ignored");
           continue;
         }
         JXL_RETURN_IF_ERROR(DecodeChrmChunk(payload, &ppf->color_encoding));
-        color_info_type = ColorInfoType::GAMA_OR_CHRM;
+        color_info_type = color_info_type == ColorInfoType::GAMA
+                              ? ColorInfoType::GAMA_AND_CHRM
+                              : ColorInfoType::CHRM;
         continue;
 
       case MakeTag('c', 'L', 'L', 'i'):

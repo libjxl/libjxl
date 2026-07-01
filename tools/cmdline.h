@@ -6,10 +6,13 @@
 #ifndef TOOLS_CMDLINE_H_
 #define TOOLS_CMDLINE_H_
 
+#include <cctype>
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -365,22 +368,41 @@ class CommandLineParser {
 //
 
 static inline bool ParseSigned(const char* arg, int* out) {
+  // Parse() only passes argv entries while i < argc, so arg is non-null.
   char* end;
-  *out = static_cast<int>(strtol(arg, &end, 0));
-  if (end[0] != '\0') {
+  errno = 0;
+  const long value = strtol(arg, &end, 0);
+  if (errno == ERANGE || end == arg || end[0] != '\0' ||
+      value < std::numeric_limits<int>::min() ||
+      value > std::numeric_limits<int>::max()) {
     fprintf(stderr, "Unable to interpret as signed integer: %s.\n", arg);
     return false;
   }
+  *out = static_cast<int>(value);
   return true;
 }
 
 static inline bool ParseUnsigned(const char* arg, size_t* out) {
-  char* end;
-  *out = static_cast<size_t>(strtoull(arg, &end, 0));
-  if (end[0] != '\0') {
+  // Parse() only passes argv entries while i < argc, so arg is non-null.
+  const char* p = arg;
+  while (*p != '\0' &&
+         std::isspace(static_cast<unsigned char>(*p)) != 0) {
+    ++p;
+  }
+  // Reject explicit negative values (strtoull accepts an optional sign).
+  if (*p == '-') {
     fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n", arg);
     return false;
   }
+  char* end;
+  errno = 0;
+  const unsigned long long value = strtoull(arg, &end, 0);
+  if (errno == ERANGE || end == arg || end[0] != '\0' ||
+      value > std::numeric_limits<size_t>::max()) {
+    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n", arg);
+    return false;
+  }
+  *out = static_cast<size_t>(value);
   return true;
 }
 

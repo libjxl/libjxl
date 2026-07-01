@@ -1,6 +1,3 @@
-# Workaround. Currently unspecified version (3.0) breaks the build
-snowballstemmer == 2.2
-
 breathe
 sphinx
 sphinx-rtd-theme
