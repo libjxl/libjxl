@@ -21,6 +21,9 @@ https://codecov.io/gh/libjxl/libjxl)
 
 <img src="doc/jxl.svg" width="100" align="right" alt="JXL logo">
 
+> [!IMPORTANT]
+> **Security Update:** It is highly recommended to update to v0.12 ASAP due to numerous security fixes.
+
 This repository contains a reference implementation of JPEG XL (encoder and
 decoder), called `libjxl`. This software library is
 [used by many applications that support JPEG XL](doc/software_support.md).
