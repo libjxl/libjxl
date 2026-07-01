@@ -276,7 +276,7 @@ std::vector<uint8_t> CreateTestJXLCodestream(
       ppf.info.num_color_channels = grayscale ? 1 : 3;
       ppf.info.bits_per_sample = 16;
       auto encoder = extras::GetJPEGEncoder();
-      encoder->SetOption("quality", "70");
+      encoder->SetOption("q", "70");
       extras::EncodedImage encoded;
       EXPECT_TRUE(encoder->Encode(ppf, &encoded, nullptr));
       jpeg_bytes = encoded.bitstreams[0];
