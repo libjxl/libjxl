@@ -7,247 +7,397 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-### Added
- - decoder: support for out-of-order `jxlp` boxes (ftyp minor version 1).
- - encoder API: `JXL_ENC_FRAME_SETTING_OUTPUT_MODE` frame setting to control
-   how the codestream is written to the output. Mode 0 (default) buffers the
-   output internally and produces a normally ordered, progressively decodable
-   codestream. Mode 1 uses seek-based streaming (reduces peak memory for large
-   images, requires a seekable output stream). Mode 2 uses out-of-order `jxlp`
-   boxes (reduces peak memory without requiring seeking, but requires a decoder
-   that supports ftyp minor version 1).
+## [0.12.0] - 2026-07-01
 
-### Changed / clarified
- - decoder API: timeframes to successfully invoke `JxlDecoderSetImageOutBuffer`
-   and `JxlDecoderSetPreviewOutBuffer` are non-intersecting; it is not possible
-   to accidentally set one buffer when the other is expected
+### Added
+
+- A new buffering flag is now available in the CLI, alongside support for
+  streaming input with buffered output. (#4634)
+- Introduced the new `jxltran` tool, which supports extracting codestreams from
+  `jxlp` boxes and packing raw codestreams into `jxlc` boxes. (#4161, #4165,
+  #4168, #4196)
+- Added the `--reconstruct_jpeg` flag to `djxl` to losslessly reconstruct a
+  JPEG and fail if impossible (mutually exclusive with `--pixels_to_jpeg` and
+  `--jpeg_quality`). (#4498)
+- Added `JXL_DEC_UNSUPPORTED` (`kUnsupported`) status code to the core API to
+  better indicate when requested features or operations are not supported by
+  the decoder. (#4390)
+- tools: added support for `ProPhoto` (#4824) and `Adobe98` / `AdobeRGB`
+  (#4199) color space names in CLI arguments (`cjxl` / `djxl`).
+- decoder API: support for out-of-order `jxlp` boxes (ftyp minor version 1)
+  (#4741).
+- encoder API: `JXL_ENC_FRAME_SETTING_OUTPUT_MODE` frame setting to control how
+  the codestream is written to the output. Mode 0 (default) buffers the output
+  internally and produces a normally ordered, progressively decodable
+  codestream. Mode 1 uses seek-based streaming (reduces peak memory for large
+  images, requires a seekable output stream). Mode 2 uses out-of-order `jxlp`
+  boxes (reduces peak memory without requiring seeking, but requires a decoder
+  that supports ftyp minor version 1) (#4745).
+
+### Changed
+
+- Major overhaul for faster decoding and progressive lossless (#4201, #4641)
+  - Progressive lossless images are around 30-40% smaller and are now
+    multithreaded increasing encoding performance by 2-5x.
+  - Lossless images with faster decoding are now 30-80% smaller and their
+    decoding speeds properly scale as the faster decoding level increases
+    from 1-4.
+  - Disabled global palette for progressive images, fixing glitchy progressive
+    loading for indexed/low color images and restoring transparency support
+    (Note: this causes a density/speed penalty for very low bit-depth images).
+- Numerous speed/memory usage improvements.
+  - Improved encoding speeds by SIMDifying `EstimateCost` (+5% performance) and
+    speeding up uint-coding trials. (#4322, #4330)
+  - Accelerated modular encoding and decoding via SIMD optimizations for
+    forward RCT transforms and upsampling (up to 4x faster). (#4332, #4384)
+  - Massive overhaul to histogram encoding and decoding, providing significant
+    performance optimizations for modular mode. (#4123, #4132, #4136, #4185)
+  - Tweaked JPEG recompression logic to improve density and efficiency. (#4202)
+  - Fixed performance regressions in fast lossless modes and optimized
+    text-like patch detection. (#4341, #4448)
+  - Refined x86 `XCR0` CPU checks to prevent issues on specific hardware.
+    (#4449)
+  - Migrated Windows release builds to use `clang-cl`, which improves
+    performance across the board. (#4529)
+- The default buffering level in the CLI has been changed to `2`, greatly
+  improving encoding performance for images under 2048x2048. Additionally,
+  output is buffered by default to allow basic progressive loading. (#4635,
+  #4637, #4642)
+- Better Density/Speed tradeoff for lossless effort levels. (#4236)
+- Improved visual quality of gradients by using channel-offset blue noise
+  dithering instead of bayer when decoding to lower bitdepths. (#4305, #4559)
+- Lossy modular encoding quality/density improvements. (#3575)
+- `local_tone_map` tool: Now produces SDR output in the `DisplayP3` color space
+  rather than `Rec2020`. Also added an optional third command-line argument to
+  dump the HDR image as a raw `rgba1010102` file for use with the `libultrahdr`
+  example app. (#4210)
+- Significant improvements to EXR input/output handling for cjxl. Now supports
+  reading float32, multilayer, per-channel bitdepth, and writing greyscale
+  EXR images. (#4312, #4460)
+- The decoder API for `JxlDecoderSetImageOutBuffer` and
+  `JxlDecoderSetPreviewOutBuffer` has been clarified; their timeframes are now
+  non-intersecting, preventing accidental buffer overwrites. (#4671)
+- Layered JXL files are no longer coalesced when re-encoding with cjxl, and
+  can now be decoded to separate PNG/PAM files with djxl by using
+  `--no_coalescing`. (#4299)
+- The progressive flag `-p` in cjxl will now encode a more progressive image.
+  (#4258, #4699)
+- When lossy encoding, resampling 2 is now enabled at distance 10, and is up to
+  10x faster below effort 10 by using a faster downsampling method. (#4147)
+- Faster PNG compression. (#3819)
+- decoder API: documented that at most one preview image exists in a codestream
+  (#4671).
+- encoder API: corrected documentation for box size header in
+  `JxlEncoderAddBox` (0 means box extends to end of file, 1 means 64-bit size
+  follows) (#4081).
+- Performance & memory: tracked memory for temporary box/codestream storage
+  (#4852) and reduced allocation overhead in `ValidateTree` (#4851) and low
+  memory rendering pipeline (#4495, #4496).
+- Quality: improved HDR behavior at effort 8+ (#3885).
+- tools: `jxlinfo` rewritten in C++ with human-friendly output formatting
+  (#4300).
+- tools: image viewers now perform CMS color transforms in parallel across
+  threads (#4326).
+
+### Deprecated
+
+- encoder API: `JXL_ENC_FRAME_SETTING_BUFFERING` mode 3 is deprecated; output
+  buffering should now be controlled via `JXL_ENC_FRAME_SETTING_OUTPUT_MODE`
+  (#4745).
+
+### Removed
+
+- The `jpegli` codebase has been removed as it is now maintained as a separate
+  project at [google/jpegli](https://github.com/google/jpegli) (#4657).
+- Dropped GIMP plugin (`libjxl-gimp-plugin`) (#4875).
+
+### Fixed
+
+- Allows -E to be used in jpeg-transcoding again (#4729)
+- Fixed an issue where Lossy Delta Palette encoding failed on images larger
+  than 2048x2048. (#4201)
+- `JxlEncoderAddChunkedFrame` incorrectly called `JxlEncoderCloseInput`
+  instead of `JxlEncoderCloseFrames`, resulting in corrupted files when
+  trying to add more boxes. (#4466)
+- Noise is no longer rendered on LF frames. (#4514)
+- Float16 values roundtrip more accurately. (#4461)
+- JXL input to cjxl no longer gets double orientation applied and also now
+  keeps frame names. (#4374, #4561)
+- `JxlBasicInfo.alpha_premultiplied` was not correctly forwarded. (#4357)
+- CMYK JXL files would not decode to PNG correctly. (#4301)
+- Encoder would hang with specific parameters on images containing more than
+  256 groups. (#4302)
+- Decoding would fail with LZ77 runs that crossed entropy-coded streams within
+  the same section. (#4298)
+- Images could be corrupted when encoding effort 1 lossless. (#4027, #4291)
+- Extremely high quality lossy would not conform to Level 5 of the spec.
+  (#4238)
+- Density regression with Predictor Zero since v0.11. (#4225)
+- Progressive VarDCT encoding would create non-progressive files. (#4223)
+- Extremely tall/wide images failed to encode using modular. (#3937, #4308)
+- Empty DHT markers no longer cause JPEG transcoding to fail. (#2704)
+- Fixed photon noise encoding for progressive images (#4866).
+- Correctly handled mistakenly set "interleaved" alpha (#4862).
+- Fixed grayscale over-read in `EncodeWithSJpeg` (#4871).
+- Fixed `djxl` `SelectFormat` failure when converting grayscale images to PPM
+  (#4691).
+- Fixed segmentation fault when attempting to open non-existing input files in
+  CLI tools (#4846).
+- Fixed GIF always being decoded as RGBA (#4849).
+- Fixed PNG color space information reading (#4598).
+
+### Security
+
+- Extensive security and hardening fixes across the core decoder/encoder, box
+  buffers, and plugins (EXR, GIF, APNG/PNG, PAM/PNM/PGX). This includes fixes
+  for integer overflows/underflows, out-of-bounds reads/writes, buffer
+  overflows, and null pointer guards (#4629, #4631, #4646, #4683, #4685, #4722,
+  #4746, #4758, #4764, #4766, #4773, #4775, #4777, #4778, #4788, #4791, #4792,
+  #4795, #4797, #4839, #4840, #4850, #4855, #4870, #4874).
 
 ## [0.11.2] - 2026-02-10
 
 ### Fixed
-  - Corrupted images when using effort 1 lossless. (#4027)
-  - Extremely tall/wide images failed to encode using modular. (#3937)
-  - Progressive VarDCT couldn't load progressively. (#4223)
-  - Lossless Faster Decoding would create uncompressed files for levels 1 and 2,
-    with levels 3 and 4 being slower instead of faster. (#4201)
-  - Density regression with Predictor Zero since v0.11. (#4225)
 
-### Changed / clarified
-  - Empty DHT markers are now valid for JPEG transcoding. (#2704)
-  - Resampling 2 is now enabled at distance 10 and is up to 10x faster below
-     effort 10, by using a faster downsampling method. (#4147)
-  - Progressive lossless is now 30-40% smaller on average and can utilize multithreading. (#4201)
+- Fix tile dimension in low memory rendering pipeline. (#4495 -
+  [CVE-2025-12474](https://www.cve.org/cverecord?id=CVE-2025-12474))
+- Fix number of channels for gray-to-gray color transform. (#4579 -
+  [CVE-2026-1837](https://www.cve.org/cverecord?id=CVE-2026-1837))
+- `djxl`: Reject decoding JXL files if "packed" representation size overflows
+  `size_t`. (#4589 - Thanks to Mateusz Jurczyk of Google Project Zero for
+  identifying this issue.)
 
 ## [0.11.1] - 2024-11-26
 
 ### Fixed
-  - Huffman lookup table size fix (#3871 -
-    [CVE-2024-11403](https://www.cve.org/cverecord?id=CVE-2024-11403))
-  - Check height limit in modular trees. (#3943 -
-    [CVE-2024-11498](https://www.cve.org/cverecord?id=CVE-2024-11498))
+
+- Huffman lookup table size fix. (#3871 -
+  [CVE-2024-11403](https://www.cve.org/cverecord?id=CVE-2024-11403))
+- Check height limit in modular trees. (#3943 -
+  [CVE-2024-11498](https://www.cve.org/cverecord?id=CVE-2024-11498))
 
 ### Changed / clarified
-  - encoder API: document that `JxlEncoderFrameSettingsCreate` could return
-    `NULL`
+
+- Encoder API: Document that `JxlEncoderFrameSettingsCreate` could return
+  `NULL`. (#4121)
 
 ## [0.11.0] - 2024-09-13
 
 ### Added
-  - Gain Map API (#3552 and #3628):  `JxlGainMapBundle` struct and API functions
-    to read and write gain map bundles`JxlGainMapWriteBundle` and
-    `JxlGainMapReadBundle` as well as handling compressed ICC profiles:
-    `JxlICCProfileEncode` and `JxlICCProfileDecode`.
-  - decoder API: added `JXL_DEC_BOX_COMPLETE` event to signal that the output
-    buffer for the current box has received all contents. Previously, this was
-    to be determined from the fact that the decoder had moved on either to
-    `JXL_DEC_SUCCESS` or to another subsequent `JXL_DEC_BOX`. This change is
-    made backward-compatible by the fact that the new event must be explicitly
-    subscribed to, and that `JXL_DEC_SUCCESS` / `JXL_DEC_BOX` still occur
-    afterwards and still imply that the previous box must be complete.
+
+- Gain Map API: `JxlGainMapBundle` struct and API functions
+  to read and write gain map bundles`JxlGainMapWriteBundle` and
+  `JxlGainMapReadBundle`. (#3552)
+- Handling of compressed ICC profiles: `JxlICCProfileEncode` and
+  `JxlICCProfileDecode`. (#3628)
+- Decoder API: added `JXL_DEC_BOX_COMPLETE` event to signal that the output
+  buffer for the current box has received all contents. Previously, this was
+  to be determined from the fact that the decoder had moved on either to
+  `JXL_DEC_SUCCESS` or to another subsequent `JXL_DEC_BOX`. This change is
+  made backward-compatible by the fact that the new event must be explicitly
+  subscribed to, and that `JXL_DEC_SUCCESS` / `JXL_DEC_BOX` still occur
+  afterwards and still imply that the previous box must be complete. (#3657)
 
 ### Changed / clarified
-  - avoiding abort in release build (#3631 and #3639)
+
+- avoiding abort in release build (#3631 and #3639)
 
 ## [0.10.2] - 2024-03-08
 
 ### Fixed
-  - bugs in (lossless) encoding (#3367, #3359 and #3386)
-  - re-enable installation of MIME file (#3375)
-  - bugs in streaming mode (#3379 and #3380)
+
+- bugs in (lossless) encoding (#3367, #3359 and #3386)
+- re-enable installation of MIME file (#3375)
+- bugs in streaming mode (#3379 and #3380)
 
 ## [0.10.1] - 2024-02-28
 
 ### Fixed
- - reduce allocations (#3336 and #3339),
-   fixing a significant speed regression present since 0.9.0
- - bug in streaming encoding (#3331)
 
-##  [0.10.0] - 2024-02-21
+- reduce allocations (#3336 and #3339),
+  fixing a significant speed regression present since 0.9.0
+- bug in streaming encoding (#3331)
+
+## [0.10.0] - 2024-02-21
 
 ### Added
- - decoder API: added `JxlDecoderGetBoxSizeContents` for getting the size of the
-   content of a box without the headers.
- - encoder API: implemented new api functions for streaming encoding.
+
+- decoder API: added `JxlDecoderGetBoxSizeContents` for getting the size of the
+  content of a box without the headers.
+- encoder API: implemented new api functions for streaming encoding.
 
 ### Changed / clarified
- - decoder/encoder API: return failure when surface allocation fail
- - encoder API / cjxl: updated modular effort levels to faster settings; the
-   effort range is now 1-10, with 11 available in advanced mode.
+
+- decoder/encoder API: return failure when surface allocation fail
+- encoder API / cjxl: updated modular effort levels to faster settings; the
+  effort range is now 1-10, with 11 available in advanced mode.
 
 ## [0.9.2] - 2024-02-07
 
 ### Fixed
- - bugs in the gdk-pixbuf plugin
- - some build issues
+
+- bugs in the gdk-pixbuf plugin
+- some build issues
 
 ## [0.9.1] - 2024-01-08
 
 ### Fixed
- - multiple build issues
+
+- multiple build issues
 
 ## [0.9.0] - 2023-12-22
 
 ### Added
- - encoder API: add `JxlEncoderSetExtraChannelDistance` to adjust the quality
-   of extra channels (like alpha) separately.
- - encoder API: new api functions for streaming encoding:
+
+- encoder API: add `JxlEncoderSetExtraChannelDistance` to adjust the quality
+  of extra channels (like alpha) separately.
+- encoder API: new api functions for streaming encoding:
   - `JxlEncoderSetOutputProcessor`
   - `JxlEncoderFlushInput`
   - `JxlEncoderOutputProcessor` struct
   - `JxlEncoderSetOutputCallback`
   - `JxlChunkedFrameInputSource` struct
-  - `JxlEncoderAddChunkedFrame`
- - encoder API: new options for more fine-grained control over metadata
-   preservation when using `JxlEncoderAddJPEGFrame`:
+- `JxlEncoderAddChunkedFrame`
+- encoder API: new options for more fine-grained control over metadata
+  preservation when using `JxlEncoderAddJPEGFrame`:
   - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF`
   - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP`
   - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF`
- - encoder API: new function `JxlEncoderSetUpsamplingMode` to change the upsampling
-   method, e.g. to use nearest-neighbor upsampling for pixel art
- - decoder API: implemented `JxlDecoderSetOutputColorProfile` and
-   `JxlDecoderSetCms` to enable decoding to desired colorspace.
- - cjxl can now be used to explicitly add/update/strip Exif/XMP/JUMBF metadata using
-   the decoder-hints syntax, e.g. `cjxl input.ppm -x exif=input.exif output.jxl`
- - djxl can now be used to extract Exif/XMP/JUMBF metadata
- - encoder API: new function `JxlEncoderDistanceFromQuality` for convenience to
-   calculate a `distance` given a `quality`
+- encoder API: new function `JxlEncoderSetUpsamplingMode` to change the upsampling
+  method, e.g. to use nearest-neighbor upsampling for pixel art
+- decoder API: implemented `JxlDecoderSetOutputColorProfile` and
+  `JxlDecoderSetCms` to enable decoding to desired colorspace.
+- cjxl can now be used to explicitly add/update/strip Exif/XMP/JUMBF metadata using
+  the decoder-hints syntax, e.g. `cjxl input.ppm -x exif=input.exif output.jxl`
+- djxl can now be used to extract Exif/XMP/JUMBF metadata
+- encoder API: new function `JxlEncoderDistanceFromQuality` for convenience to
+  calculate a `distance` given a `quality`
 
 ### Removed
- - API: the Butteraugli API (`jxl/butteraugli.h`) was removed.
- - encoder and decoder API: all deprecated functions were removed:
-   `JxlDecoderDefaultPixelFormat`, `JxlEncoderOptionsSetLossless`,
-   `JxlEncoderOptionsSetEffort`, `JxlEncoderOptionsSetDecodingSpeed`,
-   `JxlEncoderOptionsSetDistance`, `JxlEncoderOptionsCreate`, as well as
-   the deprecated enumerator values `JXL_DEC_EXTENSIONS`, `JXL_ENC_NOT_SUPPORTED`,
-   `JXL_TYPE_BOOLEAN`, `JXL_TYPE_UINT32`, and deprecated type `JxlEncoderOptions`.
- - decoder API: the signature of `JxlDecoderGetColorAsEncodedProfile`,
-   `JxlDecoderGetICCProfileSize`, and `JxlDecoderGetColorAsICCProfile`
-   changed: a deprecated unused argument was removed.
+
+- API: the Butteraugli API (`jxl/butteraugli.h`) was removed.
+- encoder and decoder API: all deprecated functions were removed:
+  `JxlDecoderDefaultPixelFormat`, `JxlEncoderOptionsSetLossless`,
+  `JxlEncoderOptionsSetEffort`, `JxlEncoderOptionsSetDecodingSpeed`,
+  `JxlEncoderOptionsSetDistance`, `JxlEncoderOptionsCreate`, as well as
+  the deprecated enumerator values `JXL_DEC_EXTENSIONS`, `JXL_ENC_NOT_SUPPORTED`,
+  `JXL_TYPE_BOOLEAN`, `JXL_TYPE_UINT32`, and deprecated type `JxlEncoderOptions`.
+- decoder API: the signature of `JxlDecoderGetColorAsEncodedProfile`,
+  `JxlDecoderGetICCProfileSize`, and `JxlDecoderGetColorAsICCProfile`
+  changed: a deprecated unused argument was removed.
 
 ### Changed / clarified
- - changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
- - fixed how large boxes are decoded (#2958)
- - fixed encoding files with unreadable patches (#3042, #3046)
+
+- changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
+- fixed how large boxes are decoded (#2958)
+- fixed encoding files with unreadable patches (#3042, #3046)
 
 ## [0.8.2] - 2023-06-14
 
 ### Changed
- - Security: Fix an integer underflow bug in patch decoding (#2551- CVE-2023-35790).
+
+- Security: Fix an integer underflow bug in patch decoding (#2551- CVE-2023-35790).
 
 ## [0.8.1] - 2023-02-03
 
 ### Changed
- - Allow fast-lossless for 16-bit float input (#2093)
- - Fix bug in palette (#2120)
- - Security: Fix OOB read in exif.h (#2101 - [CVE-2023-0645](https://www.cve.org/cverecord?id=CVE-2023-0645))
+
+- Allow fast-lossless for 16-bit float input (#2093)
+- Fix bug in palette (#2120)
+- Security: Fix OOB read in exif.h (#2101 - [CVE-2023-0645](https://www.cve.org/cverecord?id=CVE-2023-0645))
 
 ## [0.8.0] - 2023-01-18
 
 ### Added
- - decoder API: new function `JxlDecoderSetImageBitDepth` to set the bit depth
-   of the output buffer.
- - decoder API proposal: add `JxlDecoderSetOutputColorProfile` and
-   `JxlDecoderSetCms` to enable decoding to desired colorspace; NB: not
-   implemented yet.
- - encoder API: new function `JxlEncoderSetFrameBitDepth` to set the bit depth
-   of the input buffer.
- - encoder API: add an effort 10 option for lossless compression; using this
-   setting requires calling `JxlEncoderAllowExpertOptions`.
- - encoder API: new `JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES` enum value to
-   allow explicit control of metadata compression
+
+- decoder API: new function `JxlDecoderSetImageBitDepth` to set the bit depth
+  of the output buffer.
+- decoder API proposal: add `JxlDecoderSetOutputColorProfile` and
+  `JxlDecoderSetCms` to enable decoding to desired colorspace; NB: not
+  implemented yet.
+- encoder API: new function `JxlEncoderSetFrameBitDepth` to set the bit depth
+  of the input buffer.
+- encoder API: add an effort 10 option for lossless compression; using this
+  setting requires calling `JxlEncoderAllowExpertOptions`.
+- encoder API: new `JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES` enum value to
+  allow explicit control of metadata compression
 
 ### Removed
- - common API: removed `JxlIntrinsicSizeHeader`
- - decoder API: removed deprecated `JXL_DEC_NEED_DC_OUT_BUFFER` and
-   `JXL_DEC_DC_IMAGE` events, `JxlDecoderDCOutBufferSize` and
-   `JxlDecoderSetDCOutBuffer` functions
+
+- common API: removed `JxlIntrinsicSizeHeader`
+- decoder API: removed deprecated `JXL_DEC_NEED_DC_OUT_BUFFER` and
+  `JXL_DEC_DC_IMAGE` events, `JxlDecoderDCOutBufferSize` and
+  `JxlDecoderSetDCOutBuffer` functions
 
 ### Changed / clarified
- - encoder API: `JxlEncoderProcessOutput` requires at least 32 bytes of output
-   space to proceed and guarantees that at least one byte will be written
+
+- encoder API: `JxlEncoderProcessOutput` requires at least 32 bytes of output
+  space to proceed and guarantees that at least one byte will be written
 
 ## [0.7] - 2022-07-21
 
 ### Added
- - Export version information in headers.
- - decoder API: Ability to decode the content of metadata boxes:
-   `JXL_DEC_BOX`, `JXL_DEC_BOX_NEED_MORE_OUTPUT`, `JxlDecoderSetBoxBuffer`,
-   `JxlDecoderGetBoxType`, `JxlDecoderGetBoxSizeRaw` and
-   `JxlDecoderSetDecompressBoxes`.
- - decoder API: ability to mark the input is finished: `JxlDecoderCloseInput`.
- - decoder API: ability to request updates on different progressive events using
-   `JxlDecoderSetProgressiveDetail`; currently supported events are
-   `kDC`, `kLastPasses` and `kPasses`.
- - decoder API: ability to specify desired intensity target using
-   `JxlDecoderSetDesiredIntensityTarget`
- - decoder API: new function `JxlDecoderSetCoalesced` to allow decoding
-   non-coalesced (unblended) frames, e.g. layers of a composite still image
-   or the cropped frames of a recompressed GIF/APNG.
- - decoder API: new function `JxlDecoderSetUnpremultiplyAlpha` to set
-   preference for getting an associated alpha channel with premultiplied or
-   unpremultiplied colors.
- - decoder API: field added to `JxlFrameHeader`: a `JxlLayerInfo` struct
-   that contains crop dimensions and offsets and blending information for
-   the non-coalesced case.
- - decoder API: new function `JxlDecoderGetExtraChannelBlendInfo` to get
-   the blending information for extra channels in the non-coalesced case.
- - decoder API: new function `JxlDecoderSetMultithreadedImageOutCallback`,
-   allowing output callbacks to receive more information about the number of
-   threads on which they are running.
- - decoder API: new function `JxlDecoderSkipCurrentFrame` to skip processing
-   the current frame after a progressive detail is reached.
- - decoder API: new function `JxlDecoderGetIntendedDownsamplingRatio` to get
-   the intended downsampling ratio of progressive steps, based on the
-   information in the frame header.
- - decoder API: new function `JxlDecoderSetRenderSpotcolors` to allow disabling
-   rendering of spot colors.
- - decoder/encoder API: add two fields to `JXLBasicInfo`: `intrinsic_xsize`
-   and `intrinsic_ysize` to signal the intrinsic size.
- - encoder API: ability to add metadata boxes, added new functions
-   `JxlEncoderAddBox`, `JxlEncoderUseBoxes`, `JxlEncoderCloseBoxes` and
-   `JxlEncoderCloseFrames`.
- - encoder API: added ability to set several encoder options / extra fields to
-   frames using `JxlEncoderSetFrameName`, `JxlEncoderFrameSettingsSetOption`,
-   `JxlEncoderFrameSettingsSetFloatOption`.
- - encoder API: added ability to check required codestream compatibility level
-   and force specified using `JxlEncoderGetRequiredCodestreamLevel` and
-   `JxlEncoderSetCodestreamLevel`.
- - encoder API: added ability to force emitting box-based container format
-   using `JxlEncoderUseContainer`.
- - encoder API: added ability to store JPEG metadata for lossless reconstruction
-   using `JxlEncoderStoreJPEGMetadata`
- - encoder API: new functions `JxlEncoderSetFrameHeader` and
-   `JxlEncoderSetExtraChannelBlendInfo` to set animation
-   and blending parameters of the frame, and `JxlEncoderInitFrameHeader` and
-   `JxlEncoderInitBlendInfo` to initialize the structs to set.
- - encoder API: ability to encode arbitrary extra channels:
+
+- Export version information in headers.
+- decoder API: Ability to decode the content of metadata boxes:
+  `JXL_DEC_BOX`, `JXL_DEC_BOX_NEED_MORE_OUTPUT`, `JxlDecoderSetBoxBuffer`,
+  `JxlDecoderGetBoxType`, `JxlDecoderGetBoxSizeRaw` and
+  `JxlDecoderSetDecompressBoxes`.
+- decoder API: ability to mark the input is finished: `JxlDecoderCloseInput`.
+- decoder API: ability to request updates on different progressive events using
+  `JxlDecoderSetProgressiveDetail`; currently supported events are
+  `kDC`, `kLastPasses` and `kPasses`.
+- decoder API: ability to specify desired intensity target using
+  `JxlDecoderSetDesiredIntensityTarget`
+- decoder API: new function `JxlDecoderSetCoalesced` to allow decoding
+  non-coalesced (unblended) frames, e.g. layers of a composite still image
+  or the cropped frames of a recompressed GIF/APNG.
+- decoder API: new function `JxlDecoderSetUnpremultiplyAlpha` to set
+  preference for getting an associated alpha channel with premultiplied or
+  unpremultiplied colors.
+- decoder API: field added to `JxlFrameHeader`: a `JxlLayerInfo` struct
+  that contains crop dimensions and offsets and blending information for
+  the non-coalesced case.
+- decoder API: new function `JxlDecoderGetExtraChannelBlendInfo` to get
+  the blending information for extra channels in the non-coalesced case.
+- decoder API: new function `JxlDecoderSetMultithreadedImageOutCallback`,
+  allowing output callbacks to receive more information about the number of
+  threads on which they are running.
+- decoder API: new function `JxlDecoderSkipCurrentFrame` to skip processing
+  the current frame after a progressive detail is reached.
+- decoder API: new function `JxlDecoderGetIntendedDownsamplingRatio` to get
+  the intended downsampling ratio of progressive steps, based on the
+  information in the frame header.
+- decoder API: new function `JxlDecoderSetRenderSpotcolors` to allow disabling
+  rendering of spot colors.
+- decoder/encoder API: add two fields to `JXLBasicInfo`: `intrinsic_xsize`
+  and `intrinsic_ysize` to signal the intrinsic size.
+- encoder API: ability to add metadata boxes, added new functions
+  `JxlEncoderAddBox`, `JxlEncoderUseBoxes`, `JxlEncoderCloseBoxes` and
+  `JxlEncoderCloseFrames`.
+- encoder API: added ability to set several encoder options / extra fields to
+  frames using `JxlEncoderSetFrameName`, `JxlEncoderFrameSettingsSetOption`,
+  `JxlEncoderFrameSettingsSetFloatOption`.
+- encoder API: added ability to check required codestream compatibility level
+  and force specified using `JxlEncoderGetRequiredCodestreamLevel` and
+  `JxlEncoderSetCodestreamLevel`.
+- encoder API: added ability to force emitting box-based container format
+  using `JxlEncoderUseContainer`.
+- encoder API: added ability to store JPEG metadata for lossless reconstruction
+  using `JxlEncoderStoreJPEGMetadata`
+- encoder API: new functions `JxlEncoderSetFrameHeader` and
+  `JxlEncoderSetExtraChannelBlendInfo` to set animation
+  and blending parameters of the frame, and `JxlEncoderInitFrameHeader` and
+  `JxlEncoderInitBlendInfo` to initialize the structs to set.
+- encoder API: ability to encode arbitrary extra channels:
   `JxlEncoderInitExtraChannelInfo`, `JxlEncoderSetExtraChannelInfo`,
   `JxlEncoderSetExtraChannelName` and `JxlEncoderSetExtraChannelBuffer`.
- - encoder API: ability to plug custom CMS implementation using
-   `JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms)`
- - encoder API: added `JxlEncoderGetError` to retrieve last encoder error.
+- encoder API: ability to plug custom CMS implementation using
+  `JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms)`
+- encoder API: added `JxlEncoderGetError` to retrieve last encoder error.
 
 ### Changed
+
 - decoder API: using `JxlDecoderCloseInput` at the end of all input is required
   when using JXL_DEC_BOX, and is now also encouraged in other cases, but not
   required in those other cases for backwards compatibility.
@@ -256,6 +406,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and encoder API; dropped dependency on `gflags` for argument parsing.
 
 ### Deprecated
+
 - decoder API: `JXL_DEC_EXTENSIONS` event: use `JXL_DEC_BASIC_INFO`
 - decoder / encoder API: pixel types `JXL_TYPE_BOOLEAN` and `JXL_TYPE_UINT32`:
   consider using `JXL_TYPE_UINT8` and `JXL_TYPE_FLOAT` correspondingly.
@@ -280,161 +431,222 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `JXL_ENC_NOT_SUPPORTED`.
 
 ## [0.6.1] - 2021-10-29
+
 ### Changed
- - Security: Fix OOB read in splines rendering (#735 -
-   [CVE-2021-22563](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-22563))
- - Security: Fix OOB copy (read/write) in out-of-order/multi-threaded decoding
-   (#708 - [CVE-2021-22564](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-22564))
- - Fix segfault in `djxl` tool with `--allow_partial_files` flag (#781).
- - Fix border in extra channels when using upsampling (#796)
+
+- Security: Fix OOB read in splines rendering (#735 -
+  [CVE-2021-22563](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-22563))
+- Security: Fix OOB copy (read/write) in out-of-order/multi-threaded decoding
+  (#708 - [CVE-2021-22564](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-22564))
+- Fix segfault in `djxl` tool with `--allow_partial_files` flag (#781).
+- Fix border in extra channels when using upsampling (#796)
 
 ## [0.6] - 2021-10-04
+
 ### Added
- - API: New functions to decode extra channels:
-   `JxlDecoderExtraChannelBufferSize` and `JxlDecoderSetExtraChannelBuffer`.
- - API: New function `JxlEncoderInitBasicInfo` to initialize `JxlBasicInfo`
-   (only needed when encoding). NOTE: it is now required to call this function
-   when using the encoder. Padding was added to the struct for forward
-   compatibility.
- - API: Support for encoding oriented images.
- - API: FLOAT16 support in the encoder API.
- - Rewrite of the GDK pixbuf loader plugin. Added proper color management and
-   animation support.
- - Rewrite of GIMP plugin. Added compression parameters dialog and switched to
-   using the public C API.
- - Debian packages for GDK pixbuf loader (`libjxl-gdk-pixbuf`) and GIMP
-   (`libjxl-gimp-plugin`) plugins.
- - `cjxl`/`djxl` support for `stdin` and `stdout`.
+
+- API: New functions to decode extra channels:
+  `JxlDecoderExtraChannelBufferSize` and `JxlDecoderSetExtraChannelBuffer`.
+- API: New function `JxlEncoderInitBasicInfo` to initialize `JxlBasicInfo`
+  (only needed when encoding). NOTE: it is now required to call this function
+  when using the encoder. Padding was added to the struct for forward
+  compatibility.
+- API: Support for encoding oriented images.
+- API: FLOAT16 support in the encoder API.
+- Rewrite of the GDK pixbuf loader plugin. Added proper color management and
+  animation support.
+- Rewrite of GIMP plugin. Added compression parameters dialog and switched to
+  using the public C API.
+- Debian packages for GDK pixbuf loader (`libjxl-gdk-pixbuf`) and GIMP
+  (`libjxl-gimp-plugin`) plugins.
+- `cjxl`/`djxl` support for `stdin` and `stdout`.
 
 ### Changed
- - API: Renamed the field `alpha_associated` in `JxlExtraChannelInfo` to
-   `alpha_premultiplied`, to match the corresponding name in `JxlBasicInfo`.
- - Improved the 2x2 downscaling method in the encoder for the optional color
-   channel resampling for low bit rates.
- - Fixed: the combination of floating point original data, XYB color encoding,
-   and Modular mode was broken (in both encoder and decoder). It now works.
-   NOTE: this can cause the current encoder to write jxl bitstreams that do
-   not decode with the old decoder. In particular this will happen when using
-   cjxl with PFM, EXR, or floating point PSD input, and a combination of XYB
-   and modular mode is used (which caused an encoder error before), e.g.
-   using options like `-m -q 80` (lossy modular), `-d 4.5` or `--progressive_dc=1`
-   (modular DC frame), or default lossy encoding on an image where patches
-   end up being used. There is no problem when using cjxl with PNG, JPEG, GIF,
-   APNG, PPM, PGM, PGX, or integer (8-bit or 16-bit) PSD input.
- - `libjxl` static library now bundles skcms, fixing static linking in
-   downstream projects when skcms is used.
- - Spline rendering performance improvements.
- - Butteraugli changes for less visual masking.
+
+- API: Renamed the field `alpha_associated` in `JxlExtraChannelInfo` to
+  `alpha_premultiplied`, to match the corresponding name in `JxlBasicInfo`.
+- Improved the 2x2 downscaling method in the encoder for the optional color
+  channel resampling for low bit rates.
+- Fixed: the combination of floating point original data, XYB color encoding,
+  and Modular mode was broken (in both encoder and decoder). It now works.
+  NOTE: this can cause the current encoder to write jxl bitstreams that do
+  not decode with the old decoder. In particular this will happen when using
+  cjxl with PFM, EXR, or floating point PSD input, and a combination of XYB
+  and modular mode is used (which caused an encoder error before), e.g.
+  using options like `-m -q 80` (lossy modular), `-d 4.5` or `--progressive_dc=1`
+  (modular DC frame), or default lossy encoding on an image where patches
+  end up being used. There is no problem when using cjxl with PNG, JPEG, GIF,
+  APNG, PPM, PGM, PGX, or integer (8-bit or 16-bit) PSD input.
+- `libjxl` static library now bundles skcms, fixing static linking in
+  downstream projects when skcms is used.
+- Spline rendering performance improvements.
+- Butteraugli changes for less visual masking.
 
 ## [0.5] - 2021-08-02
+
 ### Added
- - API: New function to decode the image using a callback outputting a part of a
-   row per call.
- - API: 16-bit float output support.
- - API: `JxlDecoderRewind` and `JxlDecoderSkipFrames` functions to skip more
-   efficiently to earlier animation frames.
- - API: `JxlDecoderSetPreferredColorProfile` function to choose color profile in
-   certain circumstances.
- - encoder: Adding `center_x` and `center_y` flags for more control of the tile
-   order.
- - New encoder speeds `lightning` (1) and `thunder` (2).
+
+- API: New function to decode the image using a callback outputting a part of a
+  row per call.
+- API: 16-bit float output support.
+- API: `JxlDecoderRewind` and `JxlDecoderSkipFrames` functions to skip more
+  efficiently to earlier animation frames.
+- API: `JxlDecoderSetPreferredColorProfile` function to choose color profile in
+  certain circumstances.
+- encoder: Adding `center_x` and `center_y` flags for more control of the tile
+  order.
+- New encoder speeds `lightning` (1) and `thunder` (2).
 
 ### Changed
- - Re-licensed the project under a BSD 3-Clause license. See the
-   [LICENSE](LICENSE) and [PATENTS](PATENTS) files for details.
- - Full JPEG XL part 1 specification support: Implemented all the spec required
-   to decode files to pixels, including cases that are not used by the encoder
-   yet. Part 2 of the spec (container format) is final but not fully implemented
-   here.
- - Butteraugli metric improvements. Exact numbers are different from previous
-   versions.
- - Memory reductions during decoding.
- - Reduce the size of the jxl_dec library by removing dependencies.
- - A few encoding speedups.
- - Clarify the security policy.
- - Significant encoding improvements (~5 %) and less ringing.
- - Butteraugli metric to have some less masking.
- - `cjxl` flag `--speed` is deprecated and replaced by the `--effort` synonym.
+
+- Re-licensed the project under a BSD 3-Clause license. See the
+  [LICENSE](LICENSE) and [PATENTS](PATENTS) files for details.
+- Full JPEG XL part 1 specification support: Implemented all the spec required
+  to decode files to pixels, including cases that are not used by the encoder
+  yet. Part 2 of the spec (container format) is final but not fully implemented
+  here.
+- Butteraugli metric improvements. Exact numbers are different from previous
+  versions.
+- Memory reductions during decoding.
+- Reduce the size of the jxl_dec library by removing dependencies.
+- A few encoding speedups.
+- Clarify the security policy.
+- Significant encoding improvements (~5 %) and less ringing.
+- Butteraugli metric to have some less masking.
+- `cjxl` flag `--speed` is deprecated and replaced by the `--effort` synonym.
 
 ### Removed
+
 - API for returning a downsampled DC was deprecated
   (`JxlDecoderDCOutBufferSize` and `JxlDecoderSetDCOutBuffer`) and will be
   removed in the next release.
 
 ## [0.3.7] - 2021-03-29
+
 ### Changed
- - Fix a rounding issue in 8-bit decoding.
+
+- Fix a rounding issue in 8-bit decoding.
 
 ## [0.3.6] - 2021-03-25
+
 ### Changed
- - Fix a bug that could result in the generation of invalid codestreams as
-   well as failure to decode valid streams.
+
+- Fix a bug that could result in the generation of invalid codestreams as
+  well as failure to decode valid streams.
 
 ## [0.3.5] - 2021-03-23
+
 ### Added
- - New encode-time options for faster decoding at the cost of quality.
- - Man pages for cjxl and djxl.
+
+- New encode-time options for faster decoding at the cost of quality.
+- Man pages for cjxl and djxl.
 
 ### Changed
- - Memory usage improvements.
- - Faster decoding to 8-bit output with the C API.
- - GIMP plugin: avoid the sRGB conversion dialog for sRGB images, do not show
-   a console window on Windows.
- - Various bug fixes.
+
+- Memory usage improvements.
+- Faster decoding to 8-bit output with the C API.
+- GIMP plugin: avoid the sRGB conversion dialog for sRGB images, do not show
+  a console window on Windows.
+- Various bug fixes.
 
 ## [0.3.4] - 2021-03-16
+
 ### Changed
- - Improved box parsing.
- - Improved metadata handling.
- - Performance and memory usage improvements.
+
+- Improved box parsing.
+- Improved metadata handling.
+- Performance and memory usage improvements.
 
 ## [0.3.3] - 2021-03-05
+
 ### Changed
- - Performance improvements for small images.
- - Add a (flag-protected) non-high-precision mode with better speed.
- - Significantly speed up the PQ EOTF.
- - Allow optional HDR tone mapping in djxl (--tone_map, --display_nits).
- - Change the behavior of djxl -j to make it consistent with cjxl (#153).
- - Improve image quality.
- - Improve EXIF handling.
+
+- Performance improvements for small images.
+- Add a (flag-protected) non-high-precision mode with better speed.
+- Significantly speed up the PQ EOTF.
+- Allow optional HDR tone mapping in djxl (--tone_map, --display_nits).
+- Change the behavior of djxl -j to make it consistent with cjxl (#153).
+- Improve image quality.
+- Improve EXIF handling.
 
 ## [0.3.2] - 2021-02-12
+
 ### Changed
- - Fix embedded ICC encoding regression
-   [#149](https://gitlab.com/wg1/jpeg-xl/-/issues/149).
+
+- Fix embedded ICC encoding regression
+  [#149](https://gitlab.com/wg1/jpeg-xl/-/issues/149).
 
 ## [0.3.1] - 2021-02-10
+
 ### Changed
- - New experimental Butteraugli API (`jxl/butteraugli.h`).
- - Encoder improvements to low quality settings.
- - Bug fixes, including fuzzer-found potential security bug fixes.
- - Fixed `-q 100` and `-d 0` not triggering lossless modes.
+
+- New experimental Butteraugli API (`jxl/butteraugli.h`).
+- Encoder improvements to low quality settings.
+- Bug fixes, including fuzzer-found potential security bug fixes.
+- Fixed `-q 100` and `-d 0` not triggering lossless modes.
 
 ## [0.3] - 2021-01-29
+
 ### Changed
- - Minor change to the Decoder C API to accommodate future work for other ways
-   to provide input.
- - Future decoder C API changes will be backwards compatible.
- - Lots of bug fixes since the previous version.
+
+- Minor change to the Decoder C API to accommodate future work for other ways
+  to provide input.
+- Future decoder C API changes will be backwards compatible.
+- Lots of bug fixes since the previous version.
 
 ## [0.2] - 2020-12-24
+
 ### Added
- - JPEG XL bitstream format is frozen. Files encoded with 0.2 will be supported
-   by future versions.
+
+- JPEG XL bitstream format is frozen. Files encoded with 0.2 will be supported
+  by future versions.
 
 ### Changed
- - Files encoded with previous versions are not supported.
+
+- Files encoded with previous versions are not supported.
 
 ## [0.1.1] - 2020-12-01
 
 ## [0.1] - 2020-11-14
+
 ### Added
- - Initial release of an encoder (`cjxl`) and decoder (`djxl`) that work
-   together as well as a benchmark tool for comparison with other codecs
-   (`benchmark_xl`).
- - Note: JPEG XL format is in the final stages of standardization, minor changes
-   to the codestream format are still possible but we are not expecting any
-   changes beyond what is required by bug fixing.
- - API: new decoder API in C, check the `examples/` directory for its example
-   usage. The C API is a work in progress and likely to change both in API and
-   ABI in future releases.
+
+- Initial release of an encoder (`cjxl`) and decoder (`djxl`) that work
+  together as well as a benchmark tool for comparison with other codecs
+  (`benchmark_xl`).
+- Note: JPEG XL format is in the final stages of standardization, minor changes
+  to the codestream format are still possible but we are not expecting any
+  changes beyond what is required by bug fixing.
+- API: new decoder API in C, check the `examples/` directory for its example
+  usage. The C API is a work in progress and likely to change both in API and
+  ABI in future releases.
+
+[Unreleased]: https://github.com/libjxl/libjxl/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/libjxl/libjxl/compare/v0.11.2...v0.12.0
+[0.11.2]: https://github.com/libjxl/libjxl/compare/v0.11.1...v0.11.2
+[0.11.1]: https://github.com/libjxl/libjxl/compare/v0.11.0...v0.11.1
+[0.11.0]: https://github.com/libjxl/libjxl/compare/v0.10.2...v0.11.0
+[0.10.2]: https://github.com/libjxl/libjxl/compare/v0.10.1...v0.10.2
+[0.10.1]: https://github.com/libjxl/libjxl/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/libjxl/libjxl/compare/v0.9.2...v0.10.0
+[0.9.2]: https://github.com/libjxl/libjxl/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/libjxl/libjxl/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/libjxl/libjxl/compare/v0.8.2...v0.9.0
+[0.8.2]: https://github.com/libjxl/libjxl/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/libjxl/libjxl/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/libjxl/libjxl/compare/v0.7...v0.8.0
+[0.7]: https://github.com/libjxl/libjxl/compare/v0.6.1...v0.7
+[0.6.1]: https://github.com/libjxl/libjxl/compare/v0.6...v0.6.1
+[0.6]: https://github.com/libjxl/libjxl/compare/v0.5...v0.6
+[0.5]: https://github.com/libjxl/libjxl/compare/v0.3.7...v0.5
+[0.3.7]: https://github.com/libjxl/libjxl/compare/v0.3.6...v0.3.7
+[0.3.6]: https://github.com/libjxl/libjxl/compare/v0.3.5...v0.3.6
+[0.3.5]: https://github.com/libjxl/libjxl/compare/v0.3.4...v0.3.5
+[0.3.4]: https://github.com/libjxl/libjxl/compare/v0.3.3...v0.3.4
+[0.3.3]: https://github.com/libjxl/libjxl/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/libjxl/libjxl/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/libjxl/libjxl/compare/v0.3...v0.3.1
+[0.3]: https://github.com/libjxl/libjxl/compare/v0.2...v0.3
+[0.2]: https://github.com/libjxl/libjxl/compare/v0.1.1...v0.2
+[0.1.1]: https://github.com/libjxl/libjxl/compare/v0.1...v0.1.1
+[0.1]: https://github.com/libjxl/libjxl/releases/tag/v0.1
