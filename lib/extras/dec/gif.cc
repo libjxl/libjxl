@@ -281,6 +281,14 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
     GraphicsControlBlock gcb;
     DGifSavedExtensionToGCB(gif.get(), i, &gcb);
     msan::UnpoisonMemory(&gcb, sizeof(gcb));
+
+    // Some encoders (and apparently some specs) represent
+    // DisposalMethod::RESTORE_PREVIOUS as 4, but 3 is used in the canonical
+    // spec and is more popular, so we normalize to 3.
+    if (gcb.DisposalMode == 4) {
+      gcb.DisposalMode = DISPOSE_PREVIOUS;
+    }
+
     bool is_full_size = total_rect.x0() == 0 && total_rect.y0() == 0 &&
                         total_rect.xsize() == canvas.color.xsize &&
                         total_rect.ysize() == canvas.color.ysize;
@@ -316,17 +324,15 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
             "for non-full or blended frames");
       }
       switch (gcb.DisposalMode) {
-        case DISPOSE_DO_NOT:
-        case DISPOSE_BACKGROUND:
-          frame->frame_info.layer_info.save_as_reference = 1u;
-          last_base_was_none = false;
-          break;
         case DISPOSE_PREVIOUS:
           frame->frame_info.layer_info.save_as_reference = 0u;
           break;
+        case DISPOSAL_UNSPECIFIED:
+        case DISPOSE_DO_NOT:
+        case DISPOSE_BACKGROUND:
         default:
-          frame->frame_info.layer_info.save_as_reference = 0u;
-          last_base_was_none = true;
+          frame->frame_info.layer_info.save_as_reference = 1u;
+          last_base_was_none = false;
       }
     }
 
@@ -404,10 +410,6 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
     }
 
     switch (gcb.DisposalMode) {
-      case DISPOSE_DO_NOT:
-        canvas.color = std::move(new_canvas_image);
-        break;
-
       case DISPOSE_BACKGROUND:
         std::fill_n(static_cast<PackedRgba*>(canvas.color.pixels()),
                     canvas.color.xsize * canvas.color.ysize, background_rgba);
@@ -418,9 +420,9 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
         break;
 
       case DISPOSAL_UNSPECIFIED:
+      case DISPOSE_DO_NOT:
       default:
-        std::fill_n(static_cast<PackedRgba*>(canvas.color.pixels()),
-                    canvas.color.xsize * canvas.color.ysize, background_rgba);
+        canvas.color = std::move(new_canvas_image);
     }
   }
   // Finally, if any frame has an alpha-channel, every frame will need
