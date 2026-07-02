@@ -533,9 +533,11 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
     }
   }
 
-  cparams_.options.splitting_heuristics_node_threshold =
-      75 + 14 * static_cast<int>(cparams_.speed_tier) +
-      10 * cparams_.decoding_speed_tier;
+  if (cparams_.options.splitting_heuristics_node_threshold < 0) {
+    cparams_.options.splitting_heuristics_node_threshold =
+        75 + 14 * static_cast<int>(cparams_.speed_tier) +
+        10 * cparams_.decoding_speed_tier;
+  }
 
   {
     // Set properties.

@@ -2573,7 +2573,46 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
   if (cparams.speed_tier == SpeedTier::kLightning) {
     cparams.speed_tier = SpeedTier::kThunder;
   }
-  if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
+  if (frame_data.IsJPEG() && cparams.speed_tier <= SpeedTier::kGlacier && !cparams.speed_tier_tested) {
+    std::vector<CompressParams> all_params;
+    CompressParams cparams_attempt = cparams;
+    cparams_attempt.speed_tier_tested = true;
+
+    int base_threshold = 75 + 10 * cparams.decoding_speed_tier;
+
+    // Effort 10's threshold
+    cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold;
+    all_params.push_back(cparams_attempt);
+
+    // In between
+    cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold + 12;
+    all_params.push_back(cparams_attempt);
+
+    // Effort 9's threshold
+    cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold + 14;
+    all_params.push_back(cparams_attempt);
+
+    std::vector<size_t> size(all_params.size());
+    std::unique_ptr<jpeg::JPEGData> original_jpeg = frame_data.TakeJPEGData();
+    
+    for (size_t task = 0; task < all_params.size(); ++task) {
+      JxlEncoderOutputProcessorWrapper local_output(memory_manager);
+      frame_data.SetJPEGData(jxl::make_unique<jpeg::JPEGData>(*original_jpeg));
+      JXL_RETURN_IF_ERROR(EncodeFrame(
+          memory_manager, all_params[task], frame_info, metadata, frame_data,
+          cms, nullptr, &local_output, aux_out, nullptr));
+      size[task] = local_output.CurrentPosition();
+    }
+
+    frame_data.SetJPEGData(std::move(original_jpeg));
+    size_t best_idx = 0;
+    for (size_t i = 1; i < all_params.size(); i++) {
+      if (size[best_idx] > size[i]) {
+        best_idx = i;
+      }
+    }
+    cparams = all_params[best_idx];
+  } else if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
     // Test palette performance to inform later trials.
     std::vector<CompressParams> all_params;
     CompressParams cparams_attempt = cparams;
