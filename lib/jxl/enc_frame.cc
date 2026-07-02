@@ -2577,19 +2577,26 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     std::vector<CompressParams> all_params;
     CompressParams cparams_attempt = cparams;
     cparams_attempt.speed_tier_tested = true;
-
+    cparams_attempt.speed_tier = SpeedTier::kKitten; // Evaluate at effort 8
+    // Default effort 10 value (often too aggressive)
     int base_threshold = 75 + 10 * cparams.decoding_speed_tier;
 
-    // Effort 10's threshold
-    cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold;
+    // Slightly below effort 9
+    cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold + 9;
     all_params.push_back(cparams_attempt);
 
-    // In between
     cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold + 12;
     all_params.push_back(cparams_attempt);
 
-    // Effort 9's threshold
+    // Effort 9 default
     cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold + 14;
+    all_params.push_back(cparams_attempt);
+
+    // Slightly above effort 9
+    cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold + 16;
+    all_params.push_back(cparams_attempt);
+
+    cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold + 19;
     all_params.push_back(cparams_attempt);
 
     std::vector<size_t> size(all_params.size());
@@ -2611,7 +2618,10 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
         best_idx = i;
       }
     }
-    cparams = all_params[best_idx];
+    
+    // Apply only the best threshold, keeping original speed_tier (e.g. kGlacier)
+    cparams.options.splitting_heuristics_node_threshold = all_params[best_idx].options.splitting_heuristics_node_threshold;
+    cparams.speed_tier_tested = true;
   } else if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
     // Test palette performance to inform later trials.
     std::vector<CompressParams> all_params;
