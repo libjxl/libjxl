@@ -79,7 +79,7 @@ struct ModularOptions {
   // Properties default to channel, group, weighted, gradient residual, W-NW,
   // NW-N, N-NE, N-NN
   std::vector<uint32_t> splitting_heuristics_properties;
-  float splitting_heuristics_node_threshold = -1;
+  float splitting_heuristics_node_threshold = -1.0f;
   size_t max_property_values = 32;
 
   // Predictor to use for each channel.
