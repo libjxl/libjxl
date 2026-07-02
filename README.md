@@ -79,7 +79,9 @@ djxl input.jxl output.png
 When possible, `cjxl`/`djxl` are able to read/write the following image formats:
 OpenEXR (`.exr`), GIF (`.gif`), JPEG (`.jpg`/`.jpeg`), NetPBM (`.pam`/`.pgm`/`.ppm`),
 Portable FloatMap (`.pfm`), PGX Test Format (`.pgx`), Portable Network Graphics (`.png`),
-Animated PNG (`.png`/`.apng`), and JPEG XL itself (`.jxl`).
+Animated PNG (`.png`/`.apng`), and JPEG XL itself (`.jxl`). `cjxl` can also read
+TIFF (`.tif`/`.tiff`) input, including multi-page TIFFs as extra channels with all tags
+and exif data.
 
 Specifically for JPEG files, the default `cjxl` behavior is to apply lossless
 recompression and the default `djxl` behavior is to reconstruct the original
