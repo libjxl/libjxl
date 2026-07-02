@@ -9,9 +9,8 @@ we expect you to follow a couple of strict guidelines:
   understand, and actively submit changes.
 * Take full responsibility: You are considered the author of your Pull Request.
   You take full responsibility for the functionality, quality, and security of
-  all code you submit, regardless of how it was generated. Since you are
-  considered the author of the submitted code, you are expected to abide by
-  [Google's CLA](#contributor-license-agreements).
+  all code you submit, regardless of how it was generated, and you are required
+  to abide by [Google's CLA](#contributor-license-agreements).
 
 ## Contributing with bug reports
 
@@ -25,7 +24,7 @@ link:
 
 ## Contributing with patches and Pull Requests
 
-We'd love to accept your contributions to the JPEG XL Project. Please read
+We'd love to accept your contributions to the JPEG XL Project. Please read
 through this section before sending a Pull Request.
 
 ### Contributor License Agreements
@@ -35,7 +34,7 @@ and [PATENTS](PATENTS) files. Before we can accept your contributions, even for
 small changes, there are just a few small guidelines you need to follow:
 
 Please fill out either the individual or corporate Contributor License Agreement
-(CLA) with Google. JPEG XL Project is an an effort by multiple individuals and
+(CLA) with Google. JPEG XL Project is an effort by multiple individuals and
 companies, including the initial contributors Cloudinary and Google, but Google
 is the legal entity in charge of receiving these CLA and relicensing this
 software:
