@@ -724,7 +724,7 @@ namespace {
 
 bool CheckSizeLimit(JxlDecoder* dec, size_t xsize, size_t ysize) {
   if (xsize == 0 || ysize == 0) return true;
-  size_t padded_xsize = jxl::DivCeil(xsize, 32) * 32;
+  size_t padded_xsize = jxl::DivCeil<size_t>(xsize, 32) * 32;
   if (padded_xsize < xsize) return false;  // overflow
   size_t num_pixels = padded_xsize * ysize;
   if (num_pixels / padded_xsize != ysize) return false;  // overflow

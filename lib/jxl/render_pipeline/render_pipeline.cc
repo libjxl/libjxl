@@ -55,11 +55,11 @@ StatusOr<std::unique_ptr<RenderPipeline>> RenderPipeline::Builder::Finalize(
     }
     for (size_t c = 0; c < num_c_; c++) {
       if (stage->GetChannelMode(c) == RenderPipelineChannelMode::kInOut) {
-        res->padding_[i][c].first = DivCeil(res->padding_[i + 1][c].first,
-                                            1 << stage->settings_.shift_x) +
+        res->padding_[i][c].first = DivCeilPow2(res->padding_[i + 1][c].first,
+                                                stage->settings_.shift_x) +
                                     stage->settings_.border_x;
-        res->padding_[i][c].second = DivCeil(res->padding_[i + 1][c].second,
-                                             1 << stage->settings_.shift_y) +
+        res->padding_[i][c].second = DivCeilPow2(res->padding_[i + 1][c].second,
+                                                 stage->settings_.shift_y) +
                                      stage->settings_.border_y;
       } else {
         res->padding_[i][c] = res->padding_[i + 1][c];

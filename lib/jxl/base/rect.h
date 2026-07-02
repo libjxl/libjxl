@@ -138,8 +138,7 @@ class RectT {
     size_t shifty = shift.second;
     JXL_ENSURE((x0_ % (1 << shiftx) == 0) && (y0_ % (1 << shifty) == 0));
     return RectT<T>(x0_ / (1 << shiftx), y0_ / (1 << shifty),
-                    DivCeil(xsize_, T{1} << shiftx),
-                    DivCeil(ysize_, T{1} << shifty));
+                    DivCeilPow2(xsize_, shiftx), DivCeilPow2(ysize_, shifty));
   }
 
   RectT<T> Extend(T border, RectT<T> parent) const {

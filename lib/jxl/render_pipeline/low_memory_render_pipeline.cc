@@ -53,10 +53,10 @@ Status LowMemoryRenderPipeline::SaveBorders(size_t group_id, size_t c,
   size_t vshift = channel_shifts_[0][c].second;
   size_t x0 = gx * GroupInputXSize(c);
   size_t x1 = std::min((gx + 1) * GroupInputXSize(c),
-                       DivCeil(frame_dimensions_.xsize_upsampled, 1 << hshift));
+                       DivCeilPow2(frame_dimensions_.xsize_upsampled, hshift));
   size_t y0 = gy * GroupInputYSize(c);
   size_t y1 = std::min((gy + 1) * GroupInputYSize(c),
-                       DivCeil(frame_dimensions_.ysize_upsampled, 1 << vshift));
+                       DivCeilPow2(frame_dimensions_.ysize_upsampled, vshift));
 
   auto borders = BorderToStore(c);
   size_t borderx_write = borders.first;
@@ -99,10 +99,10 @@ Status LowMemoryRenderPipeline::LoadBorders(size_t group_id, size_t c,
   // Coordinates of the group in the image.
   size_t x0 = gx * GroupInputXSize(c);
   size_t x1 = std::min((gx + 1) * GroupInputXSize(c),
-                       DivCeil(frame_dimensions_.xsize_upsampled, 1 << hshift));
+                       DivCeilPow2(frame_dimensions_.xsize_upsampled, hshift));
   size_t y0 = gy * GroupInputYSize(c);
   size_t y1 = std::min((gy + 1) * GroupInputYSize(c),
-                       DivCeil(frame_dimensions_.ysize_upsampled, 1 << vshift));
+                       DivCeilPow2(frame_dimensions_.ysize_upsampled, vshift));
 
   size_t paddingx = padding_[0][c].first;
   size_t paddingy = padding_[0][c].second;
@@ -113,27 +113,25 @@ Status LowMemoryRenderPipeline::LoadBorders(size_t group_id, size_t c,
 
   // Limits of the area to copy from, in image coordinates.
   JXL_ENSURE(r.x0() == 0 || (r.x0() << base_color_shift_) >= paddingx);
-  size_t x0src = DivCeil(r.x0() << base_color_shift_, 1 << hshift);
+  size_t x0src = DivCeilPow2(r.x0() << base_color_shift_, hshift);
   if (x0src != 0) {
     x0src -= paddingx;
   }
   // r may be such that r.x1 (namely x0() + xsize()) is within paddingx of the
   // right side of the image, so we use min() here.
-  size_t x1src =
-      DivCeil((r.x0() + r.xsize()) << base_color_shift_, 1 << hshift);
+  size_t x1src = DivCeilPow2((r.x0() + r.xsize()) << base_color_shift_, hshift);
   x1src = std::min(x1src + paddingx,
-                   DivCeil(frame_dimensions_.xsize_upsampled, 1 << hshift));
+                   DivCeilPow2(frame_dimensions_.xsize_upsampled, hshift));
 
   // Similar computation for y.
   JXL_ENSURE(r.y0() == 0 || (r.y0() << base_color_shift_) >= paddingy);
-  size_t y0src = DivCeil(r.y0() << base_color_shift_, 1 << vshift);
+  size_t y0src = DivCeilPow2(r.y0() << base_color_shift_, vshift);
   if (y0src != 0) {
     y0src -= paddingy;
   }
-  size_t y1src =
-      DivCeil((r.y0() + r.ysize()) << base_color_shift_, 1 << vshift);
+  size_t y1src = DivCeilPow2((r.y0() + r.ysize()) << base_color_shift_, vshift);
   y1src = std::min(y1src + paddingy,
-                   DivCeil(frame_dimensions_.ysize_upsampled, 1 << vshift));
+                   DivCeilPow2(frame_dimensions_.ysize_upsampled, vshift));
 
   // Copy other groups' borders from the border storage.
   if (y0src < y0) {
@@ -203,9 +201,9 @@ Status LowMemoryRenderPipeline::EnsureBordersStorage() {
     JXL_ENSURE(frame_dimensions_.ysize_groups > 0);
     size_t num_yborders = (frame_dimensions_.ysize_groups - 1) * 2;
     size_t downsampled_xsize =
-        DivCeil(frame_dimensions_.xsize_upsampled_padded, 1 << shifts[c].first);
-    size_t downsampled_ysize = DivCeil(frame_dimensions_.ysize_upsampled_padded,
-                                       1 << shifts[c].second);
+        DivCeilPow2(frame_dimensions_.xsize_upsampled_padded, shifts[c].first);
+    size_t downsampled_ysize =
+        DivCeilPow2(frame_dimensions_.ysize_upsampled_padded, shifts[c].second);
     Rect horizontal = Rect(0, 0, downsampled_xsize, bordery * num_yborders);
     if (!SameSize(horizontal, borders_horizontal_[c])) {
       JXL_ASSIGN_OR_RETURN(borders_horizontal_[c],
@@ -231,14 +229,14 @@ Status LowMemoryRenderPipeline::Init() {
 
   // Ensure that each channel has enough many border pixels.
   for (size_t c = 0; c < shifts.size(); c++) {
-    group_border_.first =
-        std::max(group_border_.first,
-                 DivCeil(padding_[0][c].first << channel_shifts_[0][c].first,
-                         1 << base_color_shift_));
-    group_border_.second =
-        std::max(group_border_.second,
-                 DivCeil(padding_[0][c].second << channel_shifts_[0][c].second,
-                         1 << base_color_shift_));
+    group_border_.first = std::max(
+        group_border_.first,
+        DivCeilPow2(padding_[0][c].first << channel_shifts_[0][c].first,
+                    base_color_shift_));
+    group_border_.second = std::max(
+        group_border_.second,
+        DivCeilPow2(padding_[0][c].second << channel_shifts_[0][c].second,
+                    base_color_shift_));
   }
 
   // Ensure that all channels have an integer number of border pixels in the
@@ -296,10 +294,10 @@ Status LowMemoryRenderPipeline::Init() {
     std::vector<std::pair<size_t, size_t>> input_sizes(shifts.size());
     for (size_t c = 0; c < shifts.size(); c++) {
       input_sizes[c] =
-          std::make_pair(DivCeil(frame_dimensions_.xsize_upsampled,
-                                 1 << channel_shifts_[i][c].first),
-                         DivCeil(frame_dimensions_.ysize_upsampled,
-                                 1 << channel_shifts_[i][c].second));
+          std::make_pair(DivCeilPow2(frame_dimensions_.xsize_upsampled,
+                                     channel_shifts_[i][c].first),
+                         DivCeilPow2(frame_dimensions_.ysize_upsampled,
+                                     channel_shifts_[i][c].second));
     }
     JXL_RETURN_IF_ERROR(stages_[i]->SetInputSizes(input_sizes));
     if (stages_[i]->SwitchToImageDimensions()) {
@@ -347,10 +345,10 @@ Status LowMemoryRenderPipeline::Init() {
 
   image_rect_.resize(stages_.size());
   for (size_t i = 0; i < stages_.size(); i++) {
-    size_t x1 = DivCeil(frame_dimensions_.xsize_upsampled,
-                        1 << channel_shifts_[i][anyc_[i]].first);
-    size_t y1 = DivCeil(frame_dimensions_.ysize_upsampled,
-                        1 << channel_shifts_[i][anyc_[i]].second);
+    size_t x1 = DivCeilPow2(frame_dimensions_.xsize_upsampled,
+                            channel_shifts_[i][anyc_[i]].first);
+    size_t y1 = DivCeilPow2(frame_dimensions_.ysize_upsampled,
+                            channel_shifts_[i][anyc_[i]].second);
     image_rect_[i] = Rect(0, 0, x1, y1);
   }
 
@@ -372,8 +370,9 @@ Status LowMemoryRenderPipeline::Init() {
       }
       if (stages_[i]->GetChannelMode(c) == RenderPipelineChannelMode::kInOut) {
         ypad = aligned_y_pad + stages_[i]->settings_.border_y * y_sampling;
-        xpad = DivCeil(xpad, 1 << stages_[i]->settings_.shift_x) +
-               stages_[i]->settings_.border_x;
+        xpad = static_cast<int>(DivCeilPow2(static_cast<size_t>(xpad),
+                                            stages_[i]->settings_.shift_x) +
+                                stages_[i]->settings_.border_x);
       }
     }
   }
@@ -460,11 +459,11 @@ std::vector<std::pair<ImageF*, Rect>> LowMemoryRenderPipeline::PrepareBuffers(
     ret[c].first = &group_data_[use_group_ids_ ? group_id : thread_id][c];
     ret[c].second = Rect(group_data_x_border_, group_data_y_border_,
                          GroupInputXSize(c), GroupInputYSize(c),
-                         DivCeil(frame_dimensions_.xsize_upsampled,
-                                 1 << channel_shifts_[0][c].first) -
+                         DivCeilPow2(frame_dimensions_.xsize_upsampled,
+                                     channel_shifts_[0][c].first) -
                              gx * GroupInputXSize(c) + group_data_x_border_,
-                         DivCeil(frame_dimensions_.ysize_upsampled,
-                                 1 << channel_shifts_[0][c].second) -
+                         DivCeilPow2(frame_dimensions_.ysize_upsampled,
+                                     channel_shifts_[0][c].second) -
                              gy * GroupInputYSize(c) + group_data_y_border_);
   }
   return ret;
