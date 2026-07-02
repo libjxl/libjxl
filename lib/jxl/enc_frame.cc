@@ -2564,7 +2564,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
                    JxlEncoderOutputProcessorWrapper* output_processor,
                    AuxOut* aux_out, uint32_t* jxlp_counter) {
   CompressParams cparams = cparams_orig;
-  if (cparams.speed_tier == SpeedTier::kTectonicPlate &&
+  if (cparams.speed_tier <= SpeedTier::kTectonicPlate &&
       !cparams.IsLossless()) {
     cparams.speed_tier = SpeedTier::kGlacier;
   }
@@ -2573,7 +2573,54 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
   if (cparams.speed_tier == SpeedTier::kLightning) {
     cparams.speed_tier = SpeedTier::kThunder;
   }
-  if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
+  if (frame_data.IsJPEG() && cparams.speed_tier <= SpeedTier::kGlacier && !cparams.speed_tier_tested) {
+    std::vector<CompressParams> all_params;
+    CompressParams cparams_attempt = cparams;
+    cparams_attempt.speed_tier_tested = true;
+    cparams_attempt.speed_tier = SpeedTier::kKitten; // Evaluate at effort 8
+    // Default effort 10 value (often too aggressive)
+    int base_threshold = 75 + 10 * cparams.decoding_speed_tier;
+
+    //offset 14 is effort 9, we are searching for a local minimum around here
+    const int offsets[] = {9, 12, 14, 16, 19};
+    for (int offset : offsets) {
+      cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold + offset;
+      all_params.push_back(cparams_attempt);
+    }
+
+    std::vector<size_t> size(all_params.size(), SIZE_MAX);
+    std::unique_ptr<jpeg::JPEGData> original_jpeg = frame_data.TakeJPEGData();
+    
+    const auto process_variant = [&](size_t task, size_t) -> Status {
+      JxlEncoderChunkedFrameAdapter local_frame_data(frame_data.xsize, frame_data.ysize,
+                                                     metadata->m.num_extra_channels);
+      local_frame_data.SetJPEGData(jxl::make_unique<jpeg::JPEGData>(*original_jpeg));
+      JxlEncoderOutputProcessorWrapper local_output(memory_manager);
+      JXL_RETURN_IF_ERROR(EncodeFrame(
+          memory_manager, all_params[task], frame_info, metadata, local_frame_data,
+          cms, nullptr, &local_output, nullptr, nullptr));
+      size[task] = local_output.CurrentPosition();
+      return true;
+    };
+    
+    Status pool_status = RunOnPool(pool, 0, all_params.size(),
+                                   ThreadPool::NoInit, process_variant,
+                                   "Compress JPEG Transcode options");
+
+    frame_data.SetJPEGData(std::move(original_jpeg));
+    if (pool_status) {
+      size_t best_idx = 0;
+      for (size_t i = 1; i < all_params.size(); i++) {
+        if (size[best_idx] > size[i]) {
+          best_idx = i;
+        }
+      }
+      
+      // Apply only the best threshold, keeping original speed_tier (e.g. kGlacier)
+      cparams.options.splitting_heuristics_node_threshold = all_params[best_idx].options.splitting_heuristics_node_threshold;
+    }
+    cparams.speed_tier_tested = true;
+  } else if (cparams.speed_tier <= SpeedTier::kTectonicPlate) {
     // Test palette performance to inform later trials.
     std::vector<CompressParams> all_params;
     CompressParams cparams_attempt = cparams;
