@@ -2602,14 +2602,20 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     std::vector<size_t> size(all_params.size());
     std::unique_ptr<jpeg::JPEGData> original_jpeg = frame_data.TakeJPEGData();
     
-    for (size_t task = 0; task < all_params.size(); ++task) {
+    const auto process_variant = [&](size_t task, size_t) -> Status {
+      JxlEncoderChunkedFrameAdapter local_frame_data(frame_data.xsize, frame_data.ysize,
+                                                     metadata->m.num_extra_channels);
+      local_frame_data.SetJPEGData(jxl::make_unique<jpeg::JPEGData>(*original_jpeg));
       JxlEncoderOutputProcessorWrapper local_output(memory_manager);
-      frame_data.SetJPEGData(jxl::make_unique<jpeg::JPEGData>(*original_jpeg));
       JXL_RETURN_IF_ERROR(EncodeFrame(
-          memory_manager, all_params[task], frame_info, metadata, frame_data,
+          memory_manager, all_params[task], frame_info, metadata, local_frame_data,
           cms, nullptr, &local_output, aux_out, nullptr));
       size[task] = local_output.CurrentPosition();
-    }
+      return true;
+    };
+    JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, all_params.size(),
+                                  ThreadPool::NoInit, process_variant,
+                                  "Compress JPEG Transcode options"));
 
     frame_data.SetJPEGData(std::move(original_jpeg));
     size_t best_idx = 0;
