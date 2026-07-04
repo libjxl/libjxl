@@ -2327,6 +2327,10 @@ static bool CanDoFastLossless(const JxlEncoderFrameSettings* frame_settings,
   if (frame_settings->values.header.layer_info.have_crop) {
     return false;
   }
+  if (frame_settings->values.header.layer_info.blend_info.blendmode !=
+      JXL_BLEND_REPLACE) {
+    return false;
+  }
   if (frame_settings->enc->metadata.m.have_animation) {
     return false;
   }
