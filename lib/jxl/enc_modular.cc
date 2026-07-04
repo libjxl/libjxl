@@ -137,18 +137,27 @@ Status MergeTrees(const std::vector<Tree>& trees,
   return true;
 }
 
-void QuantizeChannel(Channel& ch, const int q) {
-  if (q == 1) return;
+Status QuantizeChannel(Channel& ch, const int q) {
+  if (q == 1) return true;
+  if (q < 1) return JXL_FAILURE("Invalid modular quantizer");
+  const pixel_type_w half_q = q / 2;
   for (size_t y = 0; y < ch.plane.ysize(); y++) {
     pixel_type* row = ch.plane.Row(y);
     for (size_t x = 0; x < ch.plane.xsize(); x++) {
-      if (row[x] < 0) {
-        row[x] = -((-row[x] + q / 2) / q) * q;
-      } else {
-        row[x] = ((row[x] + q / 2) / q) * q;
+      const pixel_type_w sample = row[x];
+      const pixel_type_w magnitude = sample < 0 ? -sample : sample;
+      const pixel_type_w quantized_magnitude =
+          ((magnitude + half_q) / q) * q;
+      const pixel_type_w quantized =
+          sample < 0 ? -quantized_magnitude : quantized_magnitude;
+      if (quantized < std::numeric_limits<pixel_type>::min() ||
+          quantized > std::numeric_limits<pixel_type>::max()) {
+        return JXL_FAILURE("Quantized modular sample out of range");
       }
+      row[x] = static_cast<pixel_type>(quantized);
     }
   }
+  return true;
 }
 
 // convert binary32 float that corresponds to custom [bits]-bit float (with
@@ -1028,7 +1037,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
         }
       }
       if (q < 1) q = 1;
-      QuantizeChannel(gi.channel[i], q);
+      JXL_RETURN_IF_ERROR(QuantizeChannel(gi.channel[i], q));
       quants_[i] = q;
     }
   }
