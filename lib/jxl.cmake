@@ -34,8 +34,17 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   include(CheckCXXCompilerFlag)
   check_cxx_compiler_flag("-Wunsafe-buffer-usage" CXX_UNSAFE_BUFFER_USAGE_SUPPORTED)
   if (CXX_UNSAFE_BUFFER_USAGE_SUPPORTED)
+    set(HUFFMAN_TABLE_SAFE_BUFFERS_FLAGS "-Werror=unsafe-buffer-usage")
+    # The libc-call sub-analysis (and its flag) only exists in newer clang;
+    # older clang rejects the unknown option under -Werror.
+    check_cxx_compiler_flag("-Wunsafe-buffer-usage-in-libc-call"
+        CXX_UNSAFE_BUFFER_USAGE_IN_LIBC_CALL_SUPPORTED)
+    if (CXX_UNSAFE_BUFFER_USAGE_IN_LIBC_CALL_SUPPORTED)
+      string(APPEND HUFFMAN_TABLE_SAFE_BUFFERS_FLAGS
+          " -Wno-unsafe-buffer-usage-in-libc-call")
+    endif()
     set_source_files_properties(jxl/huffman_table.cc PROPERTIES COMPILE_FLAGS
-        "-Werror=unsafe-buffer-usage -Wno-unsafe-buffer-usage-in-libc-call")
+        "${HUFFMAN_TABLE_SAFE_BUFFERS_FLAGS}")
   endif()
 endif()
 
