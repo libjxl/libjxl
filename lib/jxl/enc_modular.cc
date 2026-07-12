@@ -146,14 +146,18 @@ Status QuantizeChannel(Channel& ch, const int q) {
     for (size_t x = 0; x < ch.plane.xsize(); x++) {
       const pixel_type_w sample = row[x];
       const pixel_type_w magnitude = sample < 0 ? -sample : sample;
-      const pixel_type_w quantized_magnitude =
+      const pixel_type_w rounded_magnitude =
           ((magnitude + half_q) / q) * q;
+      const pixel_type_w max_magnitude =
+          sample < 0 ? -static_cast<pixel_type_w>(
+                           std::numeric_limits<pixel_type>::min())
+                     : std::numeric_limits<pixel_type>::max();
+      const pixel_type_w max_quantized_magnitude =
+          (max_magnitude / q) * q;
+      const pixel_type_w quantized_magnitude =
+          std::min(rounded_magnitude, max_quantized_magnitude);
       const pixel_type_w quantized =
           sample < 0 ? -quantized_magnitude : quantized_magnitude;
-      if (quantized < std::numeric_limits<pixel_type>::min() ||
-          quantized > std::numeric_limits<pixel_type>::max()) {
-        return JXL_FAILURE("Quantized modular sample out of range");
-      }
       row[x] = static_cast<pixel_type>(quantized);
     }
   }
