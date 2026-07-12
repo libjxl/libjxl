@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -22,7 +23,20 @@
 
 namespace jxl {
 
-#define AVERAGE(X, Y) (((X) + (Y) + (((X) > (Y)) ? 1 : 0)) >> 1)
+namespace {
+
+pixel_type_w Average(pixel_type a, pixel_type b) {
+  const pixel_type_w sum =
+      static_cast<pixel_type_w>(a) + b + (a > b ? 1 : 0);
+  return sum / 2 - (sum < 0 && sum % 2 != 0 ? 1 : 0);
+}
+
+bool FitsInPixelType(pixel_type_w value) {
+  return value >= std::numeric_limits<pixel_type>::min() &&
+         value <= std::numeric_limits<pixel_type>::max();
+}
+
+}  // namespace
 
 Status FwdHSqueeze(Image &input, int c, int rc) {
   const Channel &chin = input.channel[c];
@@ -47,23 +61,31 @@ Status FwdHSqueeze(Image &input, int c, int rc) {
     for (size_t x = 0; x < chout_residual.w; x++) {
       pixel_type A = p_in[x * 2];
       pixel_type B = p_in[x * 2 + 1];
-      pixel_type avg = AVERAGE(A, B);
+      pixel_type avg = static_cast<pixel_type>(Average(A, B));
       p_out[x] = avg;
 
-      pixel_type diff = A - B;
+      const pixel_type_w diff = static_cast<pixel_type_w>(A) - B;
+      if (!FitsInPixelType(diff)) {
+        return JXL_FAILURE("Horizontal squeeze difference out of range");
+      }
 
       pixel_type next_avg = avg;
       if (x + 1 < chout_residual.w) {
         pixel_type C = p_in[x * 2 + 2];
         pixel_type D = p_in[x * 2 + 3];
-        next_avg = AVERAGE(C, D);  // which will be chout.value(y,x+1)
+        next_avg = static_cast<pixel_type>(
+            Average(C, D));  // which will be chout.value(y,x+1)
       } else if (chin.w & 1) {
         next_avg = p_in[x * 2 + 2];
       }
       pixel_type left = (x > 0 ? p_in[x * 2 - 1] : avg);
-      pixel_type tendency = SmoothTendency(left, avg, next_avg);
+      const pixel_type_w tendency = SmoothTendency(left, avg, next_avg);
 
-      p_res[x] = diff - tendency;
+      const pixel_type_w residual = diff - tendency;
+      if (!FitsInPixelType(residual)) {
+        return JXL_FAILURE("Horizontal squeeze residual out of range");
+      }
+      p_res[x] = static_cast<pixel_type>(residual);
     }
     if (chin.w & 1) {
       int x = chout.w - 1;
@@ -99,24 +121,32 @@ Status FwdVSqueeze(Image &input, int c, int rc) {
     for (size_t x = 0; x < chout.w; x++) {
       pixel_type A = p_in[x];
       pixel_type B = p_in[x + onerow_in];
-      pixel_type avg = AVERAGE(A, B);
+      pixel_type avg = static_cast<pixel_type>(Average(A, B));
       p_out[x] = avg;
 
-      pixel_type diff = A - B;
+      const pixel_type_w diff = static_cast<pixel_type_w>(A) - B;
+      if (!FitsInPixelType(diff)) {
+        return JXL_FAILURE("Vertical squeeze difference out of range");
+      }
 
       pixel_type next_avg = avg;
       if (y + 1 < chout_residual.h) {
         pixel_type C = p_in[x + 2 * onerow_in];
         pixel_type D = p_in[x + 3 * onerow_in];
-        next_avg = AVERAGE(C, D);  // which will be chout.value(y+1,x)
+        next_avg = static_cast<pixel_type>(
+            Average(C, D));  // which will be chout.value(y+1,x)
       } else if (chin.h & 1) {
         next_avg = p_in[x + 2 * onerow_in];
       }
       pixel_type top =
           (y > 0 ? p_in[static_cast<ptrdiff_t>(x) - onerow_in] : avg);
-      pixel_type tendency = SmoothTendency(top, avg, next_avg);
+      const pixel_type_w tendency = SmoothTendency(top, avg, next_avg);
 
-      p_res[x] = diff - tendency;
+      const pixel_type_w residual = diff - tendency;
+      if (!FitsInPixelType(residual)) {
+        return JXL_FAILURE("Vertical squeeze residual out of range");
+      }
+      p_res[x] = static_cast<pixel_type>(residual);
     }
   }
   if (chin.h & 1) {

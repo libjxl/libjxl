@@ -19,6 +19,7 @@
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/transform/transform.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_modular_simd.cc"
@@ -84,7 +85,8 @@ StatusOr<float> EstimateCost(const Image& img) {
         for (uint32_t c : cutoffs) {
           ctx += (max_diff < c) ? 1 : 0;
         }
-        pixel_type res = r[x] - ClampedGradient(top, left, topleft);
+        pixel_type res =
+            PixelSub(r[x], ClampedGradient(top, left, topleft));
         uint32_t token;
         uint32_t nbits;
         uint32_t bits;
