@@ -580,7 +580,7 @@ const AEH::Lg2LUT AEH::lg2 = [] {
 
 const AEH::AllowedCounts AEH::allowed_counts = [] {
   auto result = std::make_unique<AllowedCounts>();
-  
+
   for (uint32_t shift = 0; shift < result->array.size(); ++shift) {
     auto& ac = result->array[shift];
     auto& ai = result->index[shift];
