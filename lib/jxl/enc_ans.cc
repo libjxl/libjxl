@@ -1119,6 +1119,7 @@ StatusOr<size_t> BuildAndEncodeHistograms(
         cost += size_writer.size;
       }
       num_contexts += 1;
+      JXL_DASSERT(!tokens_lz77.empty());
       tokens = std::move(tokens_lz77);
     }
     size_t total_tokens = 0;

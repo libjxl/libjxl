@@ -616,7 +616,13 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
       float lz77_cost = LenCost(lz77_len) + DistCost(dist_symbol) +
                         sce.AddSymbolCost(out.back().context);
 
-      if (lz77_cost > cost) continue;
+      if (lz77_cost > cost) {
+        for (size_t offset = 1; offset < len; offset++) {
+          out.push_back(in[pos+offset]);
+        }
+        pos += len - 1;
+        continue;
+      }
 
       // Emit LZ77 length and distance tokens
       out.back().value = len - min_length;
@@ -627,7 +633,7 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
       bit_decrease += cost - lz77_cost;
 
       // Update hash map for skipped positions inside the match
-      for (size_t offset = 2; offset < len; offset++) {
+      for (size_t offset = 1; offset < len; offset++) {
         hash_map.Update(pos + offset);
       }
       pos += len - 1;
