@@ -558,7 +558,7 @@ private:
 
 // Fast LZ77 compression on streams of tokens using cost-based matching decision.
 // Returns the compressed token streams if savings exceed the threshold.
-template<int BucketSize = 7, int HashWindowSize = 3>
+template<int BucketSize = 7, int HashWindowSize = 3, bool RuntimeCostComparison = false>
 std::vector<std::vector<Token>> ApplyLZ77_LZ77(
     const HistogramParams& params, size_t num_contexts,
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77
@@ -616,12 +616,14 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
       float lz77_cost = LenCost(lz77_len) + DistCost(dist_symbol) +
                         sce.AddSymbolCost(out.back().context);
 
-      if (lz77_cost > cost) {
-        for (size_t offset = 1; offset < len; offset++) {
-          out.push_back(in[pos+offset]);
+      if constexpr (RuntimeCostComparison) {
+        if (lz77_cost > cost) {
+          for (size_t offset = 1; offset < len; offset++) {
+            out.push_back(in[pos+offset]);
+          }
+          pos += len - 1;
+          continue;
         }
-        pos += len - 1;
-        continue;
       }
 
       // Emit LZ77 length and distance tokens
@@ -792,18 +794,33 @@ std::vector<std::vector<Token>> ApplyLZ77(
   switch (params.lz77_method) {
     case HistogramParams::LZ77Method::kRLE:
       return ApplyLZ77_RLE(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77Fast:
-      return ApplyLZ77_LZ77<1, 3>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77:
-      return ApplyLZ77_LZ77<7, 3>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77BigWindow:
-      // seldom better
-      return ApplyLZ77_LZ77<7, 4>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77Slow:
-      return ApplyLZ77_LZ77<15, 3>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kOptimal:
+    case HistogramParams::LZ77Method::kLZ77_b1_w3_f:
+      return ApplyLZ77_LZ77<1, 3, false>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kLZ77_b3_w3_f:
+      return ApplyLZ77_LZ77<3, 3, false>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kLZ77_b7_w3_f:
+      return ApplyLZ77_LZ77<7, 3, false>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kLZ77_b15_w3_f:
+      return ApplyLZ77_LZ77<15, 3, false>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kLZ77_b31_w3_f:
+      return ApplyLZ77_LZ77<31, 3, false>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kLZ77_b1_w3_t:
+      return ApplyLZ77_LZ77<1, 3, true>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kLZ77_b3_w3_t:
+      return ApplyLZ77_LZ77<3, 3, true>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kLZ77_b7_w3_t:
+      return ApplyLZ77_LZ77<7, 3, true>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kLZ77_b15_w3_t:
+      return ApplyLZ77_LZ77<15, 3, true>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kLZ77_b31_w3_t:
+      return ApplyLZ77_LZ77<31, 3, true>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kOpt_c1:
+      return ApplyLZ77_Optimal<1>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kOpt_c3:
+      return ApplyLZ77_Optimal<3>(params, num_contexts, tokens, lz77);
+    case HistogramParams::LZ77Method::kOpt_c8:
       return ApplyLZ77_Optimal<8>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kOptimalSlow:
+    case HistogramParams::LZ77Method::kOpt_c256:
       return ApplyLZ77_Optimal<256>(params, num_contexts, tokens, lz77);
     default:
       return {};

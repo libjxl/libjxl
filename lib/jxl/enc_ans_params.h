@@ -45,12 +45,20 @@ struct HistogramParams {
   enum class LZ77Method {
     kNone,          // do not try lz77.
     kRLE,           // only try doing RLE.
-    kLZ77Fast,      // try lz77 with a single reference.
-    kLZ77,          // try lz77 with seven references.
-    kLZ77BigWindow, // try lz77 with seven references and always hash 4 consecutive values.
-    kLZ77Slow,      // try lz77 with fifteen references.
-    kOptimal,       // optimal-matching LZ77 parsing.
-    kOptimalSlow,   // optimal-matching LZ77 parsing big chain length.
+    kLZ77_b1_w3_f,  // lz77
+    kLZ77_b3_w3_f,  // lz77
+    kLZ77_b7_w3_f,  // lz77
+    kLZ77_b15_w3_f, // lz77
+    kLZ77_b31_w3_f, // lz77
+    kLZ77_b1_w3_t,  // lz77 runtime cost comparison (almost always worse)
+    kLZ77_b3_w3_t,  // lz77
+    kLZ77_b7_w3_t,  // lz77
+    kLZ77_b15_w3_t, // lz77
+    kLZ77_b31_w3_t, // lz77
+    kOpt_c1,        // optimal-matching LZ77 fast.
+    kOpt_c3,        // optimal-matching LZ77
+    kOpt_c8,        // optimal-matching LZ77
+    kOpt_c256,      // optimal-matching LZ77 parsing big chain length.
   };
 
   enum class ANSHistogramStrategy {
