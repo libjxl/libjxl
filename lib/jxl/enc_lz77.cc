@@ -794,33 +794,33 @@ std::vector<std::vector<Token>> ApplyLZ77(
   switch (params.lz77_method) {
     case HistogramParams::LZ77Method::kRLE:
       return ApplyLZ77_RLE(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77_b1_w3_f:
+    case HistogramParams::LZ77Method::kLZ77b1w3f:
       return ApplyLZ77_LZ77<1, 3, false>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77_b3_w3_f:
+    case HistogramParams::LZ77Method::kLZ77b3w3f:
       return ApplyLZ77_LZ77<3, 3, false>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77_b7_w3_f:
+    case HistogramParams::LZ77Method::kLZ77b7w3f:
       return ApplyLZ77_LZ77<7, 3, false>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77_b15_w3_f:
+    case HistogramParams::LZ77Method::kLZ77b15w3f:
       return ApplyLZ77_LZ77<15, 3, false>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77_b31_w3_f:
+    case HistogramParams::LZ77Method::kLZ77b31w3f:
       return ApplyLZ77_LZ77<31, 3, false>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77_b1_w3_t:
+    case HistogramParams::LZ77Method::kLZ77b1w3t:
       return ApplyLZ77_LZ77<1, 3, true>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77_b3_w3_t:
+    case HistogramParams::LZ77Method::kLZ77b3w3t:
       return ApplyLZ77_LZ77<3, 3, true>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77_b7_w3_t:
+    case HistogramParams::LZ77Method::kLZ77b7w3t:
       return ApplyLZ77_LZ77<7, 3, true>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77_b15_w3_t:
+    case HistogramParams::LZ77Method::kLZ77b15w3t:
       return ApplyLZ77_LZ77<15, 3, true>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kLZ77_b31_w3_t:
+    case HistogramParams::LZ77Method::kLZ77b31w3t:
       return ApplyLZ77_LZ77<31, 3, true>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kOpt_c1:
+    case HistogramParams::LZ77Method::kOptc1:
       return ApplyLZ77_Optimal<1>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kOpt_c3:
+    case HistogramParams::LZ77Method::kOptc3:
       return ApplyLZ77_Optimal<3>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kOpt_c8:
+    case HistogramParams::LZ77Method::kOptc8:
       return ApplyLZ77_Optimal<8>(params, num_contexts, tokens, lz77);
-    case HistogramParams::LZ77Method::kOpt_c256:
+    case HistogramParams::LZ77Method::kOptc256:
       return ApplyLZ77_Optimal<256>(params, num_contexts, tokens, lz77);
     default:
       return {};
