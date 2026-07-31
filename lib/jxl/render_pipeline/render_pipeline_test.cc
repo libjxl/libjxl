@@ -149,6 +149,112 @@ TEST(RenderPipelineTest, CallAllGroups) {
   EXPECT_EQ(pipeline->PassesWithAllInput(), 1u);
 }
 
+struct RenderPipelineStagesTestSettings {
+  uint8_t chroma_upsample;  // bitfield in LSB order[c0v, c0h,... c2v, c2h]
+  bool loop_filter_gab;
+  int loop_filter_epf;
+  uint8_t log_upsample;  // 0 for no upsample, 1..3 for upsampling
+};
+
+std::vector<RenderPipelineStagesTestSettings> GeneratePipelineStagesTests() {
+  std::vector<RenderPipelineStagesTestSettings> all_tests;
+  for (uint8_t chroma_upsample = 0; chroma_upsample < 64; ++chroma_upsample) {
+    for (bool loop_filter_gab : {false, true}) {
+      for (int loop_filter_epf : {0, 1, 2, 3}) {
+        for (uint8_t log_upsample : {0, 1, 2, 3}) {
+          all_tests.push_back({chroma_upsample, loop_filter_gab,
+                               loop_filter_epf, log_upsample});
+        }
+      }
+    }
+  }
+  return all_tests;
+}
+
+std::ostream& operator<<(std::ostream& os,
+                         const RenderPipelineStagesTestSettings& c) {
+  os << "ChromaUpsample" << static_cast<int>(c.chroma_upsample) << "_Gab"
+     << c.loop_filter_gab << "_EpfIters" << c.loop_filter_epf << "_LogUpsample"
+     << static_cast<int>(c.log_upsample);
+  return os;
+}
+
+class RenderPipelineStagesTestParam
+    : public ::testing::TestWithParam<RenderPipelineStagesTestSettings> {};
+
+std::string PipelineStagesTestDescription(
+    const testing::TestParamInfo<RenderPipelineStagesTestParam::ParamType>&
+        info) {
+  std::stringstream name;
+  name << info.param;
+  return name.str();
+}
+
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    RenderPipelineStagesTest, RenderPipelineStagesTestParam,
+    testing::ValuesIn(GeneratePipelineStagesTests()),
+    PipelineStagesTestDescription);
+
+TEST_P(RenderPipelineStagesTestParam, Run) {
+  RenderPipelineStagesTestSettings config = GetParam();
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  RenderPipeline::Builder builder(memory_manager, /*num_c=*/3);
+  uint8_t chroma_upsample = config.chroma_upsample;
+  bool loop_filter_gab = config.loop_filter_gab;
+  int loop_filter_epf = config.loop_filter_epf;
+  uint8_t log_upsample = config.log_upsample;
+  for (size_t c = 0; c < 3; ++c) {
+    if (chroma_upsample & 1) {
+      ASSERT_TRUE(
+          builder.AddStage(jxl::make_unique<FakeVChromaUpsampleStage>(c)));
+    }
+    if (chroma_upsample & 2) {
+      ASSERT_TRUE(
+          builder.AddStage(jxl::make_unique<FakeHChromaUpsampleStage>(c)));
+    }
+    chroma_upsample >>= 2;
+  }
+  if (loop_filter_gab) {
+    ASSERT_TRUE(builder.AddStage(jxl::make_unique<FakeGaborishStage<1>>()));
+  }
+  if (loop_filter_epf >= 3) {
+    ASSERT_TRUE(builder.AddStage(jxl::make_unique<FakeGaborishStage<3>>()));
+  }
+  if (loop_filter_epf >= 1) {
+    ASSERT_TRUE(builder.AddStage(jxl::make_unique<FakeGaborishStage<2>>()));
+  }
+  if (loop_filter_epf >= 2) {
+    ASSERT_TRUE(builder.AddStage(jxl::make_unique<FakeGaborishStage<1>>()));
+  }
+  for (size_t c = 0; c < 3; ++c) {
+    if (log_upsample == 1) {
+      ASSERT_TRUE(builder.AddStage(jxl::make_unique<FakeUpsampleStage<1>>(c)));
+    } else if (log_upsample == 2) {
+      ASSERT_TRUE(builder.AddStage(jxl::make_unique<FakeUpsampleStage<2>>(c)));
+    } else if (log_upsample == 3) {
+      ASSERT_TRUE(builder.AddStage(jxl::make_unique<FakeUpsampleStage<3>>(c)));
+    }
+  }
+  ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
+  FrameDimensions frame_dimensions;
+  frame_dimensions.Set(/*xsize_px=*/180, /*ysize_px=*/180,
+                       /*group_size_shift=*/0,
+                       /*max_hshift=*/0, /*max_vshift=*/0,
+                       /*modular_mode=*/false, /*upsampling=*/1);
+  JXL_TEST_ASSIGN_OR_DIE(auto pipeline,
+                         std::move(builder).Finalize(frame_dimensions));
+  ASSERT_TRUE(pipeline->PrepareForThreads(1, /*use_group_ids=*/false));
+
+  for (size_t i = 0; i < frame_dimensions.num_groups; i++) {
+    auto input_buffers = pipeline->GetInputBuffers(i, 0);
+    const auto& buffer = input_buffers.GetBuffer(0);
+    FillPlane(0.0f, buffer.first, buffer.second);
+    ASSERT_TRUE(input_buffers.Done());
+  }
+
+  EXPECT_EQ(pipeline->PassesWithAllInput(), 1u);
+}
+
 TEST(RenderPipelineTest, BuildFast) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   RenderPipeline::Builder builder(memory_manager, /*num_c=*/1);
@@ -173,7 +279,7 @@ TEST(RenderPipelineTest, CallAllGroupsFast) {
   ASSERT_TRUE(builder.AddStage(jxl::make_unique<Check0FinalStage>()));
   builder.UseSimpleImplementation();
   FrameDimensions frame_dimensions;
-  frame_dimensions.Set(/*xsize_px=*/1024, /*ysize_px=*/1024,
+  frame_dimensions.Set(/*xsize_px=*/180, /*ysize_px=*/180,
                        /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
