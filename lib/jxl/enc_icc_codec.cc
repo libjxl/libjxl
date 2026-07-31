@@ -469,8 +469,8 @@ Status WriteICC(const Span<const uint8_t> icc, BitWriter* JXL_RESTRICT writer,
     tokens[0].emplace_back(ctx, enc[i]);
   }
   HistogramParams params;
-  params.lz77_method = enc.size() < 16384 ? HistogramParams::LZ77Method::kOptimal
-                                         : HistogramParams::LZ77Method::kLZ77;
+  params.lz77_method = enc.size() < 16384 ? HistogramParams::LZ77Method::kOptc256
+                                         : HistogramParams::LZ77Method::kLZ77b3w3f;
   EntropyEncodingData code;
   params.force_huffman = true;
   JXL_ASSIGN_OR_RETURN(size_t cost, BuildAndEncodeHistograms(
