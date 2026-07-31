@@ -111,8 +111,12 @@ Status ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
 
   // We have checked above that none of the sampling factors are 0, so the max
   // sampling factors can not be 0.
-  int MCU_rows = DivCeil(jpg->height, max_v_samp_factor * 8);
-  int MCU_cols = DivCeil(jpg->width, max_h_samp_factor * 8);
+  int MCU_rows =
+      static_cast<int>(DivCeil(static_cast<size_t>(jpg->height),
+                               static_cast<size_t>(max_v_samp_factor * 8)));
+  int MCU_cols =
+      static_cast<int>(DivCeil(static_cast<size_t>(jpg->width),
+                               static_cast<size_t>(max_h_samp_factor * 8)));
   // Compute the block dimensions for each component.
   for (JPEGComponent& c : jpg->components) {
     if (max_h_samp_factor % c.h_samp_factor != 0 ||
@@ -757,12 +761,20 @@ Status ProcessScan(const uint8_t* data, const size_t len,
     max_v_samp_factor = std::max(max_v_samp_factor, component.v_samp_factor);
   }
 
-  int MCU_rows = DivCeil(jpg->height, max_v_samp_factor * 8);
-  int MCUs_per_row = DivCeil(jpg->width, max_h_samp_factor * 8);
+  int MCU_rows =
+      static_cast<int>(DivCeil(static_cast<size_t>(jpg->height),
+                               static_cast<size_t>(max_v_samp_factor * 8)));
+  int MCUs_per_row =
+      static_cast<int>(DivCeil(static_cast<size_t>(jpg->width),
+                               static_cast<size_t>(max_h_samp_factor * 8)));
   if (!is_interleaved) {
     const JPEGComponent& c = jpg->components[scan_info->components[0].comp_idx];
-    MCUs_per_row = DivCeil(jpg->width * c.h_samp_factor, 8 * max_h_samp_factor);
-    MCU_rows = DivCeil(jpg->height * c.v_samp_factor, 8 * max_v_samp_factor);
+    MCUs_per_row = static_cast<int>(
+        DivCeil(static_cast<size_t>(jpg->width * c.h_samp_factor),
+                static_cast<size_t>(8 * max_h_samp_factor)));
+    MCU_rows = static_cast<int>(
+        DivCeil(static_cast<size_t>(jpg->height * c.v_samp_factor),
+                static_cast<size_t>(8 * max_v_samp_factor)));
   }
   coeff_t last_dc_coeff[kMaxComponents] = {0};
   BitReaderState br(data, len, *pos);
