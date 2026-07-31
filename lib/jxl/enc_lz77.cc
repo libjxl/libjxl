@@ -447,6 +447,7 @@ float DistCost(size_t dist) {
 
 // Fast hash map for LZ77 compression using a fixed-size ring buffer per bucket.
 // Overwrites the oldest candidates when a bucket reaches max capacity.
+// For optimal performance kBucketSize should be a power of 2 minus 1
 template <uint16_t kBucketSize, int kHashSize>
 class LZ77HashMap {
 public:
@@ -456,10 +457,6 @@ public:
         : data_(data),
           hash_mask_((uint32_t{1} << hash_bits) - 1),
           hash_table_(static_cast<size_t>(hash_mask_) + 1) {
-
-        // enforce BucketSize to be a power of 2 minus 1
-        static_assert((kBucketSize & (kBucketSize+1)) == 0, "LZ77 Invalid Bucket Size, should be a power of 2 minus 1");
-
         num_special_distances_ = 0;
         if (distance_multiplier) {
             num_special_distances_ = kNumSpecialDistances;
@@ -498,6 +495,7 @@ public:
             }
 
             // Reject if same length but requires a worse/longer distance symbol
+            // Trying to compare the cost from cost estimation does not help with the current implementation of sce
             if (cur_length == len && cur_dist_symbol >= dist_symbol) {
                 continue;
             }
@@ -525,7 +523,7 @@ private:
     struct HashBucket {
         std::array<uint32_t, kBucketSize> data;
         uint16_t idx = 0;   // Insertion index
-        uint16_t size = 0;  // Current entry count (<= BucketSize)
+        uint16_t size = 0;  // Current entry count (<= kBucketSize)
     };
 
     // Measures matching prefix length between indices 'a' and 'b'.
