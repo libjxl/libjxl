@@ -168,8 +168,29 @@ std::vector<std::vector<Token>> ApplyLZ77_RLE(
   return {};
 }
 
+
+// Computes a Murmur-style mix hash over HashSize elements.
+template <int kHashSize=3>
+uint32_t GetHash(size_t pos, const std::vector<uint32_t>& data_) {
+  uint32_t h = 0;
+  if (pos + kHashSize <= data_.size()) {
+    for (size_t i = 0; i < kHashSize; i++) {
+      h ^= data_[pos+i] + 0x9e3779b9 + (h << 6) + (h >> 2);
+    }
+    h ^= h >> 16;
+    h *= 0x85ebca6bu;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35u;
+    h ^= h >> 16;
+
+  } else {
+    return 0;
+  }
+  return h;
+}
+
 // Hash chain for LZ77 matching
-template <uint32_t MaxChainLength>
+template <uint32_t kMaxChainLength>
 struct HashChain {
   size_t size_;
   std::vector<uint32_t> data_;
@@ -197,7 +218,7 @@ struct HashChain {
   std::unordered_map<int, int> special_dist_table_;
   size_t num_special_distances_ = 0;
 
-  uint32_t maxchainlength = MaxChainLength;  // window_size_ to allow all
+  uint32_t maxchainlength = kMaxChainLength;  // window_size_ to allow all
 
   HashChain(const Token* data, size_t size, size_t window_size,
             size_t min_length, size_t max_length, size_t distance_multiplier)
@@ -236,24 +257,6 @@ struct HashChain {
   }
 
 
-  uint32_t GetHash(size_t pos) const {
-    uint32_t h = 0;
-    if (pos + 2 < data_.size()) {
-      for (size_t i = 0; i < 3; i++) {
-        h ^= data_[pos+i] + 0x9e3779b9 + (h << 6) + (h >> 2);
-      }
-      h ^= h >> 16;
-      h *= 0x85ebca6bu;
-      h ^= h >> 13;
-      h *= 0xc2b2ae35u;
-      h ^= h >> 16;
-
-    } else {
-      return 0;
-    }
-    return h & hash_mask_;
-  }
-
   uint32_t CountZeros(size_t pos, uint32_t prevzeros) const {
     size_t end = pos + window_size_;
     if (end > size_) end = size_;
@@ -271,7 +274,7 @@ struct HashChain {
   }
 
   void Update(size_t pos) {
-    uint32_t hashval = GetHash(pos);
+    uint32_t hashval = GetHash(pos, data_) & hash_mask_;
     uint32_t wpos = pos & window_mask_;
 
     val[wpos] = static_cast<int>(hashval);
@@ -295,7 +298,7 @@ struct HashChain {
   template <typename CB>
   void FindMatches(size_t pos, int max_dist, const CB& found_match) const {
     uint32_t wpos = pos & window_mask_;
-    uint32_t hashval = GetHash(pos);
+    uint32_t hashval = GetHash(pos, data_) & hash_mask_;
     uint32_t hashpos = chain[wpos];
 
     int prev_dist = 0;
@@ -444,7 +447,7 @@ float DistCost(size_t dist) {
 
 // Fast hash map for LZ77 compression using a fixed-size ring buffer per bucket.
 // Overwrites the oldest candidates when a bucket reaches max capacity.
-template <uint16_t BucketSize, int HashWindowSize>
+template <uint16_t kBucketSize, int kHashSize>
 class LZ77HashMap {
 public:
     // Initializes the hash map mask, table size, and distance lookup table.
@@ -453,6 +456,10 @@ public:
         : data_(data),
           hash_mask_((uint32_t{1} << hash_bits) - 1),
           hash_table_(static_cast<size_t>(hash_mask_) + 1) {
+
+        // enforce BucketSize to be a power of 2 minus 1
+        static_assert((kBucketSize & (kBucketSize+1)) == 0, "LZ77 Invalid Bucket Size, should be a power of 2 minus 1");
+
         num_special_distances_ = 0;
         if (distance_multiplier) {
             num_special_distances_ = kNumSpecialDistances;
@@ -466,7 +473,7 @@ public:
     // Searches for the longest matching sequence in the bucket for 'pos'.
     // Updates length and dist_symbol with the best match found, then inserts 'pos'.
     void FindMatch(size_t pos, size_t& len, size_t& dist_symbol, size_t min_len) {
-        const uint32_t h = GetHash(pos);
+        const uint32_t h = GetHash<kHashSize>(pos, data_) & hash_mask_;
         len = 0;
         dist_symbol = 0;
 
@@ -500,47 +507,30 @@ public:
         }
 
         // Insert 'pos' into the bucket ring buffer
-        hash_table_[h].size = std::min(static_cast<uint16_t>(hash_table_[h].size + 1), BucketSize);
+        hash_table_[h].size = std::min(static_cast<uint16_t>(hash_table_[h].size + 1), kBucketSize);
         hash_table_[h].data[hash_table_[h].idx] = static_cast<uint32_t>(pos);
-        hash_table_[h].idx = hash_table_[h].idx + 1 - static_cast<uint16_t>(hash_table_[h].idx + 1 >= BucketSize) * BucketSize;
+        hash_table_[h].idx = hash_table_[h].idx + 1 - static_cast<uint16_t>(hash_table_[h].idx + 1 >= kBucketSize) * kBucketSize;
     }
 
     // Inserts 'pos' into its bucket without performing a match search.
     void Update(size_t pos) {
-        const uint32_t h = GetHash(pos);
-        hash_table_[h].size = std::min(static_cast<uint16_t>(hash_table_[h].size + 1), BucketSize);
+        const uint32_t h = GetHash<kHashSize>(pos, data_) & hash_mask_;
+        hash_table_[h].size = std::min(static_cast<uint16_t>(hash_table_[h].size + 1), kBucketSize);
         hash_table_[h].data[hash_table_[h].idx] = static_cast<uint32_t>(pos);
-        hash_table_[h].idx = hash_table_[h].idx + 1 - static_cast<uint16_t>(hash_table_[h].idx + 1 >= BucketSize) * BucketSize;
+        hash_table_[h].idx = hash_table_[h].idx + 1 - static_cast<uint16_t>(hash_table_[h].idx + 1 >= kBucketSize) * kBucketSize;
     }
 
 private:
     // Fixed-capacity bucket stored as a ring buffer.
     struct HashBucket {
-        std::array<uint32_t, BucketSize> data;
+        std::array<uint32_t, kBucketSize> data;
         uint16_t idx = 0;   // Insertion index
         uint16_t size = 0;  // Current entry count (<= BucketSize)
     };
 
-    // Computes a Murmur-style mix hash over HashWindowSize elements.
-    uint32_t GetHash(size_t pos) const {
-        uint32_t h = 0;
-        if (pos + HashWindowSize - 1 < data_.size()) {
-            for (size_t i = 0; i < HashWindowSize; i++) {
-                h ^= data_[pos + i] + 0x9e3779b9 + (h << 6) + (h >> 2);
-            }
-            h ^= h >> 16;
-            h *= 0x85ebca6bu;
-            h ^= h >> 13;
-            h *= 0xc2b2ae35u;
-            h ^= h >> 16;
-        } else {
-            return 0; // Out-of-bounds safety check
-        }
-        return h & hash_mask_;
-    }
-
     // Measures matching prefix length between indices 'a' and 'b'.
     size_t MatchLength(size_t a, size_t b) const {
+        JXL_DASSERT(a < b);
         size_t len = 0;
         while (b + len < data_.size() && data_[a + len] == data_[b + len]) {
             ++len;
@@ -558,7 +548,7 @@ private:
 
 // Fast LZ77 compression on streams of tokens using cost-based matching decision.
 // Returns the compressed token streams if savings exceed the threshold.
-template<int BucketSize = 7, int HashWindowSize = 3, bool RuntimeCostComparison = false>
+template<int kBucketSize = 7, int kHashSize = 3, bool kRuntimeCostComparison = false>
 std::vector<std::vector<Token>> ApplyLZ77_LZ77(
     const HistogramParams& params, size_t num_contexts,
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77
@@ -592,14 +582,14 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
     size_t min_length = lz77.min_length;
     JXL_DASSERT(min_length >= 3);
 
-    LZ77HashMap<BucketSize, HashWindowSize> hash_map =
-        LZ77HashMap<BucketSize, HashWindowSize>(data, distance_multiplier);
+    LZ77HashMap<kBucketSize, kHashSize> hash_map =
+        LZ77HashMap<kBucketSize, kHashSize>(data, distance_multiplier);
 
     for (size_t pos = 0; pos < in.size(); pos++) {
       out.push_back(in[pos]);
 
       // Guard against reading past input bounds
-      if (pos + HashWindowSize >= in.size()) {
+      if (pos + kHashSize >= in.size()) {
         continue;
       }
 
@@ -613,18 +603,19 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
       // Bit cost comparison: raw tokens vs LZ77 pair
       float cost = sym_cost[pos + len] - sym_cost[pos];
       size_t lz77_len = len - lz77.min_length;
-      float lz77_cost = LenCost(lz77_len) + DistCost(dist_symbol) +
-                        sce.AddSymbolCost(out.back().context);
+      float lz77_cost = LenCost(lz77_len) + DistCost(dist_symbol);
 
-      if constexpr (RuntimeCostComparison) {
-        if (lz77_cost > cost) {
-          for (size_t offset = 1; offset < len; offset++) {
-            out.push_back(in[pos+offset]);
-          }
-          pos += len - 1;
-          continue;
+      if (kRuntimeCostComparison && lz77_cost > cost) {
+        for (size_t offset = 1; offset < len; offset++) {
+          out.push_back(in[pos+offset]);
+          hash_map.Update(pos + offset);
         }
+        pos += len - 1;
+        continue;
       }
+
+
+      bit_decrease += cost - lz77_cost - sce.AddSymbolCost(out.back().context);
 
       // Emit LZ77 length and distance tokens
       out.back().value = len - min_length;
@@ -632,7 +623,6 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
       out.emplace_back(
           static_cast<uint32_t>(lz77.nonserialized_distance_context),
           static_cast<uint32_t>(dist_symbol));
-      bit_decrease += cost - lz77_cost;
 
       // Update hash map for skipped positions inside the match
       for (size_t offset = 1; offset < len; offset++) {
@@ -649,7 +639,7 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
   return {};
 }
 
-template <uint32_t MaxChainLength>
+template <uint32_t kMaxChainLength>
 std::vector<std::vector<Token>> ApplyLZ77_Optimal(
     const HistogramParams& params, size_t num_contexts,
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77) {
@@ -689,7 +679,7 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
       window_size <<= 1;
     }
 
-    HashChain<MaxChainLength> chain(in.data(), in.size(), window_size, min_length, max_length,
+    HashChain<kMaxChainLength> chain(in.data(), in.size(), window_size, min_length, max_length,
                     distance_multiplier);
 
     struct MatchInfo {
