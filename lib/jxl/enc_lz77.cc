@@ -638,7 +638,7 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
     const HistogramParams& params, size_t num_contexts,
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77) {
   std::vector<std::vector<Token>> tokens_for_cost_estimate =
-      ApplyLZ77_LZ77(params, num_contexts, tokens, lz77);
+      ApplyLZ77_LZ77<7, 3, true>(params, num_contexts, tokens, lz77);
   // If greedy-LZ77 does not give better compression than no-lz77, no reason to
   // run the optimal matching.
   if (tokens_for_cost_estimate.empty()) return {};
