@@ -601,19 +601,15 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
       // Bit cost comparison: raw tokens vs LZ77 pair
       float cost = sym_cost[pos + len] - sym_cost[pos];
       size_t lz77_len = len - lz77.min_length;
-      float lz77_cost = LenCost(lz77_len) + DistCost(dist_symbol);
+      float lz77_cost = LenCost(lz77_len) + DistCost(dist_symbol) +
+						sce.AddSymbolCost(out.back().context);
 
       if (kRuntimeCostComparison && lz77_cost > cost) {
-        for (size_t offset = 1; offset < len; offset++) {
-          out.push_back(in[pos+offset]);
-          hash_map.Update(pos + offset);
-        }
-        pos += len - 1;
         continue;
       }
 
 
-      bit_decrease += cost - lz77_cost - sce.AddSymbolCost(out.back().context);
+      bit_decrease += cost - lz77_cost;
 
       // Emit LZ77 length and distance tokens
       out.back().value = len - min_length;
