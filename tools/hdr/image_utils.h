@@ -115,6 +115,8 @@ static inline jxl::Status Encode(const jxl::CodecInOut& io,
       // TODO(user): implement
       return JXL_FAILURE("Codec::kJXL is not supported yet");
 
+    case jxl::extras::Codec::kTIFF:
+      return JXL_FAILURE("Encoding to TIFF is not implemented");
     case jxl::extras::Codec::kUnknown:
       return JXL_FAILURE("Cannot encode using Codec::kUnknown");
   }

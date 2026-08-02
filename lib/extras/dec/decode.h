@@ -35,7 +35,8 @@ enum class Codec : uint32_t {
   kJPG,
   kGIF,
   kEXR,
-  kJXL
+  kJXL,
+  kTIFF
 };
 
 Codec DetectCodec(const Span<const uint8_t>& bytes);
