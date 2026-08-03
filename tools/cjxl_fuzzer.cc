@@ -33,7 +33,7 @@ using ::jpegxl::tools::TrackingMemoryManager;
 void CheckImpl(bool ok, const char* condition, const char* file, int line) {
   if (!ok) {
     fprintf(stderr, "Check(%s) failed at %s:%d\n", condition, file, line);
-    __builtin_trap();
+    JXL_CRASH();
   }
 }
 #define Check(OK) CheckImpl((OK), #OK, __FILE__, __LINE__)
