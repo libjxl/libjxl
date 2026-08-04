@@ -256,11 +256,16 @@ merge_request_commits() {
     MR_ANCESTOR_SHA=$(git -C "${MYDIR}" rev-parse -q FETCH_HEAD)
   else
     # We are in a local branch, not a pull request workflow.
-    MR_ANCESTOR_SHA=$(git -C "${MYDIR}" rev-parse -q HEAD@{upstream} || true)
+    # using "--verify" to avoid fatal git error when there is no upstream branch for the local branch
+    MR_ANCESTOR_SHA=$(git -C "${MYDIR}" rev-parse -q --verify HEAD@{upstream} 2>/dev/null || true)
   fi
 
   if [[ -z "${MR_ANCESTOR_SHA}" ]]; then
-    echo "Warning, not tracking any branch, using the last commit in HEAD.">&2
+     echo "Warning: current branch has no upstream tracking branch configured" \
+      "(git rev-parse HEAD@{upstream} failed). Falling back to comparing" \
+      "against the parent of HEAD (HEAD^), so only the last commit will be" \
+      "checked. Run 'git branch --set-upstream-to=<remote>/<branch>' to" \
+      "compare against a real base branch instead.">&2
     # This prints the return value with just HEAD.
     MR_ANCESTOR_SHA=$(git -C "${MYDIR}" rev-parse -q "${MR_HEAD_SHA}^")
   else
