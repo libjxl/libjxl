@@ -895,7 +895,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
     // Global palette causes bad progressive loading due to interpolation
     // but lossy palette is still required for JXL art.
-  if (!groupwise && (cparams.lossy_palette ||
+  if (!groupwise && (cparams_.lossy_palette ||
       !(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
     JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams_,
                                      channel_colors_percent, pool));
