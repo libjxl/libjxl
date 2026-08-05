@@ -55,7 +55,7 @@ talking to GitHub.
 
 ### Fork your private copy
 
-The JPEG XL code is located in [this repo](https://github.com/libjxl/libjxl).
+The JPEG XL code is located in [this repo](https://github.com/libjxl/libjxl).
 
 The normal developer workflow in GitHub involves creating your own fork of a
 repository and uploading your own changes there. From your own copy you can
@@ -73,7 +73,7 @@ Once you are done you should have your repository at
 
 where {{USERNAME}} denotes your GitHub username.
 
-### Checkout the JPEG XL code from GitHub
+### Checkout the JPEG XL code from GitHub
 
 To get the source code on your computer you need to "clone" it. There are two
 repositories at play here, the upstream repository (`libjxl/lbjxl`) and your
@@ -254,12 +254,12 @@ The repository uses submodules for external library dependencies in
 third_party. Each submodule points to a particular external commit of the
 external repository by the hash code of that external commit. Just like
 regular source code files, this hash code is part of the current branch and
-jpeg xl commit you have checked out.
+JPEG XL commit you have checked out.
 
 When changing branches or when doing `git rebase`, git will unfortunately
-*not* automatically set those hashes to the ones of the branch or jpeg xl
+*not* automatically set those hashes to the ones of the branch or JPEG XL
 commit you changed to nor set the source files of the third_party submodules
-to the new state. That is, even though git will have updated the jpeg xl
+to the new state. That is, even though git will have updated the JPEG XL
 source code files on your disk to the new ones, it will leave the submodule
 hashes and the files in third_party in your workspace to the ones they were
 before you changed branches. This will show up in a git diff because this
@@ -269,7 +269,7 @@ not show changes in files inside the third_party directory.
 
 This mismatch can cause at least two problems:
 
-*) the jpeg xl codebase may not compile due to third_party library version
+*) the JPEG XL codebase may not compile due to third_party library version
 mismatch if e.g. API changed or a submodule was added/removed.
 
 *) when using `commit -a` your commit, which may be a technical change

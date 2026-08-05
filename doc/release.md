@@ -334,7 +334,7 @@ cmake --install build --prefix="/usr"
 
 cd /src/ImageMagick
 ./configure --with-jxl=yes
-# check for "JPEG XL --with-jxl=yes yes"
+# check for "JPEG XL --with-jxl=yes yes"
 make -j `nproc`
 ./utilities/magick -version
 

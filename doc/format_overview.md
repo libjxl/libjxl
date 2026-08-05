@@ -1,6 +1,6 @@
-# JPEG XL Format Overview
+# JPEG XL Format Overview
 
-This document gives an overview of the JPEG XL file format and codestream,
+This document gives an overview of the JPEG XL file format and codestream,
 its features, and the underlying design rationale.
 The aim of this document is to provide general insight into the
 format capabilities and design, thus helping developers
@@ -8,7 +8,7 @@ better understand how to use the `libjxl` API.
 
 ## Codestream and File Format
 
-The JPEG XL format is defined in ISO/IEC 18181. This standard consists of
+The JPEG XL format is defined in ISO/IEC 18181. This standard consists of
 four parts:
 
 *   18181-1: Core codestream
@@ -24,13 +24,13 @@ the pixel data itself, colorspace information, orientation, upsampling, etc.
 
 ### File format
 
-The JPEG XL file format can take two forms:
+The JPEG XL file format can take two forms:
 
 *   A 'naked' codestream. In this case, only the image/animation data itself is
 stored, and no additional metadata can be included. Such a file starts with the
-bytes `0xFF0A` (the JPEG marker for "start of JPEG XL codestream").
+bytes `0xFF0A` (the JPEG marker for "start of JPEG XL codestream").
 *   An ISOBMFF-based container. This is a box-based container that includes a
-JPEG XL codestream box (`jxlc`), and can optionally include other boxes with
+JPEG XL codestream box (`jxlc`), and can optionally include other boxes with
 additional information, such as Exif metadata. In this case, the file starts with
 the bytes `0x0000000C 4A584C20 0D0A870A`.
 
@@ -41,12 +41,12 @@ decoders, to verify that they implement all coding tools correctly and accuratel
 
 ### Reference implementation
 
-The `libjxl` software is the reference implementation of JPEG XL.
+The `libjxl` software is the reference implementation of JPEG XL.
 
 
 ## Metadata versus Image Data
 
-JPEG XL makes a clear separation between metadata and image data.
+JPEG XL makes a clear separation between metadata and image data.
 Everything that is needed to correctly display an image is
 considered to be image data, and is part of the core codestream. This includes
 elements that have traditionally been considered 'metadata', such as ICC profiles
@@ -71,7 +71,7 @@ without affecting the displayed image.
 
 ### Color Management
 
-In JPEG XL, images always have a fully defined colorspace, i.e. it is always
+In JPEG XL, images always have a fully defined colorspace, i.e. it is always
 unambiguous how to interpret the pixel values. There are two options:
 
 *   Pixel data is in a specified (non-XYB) colorspace, and the decoder will produce
@@ -92,7 +92,7 @@ the original image was in, that has a sufficiently wide gamut and a
 suitable transfer curve to represent the image data with high fidelity
 using a limited bit depth representation.
 
-Colorspaces can be signaled in two ways in JPEG XL:
+Colorspaces can be signaled in two ways in JPEG XL:
 
 *    CICP-style Enum values: This is a very compact representation that
 covers most or all of the common colorspaces. The decoder can convert
@@ -105,7 +105,7 @@ conversions.
 
 ### Frames
 
-A JPEG XL codestream contains one or more frames. In the case of animation,
+A JPEG XL codestream contains one or more frames. In the case of animation,
 these frames have a duration and can be looped (infinitely or a number of times).
 Zero-duration frames are possible and represent different layers of the image.
 
@@ -198,7 +198,7 @@ decoded.
 Then the HF groups are encoded, corresponding to the remaining AC
 coefficients. The HF groups can be encoded in multiple passes for
 more progressive refinement steps; the coefficients of all passes
-are added. Unlike JPEG progressive scan scripts, JPEG XL allows
+are added. Unlike JPEG progressive scan scripts, JPEG XL allows
 signaling any amount of detail in any part of the image in any pass.
 
 In Modular mode, groups can have dimensions 128x128, 256x256, 512x512
@@ -229,16 +229,21 @@ the optional container format allows storing additional information.
 
 ## Metadata
 
-Three types of metadata can be included in a JPEG XL container:
+Multiple types of metadata can be included in a JPEG XL container:
 
 *   Exif (`Exif`)
 *   XMP (`xml `)
 *   JUMBF (`jumb`)
+*   Gain Map bundle (`jhgm`)
 
 This metadata can contain information about the image, such as copyright
 notices, GPS coordinates, camera settings, etc.
 If it contains rendering-impacting information (such as Exif orientation),
 the information in the codestream takes precedence.
+
+For Gain Maps both SDR-to-HDR and HDR-to-SDR forms are supported however
+only the latter (HDR-to-SDR) is recommended due to JPEG XL already
+having native support for HDR.
 
 ## Compressed Metadata
 
@@ -250,7 +255,7 @@ the first four bytes of the box contents define the actual box type
 
 ## JPEG Bitstream Reconstruction Data
 
-JPEG XL can losslessly recompress existing JPEG files.
+JPEG XL can losslessly recompress existing JPEG files.
 The general design philosophy still applies in this case:
 all the image data is stored in the codestream box, including the DCT
 coefficients of the original JPEG image and possibly an ICC profile or
@@ -271,7 +276,7 @@ needed to reconstruct the original JPEG file.
 ## Frame Index
 
 The container can optionally store a `jxli` box, which contains an index
-of offsets to keyframes of a JPEG XL animation. It is not needed to display
+of offsets to keyframes of a JPEG XL animation. It is not needed to display
 the animation, but it does facilitate efficient seeking.
 
 ## Partial Codestream
