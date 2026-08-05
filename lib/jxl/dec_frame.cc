@@ -339,9 +339,7 @@ Status FrameDecoder::FinalizeDC() {
   JxlMemoryManager* memory_manager = dec_state_->memory_manager();
   if (frame_header_.encoding == FrameEncoding::kVarDCT &&
       !(frame_header_.flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
-      !(frame_header_.flags & FrameHeader::kUseDcFrame) &&
-      // Skip smoothing when reconstructing to JPEG.
-      !decoded_->IsJPEG()) {
+      !(frame_header_.flags & FrameHeader::kUseDcFrame)) {
     JXL_RETURN_IF_ERROR(AdaptiveDCSmoothing(
         memory_manager, dec_state_->shared->quantizer.MulDC(),
         &dec_state_->shared_storage.dc_storage, pool_));
