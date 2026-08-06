@@ -607,7 +607,7 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
       if (kRuntimeCostComparison && lz77_cost > cost) {
         // If literal cost is very low (e.g. solid colors), skip the entire match
         // to avoid O(n^2) behavior.
-		if (cost < len) {
+		if (cost < 0.25f * len) {
           for (size_t offset = 1; offset < len; offset++) {
             out.push_back(in[pos+offset]);
             hash_map.Update(pos + offset);
