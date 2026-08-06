@@ -478,6 +478,7 @@ public:
         for (uint16_t i = 0; i < hash_table_[h].size; i++) {
             const uint32_t candidate = hash_table_[h].data[i];
             size_t dist = pos - candidate;
+            if (dist > kWindowSize) continue;
             size_t cur_length = MatchLength(candidate, pos);
 
             // Skip matches shorter than current best or min_length
