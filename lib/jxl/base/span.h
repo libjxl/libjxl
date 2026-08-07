@@ -55,6 +55,7 @@ class Span {
   constexpr T* end() const noexcept { return data() + size(); }
 
   constexpr T& operator[](size_t i) const noexcept {
+    JXL_DASSERT(i < len_);
     // MSVC 2015 accepts this as constexpr, but not ptr_[i]
     return *(data() + i);
   }
@@ -64,6 +65,29 @@ class Span {
     ptr_ += n;
     len_ -= n;
     return true;
+  }
+
+  // Bounds-checked replacement for `Span<T>(span.data() + offset, count)`.
+  //
+  // Returns an error rather than aborting: callers derive `offset` and `count`
+  // from untrusted input, so an out-of-range request is ordinary rejection of a
+  // malformed file, not a programmer error. (JXL_ENSURE would be wrong here --
+  // it aborts in debug and fuzzer builds.)
+  //
+  // `len_ - offset` is only evaluated once `offset <= len_` is known to hold,
+  // so a caller passing an underflowed `count` is rejected rather than
+  // wrapping.
+  StatusOr<Span<T>> subspan(size_t offset, size_t count) const {
+    if (offset > len_ || count > len_ - offset) {
+      return JXL_FAILURE("Span::subspan out of range");
+    }
+    return Span<T>(ptr_ + offset, count);
+  }
+
+  // Bounds-checked suffix starting at `offset`.
+  StatusOr<Span<T>> subspan(size_t offset) const {
+    if (offset > len_) return JXL_FAILURE("Span::subspan out of range");
+    return Span<T>(ptr_ + offset, len_ - offset);
   }
 
   void AppendTo(std::vector<NCT>& dst) const {
