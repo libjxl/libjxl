@@ -1258,10 +1258,10 @@ cmd_lint() {
   fi
 
   # It is ok, if zizmor is not installed.
-  if which typos >/dev/null; then
+  if which zizmor >/dev/null; then
     zizmor "${MYDIR}/.github/workflows/"
   else
-    echo -e "${TEXT_BOLD_PURPLE}SKIPPED:${TEXT_RESET} typos not installed; try: cargo install typos-cli"
+    echo -e "${TEXT_BOLD_PURPLE}SKIPPED:${TEXT_RESET} zizmor (not installed)"
   fi
 
   local installed=()
