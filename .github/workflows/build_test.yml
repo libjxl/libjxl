@@ -172,6 +172,7 @@ jobs:
             # The last available x86_64 OSX runner
             os: macos-15-intel
             mode: debug
+            skip_test: true # can't finish "linking" tests
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
           # Android builds
