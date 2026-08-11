@@ -76,7 +76,7 @@ jobs:
             cmake:p
             giflib:p
             gtest:p
-            libavif:p
+            ${{ matrix.msystem != 'mingw32' && 'libavif:p' || '' }}
             libjpeg-turbo:p
             libpng:p
             libwebp:p
