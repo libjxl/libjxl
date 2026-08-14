@@ -142,7 +142,7 @@ Status PerformBlending(
   };
 
   const auto copy = [&](const float* const* src) {
-    //if (xsize == 0) return;
+    if (xsize == 0) return;
     for (size_t p = 0; p < 3; p++) {
       memcpy(tmp.Row(p), src[p] + x0, xsize * sizeof(**src));
     }
