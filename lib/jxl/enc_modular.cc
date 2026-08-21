@@ -463,6 +463,15 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
                                  bool streaming_mode) {
   frame_dim_ = frame_header.ToFrameDimensions();
   cparams_ = cparams_orig;
+  const auto& metadata = frame_header.nonserialized_metadata->m;
+  size_t num_channels = 3;
+  if (metadata.color_encoding.IsGray() &&
+      frame_header.color_transform == ColorTransform::kNone) {
+    num_channels = 1;
+  }
+  max_tree_size_ =
+      MaxGlobalTreeSize(frame_dim_.xsize, frame_dim_.ysize,
+                        num_channels + metadata.extra_channel_info.size());
 
   size_t num_streams =
       ModularStreamId::Num(frame_dim_, frame_header.passes.num_passes);
@@ -1204,7 +1213,7 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
         JXL_ASSIGN_OR_RETURN(
             trees[chunk],
             LearnTree(stream_images_.data(), stream_options_.data(), start,
-                      stop, multiplier_info));
+                      stop, multiplier_info, max_tree_size_));
       } else {
         size_t total_pixels = 0;
         for (size_t i = start; i < stop; i++) {
@@ -1246,6 +1255,7 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
       tree_ = {PropertyDecisionNode::Leaf(Predictor::Gradient)};
     }
   }
+  JXL_ENSURE(tree_.size() <= max_tree_size_);
   tree_tokens_.resize(1);
   tree_tokens_[0].clear();
   Tree decoded_tree;
