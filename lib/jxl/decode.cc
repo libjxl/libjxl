@@ -188,6 +188,21 @@ uint32_t GetBitDepth(JxlBitDepth bit_depth, const T& metadata,
   return 0;
 }
 
+template <typename T>
+JxlDecoderStatus VerifyOutputBitDepth(JxlBitDepth bit_depth, const T& metadata,
+                                      JxlPixelFormat format) {
+  uint32_t bits_per_sample = GetBitDepth(bit_depth, metadata, format);
+  if (bits_per_sample == 0) return JXL_API_ERROR("Invalid output bit depth");
+  if (format.data_type == JXL_TYPE_UINT8 && bits_per_sample > 8) {
+    return JXL_API_ERROR("Invalid bit depth %u for uint8 output",
+                         bits_per_sample);
+  } else if (format.data_type == JXL_TYPE_UINT16 && bits_per_sample > 16) {
+    return JXL_API_ERROR("Invalid bit depth %u for uint16 output",
+                         bits_per_sample);
+  }
+  return JXL_DEC_SUCCESS;
+}
+
 enum class DecoderStage : uint32_t {
   kInited,              // Decoder created, no JxlDecoderProcessInput called yet
   kStarted,             // Running JxlDecoderProcessInput calls
@@ -2637,6 +2652,10 @@ JxlDecoderStatus JxlDecoderSetExtraChannelBuffer(JxlDecoder* dec,
 
   if (size < min_size) return JXL_DEC_ERROR;
 
+  JXL_API_RETURN_IF_ERROR(
+      VerifyOutputBitDepth(dec->image_out_bit_depth,
+                           dec->metadata.m.extra_channel_info[index], *format));
+
   if (dec->extra_channel_output.size() <= index) {
     dec->extra_channel_output.resize(dec->metadata.m.num_extra_channels,
                                      {{}, nullptr, 0});
@@ -2976,25 +2995,6 @@ JxlDecoderStatus JxlDecoderSetProgressiveDetail(JxlDecoder* dec,
   return JXL_DEC_SUCCESS;
 }
 
-namespace {
-
-template <typename T>
-JxlDecoderStatus VerifyOutputBitDepth(JxlBitDepth bit_depth, const T& metadata,
-                                      JxlPixelFormat format) {
-  uint32_t bits_per_sample = GetBitDepth(bit_depth, metadata, format);
-  if (bits_per_sample == 0) return JXL_API_ERROR("Invalid output bit depth");
-  if (format.data_type == JXL_TYPE_UINT8 && bits_per_sample > 8) {
-    return JXL_API_ERROR("Invalid bit depth %u for uint8 output",
-                         bits_per_sample);
-  } else if (format.data_type == JXL_TYPE_UINT16 && bits_per_sample > 16) {
-    return JXL_API_ERROR("Invalid bit depth %u for uint16 output",
-                         bits_per_sample);
-  }
-  return JXL_DEC_SUCCESS;
-}
-
-}  // namespace
-
 JxlDecoderStatus JxlDecoderSetImageOutBitDepth(JxlDecoder* dec,
                                                const JxlBitDepth* bit_depth) {
   if (!dec->image_out_buffer_set) {
@@ -3002,6 +3002,13 @@ JxlDecoderStatus JxlDecoderSetImageOutBitDepth(JxlDecoder* dec,
   }
   JXL_API_RETURN_IF_ERROR(
       VerifyOutputBitDepth(*bit_depth, dec->metadata.m, dec->image_out_format));
+  // Extra channel buffers may already be set; they use the same bit depth.
+  for (size_t i = 0; i < dec->extra_channel_output.size(); ++i) {
+    const auto& extra = dec->extra_channel_output[i];
+    if (extra.buffer == nullptr) continue;
+    JXL_API_RETURN_IF_ERROR(VerifyOutputBitDepth(
+        *bit_depth, dec->metadata.m.extra_channel_info[i], extra.format));
+  }
   dec->image_out_bit_depth = *bit_depth;
   return JXL_DEC_SUCCESS;
 }
