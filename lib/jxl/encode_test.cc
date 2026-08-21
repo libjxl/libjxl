@@ -318,6 +318,7 @@ TEST(EncodeTest, LosslessFloatMixedSignValues) {
 }
 
 
+
 TEST(EncodeTest, EncoderResetTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_NE(nullptr, enc.get());
