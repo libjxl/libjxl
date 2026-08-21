@@ -93,6 +93,8 @@ struct CompressParams {
   // effects on the decoded pixels, while still being JPEG-compliant and
   // allowing reconstruction of the original JPEG.
   bool force_cfl_jpeg_recompression = true;
+  // Apply LF Smoothing when doing JPEG recompression. Same applies as above.
+  bool force_lfs_jpeg_recompression = false;
 
   // Use brotli compression for any boxes derived from a JPEG frame.
   bool jpeg_compress_boxes = true;
