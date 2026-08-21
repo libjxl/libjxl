@@ -413,8 +413,10 @@ Status LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
       for (size_t i = stages_.size(); i-- > 0;) {
         if (stages_[i]->GetChannelMode(c) ==
             RenderPipelineChannelMode::kInOut) {
-          size_t stage_buffer_ysize =
-              2 * next_y_border + (1 << stages_[i]->settings_.shift_y);
+          // Prevent a newly produced bundle from exactly wrapping onto the
+          // oldest row that the next stage still needs for its border.
+          size_t stage_buffer_ysize = 2 * next_y_border + (next_y_border != 0) +
+                                      (1 << stages_[i]->settings_.shift_y);
           stage_buffer_ysize = 1 << CeilLog2Nonzero(stage_buffer_ysize);
           next_y_border = stages_[i]->settings_.border_y;
           JXL_ASSIGN_OR_RETURN(
