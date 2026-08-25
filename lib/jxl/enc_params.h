@@ -42,10 +42,12 @@ struct CompressParams {
   SpeedTier speed_tier = SpeedTier::kSquirrel;
   int brotli_effort = -1;
 
-  // 0 = default.
+  // -1 = encoder chooses: 1 for images with lossless modular data below
+  //      effort 10, 0 otherwise. Resolved in ParamsPostInit.
+  // 0 = best quality/density.
   // 1 = slightly worse quality.
   // 4 = fastest speed, lowest quality
-  size_t decoding_speed_tier = 0;
+  int decoding_speed_tier = -1;
 
   ColorTransform color_transform = ColorTransform::kXYB;
 

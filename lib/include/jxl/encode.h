@@ -133,7 +133,9 @@ typedef enum {
 
   /** Sets the decoding speed tier for the provided options. Minimum is 0
    * (slowest to decode, best quality/density), and maximum is 4 (fastest to
-   * decode, at the cost of some quality/density). Default is 0.
+   * decode, at the cost of some quality/density). When not set, the encoder
+   * chooses: 1 for images with lossless modular data (including lossless
+   * extra channels such as alpha) below effort 10, and 0 otherwise.
    */
   JXL_ENC_FRAME_SETTING_DECODING_SPEED = 1,
 
@@ -340,8 +342,10 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES = 33,
 
-  /** Control what kind of input buffering is used, when using chunked image frames.
-   * When using streaming input the encoder minimizes memory usage, potentially at
+  /** Control what kind of input buffering is used, when using chunked image
+   frames.
+   * When using streaming input the encoder minimizes memory usage, potentially
+   at
    * a cost in compression density (though not necessarily).
    * -1 = default (let the encoder decide)
    * 0 = buffers everything, basically the same as non-streamed code path
