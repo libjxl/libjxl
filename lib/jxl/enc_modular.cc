@@ -142,10 +142,15 @@ void QuantizeChannel(Channel& ch, const int q) {
   for (size_t y = 0; y < ch.plane.ysize(); y++) {
     pixel_type* row = ch.plane.Row(y);
     for (size_t x = 0; x < ch.plane.xsize(); x++) {
-      if (row[x] < 0) {
-        row[x] = -((-row[x] + q / 2) / q) * q;
+      // Round to the nearest multiple of q in a wider type. pixel_type is
+      // int32 and fuzzer inputs reach its extremes, where -row[x], row[x] +
+      // q/2 and the final * q all overflow (UBSan signed-integer-overflow);
+      // pixel_type_w (int64) holds every intermediate.
+      const pixel_type_w v = row[x];
+      if (v < 0) {
+        row[x] = static_cast<pixel_type>(-((-v + q / 2) / q) * q);
       } else {
-        row[x] = ((row[x] + q / 2) / q) * q;
+        row[x] = static_cast<pixel_type>(((v + q / 2) / q) * q);
       }
     }
   }
