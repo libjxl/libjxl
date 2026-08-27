@@ -107,7 +107,12 @@ struct AliasTable {
 
 #if JXL_BYTE_ORDER_LITTLE
     uint64_t entry;
-    memcpy(&entry, &table[i].cutoff, sizeof(entry));
+    // Read the whole Entry, not a pointer into its first member: copying
+    // sizeof(entry) bytes from &table[i].cutoff (a 1-byte subobject) is an
+    // intra-object out-of-bounds access. table[i] is exactly this size.
+    static_assert(sizeof(Entry) == sizeof(entry),
+                  "Lookup reads an Entry as a single uint64_t load");
+    memcpy(&entry, &table[i], sizeof(entry));
     const size_t cutoff = entry & 0xFF;              // = MOVZX
     const size_t right_value = (entry >> 8) & 0xFF;  // = MOVZX
     const size_t freq0 = (entry >> 16) & 0xFFFF;
