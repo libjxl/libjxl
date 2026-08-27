@@ -888,7 +888,13 @@ void TreeSamples::PreQuantizeProperties(
   auto quantize_abs_pixel_property = [&]() {
     if (abs_pixel_thresholds.empty()) {
       quantize_pixel_property();  // Compute the non-abs thresholds.
-      for (auto &v : pixel_samples) v = std::abs(v);
+      // std::abs(INT32_MIN) is undefined behavior (negation not representable);
+      // saturate so the absolute value stays representable and non-negative.
+      for (auto &v : pixel_samples) {
+        v = v == std::numeric_limits<pixel_type>::min()
+                ? std::numeric_limits<pixel_type>::max()
+                : std::abs(v);
+      }
       abs_pixel_thresholds =
           QuantizeSamples(pixel_samples, max_property_values);
     }
