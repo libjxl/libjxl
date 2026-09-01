@@ -89,9 +89,9 @@ Status BenchmarkArgs::AddCommandLineOptions() {
           false);
   AddFlag(&silent_errors, "silent_errors",
           "If true, doesn't print error messages on compression or"
-          " decompression errors. Errors counts are still visible in the"
+          " decompression errors. Error counts are still visible in the"
           " 'Errors' column of the result table. Please note that depending"
-          " depending on the JXL build settings, error messages and asserts"
+          " on the JXL build settings, error messages and asserts"
           " from within the codec may be printed irrespective of this flag"
           " anyway, use release build to ensure no messages.",
           false);

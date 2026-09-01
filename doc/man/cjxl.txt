@@ -15,7 +15,7 @@ Synopsis
 Description
 -----------
 
-`cjxl` compresses an image or animation to the JPEG XL format. It is intended to
+`cjxl` compresses an image or animation to the JPEG XL format. It is intended to
 spare users the trouble of determining a set of optimal parameters for each
 individual image. Instead, for a given target quality, it should provide
 consistent visual results across various kinds of images. The defaults have been
@@ -31,58 +31,225 @@ cjxl input.gif output.jxl
 Options
 -------
 
--h::
---help::
-    Displays the options that `cjxl` supports. On its own, it will only show
-    basic options. It can be combined with `-v` or `-v -v` to show increasingly
-    advanced options as well.
+Basic options:
+~~~~~~~~~~~~~~
 
+-d DISTANCE::
+--distance=DISTANCE::
+    Target visual distance in JND units, range: 0.0 .. 25.0.
+    0.0 = mathematically lossless, default for JPEG/GIF input.
+    1.0 = visually lossless, default for other input.
+    Recommended range: 0.5 .. 3.0. Higher values allow more distortion.
+    Mutually exclusive with --quality.
+-q QUALITY::
+--quality=QUALITY::
+    Internally mapped to --distance, range: 0 .. 100.
+    100 = mathematically lossless. 90 = visually lossless.
+    Quality values roughly match libjpeg quality.
+    Recommended range: 68 .. 96. Mutually exclusive with --distance.
+-e EFFORT::
+--effort=EFFORT::
+    Encoder effort, range: 1 .. 10, default = 7.
+    Higher values allow more computation, generally achieving smaller output at same quality.
+    For lossy encoding, higher effort should achieve more accurate quality.
+-V::
+--version::
+    Print encoder library version number and exit.
+--quiet::
+    Minimal printing.
 -v::
 --verbose::
-    Increases verbosity. Can be repeated to increase it further, and also
-    applies to `--help`.
+    Verbose printing; can be repeated and also applies to help (!).
 
--d 'distance'::
---distance='distance'::
-    The preferred way to specify quality. It is specified in multiples of a
-    just-noticeable difference. That is, `-d 0` is mathematically lossless,
-    `-d 1` should be visually lossless, and higher distances yield denser and
-    denser files with lower and lower fidelity. Lossy sources such as JPEG and
-    GIF files are compressed losslessly by default, and in the case of JPEG
-    files specifically, the original JPEG can then be reconstructed bit-for-bit.
-    For lossless sources, `-d 1` is the default.
 
--q 'quality'::
---quality='quality'::
-    Alternative way to indicate the desired quality. 100 is lossless and lower
-    values yield smaller files. There is no lower bound to this quality
-    parameter, but positive values should approximately match the quality
-    setting of libjpeg.
+Advanced options:
+~~~~~~~~~~~~~~~~~
 
--e 'effort'::
---effort='effort'::
-    Controls the amount of effort that goes into producing an ``optimal'' file
-    in terms of quality/size. That is to say, all other parameters being equal,
-    a higher effort should yield a file that is at least as dense and possibly
-    denser, and with at least as high and possibly higher quality.
-+
-Recognized effort settings, from fastest to slowest, are:
-+
-- 1 or ``lightning''
-- 2 or ``thunder''
-- 3 or ``falcon''
-- 4 or ``cheetah''
-- 5 or ``hare''
-- 6 or ``wombat''
-- 7 or ``squirrel'' (default)
-- 8 or ``kitten''
-- 9 or ``tortoise''
+-a DISTANCE::
+--alpha_distance=DISTANCE::
+    Target visual distance for the alpha channel, range: 0.0 .. 25.0, default = 0.0.
+    0.0 = mathematically lossless. 1.0 = visually lossless.
+    Recommended range: 0.5 .. 3.0.
+-p::
+--progressive::
+    More progressive/responsive decoding.
+--group_order=0|1::
+    Order in which groups are stored in the codestream for progressive rendering, default = 0.
+    0 = scanline order. 1 = center-first order.
+--container=0|1::
+    0 = do not use the container format unless it is needed.
+    1 = use the container format even if it is not needed.
+--compress_boxes=0|1::
+    Disable/enable Brotli compression for metadata boxes, default = 1. 0 = disable. 1 = enable.
+--brotli_effort=EFFORT::
+    Brotli effort, range: 0 .. 11, default = 9.
+    Higher values allow more computation targeting higher density.
+-m 0|1::
+--modular=0|1::
+    0 = use VarDCT mode. 1 = use modular mode. Default = encoder chooses.
+-j 0|1::
+--lossless_jpeg=0|1::
+    0 = decode JPEG input to pixels and reencode. 1 = losslessly transcode JPEG data. Default = 1.
+--num_threads=THREADS::
+    Number of worker threads, default = -1.
+    -1 = use machine default. 0 = do not use multithreading.
+--photon_noise_iso=ISO_FILM_SPEED::
+    Add noise to the image emulating photographic film or sensor noise, default = 0.
+    Higher values add more noise, e.g. 100 gives a low amount of noise, 3200 gives a lot of noise.
+--intensity_target=NITS::
+    Upper bound on the intensity level present in the image, in nits.
+    0 = choose a sensible value based on the color encoding. Default = 0.
+-x key=value::
+--dec-hints=key=value::
+    Use with 'raw' formats like PPM which do not store colorspace information
+    and metadata, or to strip or modify metadata from formats that do.
+    The key 'color_space' indicates an enumerated ColorEncoding, for example:
+    -x color_space=RGB_D65_SRG_Per_SRG is sRGB with perceptual rendering intent
+    -x color_space=RGB_D65_202_Rel_PeQ is Rec.2100 PQ with relative rendering intent
+    Shorthands: sRGB, DisplayP3, Adobe98, ProPhoto, Rec2100PQ, Rec2100HLG
+    The key 'icc_pathname' refers to a binary file containing an ICC profile.
+    The keys 'exif', 'xmp', and 'jumbf' refer to a binary file containing metadata;
+    existing metadata of the same type will be overwritten.
+    Specific metadata can be stripped using e.g. -x strip=exif.
+    Stripping metadata with lossless JPEG recompression won't allow reconstruction,
+    hence `--allow_jpeg_reconstruction=0` must be passed in this case.
 
+
+More advanced options:
+~~~~~~~~~~~~~~~~~~~~~~
+
+--allow_jpeg_reconstruction=0|1::
+    Disable/enable storing JPEG reconstruction metadata with lossless JPEG transcoding,
+    default = 1. 0 = disable. 1 = enable.
+--codestream_level=-1|5|10::
+    The codestream level.
+--buffering=-1..3::
+    Controls how much input buffering libjxl uses, affecting memory usage and compression quality.
+    -1 = encoder chooses (default). 0 = buffer entire image (most memory, best compression).
+    1 = stream input for large images. 2 = stream input with a lower threshold.
+    3 = deprecated; use --output_mode to control output streaming.
+--faster_decoding=0..4::
+    Higher values improve decode speed at the expense of quality or density, default = 0.
+--premultiply=-1|0|1::
+    Force premultiplied (associated) alpha.
+--keep_invisible=0|1::
+    0 = allow modifying invisible pixels for better density, default for lossy output.
+    1 = preserve colors of invisible pixels, default for lossless output.
+--center_x=-1..XSIZE::
+    Set the horizontal position of center for center-first group ordering, range: [-1 .. xsize).
+    -1 = middle of the image. Default = -1.
+--center_y=-1..YSIZE::
+    Set the vertical position of center for center-first group ordering, range: [-1 .. ysize).
+    -1 = middle of the image. Default = -1.
+--progressive_ac::
+    Use the progressive mode for AC.
+--qprogressive_ac::
+    Use the progressive mode for AC with shift quantization.
+--progressive_dc=-1..2::
+    Number of progressive-DC frames, default = -1. -1 = encoder chooses.
+    0 = disable. 1 = extra 64x64 low-resolution pass. 2 = extra 512x512 and 64x64 passes.
+--resampling=-1|1|2|4|8::
+    Resampling for color channels, default = -1.
+    -1 = apply resampling only for very low quality.
+    1 = 1x1 downsampling. 2 = 2x2 downsampling. 4 = 4x4 downsampling. 8 = 8x8 downsampling.
+--ec_resampling=-1|1|2|4|8::
+    Resampling for extra channels. Same as --resampling but for extra channels like alpha.
+--already_downsampled::
+    Do not downsample before encoding, but still signal that the decoder should upsample.
+--upsampling_mode=-1|0|1::
+    Decoder upsampling mode, mostly useful in combination with --already_downsampled.
+    -1 = non-separable upsampling. 0 = nearest neighbor (useful for pixel art). Default = -1.
+--epf=-1..3::
+    Edge preserving filter strength, default = -1. -1 = encoder chooses.
+--gaborish=0|1::
+    0 = don't use the gaborish filter. 1 = use gaborish. Default = encoder chooses.
+--override_bitdepth=BITDEPTH::
+    Set the bit depth, default = 0. 0 = use the input image bit depth.
+
+
+Options for experimentation / benchmarking:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+--noise=0|1::
+    Disable/enable adaptive noise generation, default = encoder chooses. 0 = disable. 1 = enable.
+    It is recommended to use --photon_noise_iso instead.
+--jpeg_reconstruction_cfl=0|1::
+    Disable/enable chroma-from-luma (CFL) for lossless JPEG reconstruction.
+    0 = disable. 1 = enable.
+--num_reps=REPS::
+    How many times to compress, for benchmarking.
+--streaming_input::
+    Enable streaming processing of the input file, supported for PPM and PGM input.
+--streaming_output::
+    Enable incremental writing of the output file.
+--output_mode=-1..2::
+    Output mode: -1=default (let encoder decide), 0=buffer output internally, 1=streaming with seeking, 2=OOO jxlp (ftyp v1, no seeking required).
+--disable_output::
+    Do not write an output file.
+--dots=0|1::
+    Disable/enable dots generation. 0 = disable. 1 = enable. Default = encoder chooses.
+--patches=0|1::
+    Disable/enable patches generation. 0 = disable. 1 = enable. Default = encoder chooses.
+--frame_indexing=INDICES::
+    INDICES is of the form '^(0*|1[01]*)'. The i-th position indicates whether the i-th
+    frame will be indexed in the frame index box.
+--allow_expert_options::
+    Allow setting effort to 11 for somewhat denser lossless compression at an extreme compute cost.
+--disable_perceptual_optimizations::
+    Disable perceptual optimizations.
+
+
+Modular mode options:
+~~~~~~~~~~~~~~~~~~~~~
+
+-I PERCENT::
+--iterations=PERCENT::
+    Percentage of pixels used to learn MA trees, default = -1.
+    -1 = encoder chooses. 0 = don't use MA trees.
+    Higher values use more memory and may result in better compression.
+-C -1..41::
+--modular_colorspace=-1..41::
+    Color transform, default = -1. -1 = try several per group, depending on effort. 0 = RGB (none).
+    1 .. 41 = fixed RCT. 6 = YCoCg.
+-g -1..3::
+--modular_group_size=-1..3::
+    Group size, default = -1.
+    -1 = encoder chooses. 0 = 128x128. 1 = 256x256. 2 = 512x512. 3 = 1024x1024.
+-P 0..15::
+--modular_predictor=0..15::
+    Predictor(s) to use. 0 = zero. 1 = left. 2 = top. 3 = avg0. 4 = select. 5 = gradient.
+    6 = weighted. 7 = topright. 8 = topleft. 9 = leftleft. 10 = avg1. 11 = avg2. 12 = avg3.
+    13 = toptop predictive average. 14 = mix 5 and 6. 15 = mix everything.
+    Default = 14 at effort < 10 and 15 at effort 10.
+-E -1..11::
+--modular_nb_prev_channels=-1..11::
+    Maximum number of previous-channel MA tree properties to use, default -1. -1 = encoder chooses.
+--modular_palette_colors=COLORS::
+    Use palette if number of colors is smaller than or equal to this.
+--modular_lossy_palette::
+    Use delta palette in a lossy way; it is recommended to also set --modular_palette_colors=0
+    with this option to use the default palette only.
+-X PERCENT::
+--pre-compact=PERCENT::
+    Use global channel palette if the number of sample values is smaller
+    than this percentage of the nominal range.
+-Y PERCENT::
+--post-compact=PERCENT::
+    Use local (per-group) channel palette if the number of sample values is
+    smaller than this percentage of the nominal range.
+-R 0|1::
+--responsive=0|1::
+    0 = don't apply the Squeeze transform. Default for lossless output.
+    1 = apply the Squeeze transform. Default for lossy output.
+
+-h::
+--help::
+    Prints this help message. All options are shown above.
 Examples
 --------
 
 ----
-# Compress a PNG file to a high-quality JPEG XL version.
+# Compress a PNG file to a high-quality JPEG XL version.
 $ cjxl input.png output.jxl
 
 # Compress it at a slightly lower quality, appropriate for web use.
@@ -100,3 +267,4 @@ See also
 --------
 
 *djxl*(1)
+
