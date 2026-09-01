@@ -637,6 +637,10 @@ class WriteToOutputStage : public RenderPipelineStage {
   static void StoreFloatRow(const Output& out, const float* input[4],
                             size_t len, float* output) {
     const HWY_FULL(float) d;
+    const size_t padding = RoundUpTo(len, Lanes(d)) - len;
+    for (size_t c = 0; c < out.num_channels_; ++c) {
+      msan::UnpoisonMemory(input[c] + len, sizeof(input[c][0]) * padding);
+    }
     if (out.num_channels_ == 1) {
       memcpy(output, input[0], len * sizeof(output[0]));
     } else if (out.num_channels_ == 2) {
@@ -656,6 +660,8 @@ class WriteToOutputStage : public RenderPipelineStage {
                           &output[4 * i]);
       }
     }
+    msan::PoisonMemory(output + out.num_channels_ * len,
+                       sizeof(output[0]) * out.num_channels_ * padding);
   }
 
   template <typename T>
