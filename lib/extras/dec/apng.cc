@@ -1075,7 +1075,18 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         if (color_info_type == ColorInfoType::CICP) {
           return JXL_FAILURE("Repeated cICP chunk");
         }
-        JXL_RETURN_IF_ERROR(DecodeCicpChunk(payload, &ppf->color_encoding));
+        if (payload.size() != 4) {
+          return JXL_FAILURE("Wrong cICP size");
+        }
+        if (!DecodeCicpChunk(payload, &ppf->color_encoding)) {
+          // A code point we do not implement is not a malformed file: per PNG
+          // 3rd Edition 11.3.2.6 the cICP chunk is the highest-precedence
+          // color chunk only "if understood by the decoder". Leave
+          // color_info_type alone so that the lower-precedence chunks (iCCP,
+          // sRGB, gAMA / cHRM) still get their turn.
+          JXL_DEBUG_V(2, "Unsupported cICP chunk ignored");
+          continue;
+        }
         ppf->icc.clear();
         ppf->primary_color_representation =
             PackedPixelFile::kColorEncodingIsPrimary;
