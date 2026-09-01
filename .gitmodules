@@ -18,7 +18,7 @@
 	url = https://github.com/google/highway
 [submodule "third_party/libpng"]
 	path = third_party/libpng
-	url = https://github.com/glennrp/libpng.git
+	url = https://github.com/pnggroup/libpng.git
 [submodule "third_party/zlib"]
 	path = third_party/zlib
 	url = https://github.com/madler/zlib.git
