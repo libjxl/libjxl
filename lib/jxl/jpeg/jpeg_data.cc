@@ -467,8 +467,12 @@ void JPEGData::CalculateMcuSize(const JPEGScanInfo& scan, int* MCUs_per_row,
     max_h_samp_factor = std::max(c.h_samp_factor, max_h_samp_factor);
     max_v_samp_factor = std::max(c.v_samp_factor, max_v_samp_factor);
   }
-  *MCUs_per_row = DivCeil(width * h_group, 8 * max_h_samp_factor);
-  *MCU_rows = DivCeil(height * v_group, 8 * max_v_samp_factor);
+  *MCUs_per_row =
+      static_cast<int>(DivCeil(static_cast<size_t>(width * h_group),
+                               static_cast<size_t>(8 * max_h_samp_factor)));
+  *MCU_rows =
+      static_cast<int>(DivCeil(static_cast<size_t>(height * v_group),
+                               static_cast<size_t>(8 * max_v_samp_factor)));
 }
 
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
