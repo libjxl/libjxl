@@ -355,6 +355,13 @@ struct CompressArgs {
         "    0 = disable. 1 = enable.",
         &jpeg_reconstruction_cfl, &ParseOverride, 3);
 
+    cmdline->AddOptionValue(
+        '\0', "jpeg_reconstruction_lfs", "0|1",
+        "Disable/enable LF Smoothing for lossless "
+        "JPEG reconstruction.\n"
+        "    0 = disable. 1 = enable.",
+        &jpeg_reconstruction_lfs, &ParseOverride, 3);
+
     cmdline->AddOptionValue('\0', "num_reps", "REPS",
                             "How many times to compress, for benchmarking.",
                             &num_reps, &ParseUnsigned, 3);
@@ -527,6 +534,7 @@ struct CompressArgs {
   int32_t premultiply = -1;
   bool already_downsampled = false;
   jxl::Override jpeg_reconstruction_cfl = jxl::Override::kDefault;
+  jxl::Override jpeg_reconstruction_lfs = jxl::Override::kDefault;
   jxl::Override modular = jxl::Override::kDefault;
   jxl::Override keep_invisible = jxl::Override::kDefault;
   jxl::Override dots = jxl::Override::kDefault;
@@ -907,6 +915,8 @@ void ProcessFlags(const jxl::extras::Codec codec,
   if (jpeg_bytes) {
     ProcessBoolFlag(args->jpeg_reconstruction_cfl,
                     JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL, params);
+    ProcessBoolFlag(args->jpeg_reconstruction_lfs,
+                    JXL_ENC_FRAME_SETTING_JPEG_RECON_LFS, params);
     ProcessBoolFlag(args->compress_boxes,
                     JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES, params);
   }
