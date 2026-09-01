@@ -213,6 +213,16 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
 
   bool replace = true;
   bool last_base_was_none = true;
+  bool follow_browser = true;
+  bool warn_gif_delay = true;
+  JXL_RETURN_IF_ERROR(color_hints.Foreach(
+      [&follow_browser](const std::string& key,
+                        const std::string& value) -> Status {
+        if (key == "gif_follow_browser") {
+          follow_browser = value != "0";
+        }
+        return true;
+      }));
   for (int i = 0; i < gif->ImageCount; ++i) {
     const SavedImage& image = gif->SavedImages[i];
     msan::UnpoisonMemory(image.RasterBits, sizeof(*image.RasterBits) *
@@ -285,7 +295,20 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
                         total_rect.xsize() == canvas.color.xsize &&
                         total_rect.ysize() == canvas.color.ysize;
     if (ppf->info.have_animation) {
-      frame->frame_info.duration = gcb.DelayTime;
+      // Enforce minimum GIF delay for parity with web browsers.
+      // See http://webkit.org/b/26455 for more information.
+      if (follow_browser && gcb.DelayTime <= 1) {
+        frame->frame_info.duration = 10;
+        if (warn_gif_delay) {
+          fprintf(stderr,
+                  "Warning: Frame delay is <= 10 ms; bumping to 100 ms to "
+                  "match browser behavior. Pass '-x gif_follow_browser=0' to "
+                  "keep the original delay.\n");
+          warn_gif_delay = false;
+        }
+      } else {
+        frame->frame_info.duration = gcb.DelayTime;
+      }
       frame->frame_info.layer_info.have_crop = static_cast<int>(!is_full_size);
       frame->frame_info.layer_info.crop_x0 = total_rect.x0();
       frame->frame_info.layer_info.crop_y0 = total_rect.y0();
