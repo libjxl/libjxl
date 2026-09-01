@@ -407,7 +407,6 @@ double Msssim::Score() const {
                                   0.0,
                                   0.00010854057858411537};
 
-  size_t i = 0;
   char ch[] = "XYB";
   const bool verbose = false;
   for (size_t c = 0; c < 3; ++c) {
@@ -418,6 +417,7 @@ double Msssim::Score() const {
                scales[scale].avg_edgediff[c * 4 + n],
                scales[scale].avg_edgediff[c * 4 + 2 + n]);
 #endif
+        size_t i = ((c * kNumScales + scale) * 2 + n) * 3;
         if (verbose) {
           printf("%f from channel %c ssim, scale 1:%i, %" PRIuS
                  "-norm (weight %f)\n",
