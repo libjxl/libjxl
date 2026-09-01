@@ -139,6 +139,18 @@ JXL_NORETURN inline JXL_NOINLINE bool Abort() {
 #define JXL_DASSERT(condition)
 #endif
 
+// Security checks that remain active in optimized/release builds.
+#ifndef JXL_HARDENED
+#define JXL_HARDENED 1
+#endif
+
+#if JXL_HARDENED
+#define JXL_SECURITY_CHECK(condition) \
+  (JXL_UNLIKELY(!(condition)) ? (JXL_CRASH(), false) : true)
+#else
+#define JXL_SECURITY_CHECK(condition) (true)
+#endif
+
 // A jxl::Status value from a StatusCode or Status which prints a debug message
 // when enabled.
 #define JXL_STATUS(status, format, ...)                                        \
