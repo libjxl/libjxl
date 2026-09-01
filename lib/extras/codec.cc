@@ -94,6 +94,9 @@ Status Encode(const extras::PackedPixelFile& ppf, const extras::Codec codec,
       // TODO(user): implement
       return JXL_FAILURE("Codec::kJXL is not supported yet");
 
+    case extras::Codec::kTIFF:
+      return JXL_FAILURE("Encoding to TIFF is not implemented");
+
     case extras::Codec::kUnknown:
       return JXL_FAILURE("Cannot encode using Codec::kUnknown");
   }
