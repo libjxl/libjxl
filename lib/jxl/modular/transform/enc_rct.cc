@@ -43,10 +43,10 @@ bool FwdRctRow(size_t w, const pixel_type* in0, const pixel_type* in1,
       pixel_type R = in0[x];
       pixel_type G = in1[x];
       pixel_type B = in2[x];
-      pixel_type o1 = R - B;
-      pixel_type tmp = B + (o1 >> 1);
-      pixel_type o2 = G - tmp;
-      out0[x] = tmp + (o2 >> 1);
+      pixel_type o1 = PixelSub(R, B);
+      pixel_type tmp = PixelAdd(B, o1 >> 1);
+      pixel_type o2 = PixelSub(G, tmp);
+      out0[x] = PixelAdd(tmp, o2 >> 1);
       out1[x] = o1;
       out2[x] = o2;
     }
@@ -58,11 +58,11 @@ bool FwdRctRow(size_t w, const pixel_type* in0, const pixel_type* in1,
     pixel_type Second = in1[x];
     pixel_type Third = in2[x];
     if (second == 1) {
-      Second = Second - First;
+      Second = PixelSub(Second, First);
     } else if (second == 2) {
-      Second = Second - ((First + Third) >> 1);
+      Second = PixelSub(Second, PixelAdd(First, Third) >> 1);
     }
-    if (third) Third = Third - First;
+    if (third) Third = PixelSub(Third, First);
     out0[x] = First;
     out1[x] = Second;
     out2[x] = Third;
