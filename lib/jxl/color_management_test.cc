@@ -8,12 +8,15 @@
 #include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ostream>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,6 +31,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/test_image.h"
 #include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
@@ -49,6 +53,247 @@ namespace {
 constexpr size_t kWidth = 16;
 
 constexpr size_t kNumThreads = 1;  // only have a single row.
+
+size_t CountDistinctColors(const extras::PackedImage& image, size_t limit) {
+  std::set<std::array<uint16_t, 3>> colors;
+  for (size_t y = 0; y < image.ysize; ++y) {
+    for (size_t x = 0; x < image.xsize; ++x) {
+      std::array<uint16_t, 3> color;
+      for (size_t c = 0; c < color.size(); ++c) {
+        color[c] = static_cast<uint16_t>(std::lround(
+            Clamp1(image.GetPixelValue(y, x, c), 0.0f, 1.0f) * 65535.0f));
+      }
+      colors.insert(color);
+      if (colors.size() > limit) return colors.size();
+    }
+  }
+  return colors.size();
+}
+
+uint32_t ReadBE32(const uint8_t* bytes) {
+  return (static_cast<uint32_t>(bytes[0]) << 24) |
+         (static_cast<uint32_t>(bytes[1]) << 16) |
+         (static_cast<uint32_t>(bytes[2]) << 8) |
+         static_cast<uint32_t>(bytes[3]);
+}
+
+void WriteBE32(uint8_t* bytes, uint32_t value) {
+  bytes[0] = static_cast<uint8_t>(value >> 24);
+  bytes[1] = static_cast<uint8_t>(value >> 16);
+  bytes[2] = static_cast<uint8_t>(value >> 8);
+  bytes[3] = static_cast<uint8_t>(value);
+}
+
+void WriteBE16(uint8_t* bytes, uint16_t value) {
+  bytes[0] = static_cast<uint8_t>(value >> 8);
+  bytes[1] = static_cast<uint8_t>(value);
+}
+
+size_t FindIccTagRecord(const IccBytes& icc, const char* signature) {
+  if (icc.size() < 132U) return 0;
+  const uint32_t tag_count = ReadBE32(icc.data() + 128);
+  if (tag_count > (icc.size() - 132U) / 12U) return 0;
+  for (uint32_t i = 0; i < tag_count; ++i) {
+    const size_t record = 132U + 12U * i;
+    if (std::memcmp(icc.data() + record, signature, 4) == 0) return record;
+  }
+  return 0;
+}
+
+bool HasIccTag(const IccBytes& icc, const char* signature) {
+  return FindIccTagRecord(icc, signature) != 0;
+}
+
+StatusOr<IccBytes> CreateDisplayP3MatrixProfile() {
+  ColorEncoding encoding;
+  encoding.SetColorSpace(ColorSpace::kRGB);
+  JXL_RETURN_IF_ERROR(encoding.SetWhitePointType(WhitePoint::kD65));
+  JXL_RETURN_IF_ERROR(encoding.SetPrimariesType(Primaries::kP3));
+  encoding.Tf().SetTransferFunction(TransferFunction::kSRGB);
+  encoding.SetRenderingIntent(RenderingIntent::kRelative);
+  JXL_RETURN_IF_ERROR(encoding.CreateICC());
+
+  IccBytes icc = encoding.ICC();
+  const size_t cicp_record = FindIccTagRecord(icc, "cicp");
+  JXL_ENSURE(cicp_record != 0);
+  std::memcpy(icc.data() + cicp_record, "tst0", 4);
+  // A zero profile ID is valid and avoids retaining the checksum after the
+  // intentional test mutation.
+  std::fill(icc.begin() + 84, icc.begin() + 100, 0);
+  return icc;
+}
+
+StatusOr<IccBytes> CreateNonconformingDisplayP3Profile() {
+  JXL_ASSIGN_OR_RETURN(IccBytes icc, CreateDisplayP3MatrixProfile());
+
+  const size_t wtpt_record = FindIccTagRecord(icc, "wtpt");
+  JXL_ENSURE(wtpt_record != 0);
+  const size_t wtpt_offset = ReadBE32(icc.data() + wtpt_record + 4);
+  const size_t wtpt_size = ReadBE32(icc.data() + wtpt_record + 8);
+  JXL_ENSURE(wtpt_offset <= icc.size());
+  JXL_ENSURE(wtpt_size >= 20U && wtpt_size <= icc.size() - wtpt_offset);
+  JXL_ENSURE(std::memcmp(icc.data() + wtpt_offset, "XYZ ", 4) == 0);
+
+  // ICC v4 display profiles normally store D50 here. This deliberately stores
+  // D65 while retaining CHAD and D50-adapted matrix columns, matching the
+  // malformed profile shape that triggered issue #4911.
+  constexpr std::array<double, 3> kD65XYZ = {0.3127 / 0.3290, 1.0,
+                                             (1.0 - 0.3127 - 0.3290) / 0.3290};
+  for (size_t i = 0; i < kD65XYZ.size(); ++i) {
+    WriteBE32(icc.data() + wtpt_offset + 8U + 4U * i,
+              static_cast<uint32_t>(
+                  static_cast<int32_t>(std::lround(kD65XYZ[i] * 65536.0))));
+  }
+  return icc;
+}
+
+StatusOr<test::TestImage> CreateNonconformingDisplayP3TestImage(
+    const IccBytes& icc, size_t size, size_t bits_per_sample,
+    size_t alpha_pattern) {
+  test::TestImage image;
+  JXL_RETURN_IF_ERROR(image.SetDimensions(size, size));
+  JXL_RETURN_IF_ERROR(image.SetChannels(4));
+  image.SetAllBitDepths(bits_per_sample);
+  JXL_RETURN_IF_ERROR(image.SetColorEncoding("DisplayP3"));
+  JXL_ASSIGN_OR_RETURN(auto frame, image.AddFrame());
+  for (size_t y = 0; y < size; ++y) {
+    for (size_t x = 0; x < size; ++x) {
+      const double ramp = static_cast<double>(x + y * size) /
+                          static_cast<double>(size * size - 1);
+      JXL_RETURN_IF_ERROR(frame.SetValue(y, x, 0, 0.945 + 0.055 * ramp));
+      JXL_RETURN_IF_ERROR(frame.SetValue(y, x, 1, 2.0 * ramp / 65535.0));
+      JXL_RETURN_IF_ERROR(frame.SetValue(y, x, 2, 8.0 * ramp / 65535.0));
+      const double alpha = alpha_pattern == 0   ? 1.0
+                           : alpha_pattern == 1 ? (x + y) % 2
+                                                : 0.25 + 0.75 * ramp;
+      JXL_RETURN_IF_ERROR(frame.SetValue(y, x, 3, alpha));
+    }
+  }
+  image.ppf().icc.assign(icc.begin(), icc.end());
+  image.ppf().orig_icc.assign(icc.begin(), icc.end());
+  image.ppf().primary_color_representation =
+      extras::PackedPixelFile::kIccIsPrimary;
+  return image;
+}
+
+bool ReplaceIccTag(IccBytes* target, const char* target_signature,
+                   const char* new_signature, const IccBytes& source,
+                   const char* source_signature) {
+  const size_t target_record = FindIccTagRecord(*target, target_signature);
+  const size_t source_record = FindIccTagRecord(source, source_signature);
+  if (target_record == 0 || source_record == 0) return false;
+  const size_t source_offset = ReadBE32(source.data() + source_record + 4);
+  const size_t source_size = ReadBE32(source.data() + source_record + 8);
+  if (source_offset > source.size() ||
+      source_size > source.size() - source_offset) {
+    return false;
+  }
+  const size_t target_offset = (target->size() + 3U) & ~size_t{3};
+  target->resize(target_offset + source_size);
+  std::copy(source.begin() + source_offset,
+            source.begin() + source_offset + source_size,
+            target->begin() + target_offset);
+  std::memcpy(target->data() + target_record, new_signature, 4);
+  WriteBE32(target->data() + target_record + 4,
+            static_cast<uint32_t>(target_offset));
+  WriteBE32(target->data() + target_record + 8,
+            static_cast<uint32_t>(source_size));
+  WriteBE32(target->data(), static_cast<uint32_t>(target->size()));
+  return true;
+}
+
+bool ReplaceTrcsWithSampledCurve(IccBytes* icc,
+                                 bool make_non_equivalent = true) {
+  constexpr size_t kEntries = 256;
+  IccBytes curve(12U + 2U * kEntries);
+  std::memcpy(curve.data(), "curv", 4);
+  WriteBE32(curve.data() + 8, kEntries);
+  for (size_t i = 0; i < kEntries; ++i) {
+    const double x = static_cast<double>(i) / (kEntries - 1);
+    double y = x <= 0.04045 ? x / 12.92 : std::pow((x + 0.055) / 1.055, 2.4);
+    if (make_non_equivalent && i == 25) y += 0.25;
+    WriteBE16(
+        curve.data() + 12U + 2U * i,
+        static_cast<uint16_t>(std::lround(Clamp1(y, 0.0, 1.0) * 65535.0)));
+  }
+
+  const size_t offset = (icc->size() + 3U) & ~size_t{3};
+  icc->resize(offset + curve.size());
+  std::copy(curve.begin(), curve.end(), icc->begin() + offset);
+  for (const char* signature : {"rTRC", "gTRC", "bTRC"}) {
+    const size_t record = FindIccTagRecord(*icc, signature);
+    if (record == 0) return false;
+    WriteBE32(icc->data() + record + 4, static_cast<uint32_t>(offset));
+    WriteBE32(icc->data() + record + 8, static_cast<uint32_t>(curve.size()));
+  }
+  WriteBE32(icc->data(), static_cast<uint32_t>(icc->size()));
+  return true;
+}
+
+bool ModifiedTrcRemainsICC(const IccBytes& icc, size_t trc_offset,
+                           uint32_t delta) {
+  IccBytes modified_icc = icc;
+  WriteBE32(modified_icc.data() + trc_offset + 16,
+            ReadBE32(modified_icc.data() + trc_offset + 16) + delta);
+  ColorEncoding modified;
+  if (!modified.SetICC(std::move(modified_icc), JxlGetDefaultCms())) {
+    return false;
+  }
+  modified.DecideIfWantICC(*JxlGetDefaultCms());
+  return modified.WantICC();
+}
+
+void CheckNonconformingDisplayP3FullSizeLossy(
+    const extras::PackedPixelFile& input, size_t distinct_color_limit) {
+  extras::JXLCompressParams params;
+  params.distance = 1.0f;
+  extras::JXLDecompressParams decode_params;
+  decode_params.accepted_formats.push_back(
+      {4, input.frames[0].color.format.data_type,
+       input.frames[0].color.format.endianness, /*align=*/0});
+  extras::PackedPixelFile output;
+  ASSERT_GT(test::Roundtrip(input, params, decode_params, nullptr, &output),
+            0U);
+  const uint32_t output_bits =
+      input.frames[0].color.format.data_type == JXL_TYPE_UINT8 ? 8U : 16U;
+  EXPECT_EQ(output.info.bits_per_sample, output_bits);
+  EXPECT_EQ(output.primary_color_representation,
+            extras::PackedPixelFile::kColorEncodingIsPrimary);
+  EXPECT_GT(CountDistinctColors(output.frames[0].color, distinct_color_limit),
+            distinct_color_limit);
+  // Butteraugli converts both inputs through their declared color encodings,
+  // so this also checks color fidelity in a common viewing space.
+  EXPECT_LE(test::ButteraugliDistance(input, output), 1.5f);
+}
+
+void CheckNonconformingDisplayP3Tolerance(
+    const extras::PackedPixelFile& input) {
+  ASSERT_GE(input.icc.size(), 132U);
+  const uint32_t tag_count = ReadBE32(input.icc.data() + 128);
+  ASSERT_LE(tag_count, (input.icc.size() - 132U) / 12U);
+  size_t trc_offset = 0;
+  size_t trc_size = 0;
+  for (uint32_t i = 0; i < tag_count; ++i) {
+    const size_t record = 132U + 12U * i;
+    if (std::memcmp(input.icc.data() + record, "rTRC", 4) == 0) {
+      trc_offset = ReadBE32(input.icc.data() + record + 4);
+      trc_size = ReadBE32(input.icc.data() + record + 8);
+      break;
+    }
+  }
+  ASSERT_GT(trc_offset, 0U);
+  ASSERT_LE(trc_offset + trc_size, input.icc.size());
+  ASSERT_GE(trc_size, 20U);
+  ASSERT_EQ(std::memcmp(input.icc.data() + trc_offset, "para", 4), 0);
+  // Keep the v4 matrix/CHAD/white-point shape but make the shared TRC clearly
+  // non-equivalent. Both CMS implementations must retain the ICC profile.
+  EXPECT_TRUE(ModifiedTrcRemainsICC(input.icc, trc_offset, 4096));
+#if !JPEGXL_ENABLE_SKCMS
+  // In the lcms path, adding 16 fixed-point LSBs is a small mutation rejected
+  // by the relaxed 3E-4 functional-equivalence comparison.
+  EXPECT_TRUE(ModifiedTrcRemainsICC(input.icc, trc_offset, 16));
+#endif
+}
 
 struct Globals {
   // TODO(deymo): Make this a const.
@@ -268,6 +513,270 @@ TEST_F(ColorManagementTest, D2700ToSRGB) {
       transform.Run(0, sRGB_D2700_values.data(), sRGB_values.data(), 1));
   Color sRGB_expected{0.914, 0.745, 0.601};
   EXPECT_ARRAY_NEAR(sRGB_values, sRGB_expected, 1e-3);
+}
+
+TEST_F(ColorManagementTest, NonconformingDisplayP3DoesNotCollapseWithLossyXYB) {
+  JXL_TEST_ASSIGN_OR_DIE(const IccBytes expected_icc,
+                         CreateNonconformingDisplayP3Profile());
+  JXL_TEST_ASSIGN_OR_DIE(test::TestImage test_image,
+                         CreateNonconformingDisplayP3TestImage(
+                             expected_icc, 256, 16, /*alpha_pattern=*/0));
+  extras::PackedPixelFile& input = test_image.ppf();
+  ASSERT_EQ(input.primary_color_representation,
+            extras::PackedPixelFile::kIccIsPrimary);
+  EXPECT_EQ(input.icc, expected_icc);
+  EXPECT_EQ(input.info.bits_per_sample, 16U);
+  EXPECT_EQ(input.info.alpha_bits, 16U);
+
+  {
+    ColorEncoding parsed;
+    ASSERT_TRUE(parsed.SetICC(IccBytes(input.icc), JxlGetDefaultCms()));
+    ASSERT_TRUE(parsed.HasPrimaries());
+    EXPECT_EQ(parsed.GetWhitePointType(), WhitePoint::kD65);
+    EXPECT_EQ(parsed.GetPrimariesType(), Primaries::kP3);
+    EXPECT_TRUE(parsed.Tf().IsSRGB());
+  }
+
+  ASSERT_NO_FATAL_FAILURE(CheckNonconformingDisplayP3FullSizeLossy(input, 100));
+  ASSERT_NO_FATAL_FAILURE(CheckNonconformingDisplayP3Tolerance(input));
+}
+
+TEST_F(ColorManagementTest, NonconformingDisplayP3InputVariants) {
+  JXL_TEST_ASSIGN_OR_DIE(const IccBytes icc,
+                         CreateNonconformingDisplayP3Profile());
+  struct Variant {
+    size_t bits_per_sample;
+    size_t alpha_pattern;
+  };
+  for (const Variant& variant :
+       {Variant{8, 0}, Variant{10, 1}, Variant{12, 2}}) {
+    SCOPED_TRACE(testing::Message()
+                 << "bits=" << variant.bits_per_sample
+                 << " alpha_pattern=" << variant.alpha_pattern);
+    JXL_TEST_ASSIGN_OR_DIE(
+        test::TestImage test_image,
+        CreateNonconformingDisplayP3TestImage(icc, 64, variant.bits_per_sample,
+                                              variant.alpha_pattern));
+    ASSERT_NO_FATAL_FAILURE(
+        CheckNonconformingDisplayP3FullSizeLossy(test_image.ppf(), 4));
+  }
+
+  JXL_TEST_ASSIGN_OR_DIE(
+      test::TestImage lossless_image,
+      CreateNonconformingDisplayP3TestImage(icc, 64, 16, /*alpha_pattern=*/2));
+  extras::JXLCompressParams params;
+  params.distance = 0.0f;
+  extras::JXLDecompressParams decode_params;
+  decode_params.accepted_formats.push_back(
+      {4, lossless_image.ppf().frames[0].color.format.data_type,
+       lossless_image.ppf().frames[0].color.format.endianness, /*align=*/0});
+  extras::PackedPixelFile output;
+  ASSERT_GT(test::Roundtrip(lossless_image.ppf(), params, decode_params,
+                            nullptr, &output),
+            0U);
+  ASSERT_EQ(output.frames.size(), 1U);
+  EXPECT_TRUE(test::SamePixels(lossless_image.ppf().frames[0].color,
+                               output.frames[0].color));
+  EXPECT_EQ(output.primary_color_representation,
+            extras::PackedPixelFile::kIccIsPrimary);
+}
+
+TEST_F(ColorManagementTest, ConformingDisplayP3ProfileUsesStructuredFields) {
+  JXL_TEST_ASSIGN_OR_DIE(IccBytes conforming_icc,
+                         CreateDisplayP3MatrixProfile());
+  ASSERT_GE(conforming_icc.size(), 128U);
+  EXPECT_EQ(conforming_icc[8], 4U);
+  EXPECT_EQ(std::memcmp(conforming_icc.data() + 12, "mntr", 4), 0);
+  EXPECT_EQ(std::memcmp(conforming_icc.data() + 16, "RGB ", 4), 0);
+  EXPECT_EQ(std::memcmp(conforming_icc.data() + 20, "XYZ ", 4), 0);
+  for (const char* tag :
+       {"wtpt", "chad", "rXYZ", "gXYZ", "bXYZ", "rTRC", "gTRC", "bTRC"}) {
+    EXPECT_TRUE(HasIccTag(conforming_icc, tag));
+  }
+  EXPECT_FALSE(HasIccTag(conforming_icc, "A2B0"));
+  ColorEncoding actual;
+  ASSERT_TRUE(actual.SetICC(std::move(conforming_icc), JxlGetDefaultCms()));
+  actual.DecideIfWantICC(*JxlGetDefaultCms());
+  EXPECT_FALSE(actual.WantICC());
+  EXPECT_EQ(actual.GetWhitePointType(), WhitePoint::kD65);
+  EXPECT_EQ(actual.GetPrimariesType(), Primaries::kP3);
+  EXPECT_TRUE(actual.Tf().IsSRGB());
+}
+
+TEST_F(ColorManagementTest, CustomChadMatrixProfileRemainsICC) {
+  JXL_TEST_ASSIGN_OR_DIE(IccBytes icc, CreateNonconformingDisplayP3Profile());
+  const size_t chad_record = FindIccTagRecord(icc, "chad");
+  ASSERT_GT(chad_record, 0U);
+  const size_t chad_offset = ReadBE32(icc.data() + chad_record + 4);
+  const size_t chad_size = ReadBE32(icc.data() + chad_record + 8);
+  ASSERT_GE(chad_size, 44U);
+  ASSERT_LE(chad_offset + chad_size, icc.size());
+  ASSERT_EQ(std::memcmp(icc.data() + chad_offset, "sf32", 4), 0);
+
+  // Structured color fields can only regenerate Bradford adaptation. A valid
+  // profile with a different CHAD must therefore retain its ICC profile.
+  WriteBE32(icc.data() + chad_offset + 8,
+            ReadBE32(icc.data() + chad_offset + 8) + 4096);
+
+  ColorEncoding actual;
+  ASSERT_TRUE(actual.SetICC(std::move(icc), JxlGetDefaultCms()));
+  actual.DecideIfWantICC(*JxlGetDefaultCms());
+  EXPECT_TRUE(actual.WantICC());
+}
+
+TEST_F(ColorManagementTest, SingularChadIsNotSimplified) {
+  JXL_TEST_ASSIGN_OR_DIE(IccBytes icc, CreateNonconformingDisplayP3Profile());
+  const size_t chad_record = FindIccTagRecord(icc, "chad");
+  ASSERT_GT(chad_record, 0U);
+  const size_t chad_offset = ReadBE32(icc.data() + chad_record + 4);
+  const size_t chad_size = ReadBE32(icc.data() + chad_record + 8);
+  ASSERT_GE(chad_size, 44U);
+  ASSERT_LE(chad_offset + chad_size, icc.size());
+  for (size_t i = 0; i < 9; ++i) {
+    WriteBE32(icc.data() + chad_offset + 8U + 4U * i, 0);
+  }
+
+  ColorEncoding actual;
+  // Rejecting a singular CHAD is also safe. If the CMS accepts the malformed
+  // profile, it must retain the ICC rather than enter the compatibility path.
+  if (actual.SetICC(std::move(icc), JxlGetDefaultCms())) {
+    actual.DecideIfWantICC(*JxlGetDefaultCms());
+    EXPECT_TRUE(actual.WantICC());
+  }
+}
+
+TEST_F(ColorManagementTest, NearSingularChadIsNotSimplified) {
+  JXL_TEST_ASSIGN_OR_DIE(IccBytes icc, CreateNonconformingDisplayP3Profile());
+  const size_t chad_record = FindIccTagRecord(icc, "chad");
+  ASSERT_GT(chad_record, 0U);
+  const size_t chad_offset = ReadBE32(icc.data() + chad_record + 4);
+  const size_t chad_size = ReadBE32(icc.data() + chad_record + 8);
+  ASSERT_GE(chad_size, 44U);
+  ASSERT_LE(chad_offset + chad_size, icc.size());
+  ASSERT_EQ(std::memcmp(icc.data() + chad_offset, "sf32", 4), 0);
+
+  // Each diagonal value is 1/65536 in ICC s15Fixed16 notation. This is a
+  // nonzero, ICC-representable determinant below Inv3x3Matrix's threshold.
+  constexpr uint32_t kOneFixedPointLsb = 1;
+  constexpr double kDeterminant = 1.0 / (65536.0 * 65536.0 * 65536.0);
+  EXPECT_GT(kDeterminant, 0.0);
+  EXPECT_LT(kDeterminant, 1e-10);
+  for (size_t i = 0; i < 9; ++i) {
+    WriteBE32(icc.data() + chad_offset + 8U + 4U * i,
+              i % 4 == 0 ? kOneFixedPointLsb : 0);
+  }
+
+  ColorEncoding actual;
+  // Rejecting an unsafe CHAD is also safe. If the CMS accepts the malformed
+  // profile, it must retain the ICC rather than enter the compatibility path.
+  if (actual.SetICC(std::move(icc), JxlGetDefaultCms())) {
+    actual.DecideIfWantICC(*JxlGetDefaultCms());
+    EXPECT_TRUE(actual.WantICC());
+  }
+}
+
+TEST_F(ColorManagementTest, Version2DisplayP3ProfileUsesStructuredFields) {
+  JXL_TEST_ASSIGN_OR_DIE(IccBytes icc, CreateDisplayP3MatrixProfile());
+  ASSERT_GE(icc.size(), 12U);
+
+  // Change the header version to ICC v2.1. The malformed-profile compatibility
+  // rule is v4-only, and valid v2 interpretation must remain unchanged.
+  icc[8] = 2;
+  icc[9] = 0x10;
+  icc[10] = 0;
+  icc[11] = 0;
+
+  ColorEncoding actual;
+  ASSERT_TRUE(actual.SetICC(std::move(icc), JxlGetDefaultCms()));
+  actual.DecideIfWantICC(*JxlGetDefaultCms());
+  EXPECT_FALSE(actual.WantICC());
+  EXPECT_EQ(actual.GetWhitePointType(), WhitePoint::kD65);
+  EXPECT_EQ(actual.GetPrimariesType(), Primaries::kP3);
+  EXPECT_TRUE(actual.Tf().IsSRGB());
+}
+
+TEST_F(ColorManagementTest, LUTProfileRemainsICC) {
+  ColorEncoding lut_source;
+  lut_source.SetColorSpace(ColorSpace::kXYB);
+  lut_source.SetRenderingIntent(RenderingIntent::kPerceptual);
+  ASSERT_TRUE(lut_source.CreateICC());
+  ASSERT_TRUE(HasIccTag(lut_source.ICC(), "A2B0"));
+
+  JXL_TEST_ASSIGN_OR_DIE(IccBytes hybrid,
+                         CreateNonconformingDisplayP3Profile());
+  ASSERT_TRUE(ReplaceIccTag(&hybrid, "desc", "A2B0", lut_source.ICC(), "A2B0"));
+  ASSERT_TRUE(HasIccTag(hybrid, "rXYZ"));
+  ASSERT_TRUE(HasIccTag(hybrid, "rTRC"));
+  ASSERT_TRUE(HasIccTag(hybrid, "A2B0"));
+
+  ColorEncoding actual;
+  ASSERT_TRUE(actual.SetICC(std::move(hybrid), JxlGetDefaultCms()));
+  actual.DecideIfWantICC(*JxlGetDefaultCms());
+  EXPECT_TRUE(actual.WantICC());
+  EXPECT_NE(actual.GetWhitePointType(), WhitePoint::kD65);
+}
+
+TEST_F(ColorManagementTest, SampledTrcProfileSkipsWhitePointRecovery) {
+  JXL_TEST_ASSIGN_OR_DIE(IccBytes icc, CreateNonconformingDisplayP3Profile());
+  ASSERT_TRUE(ReplaceTrcsWithSampledCurve(&icc));
+
+  ColorEncoding actual;
+  ASSERT_TRUE(actual.SetICC(std::move(icc), JxlGetDefaultCms()));
+  actual.DecideIfWantICC(*JxlGetDefaultCms());
+  EXPECT_TRUE(actual.WantICC());
+  EXPECT_NE(actual.GetWhitePointType(), WhitePoint::kD65);
+}
+
+TEST_F(ColorManagementTest, NoChadProfileSkipsCompatibilityPath) {
+  JXL_TEST_ASSIGN_OR_DIE(IccBytes icc, CreateNonconformingDisplayP3Profile());
+  const size_t chad_record = FindIccTagRecord(icc, "chad");
+  ASSERT_GT(chad_record, 0U);
+  std::memcpy(icc.data() + chad_record, "tst1", 4);
+  ASSERT_TRUE(ReplaceTrcsWithSampledCurve(&icc, /*make_non_equivalent=*/false));
+
+  ColorEncoding actual;
+  ASSERT_TRUE(actual.SetICC(std::move(icc), JxlGetDefaultCms()));
+  actual.DecideIfWantICC(*JxlGetDefaultCms());
+  EXPECT_FALSE(actual.WantICC());
+  EXPECT_EQ(actual.GetWhitePointType(), WhitePoint::kD65);
+  EXPECT_EQ(actual.GetPrimariesType(), Primaries::kP3);
+  EXPECT_TRUE(actual.Tf().IsSRGB());
+}
+
+TEST_F(ColorManagementTest, UnequalTrcMatrixProfileRemainsICC) {
+  JXL_TEST_ASSIGN_OR_DIE(IccBytes icc, CreateNonconformingDisplayP3Profile());
+  ASSERT_GE(icc.size(), 132U);
+  const uint32_t tag_count = ReadBE32(icc.data() + 128);
+  ASSERT_LE(tag_count, (icc.size() - 132U) / 12U);
+  size_t green_trc_record = 0;
+  for (uint32_t i = 0; i < tag_count; ++i) {
+    const size_t record = 132U + 12U * i;
+    if (std::memcmp(icc.data() + record, "gTRC", 4) == 0) {
+      green_trc_record = record;
+      break;
+    }
+  }
+  ASSERT_GT(green_trc_record, 0U);
+  const size_t trc_offset = ReadBE32(icc.data() + green_trc_record + 4);
+  const size_t trc_size = ReadBE32(icc.data() + green_trc_record + 8);
+  ASSERT_GE(trc_size, 20U);
+  ASSERT_LE(trc_offset + trc_size, icc.size());
+
+  const IccBytes green_trc(icc.begin() + trc_offset,
+                           icc.begin() + trc_offset + trc_size);
+  const size_t new_trc_offset = (icc.size() + 3U) & ~size_t{3};
+  icc.resize(new_trc_offset + trc_size);
+  std::copy(green_trc.begin(), green_trc.end(), icc.begin() + new_trc_offset);
+  WriteBE32(icc.data(), static_cast<uint32_t>(icc.size()));
+  WriteBE32(icc.data() + green_trc_record + 4,
+            static_cast<uint32_t>(new_trc_offset));
+  WriteBE32(icc.data() + new_trc_offset + 16,
+            ReadBE32(icc.data() + new_trc_offset + 16) + 4096);
+
+  ColorEncoding actual;
+  ASSERT_TRUE(actual.SetICC(std::move(icc), JxlGetDefaultCms()));
+  actual.DecideIfWantICC(*JxlGetDefaultCms());
+  EXPECT_TRUE(actual.WantICC());
 }
 
 TEST_F(ColorManagementTest, P3HlgTo2020Hlg) {
