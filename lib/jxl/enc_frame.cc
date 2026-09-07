@@ -2582,7 +2582,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
     int base_threshold = 75 + 10 * cparams.decoding_speed_tier;
 
     //offset 14 is effort 9, we are searching for a local minimum around here
-    const int offsets[] = {9, 12, 14, 16, 19};
+    const int offsets[] = {0, 9, 12, 14, 16, 19};
     for (int offset : offsets) {
       cparams_attempt.options.splitting_heuristics_node_threshold = base_threshold + offset;
       all_params.push_back(cparams_attempt);
