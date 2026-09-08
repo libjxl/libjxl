@@ -579,11 +579,11 @@ const AEH::Lg2LUT AEH::lg2 = [] {
 }();
 
 const AEH::AllowedCounts AEH::allowed_counts = [] {
-  AllowedCounts result;
+  auto result = std::make_unique<AllowedCounts>();
 
-  for (uint32_t shift = 0; shift < result.array.size(); ++shift) {
-    auto& ac = result.array[shift];
-    auto& ai = result.index[shift];
+  for (uint32_t shift = 0; shift < result->array.size(); ++shift) {
+    auto& ac = result->array[shift];
+    auto& ai = result->index[shift];
     ANSHistBin last = ~0;
     size_t slot = 0;
     // TODO(eustas): are those "default" values relevant?
@@ -611,7 +611,7 @@ const AEH::AllowedCounts AEH::allowed_counts = [] {
     }
   }
 
-  return result;
+  return *result;
 }();
 
 }  // namespace
