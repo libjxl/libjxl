@@ -15,6 +15,7 @@
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
@@ -71,6 +72,7 @@ struct State {
   pixel_type_w pred = 0;  // *before* removing the added bits.
   std::vector<uint32_t> pred_errors[kNumPredictors];
   std::vector<int32_t> error;
+  size_t buf_size_ = 0;  // = (xsize + 2) * 2, for bounds-checked Span views
   const Header &header;
 
   // Allows to approximate division by a number from 1 to 64.
@@ -90,13 +92,14 @@ struct State {
     return static_cast<uint64_t>(x) << kPredExtraBits;
   }
 
-  State(const Header &header, size_t xsize, size_t ysize) : header(header) {
+  State(const Header &header, size_t xsize, size_t ysize)
+      : buf_size_((xsize + 2) * 2), header(header) {
     // Extra margin to avoid out-of-bounds writes.
     // All have space for two rows of data.
     for (auto &pred_error : pred_errors) {
-      pred_error.resize((xsize + 2) * 2);
+      pred_error.resize(buf_size_);
     }
-    error.resize((xsize + 2) * 2);
+    error.resize(buf_size_);
   }
 
   // Approximates 4+(maxweight<<24)/(x+1), avoiding division
@@ -145,8 +148,8 @@ struct State {
     for (size_t i = 0; i < kNumPredictors; i++) {
       // pred_errors[pos_N] also contains the error of pixel W.
       // pred_errors[pos_NW] also contains the error of pixel WW.
-      weights[i] = pred_errors[i][pos_N] + pred_errors[i][pos_NE] +
-                   pred_errors[i][pos_NW];
+      const Span<const uint32_t> pe(pred_errors[i].data(), buf_size_);
+      weights[i] = pe[pos_N] + pe[pos_NE] + pe[pos_NW];
       weights[i] = ErrorWeight(weights[i], header.w[i]);
     }
 
@@ -156,11 +159,12 @@ struct State {
     NW = AddBits(NW);
     NN = AddBits(NN);
 
-    pixel_type_w teW = x == 0 ? 0 : error[cur_row + x - 1];
-    pixel_type_w teN = error[pos_N];
-    pixel_type_w teNW = error[pos_NW];
+    const Span<const int32_t> err(error.data(), buf_size_);
+    pixel_type_w teW = x == 0 ? 0 : err[cur_row + x - 1];
+    pixel_type_w teN = err[pos_N];
+    pixel_type_w teNW = err[pos_NW];
     pixel_type_w sumWN = teN + teW;
-    pixel_type_w teNE = error[pos_NE];
+    pixel_type_w teNE = err[pos_NE];
 
     if (compute_properties) {
       pixel_type_w p = teW;
@@ -197,15 +201,17 @@ struct State {
     size_t cur_row = y & 1 ? 0 : (xsize + 2);
     size_t prev_row = y & 1 ? (xsize + 2) : 0;
     val = AddBits(val);
-    error[cur_row + x] = pred - val;
+    Span<int32_t> err_span(error.data(), buf_size_);
+    err_span[cur_row + x] = pred - val;
     for (size_t i = 0; i < kNumPredictors; i++) {
       pixel_type_w err =
           (std::abs(prediction[i] - val) + kPredictionRound) >> kPredExtraBits;
+      Span<uint32_t> pe(pred_errors[i].data(), buf_size_);
       // For predicting in the next row.
-      pred_errors[i][cur_row + x] = err;
+      pe[cur_row + x] = err;
       // Add the error on this pixel to the error on the NE pixel. This has the
       // effect of adding the error on this pixel to the E and EE pixels.
-      pred_errors[i][prev_row + x + 1] += err;
+      pe[prev_row + x + 1] += err;
     }
   }
 };
@@ -424,8 +430,9 @@ inline void PrecomputeReferences(const Channel &ch, size_t y,
     if (image.channel[j].hshift != image.channel[i].hshift) continue;
     if (image.channel[j].vshift != image.channel[i].vshift) continue;
     pixel_type *JXL_RESTRICT rp = references->Row(0) + offset;
-    const pixel_type *JXL_RESTRICT rpp = image.channel[j].Row(y);
-    const pixel_type *JXL_RESTRICT rpprev = image.channel[j].Row(y ? y - 1 : 0);
+    const Span<const pixel_type> rpp(image.channel[j].Row(y), ch.w);
+    const Span<const pixel_type> rpprev(
+        image.channel[j].Row(y ? y - 1 : 0), ch.w);
     for (size_t x = 0; x < ch.w; x++, rp += onerow) {
       pixel_type_w v = rpp[x];
       rp[0] = std::abs(v);
@@ -561,8 +568,8 @@ JXL_INLINE PredictionResult Predict(
   }
   if (!nec && compute_properties) {
     offset += weighted::kNumProperties;
-    // Extra properties.
-    const pixel_type *JXL_RESTRICT rp = references->Row(x);
+    // Extra properties from reference channels.
+    const Span<const pixel_type> rp(references->Row(x), references->w);
     for (size_t i = 0; i < references->w; i++) {
       (*p)[offset++] = rp[i];
     }
