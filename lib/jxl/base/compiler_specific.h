@@ -215,4 +215,24 @@
 #define JXL_CRASH() (void)__builtin_trap()
 #endif
 
+// Suppresses -Wunsafe-buffer-usage for intentional low-level buffer operations
+// that are themselves safe but use raw pointer arithmetic internally, such as
+// the implementation of Span::operator[]. Wrap only the minimal scope that
+// requires suppression; do NOT use these macros to silence warnings in
+// application logic.
+//
+// Example usage:
+//   JXL_UNSAFE_BUFFERS_BEGIN
+//   constexpr T& operator[](size_t i) const noexcept { return *(data() + i); }
+//   JXL_UNSAFE_BUFFERS_END
+#if JXL_COMPILER_CLANG >= 1400
+#define JXL_UNSAFE_BUFFERS_BEGIN \
+  _Pragma("clang diagnostic push") \
+  _Pragma("clang diagnostic ignored \"-Wunsafe-buffer-usage\"")
+#define JXL_UNSAFE_BUFFERS_END _Pragma("clang diagnostic pop")
+#else
+#define JXL_UNSAFE_BUFFERS_BEGIN
+#define JXL_UNSAFE_BUFFERS_END
+#endif
+
 #endif  // LIB_JXL_BASE_COMPILER_SPECIFIC_H_

@@ -14,6 +14,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
@@ -52,19 +53,33 @@ class Span {
 
   constexpr T* begin() const noexcept { return data(); }
 
+  // Raw pointer arithmetic is intentional here: end() must point one past the
+  // last element. Suppressed so callers using Span::operator[] are clean under
+  // -Wunsafe-buffer-usage.
+  JXL_UNSAFE_BUFFERS_BEGIN
   constexpr T* end() const noexcept { return data() + size(); }
+  JXL_UNSAFE_BUFFERS_END
 
+  // operator[] carries bounds information through the Span type, making it
+  // safe to use at call sites. The pointer arithmetic in the implementation is
+  // suppressed here so it does not propagate warnings to callers.
+  JXL_UNSAFE_BUFFERS_BEGIN
   constexpr T& operator[](size_t i) const noexcept {
     // MSVC 2015 accepts this as constexpr, but not ptr_[i]
     return *(data() + i);
   }
+  JXL_UNSAFE_BUFFERS_END
 
+  // remove_prefix advances the start pointer by n bytes. Suppressed because
+  // the mutation of ptr_ is intentional and bounded by the JXL_ENSURE check.
+  JXL_UNSAFE_BUFFERS_BEGIN
   Status remove_prefix(size_t n) noexcept {
     JXL_ENSURE(size() >= n);
     ptr_ += n;
     len_ -= n;
     return true;
   }
+  JXL_UNSAFE_BUFFERS_END
 
   void AppendTo(std::vector<NCT>& dst) const {
     dst.insert(dst.end(), begin(), end());
