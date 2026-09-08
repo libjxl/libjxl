@@ -402,6 +402,22 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         ppf->extra_channels_info.push_back({eci, i, name});
       }
     } else if (status == JXL_DEC_COLOR_ENCODING) {
+      size_t icc_size = 0;
+      JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderGetICCProfileSize(dec, target, &icc_size)) {
+        fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
+      }
+      if (icc_size != 0) {
+        ppf->orig_icc.resize(icc_size);
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderGetColorAsICCProfile(dec, target, ppf->orig_icc.data(),
+                                           icc_size)) {
+          fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
+          return false;
+        }
+      }
+
       if (set_colorspace) {
         JxlDecoderSetCms(dec, *JxlGetDefaultCms());
         if (JXL_DEC_SUCCESS !=
@@ -410,9 +426,20 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           return false;
         }
         ppf->color_encoding = color_encoding;
+      } else if (ppf->info.uses_original_profile == JXL_FALSE &&
+                 JXL_DEC_ERROR ==
+                     JxlDecoderGetColorAsEncodedProfile(dec, target, nullptr)) {
+        JxlDecoderSetCms(dec, *JxlGetDefaultCms());
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetOutputColorProfile(dec, nullptr, ppf->orig_icc.data(),
+                                            icc_size)) {
+          fprintf(stderr, "Failed to set color space.\n");
+          return false;
+        }
       }
-      size_t icc_size = 0;
-      JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
+
+      icc_size = 0;
+      target = JXL_COLOR_PROFILE_TARGET_DATA;
       if (JXL_DEC_SUCCESS !=
           JxlDecoderGetICCProfileSize(dec, target, &icc_size)) {
         fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
@@ -432,23 +459,6 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         ppf->color_encoding.color_space = JXL_COLOR_SPACE_UNKNOWN;
         ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
       }
-
-      icc_size = 0;
-      target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
-      if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetICCProfileSize(dec, target, &icc_size)) {
-        fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
-      }
-      if (icc_size != 0) {
-        ppf->orig_icc.resize(icc_size);
-        if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetColorAsICCProfile(dec, target, ppf->orig_icc.data(),
-                                           icc_size)) {
-          fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
-          return false;
-        }
-      }
-
     } else if (status == JXL_DEC_FRAME) {
       if (!VerifyDimensions(constraints, ppf->xsize(), ppf->ysize())) {
         fprintf(stderr, "Image too big\n");
