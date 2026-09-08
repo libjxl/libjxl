@@ -1719,7 +1719,7 @@ Status ComputeEncodingData(
 
 Status PermuteGroups(const CompressParams& cparams,
                      const FrameDimensions& frame_dim,
-                     size_t num_passes, FrameType frame_type,
+                     size_t num_passes, size_t dc_level,
                      std::vector<coeff_order_t>* permutation,
                      std::vector<std::unique_ptr<BitWriter>>* group_codes) {
   const size_t num_groups = frame_dim.num_groups;
@@ -1731,26 +1731,28 @@ Status PermuteGroups(const CompressParams& cparams,
   std::iota(permutation->begin(), permutation->end(), 0);
   std::vector<coeff_order_t> ac_group_order(num_groups);
   std::iota(ac_group_order.begin(), ac_group_order.end(), 0);
-  size_t group_dim = frame_dim.group_dim;
+  const size_t group_dim = frame_dim.group_dim;
 
   // The center of the image is either given by parameters or chosen
   // to be the middle of the image by default if center_x, center_y resp.
   // are not provided.
 
+  // Calculate the coordinate scaling for LF frames.
+  // libjxl only implements 2 LF frames, so won't overflow.
+  const size_t dc_scale = size_t{1} << (3 * dc_level);
+  
   int64_t imag_cx;
-  if (cparams.center_x != static_cast<size_t>(-1) &&
-      frame_type != FrameType::kDCFrame) {
-    JXL_RETURN_IF_ERROR(cparams.center_x < frame_dim.xsize);
-    imag_cx = cparams.center_x;
+  if (cparams.center_x != static_cast<size_t>(-1)) {
+    imag_cx = cparams.center_x / dc_scale;
+    JXL_RETURN_IF_ERROR(imag_cx < static_cast<int64_t>(frame_dim.xsize));
   } else {
     imag_cx = frame_dim.xsize / 2;
   }
 
   int64_t imag_cy;
-  if (cparams.center_y != static_cast<size_t>(-1) &&
-      frame_type != FrameType::kDCFrame) {
-    JXL_RETURN_IF_ERROR(cparams.center_y < frame_dim.ysize);
-    imag_cy = cparams.center_y;
+  if (cparams.center_y != static_cast<size_t>(-1)) {
+    imag_cy = cparams.center_y / dc_scale;
+    JXL_RETURN_IF_ERROR(imag_cy < static_cast<int64_t>(frame_dim.ysize));
   } else {
     imag_cy = frame_dim.ysize / 2;
   }
@@ -2100,7 +2102,7 @@ JXL_NOINLINE Status EncodeFrameStreaming(
   // For ooo mode, also compute inv_perm (encoding_pos → canonical_idx).
   std::vector<coeff_order_t> group_order_perm;
   JXL_RETURN_IF_ERROR(PermuteGroups(cparams, frame_header.ToFrameDimensions(),
-                                    num_passes, frame_header.frame_type,
+                                    num_passes, frame_info.dc_level,
                                     &group_order_perm, nullptr));
   size_t encoding_pos = 0;
   std::vector<size_t> inv_perm;
@@ -2345,7 +2347,7 @@ Status EncodeFrameOneShot(JxlMemoryManager* memory_manager,
 
   std::vector<coeff_order_t> permutation;
   JXL_RETURN_IF_ERROR(PermuteGroups(cparams, enc_state->shared.frame_dim,
-                                    num_passes, frame_header.frame_type,
+                                    num_passes, frame_info.dc_level,
                                     &permutation, &group_codes));
 
   std::vector<size_t> group_sizes;
