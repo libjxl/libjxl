@@ -5765,6 +5765,116 @@ TEST(DecodeTest, SpotColorTest) {
   }
 }
 
+TEST(DecodeTest, ExtraChannelBitDepthTest) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  size_t xsize = 8;
+  size_t ysize = 8;
+  io->metadata.m.color_encoding = jxl::ColorEncoding::LinearSRGB();
+  JXL_TEST_ASSIGN_OR_DIE(Image3F main,
+                         Image3F::Create(memory_manager, xsize, ysize));
+  JXL_TEST_ASSIGN_OR_DIE(ImageF ec_image,
+                         ImageF::Create(memory_manager, xsize, ysize));
+  jxl::ZeroFillImage(&main);
+  jxl::ZeroFillImage(&ec_image);
+  ASSERT_TRUE(
+      io->SetFromImage(std::move(main), jxl::ColorEncoding::LinearSRGB()));
+
+  // A binary32 extra channel; its bit depth does not fit uint8 output.
+  jxl::ExtraChannelInfo info;
+  info.bit_depth.floating_point_sample = true;
+  info.bit_depth.bits_per_sample = 32;
+  info.bit_depth.exponent_bits_per_sample = 8;
+  info.dim_shift = 0;
+  info.type = jxl::ExtraChannel::kOptional;
+  io->metadata.m.extra_channel_info.push_back(info);
+  std::vector<ImageF> ec;
+  ec.push_back(std::move(ec_image));
+  ASSERT_TRUE(io->frames[0].SetExtraChannels(std::move(ec)));
+
+  jxl::CompressParams cparams;
+  cparams.speed_tier = jxl::SpeedTier::kLightning;
+  cparams.modular_mode = true;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.butteraugli_distance = 0.f;
+
+  std::vector<uint8_t> compressed;
+  EXPECT_TRUE(jxl::test::EncodeFile(cparams, io.get(), &compressed));
+
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+  JxlPixelFormat ec_format = {1, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+  JxlBitDepth from_codestream;
+  from_codestream.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
+  JxlBitDepth from_format;
+  from_format.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
+
+  // Set up a decoder up to the point where the output buffers are requested.
+  const auto init = [&](JxlDecoderPtr* dec, std::vector<uint8_t>* image,
+                        std::vector<uint8_t>* extra) {
+    *dec = JxlDecoderMake(nullptr);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(
+                  dec->get(), JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec->get(), compressed.data(),
+                                                  compressed.size()));
+    EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec->get()));
+    EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER,
+              JxlDecoderProcessInput(dec->get()));
+    size_t buffer_size;
+    size_t extra_size;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderImageOutBufferSize(dec->get(), &format, &buffer_size));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderExtraChannelBufferSize(
+                                   dec->get(), &ec_format, &extra_size, 0));
+    image->resize(buffer_size);
+    extra->resize(extra_size);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetImageOutBuffer(dec->get(), &format, image->data(),
+                                          image->size()));
+  };
+
+  {
+    // The codestream bit depth (32) does not fit the uint8 extra channel
+    // buffer, so it must be rejected instead of reaching the output stage.
+    JxlDecoderPtr dec;
+    std::vector<uint8_t> image;
+    std::vector<uint8_t> extra;
+    init(&dec, &image, &extra);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetImageOutBitDepth(dec.get(), &from_codestream));
+    EXPECT_EQ(JXL_DEC_ERROR,
+              JxlDecoderSetExtraChannelBuffer(dec.get(), &ec_format,
+                                              extra.data(), extra.size(), 0));
+  }
+
+  {
+    // Same, with the bit depth requested after the extra channel buffer.
+    JxlDecoderPtr dec;
+    std::vector<uint8_t> image;
+    std::vector<uint8_t> extra;
+    init(&dec, &image, &extra);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetExtraChannelBuffer(dec.get(), &ec_format,
+                                              extra.data(), extra.size(), 0));
+    EXPECT_EQ(JXL_DEC_ERROR,
+              JxlDecoderSetImageOutBitDepth(dec.get(), &from_codestream));
+  }
+
+  {
+    // A bit depth that does fit the buffer decodes as before.
+    JxlDecoderPtr dec;
+    std::vector<uint8_t> image;
+    std::vector<uint8_t> extra;
+    init(&dec, &image, &extra);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetImageOutBitDepth(dec.get(), &from_format));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetExtraChannelBuffer(dec.get(), &ec_format,
+                                              extra.data(), extra.size(), 0));
+    EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
+  }
+}
+
 TEST(DecodeTest, CloseInput) {
   std::vector<uint8_t> partial_file = {0xff};
 
