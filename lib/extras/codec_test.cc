@@ -570,6 +570,86 @@ TEST(CodecTest, EncodeToPNG) {
                   decoded_ppf.info.bits_per_sample);
 }
 
+// A cICP chunk carrying a code point that libjxl does not implement must not
+// fail the whole PNG: per PNG 3rd Edition 11.3.2.6 cICP is the
+// highest-precedence color chunk only "if understood by the decoder", so an
+// unsupported one has to fall through to iCCP / sRGB / gAMA+cHRM.
+TEST(CodecTest, DecodePNGWithUnsupportedCicp) {
+  if (!CanDecode(Codec::kPNG)) {
+    fprintf(stderr, "Skipping test because of missing codec support.\n");
+    return;
+  }
+  const std::vector<uint8_t> png = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  // 8 byte signature plus a 13 byte IHDR chunk; cICP goes after IHDR and
+  // before PLTE / IDAT. The test image carries an iCCP chunk to fall back to.
+  constexpr size_t kAfterIhdr = 8 + 12 + 13;
+  ASSERT_GT(png.size(), kAfterIhdr);
+
+  const auto crc32 = [](const uint8_t* data, size_t size) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < size; ++i) {
+      crc ^= data[i];
+      for (int k = 0; k < 8; ++k) {
+        crc = (crc & 1) ? ((crc >> 1) ^ 0xEDB88320u) : (crc >> 1);
+      }
+    }
+    return crc ^ 0xFFFFFFFFu;
+  };
+  const auto with_cicp = [&](const std::vector<uint8_t>& payload) {
+    std::vector<uint8_t> chunk(8);
+    StoreBE32(static_cast<uint32_t>(payload.size()), chunk.data());
+    memcpy(chunk.data() + 4, "cICP", 4);
+    chunk.insert(chunk.end(), payload.begin(), payload.end());
+    uint8_t crc[4];
+    StoreBE32(crc32(chunk.data() + 4, chunk.size() - 4), crc);
+    chunk.insert(chunk.end(), crc, crc + 4);
+    std::vector<uint8_t> out(png.begin(), png.begin() + kAfterIhdr);
+    out.insert(out.end(), chunk.begin(), chunk.end());
+    out.insert(out.end(), png.begin() + kAfterIhdr, png.end());
+    return out;
+  };
+
+  // Positive control: a code point that libjxl does implement still wins over
+  // the iCCP chunk. BT.2100 primaries, PQ transfer function, identity matrix
+  // coefficients, full range.
+  {
+    PackedPixelFile ppf;
+    ASSERT_TRUE(extras::DecodeBytes(Bytes(with_cicp({9, 16, 0, 1})),
+                                    ColorHints(), &ppf));
+    EXPECT_EQ(ppf.primary_color_representation,
+              PackedPixelFile::kColorEncodingIsPrimary);
+    EXPECT_EQ(ppf.color_encoding.primaries, JXL_PRIMARIES_2100);
+    EXPECT_EQ(ppf.color_encoding.transfer_function, JXL_TRANSFER_FUNCTION_PQ);
+    EXPECT_TRUE(ppf.icc.empty());
+  }
+
+  // Syntactically valid code points that libjxl does not implement.
+  const std::vector<std::vector<uint8_t>> unsupported = {
+      {9, 16, 0, 0},  // video full range flag 0, i.e. a narrow-range image
+      {1, 7, 0, 1},   // transfer function 7, SMPTE ST 240M
+      {2, 13, 0, 1},  // colour primaries 2, "unspecified"
+  };
+  for (const std::vector<uint8_t>& payload : unsupported) {
+    PackedPixelFile ppf;
+    ASSERT_TRUE(
+        extras::DecodeBytes(Bytes(with_cicp(payload)), ColorHints(), &ppf))
+        << "cICP " << static_cast<int>(payload[0]) << " "
+        << static_cast<int>(payload[1]) << " " << static_cast<int>(payload[2])
+        << " " << static_cast<int>(payload[3]);
+    // The iCCP chunk of the test image has to remain in charge.
+    EXPECT_EQ(ppf.primary_color_representation, PackedPixelFile::kIccIsPrimary);
+    EXPECT_FALSE(ppf.icc.empty());
+  }
+
+  // Negative control: a malformed cICP chunk stays a hard error.
+  {
+    PackedPixelFile ppf;
+    EXPECT_FALSE(
+        extras::DecodeBytes(Bytes(with_cicp({9, 16, 0})), ColorHints(), &ppf));
+  }
+}
+
 }  // namespace
 }  // namespace extras
 }  // namespace jxl
