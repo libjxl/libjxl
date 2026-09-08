@@ -212,7 +212,6 @@ TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
   cparams.SetLossless();
   cparams.lossy_palette = true;
   cparams.palette_colors = 0;
-  // TODO(jon): this is currently ignored, and Avg4 is always used instead
   cparams.options.predictor = jxl::Predictor::Weighted;
   extras::JXLDecompressParams dparams;
 
@@ -225,7 +224,8 @@ TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
   size_t compressed_size;
   JXL_EXPECT_OK(
       Roundtrip(io.get(), cparams, dparams, io_out.get(), _, &compressed_size));
-  EXPECT_LE(compressed_size, 6500u);
+  // Restored Weighted predictor produces ~6.7k bytes (Avg4 produced ~6.3k).
+  EXPECT_LE(compressed_size, 7000u);
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io->frames, io_out->frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
