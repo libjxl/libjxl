@@ -510,7 +510,9 @@ Status MakeFrameHeader(size_t xsize, size_t ysize,
 
   if (jpeg_data) {
     frame_header->UpdateFlag(false, FrameHeader::kUseDcFrame);
-    frame_header->UpdateFlag(true, FrameHeader::kSkipAdaptiveDCSmoothing);
+    if (!cparams.force_lfs_jpeg_recompression) {
+      frame_header->UpdateFlag(true, FrameHeader::kSkipAdaptiveDCSmoothing);
+    }
   }
 
   return true;
