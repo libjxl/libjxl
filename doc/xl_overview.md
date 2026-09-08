@@ -2,7 +2,7 @@
 
 ## Requirements
 
-JPEG XL was designed for two main requirements:
+JPEG XL was designed for two main requirements:
 
 *   high quality: visually lossless at reasonable bitrates;
 *   decoding speed: multithreaded decoding should be able to reach around
@@ -15,7 +15,7 @@ support of color spaces and transfer functions.
 High performance is achieved by designing the format with careful consideration
 of memory bandwidth usage and ease of SIMD/GPU implementation.
 
-The full requirements for JPEG XL are listed in document wg1m82079.
+The full requirements for JPEG XL are listed in document wg1m82079.
 
 ## General architecture
 
@@ -99,7 +99,7 @@ appending additional images and could be too constraining for the encoder.
 
 ## Lossless
 
-JPEG XL supports tools for lossless coding designed by Alexander Rhatushnyak and
+JPEG XL supports tools for lossless coding designed by Alexander Rhatushnyak and
 Jon Sneyers. They are about 60-75% of size of PNG, and smaller than WebP
 lossless for photos.
 

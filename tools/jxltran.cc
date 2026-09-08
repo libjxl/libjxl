@@ -163,7 +163,7 @@ JxlDecoderStatus apply_file_format_options(
         }
       } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
         if (box == jxll) {
-          fprintf(stderr, "jxll box too large");
+          fprintf(stderr, "jxll box too large\n");
           JxlDecoderReleaseBoxBuffer(dec.get());
           continue;
         }
@@ -190,7 +190,7 @@ JxlDecoderStatus apply_file_format_options(
           JxlDecoderReleaseBoxBuffer(dec.get());
           if (level > 5) {
             fprintf(stderr,
-                    "Warning: extracting raw codestream that"
+                    "Warning: extracting raw codestream that "
                     "is greater than level 5\n");
           }
         }

@@ -1,6 +1,6 @@
-# JPEG XL software support
+# JPEG XL software support
 
-This document attempts to keep track of software that is using libjxl to support JPEG XL.
+This document attempts to keep track of software that is using libjxl to support JPEG XL.
 This list serves several purposes:
 
 - thank/acknowledge other projects for integrating jxl support
@@ -34,7 +34,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [GDAL](https://gdal.org/drivers/raster/jpegxl.html): supported since 3.4.0 as a TIFF codec, and 3.6.0 as standalone format
 - [GraphicsMagick](http://www.graphicsmagick.org/NEWS.html#march-26-2022): supported since 1.3.38
 - [SAIL](https://sail.software): supported since 0.9.0
-- [JPEG XL Coder](https://github.com/awxkee/jxl-coder): Supports version from Android 5.0 (API Level 21)
+- [JPEG XL Coder](https://github.com/awxkee/jxl-coder): Supports version from Android 5.0 (API Level 21)
 - [SDWebImageJPEGXLCoder](https://github.com/SDWebImage/SDWebImageJPEGXLCoder): supported since 0.1.0
 
 ## Metadata manipulation libraries
@@ -68,7 +68,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Photoshop](https://gitlab.com/SuperSaltyGamer/jpegxlformat); plugin for Adobe Photoshop 2020 and above on Windows, supports 8-bit and 16-bit color depth, embedded ICC color profiles, transparency.
 - [XL Converter](https://github.com/JacobDev1/xl-converter)
 - [Image Toolbox (supported since 2.6.0)](https://github.com/T8RIN/ImageToolbox)
-- [JPEG XL Toolbox by SUIKA LTD](https://apps.apple.com/app/jpeg-xl-toolbox/id6470681357)
+- [JPEG XL Toolbox by SUIKA LTD](https://apps.apple.com/app/jpeg-xl-toolbox/id6470681357)
 - [RawTherapee (since 5.11)](https://github.com/Beep6581/RawTherapee); Currently only opening of JXL files is supported. [Exporting is expected for the 6.0 release](https://github.com/Beep6581/RawTherapee/pull/7097)
 
 ## Image viewers

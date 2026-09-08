@@ -18,32 +18,42 @@ The following table describes what the various effort settings do:
 
 |Effort | Modular (lossless) | VarDCT (lossy) |
 |-------|--------------------|----------------|
-| e1 | fast-lossless, fixed YCoCg RCT, fixed ClampedGradient predictor, simple palette detection, no MA tree (one context for everything), Huffman, simple rle-only lz77 | only 8x8, basically XYB jpeg with ANS |
-| e2 | global channel palette, fixed MA tree (context based on Gradient-error), ANS, otherwise same as e1 | same as e1 |
+| e1 | fast-lossless, fixed YCoCg RCT, fixed ClampedGradient predictor, simple palette detection, no MA tree (one context for everything), Huffman, simple rle-only lz77 | N/A (gets bumped to e2) |
+| e2 | global channel palette, fixed MA tree (context based on Gradient-error), ANS, otherwise same as e1 | only 8x8, basically XYB jpeg with ANS |
 | e3 | same as e2 but fixed Weighted predictor and fixed MA tree with context based on WP-error | e2 + better ANS |
 | e4 | try both ClampedGradient and Weighted predictor, learned MA tree, global palette | coefficient reordering |
 | e5 | e4 + patches, local palette / local channel palette, different local RCTs | e4 + simple variable blocks heuristics, adaptive quantization, gabor-like transform, chroma from luma |
-| e6 | e5 + more RCTs and MA tree properties | e5 + error diffusion, full variable blocks heuristics |
-| e7 | e6 + more RCTs and MA tree properties | e6 + patches (including dots) |
-| e8 | e7 + more RCTs, MA tree properties, and Weighted predictor parameters | e7 + Butteraugli iterations for adaptive quantization |
-| e9 | e8 + more RCTs, MA tree properties, and Weighted predictor parameters | e8 + more Butteraugli iterations |
-| e10 | e9 + global MA tree, try all predictors, and disables chunked encoding | e9 + more thorough adaptive quantization, disables chunked encoding and uses iterative downsampling |
-| e11 | e10 + previous-channel MA tree properties, different group dimensions, and try multiple e10 configurations | N/A |
+| e6 | e5 + more RCTs and MA tree properties | e5 + full variable blocks heuristics |
+| e7 | e6 + more RCTs and MA tree properties | e6 + error diffusion, patches (see chunked encoding) + better chroma from luma |
+| e8 | e7 + more RCTs, MA tree properties, and Weighted predictor parameters | e7 + better adaptive quantization with butteraugli iterations |
+| e9 | e8 + more RCTs, MA tree properties, and Weighted predictor parameters | e8 + more butteraugli iterations |
+| e10 | e9 + global MA tree, try all predictors, and disables chunked encoding | e9 + exhaustive block heuristics, iterative downsampling (only used when `--resampling=2`), and disables chunked encoding |
+| e11 | e10 + previous-channel MA tree properties, different group dimensions, and try multiple e10 configurations | N/A (bumped down to e10) |
 
 For the entropy coding (context clustering, lz77 search, hybriduint configuration): slower/more exhaustive search as effort goes up.
 
-<u>Chunked encoding is also disabled under these circumstances:</u>
-* When the image is smaller than 2048x2048.
+<u>Chunked encoding (streaming) is also disabled under these circumstances:</u>
+* When using default buffering (`--buffering=-1`):
+  * Effort 7 VarDCT at distances ≥3.0. (patches get enabled)
+  * Efforts 8 & 9 VarDCT at distances >0.5. (hidden check in code)
+* When using `--buffering=0` (buffer entire image).
+* When using `--buffering=1` and the image is 2048x2048 or smaller.
+* When using any buffering mode, and the image has 8 or fewer total groups. The default group size is 256x256
+  (meaning this applies to images smaller than ~768x768), but this threshold dynamically scales if the group
+  size is changed via the `-g` flag in Modular mode.
 * Lossless Jpeg transcoding.
 * VarDCT at distances ≥10.
-* Effort 7 VarDCT at distances ≥3.0.
-* Efforts 8 & 9 VarDCT at distances >0.5.
 * Lossy Modular.
 * When using any of these flags:
   * `--patches=1`
   * `--progressive_dc >0`
+  * `--progressive_ac`
+  * `--qprogressive_ac`
   * `-p`
   * `-d 0` and `-R 1`
   * `--noise=1`
   * `--resampling >1`
   * `--disable_perceptual_optimizations`
+
+> [!NOTE]
+> In version 0.12, the new flags `--buffering` and `--output_mode` were introduced to explicitly control streaming behavior. `--buffering` controls input buffering (`0` for full buffering, `1` to stream large images, `2` to stream with a lower threshold). `--output_mode` controls output codestream buffering and streaming order. By default, output is buffered (`--output_mode 0`) to allow basic progressive loading.

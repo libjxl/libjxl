@@ -36,15 +36,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Major overhaul for faster decoding and progressive lossless. (#4201, #4641,
-  #4811)
+- Major encoding overhaul for both progressive lossless and faster decoding
+  modes. (#4201, #4641, #4811)
   - Progressive lossless images are around 30-40% smaller and are now
     multithreaded increasing encoding performance by 2-5x.
-  - Lossless images with faster decoding are now 30-80% smaller and their
-    decoding speeds properly scale as the faster decoding level increases
+  - Lossless images encoded with faster decoding are now 30-80% smaller and
+    their decoding speeds properly scale as the faster decoding level increases
     from 1-4.
-  - Disabled global palette for progressive images, fixing glitchy progressive
-    loading for indexed/low color images and restoring transparency support
+  - Disabled global palette when encoding progressive images, fixing glitchy
+    progressive loading for indexed/low color images and restoring transparency
+    support
     (Note: this causes a density/speed penalty for very low bit-depth images).
 - Numerous speed/memory usage improvements.
   - Improved encoding speeds by SIMDifying `EstimateCost` (+5% performance) and
@@ -115,10 +116,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `jpegli` codebase has been removed as it is now maintained as a separate
   project at [google/jpegli](https://github.com/google/jpegli). (#4657)
 - Dropped GIMP plugin (`libjxl-gimp-plugin`). (#4875)
+- `brotli` tool is no longer built or shipped. (#4501)
 
 ### Fixed
 
-- Allows -E to be used in jpeg-transcoding again. (#4729)
+- Allow the `-E` flag to be used in jpeg-transcoding again. (#4729)
 - Fixed an issue where Lossy Delta Palette encoding failed on images larger
   than 2048x2048. (#4201)
 - Fixed Delta Palette with Weighted Predictor decoding. (#4837)
@@ -214,23 +216,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed / clarified
 
-- avoiding abort in release build (#3631 and #3639)
+- Avoiding abort in the release build. (#3631, #3639)
 
 ## [0.10.2] - 2024-03-08
 
 ### Fixed
 
-- bugs in (lossless) encoding (#3367, #3359 and #3386)
-- re-enable installation of MIME file. (#3375)
-- bugs in streaming mode (#3379 and #3380)
+- Fixed bugs in lossless encoding. (#3359, #3367, #3386)
+- Re-enabled installation of the MIME file. (#3375)
+- Fixed bugs in streaming mode. (#3379, #3380)
 
 ## [0.10.1] - 2024-02-28
 
 ### Fixed
 
-- reduce allocations (#3336 and #3339),
-  fixing a significant speed regression present since 0.9.0
-- bug in streaming encoding. (#3331)
+- Reduced allocations, fixing a significant speed regression present since
+  0.9.0. (#3336, #3339)
+- Fixed a bug in streaming encoding. (#3331)
 
 ## [0.10.0] - 2024-02-21
 
@@ -250,14 +252,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- bugs in the gdk-pixbuf plugin
-- some build issues
+- Fixed bugs in the gdk-pixbuf plugin.
+- Fixed some build issues.
 
 ## [0.9.1] - 2024-01-08
 
 ### Fixed
 
-- multiple build issues
+- Fixed multiple build issues.
 
 ## [0.9.0] - 2023-12-22
 
@@ -466,7 +468,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API: New functions to decode extra channels:
   `JxlDecoderExtraChannelBufferSize` and `JxlDecoderSetExtraChannelBuffer`.
 - API: New function `JxlEncoderInitBasicInfo` to initialize `JxlBasicInfo`
-  (only needed when encoding). NOTE: it is now required to call this function
+  (only needed when encoding). Note: it is now required to call this function
   when using the encoder. Padding was added to the struct for forward
   compatibility.
 - API: Support for encoding oriented images.
@@ -520,7 +522,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Re-licensed the project under a BSD 3-Clause license. See the
   [LICENSE](LICENSE) and [PATENTS](PATENTS) files for details.
-- Full JPEG XL part 1 specification support: Implemented all the spec required
+- Full JPEG XL part 1 specification support: Implemented all the spec required
   to decode files to pixels, including cases that are not used by the encoder
   yet. Part 2 of the spec (container format) is final but not fully implemented
   here.
@@ -617,7 +619,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- JPEG XL bitstream format is frozen. Files encoded with 0.2 will be supported
+- JPEG XL bitstream format is frozen. Files encoded with 0.2 will be supported
   by future versions.
 
 ### Changed
@@ -633,7 +635,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release of an encoder (`cjxl`) and decoder (`djxl`) that work
   together as well as a benchmark tool for comparison with other codecs
   (`benchmark_xl`).
-- Note: JPEG XL format is in the final stages of standardization, minor changes
+- Note: JPEG XL format is in the final stages of standardization, minor changes
   to the codestream format are still possible but we are not expecting any
   changes beyond what is required by bug fixing.
 - API: new decoder API in C, check the `examples/` directory for its example
