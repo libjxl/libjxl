@@ -1,0 +1,40 @@
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+ngx_addon_name=ngx_jxl
+
+if [ -z "$ngx_module_link" ]; then
+cat << END
+
+$0: error: JXL module requires recent version of NGINX (1.9.11+).
+
+END
+    exit 1
+fi
+
+ngx_module_type=HTTP_FILTER
+ngx_module_name=ngx_http_jxl_module
+
+jxl="/usr/"
+if [ ! -f "$jxl/include/jxl/encode.h" ]; then
+cat << END
+
+$0: error: JXL library is not installed.
+
+END
+    exit 1
+fi
+
+JXL_ENC_H="$jxl/include/jxl/encode.h"
+JXL_ENC_LIB="-ljxl"
+
+ngx_module_incs="$jxl/include"
+ngx_module_deps="$JXL_ENC_H"
+ngx_module_srcs="$ngx_addon_dir/ngx_http_jxl_module.c"
+ngx_module_libs="$JXL_ENC_LIB -lm"
+
+. auto/module
+
+have=NGX_HTTP_JXL_FILTER . auto/have
