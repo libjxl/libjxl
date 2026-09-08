@@ -338,6 +338,38 @@ TEST(ModularTest, RoundtripExtraProperties) {
   }
 }
 
+TEST(ModularTest, LearnedTreeFitsGlobalDecoderLimit) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  constexpr size_t kSize = 64;
+  constexpr size_t kNumChannels = 3;
+  JXL_TEST_ASSIGN_OR_DIE(
+      Image image, Image::Create(memory_manager, kSize, kSize, /*bitdepth=*/8,
+                                 kNumChannels));
+  Rng rng(0);
+  for (Channel& channel : image.channel) {
+    for (size_t y = 0; y < kSize; ++y) {
+      pixel_type* row = channel.plane.Row(y);
+      for (size_t x = 0; x < kSize; ++x) {
+        row[x] = rng.UniformU(0, 256);
+      }
+    }
+  }
+
+  ModularOptions options;
+  options.predictor = Predictor::Zero;
+  options.nb_repeats = 1.0f;
+  options.splitting_heuristics_node_threshold = 0.0f;
+  options.max_property_values = 256;
+  constexpr size_t kGlobalTreeSizeLimit =
+      MaxGlobalTreeSize(kSize, kSize, kNumChannels);
+  JXL_TEST_ASSIGN_OR_DIE(
+      Tree tree, LearnTree(&image, &options, /*start=*/0, /*stop=*/1,
+                           /*multiplier_info=*/{}, kGlobalTreeSizeLimit));
+
+  EXPECT_LE(tree.size(), kGlobalTreeSizeLimit)
+      << "encoder learned a global MA tree that its decoder rejects";
+}
+
 struct RoundtripLosslessConfig {
   int bitdepth;
   int responsive;

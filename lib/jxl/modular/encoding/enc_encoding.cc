@@ -210,7 +210,8 @@ StatusOr<Tree> LearnTree(
     TreeSamples &&tree_samples, size_t total_pixels,
     const ModularOptions &options,
     const std::vector<ModularMultiplierInfo> &multiplier_info = {},
-    StaticPropRange static_prop_range = {}) {
+    StaticPropRange static_prop_range = {},
+    size_t max_tree_size = kMaxTreeSize) {
   Tree tree;
   for (size_t i = 0; i < kNumStaticProperties; i++) {
     if (static_prop_range[i][1] == 0) {
@@ -231,7 +232,7 @@ StatusOr<Tree> LearnTree(
   JXL_RETURN_IF_ERROR(ComputeBestTree(
       tree_samples, options.splitting_heuristics_node_threshold * required_cost,
       multiplier_info, static_prop_range, options.fast_decode_multiplier,
-      &tree));
+      max_tree_size, &tree));
   return tree;
 }
 
@@ -570,7 +571,8 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels,
 StatusOr<Tree> LearnTree(
     const Image *images, const ModularOptions *options, const uint32_t start,
     const uint32_t stop,
-    const std::vector<ModularMultiplierInfo> &multiplier_info = {}) {
+    const std::vector<ModularMultiplierInfo> &multiplier_info,
+    size_t max_tree_size) {
   TreeSamples tree_samples;
   JXL_RETURN_IF_ERROR(tree_samples.SetPredictor(options[start].predictor,
                                                 options[start].wp_tree_mode));
@@ -642,9 +644,10 @@ StatusOr<Tree> LearnTree(
   }
 
   // TODO(veluca): parallelize more.
-  JXL_ASSIGN_OR_RETURN(Tree tree,
-                       LearnTree(std::move(tree_samples), total_pixels,
-                                 options[start], multiplier_info, range));
+  JXL_ASSIGN_OR_RETURN(
+      Tree tree,
+      LearnTree(std::move(tree_samples), total_pixels, options[start],
+                multiplier_info, range, max_tree_size));
   return tree;
 }
 
@@ -744,7 +747,8 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
   // Compute tree.
   Tree tree;
   if (options.tree_kind == ModularOptions::TreeKind::kLearn) {
-    JXL_ASSIGN_OR_RETURN(tree, LearnTree(&image, &options, 0, 1));
+    JXL_ASSIGN_OR_RETURN(tree,
+                         LearnTree(&image, &options, 0, 1, {}, kMaxTreeSize));
   } else {
     size_t total_pixels = 0;
     for (size_t i = 0; i < nb_channels; i++) {
