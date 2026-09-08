@@ -1718,7 +1718,8 @@ Status ComputeEncodingData(
 }
 
 Status PermuteGroups(const CompressParams& cparams,
-                     const FrameDimensions& frame_dim, size_t num_passes,
+                     const FrameDimensions& frame_dim,
+                     size_t num_passes, FrameType frame_type,
                      std::vector<coeff_order_t>* permutation,
                      std::vector<std::unique_ptr<BitWriter>>* group_codes) {
   const size_t num_groups = frame_dim.num_groups;
@@ -1737,7 +1738,8 @@ Status PermuteGroups(const CompressParams& cparams,
   // are not provided.
 
   int64_t imag_cx;
-  if (cparams.center_x != static_cast<size_t>(-1)) {
+  if (cparams.center_x != static_cast<size_t>(-1) &&
+      frame_type != FrameType::kDCFrame) {
     JXL_RETURN_IF_ERROR(cparams.center_x < frame_dim.xsize);
     imag_cx = cparams.center_x;
   } else {
@@ -1745,7 +1747,8 @@ Status PermuteGroups(const CompressParams& cparams,
   }
 
   int64_t imag_cy;
-  if (cparams.center_y != static_cast<size_t>(-1)) {
+  if (cparams.center_y != static_cast<size_t>(-1) &&
+      frame_type != FrameType::kDCFrame) {
     JXL_RETURN_IF_ERROR(cparams.center_y < frame_dim.ysize);
     imag_cy = cparams.center_y;
   } else {
@@ -2097,7 +2100,8 @@ JXL_NOINLINE Status EncodeFrameStreaming(
   // For ooo mode, also compute inv_perm (encoding_pos → canonical_idx).
   std::vector<coeff_order_t> group_order_perm;
   JXL_RETURN_IF_ERROR(PermuteGroups(cparams, frame_header.ToFrameDimensions(),
-                                    num_passes, &group_order_perm, nullptr));
+                                    num_passes, frame_header.frame_type,
+                                    &group_order_perm, nullptr));
   size_t encoding_pos = 0;
   std::vector<size_t> inv_perm;
   if (ooo) {
@@ -2341,7 +2345,8 @@ Status EncodeFrameOneShot(JxlMemoryManager* memory_manager,
 
   std::vector<coeff_order_t> permutation;
   JXL_RETURN_IF_ERROR(PermuteGroups(cparams, enc_state->shared.frame_dim,
-                                    num_passes, &permutation, &group_codes));
+                                    num_passes, frame_header.frame_type,
+                                    &permutation, &group_codes));
 
   std::vector<size_t> group_sizes;
   group_sizes.reserve(group_codes.size());
