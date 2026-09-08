@@ -35,7 +35,7 @@ the following packages:
 ```bash
 sudo apt install extra-cmake-modules g++ libbenchmark-dev libbenchmark-tools \
   libgif-dev libgoogle-perftools-dev libgtest-dev libjpeg-dev libopenexr-dev \
-  libwebp-dev qt6-base-dev xdg-utils
+  libtiff-dev libwebp-dev qt6-base-dev xdg-utils
 ```
 
 For the lint/coverage commands, you will also need additional packages:

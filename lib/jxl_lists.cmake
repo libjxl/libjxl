@@ -429,6 +429,8 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/dec/color_hints.h
   extras/dec/decode.cc
   extras/dec/decode.h
+  extras/dec/tiff.cc
+  extras/dec/tiff.h
   extras/enc/encode.cc
   extras/enc/encode.h
   extras/exif.cc
@@ -491,6 +493,7 @@ set(JPEGXL_INTERNAL_TESTS
   extras/compressed_icc_test.cc
   extras/dec/color_description_test.cc
   extras/dec/pgx_test.cc
+  extras/dec/tiff_test.cc
   extras/gain_map_test.cc
   jxl/ac_strategy_test.cc
   jxl/alpha_test.cc
