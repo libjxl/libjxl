@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "lib/jxl/base/span.h"
+
 namespace jxl {
 
 struct HuffmanCode {
@@ -18,10 +20,12 @@ struct HuffmanCode {
 
 /* Builds Huffman lookup table assuming code lengths are in symbol order. */
 /* Returns 0 in case of error (invalid tree or memory error), otherwise
-   populated size of table. */
-uint32_t BuildHuffmanTable(HuffmanCode* root_table, int root_bits,
-                           const uint8_t* code_lengths,
-                           size_t code_lengths_size, uint16_t* count);
+   populated size of table. The number of symbols is `code_lengths.size()`;
+   `count` is the per-code-length histogram (so it must hold at least
+   PREFIX_MAX_BITS + 1 entries) and is used as scratch space. */
+uint32_t BuildHuffmanTable(Span<HuffmanCode> root_table, int root_bits,
+                           Span<const uint8_t> code_lengths,
+                           Span<uint16_t> count);
 
 }  // namespace jxl
 
