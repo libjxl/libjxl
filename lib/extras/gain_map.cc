@@ -70,14 +70,15 @@ JXL_BOOL JxlGainMapGetBundleSize(const JxlGainMapBundle* map_bundle,
   }
 
   *bundle_size =
-      1 +                                     // size of jhgm_version
-      2 +                                     // size_of gain_map_metadata_size
-      map_bundle->gain_map_metadata_size +    // size of gain_map_metadata
-      1 +                                     // size of color_encoding_size
-      jxl::DivCeil(color_encoding_size, 8) +  // size of the color_encoding
-      4 +                                     // size of compressed_icc_size
-      map_bundle->alt_icc_size +              // size of compressed_icc
-      map_bundle->gain_map_size;              // size of gain map
+      1 +                                   // size of jhgm_version
+      2 +                                   // size_of gain_map_metadata_size
+      map_bundle->gain_map_metadata_size +  // size of gain_map_metadata
+      1 +                                   // size of color_encoding_size
+      jxl::DivCeil<size_t>(color_encoding_size,
+                           8) +   // size of the color_encoding
+      4 +                         // size of compressed_icc_size
+      map_bundle->alt_icc_size +  // size of compressed_icc
+      map_bundle->gain_map_size;  // size of gain map
   return JXL_TRUE;
 }
 

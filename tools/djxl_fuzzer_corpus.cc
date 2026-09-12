@@ -217,7 +217,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     const bool has_alpha = (spec.alpha_bit_depth != 0);
     const int alpha_channels = (has_alpha ? 1 : 0);
     const size_t bytes_per_sample =
-        jxl::DivCeil(io->metadata.m.bit_depth.bits_per_sample, 8);
+        jxl::DivCeil<size_t>(io->metadata.m.bit_depth.bits_per_sample, 8);
     const size_t bytes_per_pixel =
         bytes_per_sample *
         (io->metadata.m.color_encoding.Channels() + alpha_channels);

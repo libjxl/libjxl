@@ -471,8 +471,8 @@ struct FrameHeader : public Fields {
     ysize = frame_size.ysize ? frame_size.ysize : ysize;
 
     if (dc_level != 0) {
-      xsize = DivCeil(xsize, 1 << (3 * dc_level));
-      ysize = DivCeil(ysize, 1 << (3 * dc_level));
+      xsize = DivCeilPow2(xsize, (3 * dc_level));
+      ysize = DivCeilPow2(ysize, (3 * dc_level));
     }
 
     FrameDimensions frame_dim;
