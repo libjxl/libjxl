@@ -1794,8 +1794,10 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       }
       if (value == -1) {
         frame_settings->values.cparams.palette_colors = 1 << 10;
+        frame_settings->values.cparams.custom_palette_colors = false;
       } else {
         frame_settings->values.cparams.palette_colors = value;
+        frame_settings->values.cparams.custom_palette_colors = true;
       }
       break;
     case JXL_ENC_FRAME_SETTING_LOSSY_PALETTE:
@@ -1965,9 +1967,13 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
       if (value < -.5f) {
         frame_settings->values.cparams.channel_colors_pre_transform_percent =
             95.0f;
+        frame_settings->values.cparams
+            .custom_channel_colors_pre_transform_percent = false;
       } else {
         frame_settings->values.cparams.channel_colors_pre_transform_percent =
             value;
+        frame_settings->values.cparams
+            .custom_channel_colors_pre_transform_percent = true;
       }
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT:
@@ -1977,8 +1983,10 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
       }
       if (value < -.5f) {
         frame_settings->values.cparams.channel_colors_percent = 80.0f;
+        frame_settings->values.cparams.custom_channel_colors_percent = false;
       } else {
         frame_settings->values.cparams.channel_colors_percent = value;
+        frame_settings->values.cparams.custom_channel_colors_percent = true;
       }
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_EFFORT:
