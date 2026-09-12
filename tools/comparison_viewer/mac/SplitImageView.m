@@ -8,16 +8,16 @@
 #import <AvailabilityMacros.h>
 #import <QuartzCore/QuartzCore.h>
 
-@implementation SplitImageView
-
-NSSize leftImageSize;
-NSSize rightImageSize;
-NSSize referenceImageSize;
-CALayer *leftImageLayer;
-CALayer *rightImageLayer;
-CALayer *referenceImageLayer;
-CAShapeLayer *firstSeparator;
-CAShapeLayer *secondSeparator;
+@implementation SplitImageView {
+  NSSize leftImageSize;
+  NSSize rightImageSize;
+  NSSize referenceImageSize;
+  CALayer *leftImageLayer;
+  CALayer *rightImageLayer;
+  CALayer *referenceImageLayer;
+  CAShapeLayer *firstSeparator;
+  CAShapeLayer *secondSeparator;
+}
 
 - (instancetype)initComparisonBetween:(NSImage *)firstImage
                                   and:(NSImage *)secondImage
@@ -38,20 +38,20 @@ CAShapeLayer *secondSeparator;
     self.wantsLayer = YES;
 
     leftImageLayer = [CALayer layer];
-    leftImageLayer.anchorPoint = NSMakePoint(0, 0);
-    leftImageLayer.bounds = NSMakeRect(0, 0, leftImageSize.width, leftImageSize.height);
+    leftImageLayer.anchorPoint = CGPointZero;
+    leftImageLayer.bounds = CGRectMake(0, 0, leftImageSize.width, leftImageSize.height);
     leftImageLayer.contentsGravity = kCAGravityLeft;
     leftImageLayer.contents = firstImage;
     rightImageLayer = [CALayer layer];
-    rightImageLayer.anchorPoint = NSMakePoint(0, 0);
-    rightImageLayer.bounds = NSMakeRect(0, 0, rightImageSize.width, rightImageSize.height);
+    rightImageLayer.anchorPoint = CGPointZero;
+    rightImageLayer.bounds = CGRectMake(0, 0, rightImageSize.width, rightImageSize.height);
     rightImageLayer.contentsGravity = kCAGravityRight;
     rightImageLayer.contents = secondImage;
     if (referenceImage) {
       referenceImageLayer = [CALayer layer];
-      referenceImageLayer.anchorPoint = NSMakePoint(0, 0);
+      referenceImageLayer.anchorPoint = CGPointZero;
       referenceImageLayer.bounds =
-          NSMakeRect(0, 0, referenceImageSize.width, referenceImageSize.height);
+          CGRectMake(0, 0, referenceImageSize.width, referenceImageSize.height);
       referenceImageLayer.contents = referenceImage;
     }
 
@@ -81,8 +81,8 @@ CAShapeLayer *secondSeparator;
 
     NSArray *dashPattern = @[ @3, @1 ];
     CGMutablePathRef path = CGPathCreateMutable();
-    CGPathMoveToPoint(path, nil, 0, 0);
-    CGPathAddLineToPoint(path, nil, 0, height);
+    CGPathMoveToPoint(path, nil, 0, -height);
+    CGPathAddLineToPoint(path, nil, 0, 2 * height);
     firstSeparator = [CAShapeLayer layer];
     firstSeparator.strokeColor = NSColor.grayColor.CGColor;
     firstSeparator.lineWidth = 1;
@@ -99,14 +99,11 @@ CAShapeLayer *secondSeparator;
     }
     CGPathRelease(path);
 
-    firstSeparator.position = NSMakePoint(200, 0);
-
-    NSTrackingArea *trackingArea = [[NSTrackingArea alloc]
-        initWithRect:NSMakeRect(self.frame.origin.x - 1000, self.frame.origin.y - 1000,
-                                self.frame.size.width + 2000, self.frame.size.height + 2000)
-             options:NSTrackingMouseMoved | NSTrackingActiveAlways
-               owner:self
-            userInfo:nil];
+    NSTrackingArea *trackingArea =
+        [[NSTrackingArea alloc] initWithRect:NSRectFromCGRect(CGRectInfinite)
+                                     options:NSTrackingMouseMoved | NSTrackingActiveAlways
+                                       owner:self
+                                    userInfo:nil];
     [self addTrackingArea:trackingArea];
   }
   return self;
@@ -119,17 +116,17 @@ CAShapeLayer *secondSeparator;
 #define CLAMP(x) (MAX(0, MIN(1, (x))))
   firstSeparator.hidden = NO;
   if (referenceImageLayer) {
-    leftImageLayer.contentsRect = NSMakeRect(0, 0, CLAMP((where.x - 50) / leftImageSize.width), 1);
-    rightImageLayer.contentsRect = NSMakeRect(CLAMP((where.x + 50) / rightImageSize.width), 0,
+    leftImageLayer.contentsRect = CGRectMake(0, 0, CLAMP((where.x - 50) / leftImageSize.width), 1);
+    rightImageLayer.contentsRect = CGRectMake(CLAMP((where.x + 50) / rightImageSize.width), 0,
                                               CLAMP(1 - (where.x + 50) / rightImageSize.width), 1);
-    firstSeparator.position = NSMakePoint(where.x - 50, 0);
-    secondSeparator.position = NSMakePoint(where.x + 50, 0);
+    firstSeparator.position = CGPointMake(where.x - 50, 0);
+    secondSeparator.position = CGPointMake(where.x + 50, 0);
     secondSeparator.hidden = NO;
   } else {
-    leftImageLayer.contentsRect = NSMakeRect(0, 0, CLAMP(where.x / leftImageSize.width), 1);
-    rightImageLayer.contentsRect = NSMakeRect(CLAMP(where.x / rightImageSize.width), 0,
+    leftImageLayer.contentsRect = CGRectMake(0, 0, CLAMP(where.x / leftImageSize.width), 1);
+    rightImageLayer.contentsRect = CGRectMake(CLAMP(where.x / rightImageSize.width), 0,
                                               CLAMP(1 - where.x / rightImageSize.width), 1);
-    firstSeparator.position = NSMakePoint(where.x, 0);
+    firstSeparator.position = CGPointMake(where.x, 0);
   }
 #undef CLAMP
   [CATransaction commit];
@@ -162,17 +159,17 @@ CAShapeLayer *secondSeparator;
   secondSeparator.hidden = YES;
   switch (key) {
     case NSLeftArrowFunctionKey:
-      leftImageLayer.contentsRect = NSMakeRect(0, 0, 1, 1);
-      rightImageLayer.contentsRect = NSMakeRect(0, 0, 0, 0);
+      leftImageLayer.contentsRect = CGRectMake(0, 0, 1, 1);
+      rightImageLayer.contentsRect = CGRectZero;
       break;
     case NSRightArrowFunctionKey:
-      leftImageLayer.contentsRect = NSMakeRect(0, 0, 0, 0);
-      rightImageLayer.contentsRect = NSMakeRect(0, 0, 1, 1);
+      leftImageLayer.contentsRect = CGRectZero;
+      rightImageLayer.contentsRect = CGRectMake(0, 0, 1, 1);
       break;
     case NSUpArrowFunctionKey:
     case NSDownArrowFunctionKey:
-      leftImageLayer.contentsRect = NSMakeRect(0, 0, 0, 0);
-      rightImageLayer.contentsRect = NSMakeRect(0, 0, 0, 0);
+      leftImageLayer.contentsRect = CGRectZero;
+      rightImageLayer.contentsRect = CGRectZero;
       break;
   }
   [CATransaction commit];
