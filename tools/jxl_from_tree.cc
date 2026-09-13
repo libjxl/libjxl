@@ -279,7 +279,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       return false;
     }
       if (bits_per_sample <= 12) {
-        modular_16_bit_buffer_sufficient = true;
+        io.metadata.m.modular_16_bit_buffer_sufficient = true;
       }
     io.metadata.m.bit_depth.bits_per_sample = bits_per_sample;
   } else if (t == "FloatExpBits") {
