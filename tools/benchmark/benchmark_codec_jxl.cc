@@ -259,6 +259,21 @@ class JxlCodec : public ImageCodec {
                          1);
     } else if (param == "expert") {
       cparams_.allow_expert_options = true;
+    } else if (param == "tree=greedy" || param == "tree=default") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 0);
+    } else if (param == "tree=dp1" || param == "tree=1d") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 1);
+    } else if (param == "tree=dp2" || param == "tree=2prop") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 2);
+    } else if (param == "tree=joint" || param == "tree=nested" ||
+               param == "tree=2d") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 3);
+    } else if (param == "tree=grid") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 4);
+    } else if (param == "wp=0" || param == "nowp") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, 1);
+    } else if (param == "wp=1" || param == "wp") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, 0);
     } else {
       return JXL_FAILURE("Unrecognized param");
     }

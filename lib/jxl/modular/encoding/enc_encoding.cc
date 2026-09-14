@@ -231,7 +231,7 @@ StatusOr<Tree> LearnTree(
   JXL_RETURN_IF_ERROR(ComputeBestTree(
       tree_samples, options.splitting_heuristics_node_threshold * required_cost,
       multiplier_info, static_prop_range, options.fast_decode_multiplier,
-      &tree));
+      &tree, options.nb_repeats, options.tree_learning_mode));
   return tree;
 }
 

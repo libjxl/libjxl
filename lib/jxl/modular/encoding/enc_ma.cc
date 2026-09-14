@@ -499,6 +499,726 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
   }
 }
 
+struct DP1DResult {
+  size_t prop_dim = 0;
+  float cost = std::numeric_limits<float>::max();
+  std::vector<int32_t> cutoffs;
+  std::vector<size_t> segment_preds;
+};
+
+DP1DResult Run1DDPOnSamples(TreeSamples& tree_samples, size_t prop_dim,
+                           const std::vector<uint32_t>* sample_subset,
+                           float nb_repeats) {
+  DP1DResult res;
+  res.prop_dim = prop_dim;
+  size_t total_samples = sample_subset ? sample_subset->size()
+                                       : tree_samples.NumDistinctSamples();
+  if (total_samples == 0) return res;
+
+  const size_t num_predictors = tree_samples.NumPredictors();
+  const size_t prop_idx = prop_dim + tree_samples.NumStaticProps();
+
+  auto get_sample_idx = [&](size_t i) -> size_t {
+    return sample_subset ? (*sample_subset)[i] : i;
+  };
+
+  int32_t min_val = std::numeric_limits<int32_t>::max();
+  int32_t max_val = std::numeric_limits<int32_t>::min();
+  for (size_t i = 0; i < total_samples; i++) {
+    size_t s = get_sample_idx(i);
+    int32_t p = tree_samples.Property<false>(prop_dim, s);
+    min_val = std::min(min_val, p);
+    max_val = std::max(max_val, p);
+  }
+
+  std::vector<size_t> max_symbols(num_predictors, 0);
+  for (size_t pred = 0; pred < num_predictors; pred++) {
+    for (size_t i = 0; i < total_samples; i++) {
+      size_t s = get_sample_idx(i);
+      uint32_t tok = tree_samples.Token(pred, s);
+      max_symbols[pred] = std::max(max_symbols[pred], static_cast<size_t>(tok + 1));
+    }
+    max_symbols[pred] = Padded(max_symbols[pred]);
+  }
+
+  // If all samples have the same property value: single leaf.
+  if (min_val >= max_val) {
+    std::vector<int32_t> hist(max_symbols[0], 0);
+    float best_leaf_cost = std::numeric_limits<float>::max();
+    size_t best_leaf_pred = 0;
+    for (size_t pred = 0; pred < num_predictors; pred++) {
+      hist.assign(max_symbols[pred], 0);
+      int64_t extra = 0;
+      for (size_t i = 0; i < total_samples; i++) {
+        size_t s = get_sample_idx(i);
+        size_t cnt = tree_samples.Count(s);
+        hist[tree_samples.Token(pred, s)] += cnt;
+        extra += tree_samples.RTokens(pred)[s].nbits * cnt;
+      }
+      float bits = EstimateBits(hist.data(), max_symbols[pred]) + extra;
+      if (bits < best_leaf_cost) {
+        best_leaf_cost = bits;
+        best_leaf_pred = pred;
+      }
+    }
+    res.cost = best_leaf_cost;
+    res.segment_preds.push_back(best_leaf_pred);
+    return res;
+  }
+
+  int32_t R = max_val - min_val + 1;
+  std::vector<std::vector<std::vector<int32_t>>> freq(
+      num_predictors, std::vector<std::vector<int32_t>>(R));
+  for (size_t pred = 0; pred < num_predictors; pred++) {
+    for (int32_t v = 0; v < R; v++) {
+      freq[pred][v].resize(max_symbols[pred], 0);
+    }
+  }
+
+  std::vector<std::vector<int64_t>> pref_extra_bits(
+      num_predictors, std::vector<int64_t>(R, 0));
+  std::vector<int64_t> sample_counts(R, 0);
+  std::vector<uint8_t> exist(R, 0);
+
+  for (size_t i = 0; i < total_samples; i++) {
+    size_t s = get_sample_idx(i);
+    int32_t val = tree_samples.Property<false>(prop_dim, s) - min_val;
+    size_t cnt = tree_samples.Count(s);
+    sample_counts[val] += cnt;
+    exist[val] = 1;
+    for (size_t pred = 0; pred < num_predictors; pred++) {
+      uint32_t tok = tree_samples.Token(pred, s);
+      freq[pred][val][tok] += cnt;
+      pref_extra_bits[pred][val] += tree_samples.RTokens(pred)[s].nbits * cnt;
+    }
+  }
+
+  for (size_t pred = 0; pred < num_predictors; pred++) {
+    for (int32_t v = 1; v < R; v++) {
+      pref_extra_bits[pred][v] += pref_extra_bits[pred][v - 1];
+    }
+  }
+
+  std::vector<int64_t> pref_counts(R);
+  pref_counts[0] = sample_counts[0];
+  for (int32_t v = 1; v < R; v++) {
+    pref_counts[v] = pref_counts[v - 1] + sample_counts[v];
+  }
+
+  std::vector<int32_t> prev_exist(R, -1);
+  int32_t last_exist = -1;
+  for (int32_t v = 0; v < R; v++) {
+    if (exist[v]) {
+      prev_exist[v] = last_exist;
+      last_exist = v;
+    } else {
+      prev_exist[v] = last_exist;
+    }
+  }
+
+  auto split_penalty = [&](int32_t cutoff_idx) -> float {
+    int32_t unquant = tree_samples.UnquantizeProperty(prop_idx, cutoff_idx + min_val);
+    return (110.0f + 3.0f * FastLog2f(std::abs(unquant) + 1.0f)) * (nb_repeats / 0.3f);
+  };
+
+  std::vector<float> dp(R, std::numeric_limits<float>::max());
+  std::vector<int32_t> opt_split(R, -1);
+  std::vector<size_t> pred_split(R, 0);
+
+  std::vector<std::vector<int32_t>> residual_hist(num_predictors);
+  for (size_t pred = 0; pred < num_predictors; pred++) {
+    residual_hist[pred].resize(max_symbols[pred], 0);
+  }
+
+  for (int32_t i = 0; i < R; i++) {
+    if (!exist[i]) continue;
+    for (size_t pred = 0; pred < num_predictors; pred++) {
+      std::fill(residual_hist[pred].begin(), residual_hist[pred].end(), 0);
+    }
+
+    for (int32_t j = i; j >= 0; j--) {
+      for (size_t pred = 0; pred < num_predictors; pred++) {
+        const auto& f = freq[pred][j];
+        for (size_t k = 0; k < max_symbols[pred]; k++) {
+          residual_hist[pred][k] += f[k];
+        }
+      }
+
+      int64_t cur_cnt = pref_counts[i] - (j > 0 ? pref_counts[j - 1] : 0);
+      if (cur_cnt == 0) continue;
+
+      float best_int_cost = std::numeric_limits<float>::max();
+      size_t best_int_pred = 0;
+      for (size_t pred = 0; pred < num_predictors; pred++) {
+        float bits = EstimateBits(residual_hist[pred].data(), max_symbols[pred]);
+        int64_t extra = pref_extra_bits[pred][i] - (j > 0 ? pref_extra_bits[pred][j - 1] : 0);
+        float total = bits + extra;
+        if (total < best_int_cost) {
+          best_int_cost = total;
+          best_int_pred = pred;
+        }
+      }
+
+      if (j == 0) {
+        if (best_int_cost < dp[i]) {
+          dp[i] = best_int_cost;
+          opt_split[i] = -1;
+          pred_split[i] = best_int_pred;
+        }
+      } else {
+        int32_t prev_cut = prev_exist[j - 1];
+        if (prev_cut != -1 && dp[prev_cut] != std::numeric_limits<float>::max()) {
+          float cand = dp[prev_cut] + best_int_cost + split_penalty(prev_cut);
+          if (cand < dp[i]) {
+            dp[i] = cand;
+            opt_split[i] = prev_cut;
+            pred_split[i] = best_int_pred;
+          }
+        }
+      }
+    }
+  }
+
+  if (last_exist == -1 || dp[last_exist] == std::numeric_limits<float>::max()) {
+    return res;
+  }
+
+  res.cost = dp[last_exist];
+  int32_t curr = last_exist;
+  while (curr != -1) {
+    res.segment_preds.push_back(pred_split[curr]);
+    int32_t prev = opt_split[curr];
+    if (prev != -1) {
+      res.cutoffs.push_back(prev + min_val);
+    }
+    curr = prev;
+  }
+  std::reverse(res.cutoffs.begin(), res.cutoffs.end());
+  std::reverse(res.segment_preds.begin(), res.segment_preds.end());
+  return res;
+}
+
+void BuildTreeFrom1D(size_t prop_idx,
+                     const std::vector<int32_t>& cutoffs,
+                     const std::vector<size_t>& segment_preds,
+                     TreeSamples& tree_samples, Tree* tree,
+                     size_t root_pos = 0,
+                     std::vector<size_t>* leaf_positions = nullptr) {
+  if (cutoffs.empty()) {
+    (*tree)[root_pos] = PropertyDecisionNode::Leaf(
+        tree_samples.PredictorFromIndex(segment_preds.empty() ? 0 : segment_preds[0]));
+    if (leaf_positions && !leaf_positions->empty()) {
+      (*leaf_positions)[0] = root_pos;
+    }
+    return;
+  }
+  int32_t property = tree_samples.PropertyFromIndex(prop_idx);
+  struct NodeInfo {
+    size_t begin, end, pos;
+  };
+  std::queue<NodeInfo> q;
+  q.push(NodeInfo{0, cutoffs.size(), root_pos});
+
+  while (!q.empty()) {
+    NodeInfo info = q.front();
+    q.pop();
+    if (info.begin == info.end) {
+      if (leaf_positions && info.begin < leaf_positions->size()) {
+        (*leaf_positions)[info.begin] = info.pos;
+      }
+      continue;
+    }
+    uint32_t split = (info.begin + info.end) / 2;
+    int32_t cutoff = tree_samples.UnquantizeProperty(prop_idx, cutoffs[split]);
+    uint32_t lchild = tree->size();
+    uint32_t rchild = tree->size() + 1;
+    (*tree)[info.pos] = PropertyDecisionNode::Split(property, cutoff, lchild, rchild);
+
+    // Left child: strictly greater than cutoff (> cutoff) -> segments [split + 1, end]
+    tree->push_back(PropertyDecisionNode::Leaf(
+        tree_samples.PredictorFromIndex(segment_preds[split + 1])));
+    q.push(NodeInfo{split + 1, info.end, lchild});
+
+    // Right child: less than or equal to cutoff (<= cutoff) -> segments [begin, split]
+    tree->push_back(PropertyDecisionNode::Leaf(
+        tree_samples.PredictorFromIndex(segment_preds[split])));
+    q.push(NodeInfo{info.begin, split, rchild});
+  }
+}
+
+void FindBestTree1dDP(TreeSamples& tree_samples, float nb_repeats, Tree* tree) {
+  const size_t num_props = tree_samples.NumProperties() - tree_samples.NumStaticProps();
+  if (num_props == 0 || tree_samples.NumDistinctSamples() == 0) return;
+
+  DP1DResult best_res;
+  for (size_t dim = 0; dim < num_props; dim++) {
+    DP1DResult r = Run1DDPOnSamples(tree_samples, dim, nullptr, nb_repeats);
+    if (r.cost < best_res.cost) {
+      best_res = std::move(r);
+    }
+  }
+
+  if (best_res.segment_preds.empty()) {
+    (*tree)[0] = PropertyDecisionNode::Leaf(tree_samples.PredictorFromIndex(0));
+    return;
+  }
+
+  BuildTreeFrom1D(best_res.prop_dim + tree_samples.NumStaticProps(),
+                  best_res.cutoffs, best_res.segment_preds, tree_samples, tree, 0);
+}
+
+void FindBestTree2PropDP(TreeSamples& tree_samples, float nb_repeats, Tree* tree) {
+  const size_t num_props = tree_samples.NumProperties() - tree_samples.NumStaticProps();
+  if (num_props == 0 || tree_samples.NumDistinctSamples() == 0) return;
+  if (num_props == 1) {
+    FindBestTree1dDP(tree_samples, nb_repeats, tree);
+    return;
+  }
+
+  std::vector<DP1DResult> primary_dps(num_props);
+  for (size_t dim = 0; dim < num_props; dim++) {
+    primary_dps[dim] = Run1DDPOnSamples(tree_samples, dim, nullptr, nb_repeats);
+  }
+
+  const size_t total_samples = tree_samples.NumDistinctSamples();
+
+  struct BestPairRefinement {
+    size_t pA = 0;
+    size_t pB = 1;
+    float cost = std::numeric_limits<float>::max();
+    DP1DResult dpA;
+    std::vector<DP1DResult> refinementsB;
+  };
+
+  BestPairRefinement best_pair;
+
+  std::vector<size_t> ranked_props(num_props);
+  for (size_t i = 0; i < num_props; i++) ranked_props[i] = i;
+  std::sort(ranked_props.begin(), ranked_props.end(), [&](size_t a, size_t b) {
+    return primary_dps[a].cost < primary_dps[b].cost;
+  });
+  size_t K = std::min<size_t>(num_props, 4);
+
+  for (size_t rA = 0; rA < K; rA++) {
+    size_t pA = ranked_props[rA];
+    const auto& dpA = primary_dps[pA];
+    if (dpA.segment_preds.empty()) continue;
+
+    const size_t num_segs = dpA.cutoffs.size() + 1;
+    std::vector<std::vector<uint32_t>> seg_samples(num_segs);
+
+    for (size_t i = 0; i < total_samples; i++) {
+      int32_t v = tree_samples.Property<false>(pA, i);
+      size_t seg = std::upper_bound(dpA.cutoffs.begin(), dpA.cutoffs.end(), v) -
+                   dpA.cutoffs.begin();
+      seg_samples[seg].push_back(i);
+    }
+
+    std::vector<float> seg_base_cost(num_segs, 0.0f);
+    for (size_t s = 0; s < num_segs; s++) {
+      if (seg_samples[s].empty()) continue;
+      size_t pred = dpA.segment_preds[s];
+      size_t max_sym = 0;
+      for (uint32_t idx : seg_samples[s]) {
+        max_sym = std::max(max_sym, static_cast<size_t>(tree_samples.Token(pred, idx) + 1));
+      }
+      max_sym = Padded(max_sym);
+      std::vector<int32_t> hist(max_sym, 0);
+      int64_t extra = 0;
+      for (uint32_t idx : seg_samples[s]) {
+        size_t cnt = tree_samples.Count(idx);
+        hist[tree_samples.Token(pred, idx)] += cnt;
+        extra += tree_samples.RTokens(pred)[idx].nbits * cnt;
+      }
+      seg_base_cost[s] = EstimateBits(hist.data(), max_sym) + extra;
+    }
+
+    float cutoffsA_penalty = 0.0f;
+    for (int32_t c : dpA.cutoffs) {
+      int32_t unquant = tree_samples.UnquantizeProperty(
+          pA + tree_samples.NumStaticProps(), c);
+      cutoffsA_penalty += (110.0f + 3.0f * FastLog2f(std::abs(unquant) + 1.0f)) * (nb_repeats / 0.3f);
+    }
+
+    for (size_t rB = 0; rB < K; rB++) {
+      size_t pB = ranked_props[rB];
+      if (pA == pB) continue;
+
+      float pair_cost = cutoffsA_penalty;
+      std::vector<DP1DResult> refs(num_segs);
+
+      for (size_t s = 0; s < num_segs; s++) {
+        if (seg_samples[s].size() < 16) {
+          pair_cost += seg_base_cost[s];
+          refs[s].cost = seg_base_cost[s];
+          refs[s].segment_preds = {dpA.segment_preds[s]};
+        } else {
+          DP1DResult refB = Run1DDPOnSamples(tree_samples, pB, &seg_samples[s], nb_repeats);
+          if (refB.cost < seg_base_cost[s] && !refB.cutoffs.empty()) {
+            pair_cost += refB.cost;
+            refs[s] = std::move(refB);
+          } else {
+            pair_cost += seg_base_cost[s];
+            refs[s].cost = seg_base_cost[s];
+            refs[s].segment_preds = {dpA.segment_preds[s]};
+          }
+        }
+      }
+
+      if (pair_cost < best_pair.cost) {
+        best_pair.cost = pair_cost;
+        best_pair.pA = pA;
+        best_pair.pB = pB;
+        best_pair.dpA = dpA;
+        best_pair.refinementsB = std::move(refs);
+      }
+    }
+  }
+
+  if (best_pair.cost == std::numeric_limits<float>::max()) {
+    FindBestTree1dDP(tree_samples, nb_repeats, tree);
+    return;
+  }
+
+  std::vector<size_t> seg_leaf_pos(best_pair.refinementsB.size(), static_cast<size_t>(-1));
+  BuildTreeFrom1D(best_pair.pA + tree_samples.NumStaticProps(),
+                  best_pair.dpA.cutoffs, best_pair.dpA.segment_preds,
+                  tree_samples, tree, 0, &seg_leaf_pos);
+
+  for (size_t s = 0; s < best_pair.refinementsB.size(); s++) {
+    const auto& ref = best_pair.refinementsB[s];
+    if (!ref.cutoffs.empty() && seg_leaf_pos[s] != static_cast<size_t>(-1)) {
+      BuildTreeFrom1D(best_pair.pB + tree_samples.NumStaticProps(),
+                      ref.cutoffs, ref.segment_preds, tree_samples, tree,
+                      seg_leaf_pos[s]);
+    }
+  }
+}
+
+void FindBestTreeJoint2dDP(TreeSamples& tree_samples, float nb_repeats, Tree* tree) {
+  const size_t num_props = tree_samples.NumProperties() - tree_samples.NumStaticProps();
+  if (num_props <= 1 || tree_samples.NumDistinctSamples() == 0) {
+    FindBestTree1dDP(tree_samples, nb_repeats, tree);
+    return;
+  }
+
+  std::vector<DP1DResult> dps(num_props);
+  std::vector<size_t> ranked_props(num_props);
+  for (size_t i = 0; i < num_props; i++) {
+    dps[i] = Run1DDPOnSamples(tree_samples, i, nullptr, nb_repeats);
+    ranked_props[i] = i;
+  }
+  std::sort(ranked_props.begin(), ranked_props.end(), [&](size_t a, size_t b) {
+    return dps[a].cost < dps[b].cost;
+  });
+
+  const size_t total_samples = tree_samples.NumDistinctSamples();
+  const size_t num_predictors = tree_samples.NumPredictors();
+
+  struct NestedDPResult {
+    float cost = std::numeric_limits<float>::max();
+    size_t pA = 0;
+    size_t pB = 1;
+    std::vector<int32_t> cutoffsA;
+    std::vector<DP1DResult> segment_refinements;
+  };
+
+  NestedDPResult best_joint;
+
+  std::vector<std::pair<size_t, size_t>> pairs_to_try;
+  pairs_to_try.push_back({ranked_props[0], ranked_props[1]});
+  pairs_to_try.push_back({ranked_props[1], ranked_props[0]});
+  if (num_props > 2) {
+    pairs_to_try.push_back({ranked_props[0], ranked_props[2]});
+  }
+
+  for (const auto& pair : pairs_to_try) {
+    size_t pA = pair.first;
+    size_t pB = pair.second;
+
+    std::vector<int32_t> vals;
+    vals.reserve(total_samples);
+    for (size_t i = 0; i < total_samples; i++) {
+      vals.push_back(tree_samples.Property<false>(pA, i));
+    }
+    std::sort(vals.begin(), vals.end());
+    vals.erase(std::unique(vals.begin(), vals.end()), vals.end());
+
+    if (vals.size() <= 1) continue;
+
+    std::vector<int32_t> cand_cutoffsA;
+    const size_t max_cand_cuts = 15;
+    if (vals.size() <= max_cand_cuts + 1) {
+      for (size_t i = 0; i + 1 < vals.size(); i++) {
+        cand_cutoffsA.push_back(vals[i]);
+      }
+    } else {
+      for (size_t i = 1; i <= max_cand_cuts; i++) {
+        size_t idx = (i * (vals.size() - 1)) / (max_cand_cuts + 1);
+        cand_cutoffsA.push_back(vals[idx]);
+      }
+      std::sort(cand_cutoffsA.begin(), cand_cutoffsA.end());
+      cand_cutoffsA.erase(std::unique(cand_cutoffsA.begin(), cand_cutoffsA.end()),
+                          cand_cutoffsA.end());
+    }
+
+    const size_t num_bins = cand_cutoffsA.size() + 1;
+    std::vector<std::vector<uint32_t>> bin_samples(num_bins);
+    for (size_t i = 0; i < total_samples; i++) {
+      int32_t v = tree_samples.Property<false>(pA, i);
+      size_t b = std::upper_bound(cand_cutoffsA.begin(), cand_cutoffsA.end(), v) -
+                 cand_cutoffsA.begin();
+      bin_samples[b].push_back(i);
+    }
+
+    auto split_penaltyA = [&](int32_t cutoff_val) -> float {
+      int32_t unquant = tree_samples.UnquantizeProperty(
+          pA + tree_samples.NumStaticProps(), cutoff_val);
+      return (110.0f + 3.0f * FastLog2f(std::abs(unquant) + 1.0f)) * (nb_repeats / 0.3f);
+    };
+
+    std::vector<float> dp(num_bins, std::numeric_limits<float>::max());
+    std::vector<int32_t> opt_prev(num_bins, -1);
+    std::vector<DP1DResult> opt_ref(num_bins);
+
+    for (size_t i = 0; i < num_bins; i++) {
+      std::vector<uint32_t> interval_samples;
+      for (int32_t j = static_cast<int32_t>(i); j >= 0; j--) {
+        const auto& b_samp = bin_samples[j];
+        interval_samples.insert(interval_samples.end(), b_samp.begin(), b_samp.end());
+
+        float interval_cost = 0.0f;
+        DP1DResult refB;
+
+        if (interval_samples.empty()) {
+          interval_cost = 0.0f;
+          refB.cost = 0.0f;
+          refB.segment_preds = {0};
+        } else {
+          float best_leaf_cost = std::numeric_limits<float>::max();
+          size_t best_leaf_pred = 0;
+          for (size_t pred = 0; pred < num_predictors; pred++) {
+            size_t max_sym = 0;
+            for (uint32_t idx : interval_samples) {
+              max_sym = std::max(max_sym, static_cast<size_t>(tree_samples.Token(pred, idx) + 1));
+            }
+            max_sym = Padded(max_sym);
+            std::vector<int32_t> hist(max_sym, 0);
+            int64_t extra = 0;
+            for (uint32_t idx : interval_samples) {
+              size_t cnt = tree_samples.Count(idx);
+              hist[tree_samples.Token(pred, idx)] += cnt;
+              extra += tree_samples.RTokens(pred)[idx].nbits * cnt;
+            }
+            float bits = EstimateBits(hist.data(), max_sym) + extra;
+            if (bits < best_leaf_cost) {
+              best_leaf_cost = bits;
+              best_leaf_pred = pred;
+            }
+          }
+
+          if (interval_samples.size() < 32) {
+            interval_cost = best_leaf_cost;
+            refB.cost = best_leaf_cost;
+            refB.segment_preds = {best_leaf_pred};
+          } else {
+            refB = Run1DDPOnSamples(tree_samples, pB, &interval_samples, nb_repeats);
+            if (refB.cost < best_leaf_cost && !refB.cutoffs.empty()) {
+              interval_cost = refB.cost;
+            } else {
+              interval_cost = best_leaf_cost;
+              refB.cost = best_leaf_cost;
+              refB.cutoffs.clear();
+              refB.segment_preds = {best_leaf_pred};
+            }
+          }
+        }
+
+        if (j == 0) {
+          if (interval_cost < dp[i]) {
+            dp[i] = interval_cost;
+            opt_prev[i] = -1;
+            opt_ref[i] = std::move(refB);
+          }
+        } else {
+          int32_t p_idx = j - 1;
+          if (dp[p_idx] != std::numeric_limits<float>::max()) {
+            float cand = dp[p_idx] + interval_cost + split_penaltyA(cand_cutoffsA[p_idx]);
+            if (cand < dp[i]) {
+              dp[i] = cand;
+              opt_prev[i] = p_idx;
+              opt_ref[i] = std::move(refB);
+            }
+          }
+        }
+      }
+    }
+
+    if (dp[num_bins - 1] < best_joint.cost) {
+      best_joint.cost = dp[num_bins - 1];
+      best_joint.pA = pA;
+      best_joint.pB = pB;
+      best_joint.cutoffsA.clear();
+      best_joint.segment_refinements.clear();
+
+      int32_t curr = static_cast<int32_t>(num_bins - 1);
+      while (curr != -1) {
+        best_joint.segment_refinements.push_back(std::move(opt_ref[curr]));
+        int32_t prev = opt_prev[curr];
+        if (prev != -1) {
+          best_joint.cutoffsA.push_back(cand_cutoffsA[prev]);
+        }
+        curr = prev;
+      }
+      std::reverse(best_joint.cutoffsA.begin(), best_joint.cutoffsA.end());
+      std::reverse(best_joint.segment_refinements.begin(),
+                   best_joint.segment_refinements.end());
+    }
+  }
+
+  if (best_joint.cost == std::numeric_limits<float>::max()) {
+    FindBestTree1dDP(tree_samples, nb_repeats, tree);
+    return;
+  }
+
+  std::vector<size_t> pA_dummy_preds(best_joint.segment_refinements.size(), 0);
+  for (size_t s = 0; s < best_joint.segment_refinements.size(); s++) {
+    if (!best_joint.segment_refinements[s].segment_preds.empty()) {
+      pA_dummy_preds[s] = best_joint.segment_refinements[s].segment_preds[0];
+    }
+  }
+
+  std::vector<size_t> seg_leaf_pos(best_joint.segment_refinements.size(), static_cast<size_t>(-1));
+  BuildTreeFrom1D(best_joint.pA + tree_samples.NumStaticProps(),
+                  best_joint.cutoffsA, pA_dummy_preds,
+                  tree_samples, tree, 0, &seg_leaf_pos);
+
+  for (size_t s = 0; s < best_joint.segment_refinements.size(); s++) {
+    const auto& ref = best_joint.segment_refinements[s];
+    if (!ref.cutoffs.empty() && seg_leaf_pos[s] != static_cast<size_t>(-1)) {
+      BuildTreeFrom1D(best_joint.pB + tree_samples.NumStaticProps(),
+                      ref.cutoffs, ref.segment_preds, tree_samples, tree,
+                      seg_leaf_pos[s]);
+    }
+  }
+}
+
+void FindBestTreeGrid2dDP(TreeSamples& tree_samples, float nb_repeats, Tree* tree) {
+  const size_t num_props = tree_samples.NumProperties() - tree_samples.NumStaticProps();
+  if (num_props <= 1 || tree_samples.NumDistinctSamples() == 0) {
+    FindBestTree1dDP(tree_samples, nb_repeats, tree);
+    return;
+  }
+
+  std::vector<DP1DResult> dps(num_props);
+  for (size_t i = 0; i < num_props; i++) {
+    dps[i] = Run1DDPOnSamples(tree_samples, i, nullptr, nb_repeats);
+  }
+
+  size_t pA = 0;
+  size_t pB = 1;
+  float best_c = std::numeric_limits<float>::max();
+  for (size_t i = 0; i < num_props; i++) {
+    if (dps[i].cost < best_c) {
+      best_c = dps[i].cost;
+      pA = i;
+    }
+  }
+  best_c = std::numeric_limits<float>::max();
+  for (size_t i = 0; i < num_props; i++) {
+    if (i != pA && dps[i].cost < best_c) {
+      best_c = dps[i].cost;
+      pB = i;
+    }
+  }
+
+  std::vector<int32_t> cutoffsA = dps[pA].cutoffs;
+  if (cutoffsA.size() > 3) cutoffsA.resize(3);
+  std::vector<int32_t> cutoffsB = dps[pB].cutoffs;
+  if (cutoffsB.size() > 3) cutoffsB.resize(3);
+
+  const size_t total_samples = tree_samples.NumDistinctSamples();
+  const size_t num_predictors = tree_samples.NumPredictors();
+  const size_t rows = cutoffsA.size() + 1;
+  const size_t cols = cutoffsB.size() + 1;
+
+  std::vector<std::vector<std::vector<uint32_t>>> cell_samples(
+      rows, std::vector<std::vector<uint32_t>>(cols));
+  for (size_t i = 0; i < total_samples; i++) {
+    int32_t va = tree_samples.Property<false>(pA, i);
+    int32_t vb = tree_samples.Property<false>(pB, i);
+    size_t r = std::upper_bound(cutoffsA.begin(), cutoffsA.end(), va) - cutoffsA.begin();
+    size_t c = std::upper_bound(cutoffsB.begin(), cutoffsB.end(), vb) - cutoffsB.begin();
+    cell_samples[r][c].push_back(i);
+  }
+
+  std::vector<std::vector<size_t>> cell_preds(rows, std::vector<size_t>(cols, 0));
+  for (size_t r = 0; r < rows; r++) {
+    for (size_t c = 0; c < cols; c++) {
+      if (cell_samples[r][c].empty()) continue;
+      size_t best_pred = 0;
+      float best_cost = std::numeric_limits<float>::max();
+      for (size_t pred = 0; pred < num_predictors; pred++) {
+        size_t max_sym = 0;
+        for (uint32_t idx : cell_samples[r][c]) {
+          max_sym = std::max(max_sym, static_cast<size_t>(tree_samples.Token(pred, idx) + 1));
+        }
+        max_sym = Padded(max_sym);
+        std::vector<int32_t> hist(max_sym, 0);
+        int64_t extra = 0;
+        for (uint32_t idx : cell_samples[r][c]) {
+          size_t cnt = tree_samples.Count(idx);
+          hist[tree_samples.Token(pred, idx)] += cnt;
+          extra += tree_samples.RTokens(pred)[idx].nbits * cnt;
+        }
+        float bits = EstimateBits(hist.data(), max_sym) + extra;
+        if (bits < best_cost) {
+          best_cost = bits;
+          best_pred = pred;
+        }
+      }
+      cell_preds[r][c] = best_pred;
+    }
+  }
+
+  std::vector<size_t> dummy_preds(rows, 0);
+  std::vector<size_t> row_leaf_pos(rows, static_cast<size_t>(-1));
+  BuildTreeFrom1D(pA + tree_samples.NumStaticProps(), cutoffsA, dummy_preds,
+                  tree_samples, tree, 0, &row_leaf_pos);
+
+  for (size_t r = 0; r < rows; r++) {
+    if (row_leaf_pos[r] != static_cast<size_t>(-1)) {
+      BuildTreeFrom1D(pB + tree_samples.NumStaticProps(), cutoffsB, cell_preds[r],
+                      tree_samples, tree, row_leaf_pos[r]);
+    }
+  }
+}
+
+void FindBestTreeDispatch(
+    TreeSamples &tree_samples, float threshold,
+    const std::vector<ModularMultiplierInfo> &mul_info,
+    StaticPropRange static_prop_range, float fast_decode_multiplier, Tree *tree,
+    float nb_repeats, ModularOptions::TreeLearningMode tree_learning_mode) {
+  const size_t num_props = tree_samples.NumProperties() - tree_samples.NumStaticProps();
+  if (num_props == 0 || tree_learning_mode == ModularOptions::TreeLearningMode::kGreedy) {
+    FindBestSplit(tree_samples, threshold, mul_info, static_prop_range,
+                  fast_decode_multiplier, tree);
+    return;
+  }
+  if (tree_learning_mode == ModularOptions::TreeLearningMode::k1dDP) {
+    FindBestTree1dDP(tree_samples, nb_repeats, tree);
+  } else if (tree_learning_mode == ModularOptions::TreeLearningMode::k2PropertyDP) {
+    FindBestTree2PropDP(tree_samples, nb_repeats, tree);
+  } else if (tree_learning_mode == ModularOptions::TreeLearningMode::kJoint2dDP) {
+    FindBestTreeJoint2dDP(tree_samples, nb_repeats, tree);
+  } else if (tree_learning_mode == ModularOptions::TreeLearningMode::kGrid2dDP) {
+    FindBestTreeGrid2dDP(tree_samples, nb_repeats, tree);
+  } else {
+    FindBestSplit(tree_samples, threshold, mul_info, static_prop_range,
+                  fast_decode_multiplier, tree);
+  }
+}
+
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace jxl
@@ -507,15 +1227,14 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(FindBestSplit);  // Local function.
+HWY_EXPORT(FindBestTreeDispatch);  // Local function.
 
 Status ComputeBestTree(TreeSamples &tree_samples, float threshold,
                        const std::vector<ModularMultiplierInfo> &mul_info,
                        StaticPropRange static_prop_range,
-                       float fast_decode_multiplier, Tree *tree) {
-  // TODO(veluca): take into account that different contexts can have different
-  // uint configs.
-  //
+                       float fast_decode_multiplier, Tree *tree,
+                       float nb_repeats,
+                       ModularOptions::TreeLearningMode tree_learning_mode) {
   // Initialize tree.
   tree->emplace_back();
   tree->back().property = -1;
@@ -526,9 +1245,25 @@ Status ComputeBestTree(TreeSamples &tree_samples, float threshold,
 
   JXL_ENSURE(tree_samples.NumDistinctSamples() <=
              std::numeric_limits<uint32_t>::max());
-  HWY_DYNAMIC_DISPATCH(FindBestSplit)
+
+  const char* env_mode = getenv("JXL_TREE_LEARNING_MODE");
+  if (env_mode != nullptr) {
+    if (strcmp(env_mode, "1d") == 0 || strcmp(env_mode, "dp1") == 0) {
+      tree_learning_mode = ModularOptions::TreeLearningMode::k1dDP;
+    } else if (strcmp(env_mode, "2prop") == 0 || strcmp(env_mode, "dp2") == 0) {
+      tree_learning_mode = ModularOptions::TreeLearningMode::k2PropertyDP;
+    } else if (strcmp(env_mode, "joint") == 0 || strcmp(env_mode, "nested") == 0) {
+      tree_learning_mode = ModularOptions::TreeLearningMode::kJoint2dDP;
+    } else if (strcmp(env_mode, "grid") == 0) {
+      tree_learning_mode = ModularOptions::TreeLearningMode::kGrid2dDP;
+    } else if (strcmp(env_mode, "greedy") == 0) {
+      tree_learning_mode = ModularOptions::TreeLearningMode::kGreedy;
+    }
+  }
+
+  HWY_DYNAMIC_DISPATCH(FindBestTreeDispatch)
   (tree_samples, threshold, mul_info, static_prop_range, fast_decode_multiplier,
-   tree);
+   tree, nb_repeats, tree_learning_mode);
   return true;
 }
 

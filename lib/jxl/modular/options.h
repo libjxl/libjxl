@@ -111,6 +111,15 @@ struct ModularOptions {
   };
   TreeKind tree_kind = TreeKind::kLearn;
 
+  enum class TreeLearningMode {
+    kGreedy = 0,
+    k1dDP = 1,
+    k2PropertyDP = 2,
+    kJoint2dDP = 3,
+    kGrid2dDP = 4,
+  };
+  TreeLearningMode tree_learning_mode = TreeLearningMode::kGreedy;
+
   HistogramParams histogram_params;
 
   // Ignore the image and just pretend all tokens are zeroes

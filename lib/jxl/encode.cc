@@ -1860,6 +1860,14 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       frame_settings->values.cparams.force_cfl_jpeg_recompression =
           default_to_true(value);
       break;
+    case JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE:
+      if (value < 0 || value > 4) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Tree learning mode has to be in [0..4]");
+      }
+      frame_settings->values.cparams.options.tree_learning_mode =
+          static_cast<jxl::ModularOptions::TreeLearningMode>(value);
+      break;
     case JXL_ENC_FRAME_INDEX_BOX:
       if (value < 0 || value > 1) {
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
