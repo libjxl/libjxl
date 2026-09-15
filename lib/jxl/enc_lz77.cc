@@ -601,19 +601,24 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
       // Bit cost comparison: raw tokens vs LZ77 pair
       float cost = sym_cost[pos + len] - sym_cost[pos];
       size_t lz77_len = len - lz77.min_length;
-      float lz77_cost = LenCost(lz77_len) + DistCost(dist_symbol);
+      float lz77_cost = LenCost(lz77_len) + DistCost(dist_symbol) +
+						sce.AddSymbolCost(out.back().context);
 
       if (kRuntimeCostComparison && lz77_cost > cost) {
-        for (size_t offset = 1; offset < len; offset++) {
-          out.push_back(in[pos+offset]);
-          hash_map.Update(pos + offset);
+        // If literal cost is very low (e.g. solid colors), skip the entire match
+        // to avoid O(n^2) behavior.
+		if (cost < 0.25f * len) {
+          for (size_t offset = 1; offset < len; offset++) {
+            out.push_back(in[pos+offset]);
+            hash_map.Update(pos + offset);
+          }
+          pos += len - 1;
         }
-        pos += len - 1;
         continue;
       }
 
 
-      bit_decrease += cost - lz77_cost - sce.AddSymbolCost(out.back().context);
+      bit_decrease += cost - lz77_cost;
 
       // Emit LZ77 length and distance tokens
       out.back().value = len - min_length;
@@ -642,7 +647,7 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
     const HistogramParams& params, size_t num_contexts,
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77) {
   std::vector<std::vector<Token>> tokens_for_cost_estimate =
-      ApplyLZ77_LZ77(params, num_contexts, tokens, lz77);
+      ApplyLZ77_LZ77<7, 3, true>(params, num_contexts, tokens, lz77);
   // If greedy-LZ77 does not give better compression than no-lz77, no reason to
   // run the optimal matching.
   if (tokens_for_cost_estimate.empty()) return {};

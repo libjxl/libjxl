@@ -1355,7 +1355,7 @@ HistogramParams HistogramParams::ForModular(
             : HistogramParams::ANSHistogramStrategy::kApproximate;
     params.lz77_method =
         cparams.modular_mode && cparams.speed_tier <= SpeedTier::kHare
-            ? HistogramParams::LZ77Method::kRLE
+            ? HistogramParams::LZ77Method::kLZ77b3w3f
             : HistogramParams::LZ77Method::kNone;
     // Near-lossless DC, as well as modular mode, require choosing hybrid uint
     // more carefully.
@@ -1368,7 +1368,7 @@ HistogramParams HistogramParams::ForModular(
   } else if (cparams.speed_tier <= SpeedTier::kTortoise) {
     params.lz77_method = HistogramParams::LZ77Method::kOptc256;
   } else {
-    params.lz77_method = HistogramParams::LZ77Method::kLZ77b3w3f;
+    params.lz77_method = HistogramParams::LZ77Method::kLZ77b7w3t;
   }
   if (cparams.decoding_speed_tier >= 2) {
     params.max_histograms = 12;
