@@ -25,6 +25,18 @@ endif()
 
 set_source_files_properties(jxl/enc_fast_lossless.cc PROPERTIES COMPILE_FLAGS "${FJXL_COMPILE_FLAGS}")
 
+# Files converted to bounds-carrying types. -Wunsafe-buffer-usage is enabled
+# per file so converted code cannot regress; add files here as they are done.
+set(JPEGXL_SAFE_BUFFER_SOURCES
+  jxl/dec_huffman.cc
+)
+
+check_cxx_compiler_flag("-Wunsafe-buffer-usage" JXL_CXX_UNSAFE_BUFFER_USAGE)
+if(JXL_CXX_UNSAFE_BUFFER_USAGE)
+  set_source_files_properties(${JPEGXL_SAFE_BUFFER_SOURCES} PROPERTIES
+    COMPILE_OPTIONS "-Wunsafe-buffer-usage;-Werror=unsafe-buffer-usage")
+endif()
+
 set(JPEGXL_DEC_INTERNAL_LIBS
   hwy
   Threads::Threads
