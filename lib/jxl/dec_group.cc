@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dct_util.h"
@@ -488,6 +489,8 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
   size_t ord = kStrategyOrder[acs.RawStrategy()];
   const coeff_order_t* JXL_RESTRICT order =
       &coeff_order[CoeffOrderOffset(ord, c)];
+  // Bounds-checked view of the coefficient order for this block.
+  const Span<const coeff_order_t> order_span(order, size);
 
   size_t block_ctx = block_ctx_map.Context(qdc_row[lbx], qf_row[bx], ord, c);
   const int32_t nzero_ctx =
@@ -523,10 +526,14 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
     const size_t neg_sign = (~u_coeff) & 1;
     const ptrdiff_t coeff =
         static_cast<ptrdiff_t>((magnitude ^ (neg_sign - 1)) << shift);
+    // Bounds-checked access: order_span[k] validates k < size, and
+    // coeff_idx < size is verified before indexing into the block.
+    const size_t coeff_idx = order_span[k];
+    JXL_SECURITY_CHECK(coeff_idx < size);
     if (ac_type == ACType::k16) {
-      block.ptr16[order[k]] += coeff;
+      block.ptr16[coeff_idx] += coeff;
     } else {
-      block.ptr32[order[k]] += coeff;
+      block.ptr32[coeff_idx] += coeff;
     }
     prev = static_cast<size_t>(u_coeff != 0);
     nzeros -= prev;
