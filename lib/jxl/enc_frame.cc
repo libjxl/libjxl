@@ -118,6 +118,21 @@ Status ParamsPostInit(CompressParams* p) {
   if (p->ec_resampling <= 0) {
     p->ec_resampling = p->resampling;
   }
+  if (p->decoding_speed_tier < 0) {
+    // Lossless modular data (fully lossless images, but also e.g. lossless
+    // alpha in an otherwise lossy image) is much slower to decode than
+    // VarDCT, so by default trade a small amount of density for decode
+    // speed, except at the highest efforts where density is the priority.
+    // Note that ModularPartIsLossless() is vacuously true when there is no
+    // modular data at all, so also require a lossless image or the presence
+    // of extra channels.
+    const bool has_lossless_modular_part =
+        p->IsLossless() ||
+        (!p->ec_distance.empty() && p->ModularPartIsLossless());
+    const bool density_focused_effort = p->speed_tier <= SpeedTier::kGlacier;
+    p->decoding_speed_tier =
+        (has_lossless_modular_part && !density_focused_effort) ? 1 : 0;
+  }
   // Modular has to be squeezed to show progressive HF passes.
   if (p->progressive_mode == Override::kOn ||
       p->qprogressive_mode == Override::kOn) {
@@ -701,8 +716,8 @@ void ComputeNoiseParams(const CompressParams& cparams, bool streaming_mode,
   }
   if (cparams.photon_noise_iso > 0) {
     FrameDimensions full_frame_dim = frame_header->ToFrameDimensions();
-    *noise_params = SimulatePhotonNoise(full_frame_dim.xsize, full_frame_dim.ysize,
-                                        cparams.photon_noise_iso);
+    *noise_params = SimulatePhotonNoise(
+        full_frame_dim.xsize, full_frame_dim.ysize, cparams.photon_noise_iso);
   } else if (cparams.manual_noise.size() == NoiseParams::kNumNoisePoints) {
     for (size_t i = 0; i < NoiseParams::kNumNoisePoints; i++) {
       noise_params->lut[i] = cparams.manual_noise[i];

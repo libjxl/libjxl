@@ -250,11 +250,13 @@ struct CompressArgs {
         "3 = deprecated; use --output_mode to control output streaming.",
         &buffering, &ParseInt64, -1);
 
-    cmdline->AddOptionValue('\0', "faster_decoding", "0..4",
-                            "Higher values improve decode speed "
-                            "at the expense of quality or density, "
-                            "default = 0.",
-                            &faster_decoding, &ParseUnsigned, 2);
+    opt_faster_decoding_id =
+        cmdline->AddOptionValue('\0', "faster_decoding", "0..4",
+                                "Higher values improve decode speed "
+                                "at the expense of quality or density; "
+                                "default = encoder chooses (1 for lossless "
+                                "encoding below effort 10, otherwise 0).",
+                                &faster_decoding, &ParseUnsigned, 2);
 
     cmdline->AddOptionValue('\0', "premultiply", "-1|0|1",
                             "Force premultiplied (associated) alpha.",
@@ -570,6 +572,7 @@ struct CompressArgs {
   CommandLineParser::OptionId opt_alpha_distance_id = -1;
   CommandLineParser::OptionId opt_quality_id = -1;
   CommandLineParser::OptionId opt_modular_group_size_id = -1;
+  CommandLineParser::OptionId opt_faster_decoding_id = -1;
 };
 
 const char* ModeFromArgs(const CompressArgs& args) {
@@ -760,11 +763,15 @@ void ProcessFlags(const jxl::extras::Codec codec,
       "epf", args->epf, JXL_ENC_FRAME_SETTING_EPF, params,
       [](int64_t x) { return (-1 <= x && x <= 3); },
       "Valid range is {-1, 0, 1, 2, 3}.");
-  ProcessFlag<int64_t>(
-      "faster_decoding", args->faster_decoding,
-      JXL_ENC_FRAME_SETTING_DECODING_SPEED, params,
-      [](int64_t x) { return (0 <= x && x <= 4); },
-      "Valid range is {0, 1, 2, 3, 4}.");
+  // Only forward --faster_decoding when given on the command line, so that
+  // the encoder can pick a default based on the other settings.
+  if (cmdline->GetOption(args->opt_faster_decoding_id)->matched()) {
+    ProcessFlag<int64_t>(
+        "faster_decoding", args->faster_decoding,
+        JXL_ENC_FRAME_SETTING_DECODING_SPEED, params,
+        [](int64_t x) { return (0 <= x && x <= 4); },
+        "Valid range is {0, 1, 2, 3, 4}.");
+  }
   ProcessFlag<int64_t>(
       "resampling", args->resampling, JXL_ENC_FRAME_SETTING_RESAMPLING, params,
       [](int64_t x) {
