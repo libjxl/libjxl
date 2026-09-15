@@ -799,6 +799,12 @@ std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
   return thresholds;
 }
 
+pixel_type SaturatingAbs(pixel_type value) {
+  return value == std::numeric_limits<pixel_type>::min()
+             ? std::numeric_limits<pixel_type>::max()
+             : std::abs(value);
+}
+
 // `to[i]` is assigned value `v` conforming `from[v] <= i && from[v-1] > i`.
 // This is because the decision node in the tree splits on (property) > i,
 // hence everything that is not > of a threshold should be clustered
@@ -888,7 +894,7 @@ void TreeSamples::PreQuantizeProperties(
   auto quantize_abs_pixel_property = [&]() {
     if (abs_pixel_thresholds.empty()) {
       quantize_pixel_property();  // Compute the non-abs thresholds.
-      for (auto &v : pixel_samples) v = std::abs(v);
+      for (auto &v : pixel_samples) v = SaturatingAbs(v);
       abs_pixel_thresholds =
           QuantizeSamples(pixel_samples, max_property_values);
     }
@@ -905,7 +911,7 @@ void TreeSamples::PreQuantizeProperties(
   auto quantize_abs_diff_property = [&]() {
     if (abs_diff_thresholds.empty()) {
       quantize_diff_property();  // Compute the non-abs thresholds.
-      for (auto &v : diff_samples) v = std::abs(v);
+      for (auto &v : diff_samples) v = SaturatingAbs(v);
       abs_diff_thresholds = QuantizeSamples(diff_samples, max_property_values);
     }
     return abs_diff_thresholds;
