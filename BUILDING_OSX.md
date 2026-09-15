@@ -7,7 +7,7 @@ This manual outlines OSX specific setup. For general building and testing
 instructions see "[BUILDING](BUILDING.md)" and
 "[Building and Testing changes](doc/building_and_testing.md)".
 
-[Homebrew](https://brew.sh/) is a popular package manager. JPEG XL library and
+[Homebrew](https://brew.sh/) is a popular package manager. JPEG XL library and
 binaries could be installed using it:
 
 ```bash

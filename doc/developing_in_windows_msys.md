@@ -4,17 +4,17 @@
 
 ## Build Environments
 
-MSYS2 provides multiple development [environments](https://www.msys2.org/docs/environments/).  By convention, they are referred to in uppercase.  They target slightly different platforms, runtime libraries, and compiler toolchains.  For example, to build for 32-bit Windows, use the MINGW32 environment.  For interoperability with Visual Studio projects, use the UCRT64 environment.
+MSYS2 provides multiple development [environments](https://www.msys2.org/docs/environments/).  By convention, they are referred to in uppercase.  They target slightly different platforms, runtime libraries, and compiler toolchains.  For interoperability with Visual Studio projects, use the UCRT64 environment.
 
 Since all of the build environments are built on top of the MSYS environment, **all updates and package installation must be done from within the MSYS environment**.  After making any package changes, `exit` all MSYS2 terminals and restart the desired build-environment.  This reminder is repeated multiple times throughout this guide.
 
-* **MINGW32:**  To compile for 32-bit Windows (on 64-bit Windows), use packages from the `mingw32` group.  Package names are prefixed with `mingw-w64-i686`.  The naming scheme may be different on the 32-bit version of MSYS2.
+* **MINGW32 (Deprecated):**  To compile for 32-bit Windows (on 64-bit Windows), use packages from the `mingw32` group.  Package names are prefixed with `mingw-w64-i686`.  *Note: 32-bit MSYS2 is deprecated and some newer packages (like `clang`) are no longer available.*
 
-* **MINGW64:**  This is the primary environment to building for 64-bit Windows.  It uses the older MSVCRT runtime, which is widely available across Windows systems.  Package names are prefixed with `mingw-w64-x86_64`.
+* **MINGW64 (Phasing Out):**  This uses the older MSVCRT runtime, which is widely available across Windows systems. Package names are prefixed with `mingw-w64-x86_64`. *Note: As of March 2026, the MINGW64 environment is being phased out in favor of UCRT environments.*
 
-* **UCRT64:**  The Universal C Runtime (UCRT) is used by recent versions of Microsoft Visual Studio.  It ships by default with Windows 10.  For older versions of Windows, it must be provided with the application or installed by the user.  Package names are prefixed with `mingw-w64-ucrt-x86_64`.
+* **UCRT64 (Recommended):**  The Universal C Runtime (UCRT) is used by recent versions of Microsoft Visual Studio. It is the modern standard on Windows 10/11. Package names are prefixed with `mingw-w64-ucrt-x86_64`. MSYS2 strongly recommends using UCRT64 over MINGW64.
 
-* **CLANG64:**  Packages are prefixed with `mingw-w64-clang-x86_64`.
+* **CLANG64 (Recommended):**  Packages are prefixed with `mingw-w64-clang-x86_64`. MSYS2 recommends CLANG64 as a modern alternative alongside UCRT64.
 
 ## Install and Upgrade MSYS2
 
@@ -37,7 +37,6 @@ pacman -Su
 Packages are organized in groups, which share the build environment name, but in lower case.  Then they have name prefixes that indicate which group they belong to.  Consider this package search: `pacman -Ss cmake`
 
 ```
-mingw32/mingw-w64-i686-cmake
 mingw64/mingw-w64-x86_64-cmake
 ucrt64/mingw-w64-ucrt-x86_64-cmake
 clang64/mingw-w64-clang-x86_64-cmake
@@ -72,67 +71,89 @@ If packages management is done within a build environment other than MSYS, the e
 
 5. After successfully building a project, it is safe to delete `msys64.bak`
 
-## The MING64 Environment
+## The UCRT64 Environment
 
-Next set up the MING64 environment.  The following commands should be run within the MSYS environment.  `pacman -S` is used to install packages.  The `--needed` argument prevents packages from being reinstalled.
+Next set up the UCRT64 environment.  The following commands should be run within the MSYS environment.  `pacman -S` is used to install packages.  The `--needed` argument prevents packages from being reinstalled.
+
+> [!NOTE]
+> If you are unsure what dependencies `libjxl` requires in general, refer to [BUILDING.md](../BUILDING.md) as a starting point. The command below installs the MSYS2 equivalents for those packages.
 
 ```bash
-pacman -S --needed base-devel mingw-w64-x86_64-toolchain
-pacman -S git mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja \
-    mingw-w64-x86_64-gtest mingw-w64-x86_64-giflib \
-    mingw-w64-x86_64-libpng mingw-w64-x86_64-libjpeg-turbo 
+pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain
+pacman -S git mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja \
+    mingw-w64-ucrt-x86_64-gtest mingw-w64-ucrt-x86_64-giflib \
+    mingw-w64-ucrt-x86_64-libpng mingw-w64-ucrt-x86_64-libjpeg-turbo 
 ```
 
 ## Build `libjxl`
 
 Download the source from the libjxl [releases](https://github.com/libjxl/libjxl/releases) page.  Alternatively, you may obtain the latest development version with `git`.  Run `./deps.sh` to ensure additional third-party dependencies are downloaded.
 
-Start the MINGW64 environment, create a build directory within the source directory, and configure with `cmake`.
+Start the UCRT64 environment, create a build directory within the source directory, and configure with `cmake`.
 
 ```bash
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-   -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF \
+cmake -DCMAKE_BUILD_TYPE=Release \
+   -DBUILD_TESTING=OFF \
    -DJPEGXL_ENABLE_BENCHMARK=OFF -DJPEGXL_ENABLE_PLUGINS=ON \
-   -DJPEGXL_ENABLE_MANPAGES=OFF -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-   -DJPEGXL_FORCE_SYSTEM_GTEST=ON ..
+   -DJPEGXL_ENABLE_MANPAGES=OFF -DJPEGXL_STATIC=ON ..
 ```
 
-Check the output to see if any dependencies were missed and need to be installed.  Adding `-G Ninja` may be helpful, but on my computer, Ninja was selected by default.  Remember that package changes must be done from the MSYS environment.  Then exit all MSYS2 terminals and restart the build environment.
+You could optionally add `-DCMAKE_EXE_LINKER_FLAGS=-s` to strip symbols to reduce the size of the binaries. Check the output to see if any dependencies were missed and need to be installed.  Adding `-G Ninja` may be helpful, but on my computer, Ninja was selected by default.  Remember that package changes must be done from the MSYS environment.  Then exit all MSYS2 terminals and restart the build environment.
 
-If all went well, you may now run `cmake` to build `libjxl`:
+If all went well, you may now build `libjxl` using either `cmake` or `ninja` directly:
 
 ```bash
-cmake --build .
+# Build using cmake
+cmake --build . --parallel
+
+# Or, build directly with ninja (if using the Ninja generator)
+ninja
 ```
 
-Do not be alarmed by the compiler warnings.  They are a caused by differences between gcc/g++ and clang.  The build should complete successfully.  Then `cjxl`, `djxl`, `jxlinfo`, and others can be run from within the build environment.  Moving them into the native Windows environment requires resolving `dll` issues that are beyond the scope of this document.
+Do not be alarmed by the compiler warnings.  They are a caused by differences between gcc/g++ and clang.  The build should complete successfully.  Then `cjxl`, `djxl`, `jxlinfo`, and others can be run from within the build environment.  Because we used `-DJPEGXL_STATIC=ON`, these executables are statically linked and can be easily moved to a native Windows environment without resolving `dll` issues.
+
+> [!WARNING]
+> If you enable OpenEXR support using `-DJPEGXL_ENABLE_OPENEXR=ON` alongside the OpenEXR package provided by `pacman`, the resulting binaries will **not** compile fully statically. If you require standalone static builds with EXR support, you must compile OpenEXR separately from source. Otherwise, leave it disabled.
 
 ## The `clang` Compiler
 
 To use the `clang` compiler, install the packages that correspond with the environment you wish to use.  Remember to make package changes from within the MSYS environment.
 
 ```
-mingw-w64-i686-clang
-mingw-w64-i686-clang-tools-extra
-mingw-w64-i686-clang-compiler-rt
-
 mingw-w64-x86_64-clang
 mingw-w64-x86_64-clang-tools-extra
-mingw-w64-x86_64-clang-compiler-rt
+mingw-w64-x86_64-compiler-rt
 
-mingw-w64-ucrt64-x86_64-clang
-mingw-w64-ucrt64-x86_64-clang-tools-extra
-mingw-w64-ucrt64-x86_64-clang-compiler-rt
+mingw-w64-ucrt-x86_64-clang
+mingw-w64-ucrt-x86_64-clang-tools-extra
+mingw-w64-ucrt-x86_64-compiler-rt
 ```
 
 After the `clang` compiler is installed, 'libjxl' can be built with the `./ci.sh` script.
 
+> [!IMPORTANT]
+> The `./ci.sh` script relies on GNU Parallel for some of its commands (like `tidy` and testing). Ensure you install it from your MSYS terminal by running `pacman -S parallel` before using the script.
+
 ```bash
-./ci.sh opt -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF \
+./ci.sh release -DBUILD_TESTING=OFF \
     -DJPEGXL_ENABLE_BENCHMARK=OFF -DJPEGXL_ENABLE_MANPAGES=OFF \
-    -DJPEGXL_FORCE_SYSTEM_BROTLI=ON -DJPEGXL_FORCE_SYSTEM_GTEST=ON
+    -DJPEGXL_STATIC=ON
 ```
 
-On my computer, `doxygen` packages needed to be installed to proceed with building.  Use `pacman -Ss doxygen` to find the packages to install.
+If the script doesn't work, navigate to the build directory to reconfigure and build with `cmake`.
+
+```bash
+export CC=clang && export CXX=clang++
+cmake -DCMAKE_BUILD_TYPE=Release \
+   -DBUILD_TESTING=OFF \
+   -DJPEGXL_ENABLE_BENCHMARK=OFF -DJPEGXL_ENABLE_PLUGINS=ON \
+   -DJPEGXL_ENABLE_MANPAGES=OFF -DJPEGXL_STATIC=ON ..
+```
+
+### Link Time Optimization (LTO)
+
+If you want to build `libjxl` with Link Time Optimization (LTO) using Clang, be aware that it will **fail to link** in the `MINGW64` environment. This is because LLVM currently cannot handle `emutls` during LTO code generation, which is used by GCC/libstdc++ in the MINGW64 environment.
+
+To successfully build with LTO, you **must** use an environment with native TLS support, such as `CLANG64` or `UCRT64`. Keep in mind that `-DJPEGXL_LTO=ON` enables full LTO, which can take a long time to link. Thin LTO is recommended for faster link times by passing `-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`.

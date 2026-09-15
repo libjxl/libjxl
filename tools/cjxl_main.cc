@@ -277,7 +277,7 @@ struct CompressArgs {
     cmdline->AddOptionValue(
         '\0', "center_y", "-1..YSIZE",
         "Set the vertical position of center for center-first group ordering, "
-        "range: [-1 .. xsize).\n"
+        "range: [-1 .. ysize).\n"
         "    -1 = middle of the image. Default = -1.",
         &center_y, &ParseInt64, 2);
 
