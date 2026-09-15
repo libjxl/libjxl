@@ -116,10 +116,17 @@ struct CompressParams {
 
   // Use Global channel palette if #colors < this percentage of range
   float channel_colors_pre_transform_percent = 95.f;
+  // Bypasses size clamping for global channel compact.
+  bool custom_channel_colors_pre_transform_percent = false;
   // Use Local channel palette if #colors < this percentage of range
   float channel_colors_percent = 80.f;
+  // Bypasses size clamping for local channel compact.
+  bool custom_channel_colors_percent = false;
   int palette_colors = 1 << 10;  // up to 10-bit palette is probably worthwhile
+  // Bypasses heuristic clamping for palette size.
+  bool custom_palette_colors = false;
   bool lossy_palette = false;
+  Predictor lossy_palette_predictor = Predictor::Average4;
 
   // Returns whether these params are lossless as defined by SetLossless();
   bool IsLossless() const { return modular_mode && ModularPartIsLossless(); }
