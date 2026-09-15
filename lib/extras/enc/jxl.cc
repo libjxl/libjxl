@@ -232,10 +232,39 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
         fprintf(stderr,
                 "Error while decoding the JPEG image. It may be corrupt (e.g. "
                 "truncated) or of an unsupported type (e.g. CMYK).\n");
+      } else if (error == JXL_ENC_ERR_JBRD_TOO_MUCH_TAIL_DATA) {
+        fprintf(stderr,
+                "JPEG bitstream reconstruction data could not be created: "
+                "tail data is too large.\n"
+                "This can be fixed by removing trailing bytes after the JPEG "
+                "EOI marker.\n");
+        fprintf(stderr,
+                "Try using --allow_jpeg_reconstruction 0, to losslessly "
+                "recompress the JPEG image data without bitstream "
+                "reconstruction data.\n");
+      } else if (error == JXL_ENC_ERR_JBRD_TOO_MANY_RESET_POINTS) {
+        fprintf(stderr,
+                "JPEG bitstream reconstruction data could not be created: too "
+                "many reset points for JXL reconstruction format.\n"
+                "This limitation cannot be overcome while preserving exact "
+                "JPEG bitstream reconstruction.\n");
+        fprintf(stderr,
+                "Try using --allow_jpeg_reconstruction 0, to losslessly "
+                "recompress the JPEG image data without bitstream "
+                "reconstruction data.\n");
+      } else if (error == JXL_ENC_ERR_JBRD_TOO_MANY_MARKERS) {
+        fprintf(stderr,
+                "JPEG bitstream reconstruction data could not be created: too "
+                "many JPEG markers for JXL reconstruction format.\n"
+                "This limitation cannot be overcome while preserving exact "
+                "JPEG bitstream reconstruction.\n");
+        fprintf(stderr,
+                "Try using --allow_jpeg_reconstruction 0, to losslessly "
+                "recompress the JPEG image data without bitstream "
+                "reconstruction data.\n");
       } else if (error == JXL_ENC_ERR_JBRD) {
         fprintf(stderr,
-                "JPEG bitstream reconstruction data could not be created. "
-                "Possibly there is too much tail data.\n"
+                "JPEG bitstream reconstruction data could not be created.\n"
                 "Try using --allow_jpeg_reconstruction 0, to losslessly "
                 "recompress the JPEG image data without bitstream "
                 "reconstruction data.\n");
