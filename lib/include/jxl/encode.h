@@ -417,11 +417,33 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_OUTPUT_MODE = 40,
 
+  /** Dynamically scale yellow bias based on butteraugli distance to boost color
+   * accuracy. Scales from distance 0.3 and maxes out at 3.0. 0 = disabled
+   * (default), 1 = enabled. Note: For multi-frame animations, the scaling
+   * multiplier is calculated based on the first frame's distance and applied
+   * globally to the entire sequence.
+   */
+  JXL_ENC_FRAME_SETTING_COLOR_BOOST = 41,
+
+  /** Sets the yellow multiplier for the S-cone (e.g. 0.85). Range [0, 1]. -1.0
+   * means disable (default).
+   */
+  JXL_ENC_FRAME_SETTING_YELLOW_BIAS = 42,
+
+  /** Sets the red multiplier for the L-cone (e.g. 0.85). Range [0, 1]. -1.0
+   * means disable (default).
+   */
+  JXL_ENC_FRAME_SETTING_RED_BIAS = 43,
+
+  /** Sets the green multiplier for the M-cone (e.g. 0.85). Range [0, 1]. -1.0
+   * means disable (default).
+   */
+  JXL_ENC_FRAME_SETTING_GREEN_BIAS = 44,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */
   JXL_ENC_FRAME_SETTING_FILL_ENUM = 65535,
-
 } JxlEncoderFrameSettingId;
 
 /**

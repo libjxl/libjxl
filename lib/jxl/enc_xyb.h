@@ -24,13 +24,16 @@ namespace jxl {
 // with a linear sRGB copy of `image`.
 Status ToXYB(const ColorEncoding& c_current, float intensity_target,
              const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
-             const JxlCmsInterface& cms, Image3F* JXL_RESTRICT linear);
+             const JxlCmsInterface& cms,
+             Image3F* const JXL_RESTRICT linear = nullptr,
+             const float* custom_opsin = nullptr);
 
 void LinearRGBRowToXYB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                        float* JXL_RESTRICT row2,
                        const float* JXL_RESTRICT premul_absorb, size_t xsize);
 
-void ComputePremulAbsorb(float intensity_target, float* premul_absorb);
+void ComputePremulAbsorb(float intensity_target, float* premul_absorb,
+                         const float* custom_opsin = nullptr);
 
 // Transforms each color component of the given XYB image into the [0.0, 1.0]
 // interval with an affine transform.
