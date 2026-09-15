@@ -40,8 +40,10 @@ JXL_BOOL ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
   for (int i = 0; i < kCodeLengthCodes; ++i) {
     ++counts[code_length_code_lengths[i]];
   }
-  if (!BuildHuffmanTable(table, 5, code_length_code_lengths, kCodeLengthCodes,
-                         &counts[0])) {
+  if (!BuildHuffmanTable(
+          Span<HuffmanCode>(table, 32), 5,
+          Span<const uint8_t>(code_length_code_lengths, kCodeLengthCodes),
+          Span<uint16_t>(counts, 16))) {
     return JXL_FALSE;
   }
 
@@ -235,9 +237,10 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
     ++counts[code_lengths[i]];
   }
   table_.resize(alphabet_size + 376);
-  uint32_t table_size =
-      BuildHuffmanTable(table_.data(), kHuffmanTableBits, code_lengths.data(),
-                        alphabet_size, &counts[0]);
+  uint32_t table_size = BuildHuffmanTable(
+      Span<HuffmanCode>(table_.data(), table_.size()), kHuffmanTableBits,
+      Span<const uint8_t>(code_lengths.data(), alphabet_size),
+      Span<uint16_t>(counts, 16));
   table_.resize(table_size);
   return (table_size > 0);
 }
