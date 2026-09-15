@@ -2327,6 +2327,23 @@ static bool CanDoFastLossless(const JxlEncoderFrameSettings* frame_settings,
   if (frame_settings->values.header.layer_info.have_crop) {
     return false;
   }
+  if (frame_settings->values.header.layer_info.blend_info.blendmode !=
+      JXL_BLEND_REPLACE) {
+    return false;
+  }
+  if (frame_settings->values.header.layer_info.save_as_reference != 0 ||
+      frame_settings->values.header.layer_info.blend_info.source != 0) {
+    return false;
+  }
+  if (!frame_settings->values.extra_channel_blend_info.empty()) {
+    if (frame_settings->values.extra_channel_blend_info[0].blendmode !=
+        JXL_BLEND_REPLACE) {
+      return false;
+    }
+    if (frame_settings->values.extra_channel_blend_info[0].source != 0) {
+      return false;
+    }
+  }
   if (frame_settings->enc->metadata.m.have_animation) {
     return false;
   }
