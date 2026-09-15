@@ -492,6 +492,65 @@ TEST(RoundtripTest, FloatFrameRoundtripTest) {
   }
 }
 
+TEST(RoundtripTest, ProgressiveFloatModularQuantizationAtIntegerLimit) {
+  constexpr uint32_t kXSize = 1;
+  constexpr uint32_t kYSize = 8;
+  constexpr uint32_t kNumChannels = 3;
+  const std::vector<uint32_t> pixels = {
+      0x20202020, 0x20202020, 0x20202020, 0x20202020, 0x20202020,
+      0x20202020, 0x20202020, 0x20202020, 0x20202020, 0x20202020,
+      0x20202020, 0x20202020, 0xffffffff, 0xffff2020, 0x20202020,
+      0x20202020, 0x6f202020, 0x20202020, 0x20202020, 0x20202020,
+      0x20202020, 0x202020ff, 0xffffffff, 0xff202020,
+  };
+  const JxlPixelFormat pixel_format = {kNumChannels, JXL_TYPE_FLOAT,
+                                       JXL_NATIVE_ENDIAN, 0};
+
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  ASSERT_NE(nullptr, enc.get());
+
+  JxlBasicInfo basic_info;
+  JxlEncoderInitBasicInfo(&basic_info);
+  basic_info.xsize = kXSize;
+  basic_info.ysize = kYSize;
+  basic_info.bits_per_sample = 32;
+  basic_info.exponent_bits_per_sample = 8;
+  basic_info.uses_original_profile = JXL_FALSE;
+  ASSERT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToLinearSRGB(&color_encoding, JXL_FALSE);
+  ASSERT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  ASSERT_NE(nullptr, frame_settings);
+  ASSERT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetFrameDistance(
+                frame_settings, JxlEncoderDistanceFromQuality(75.0f)));
+  ASSERT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderFrameSettingsSetOption(
+                frame_settings, JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, 1));
+  ASSERT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderFrameSettingsSetOption(
+                frame_settings, JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC, 1));
+  ASSERT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderFrameSettingsSetOption(
+                frame_settings, JXL_ENC_FRAME_SETTING_RESPONSIVE, 1));
+  ASSERT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderFrameSettingsSetOption(
+                frame_settings, JXL_ENC_FRAME_SETTING_GROUP_ORDER, 1));
+  ASSERT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(frame_settings, &pixel_format,
+                                    pixels.data(),
+                                    pixels.size() * sizeof(pixels[0])));
+  JxlEncoderCloseInput(enc.get());
+
+  std::vector<uint8_t> compressed;
+  EncodeWithEncoder(enc.get(), &compressed);
+}
+
 TEST(RoundtripTest, Uint16FrameRoundtripTest) {
   std::vector<std::vector<std::pair<JxlExtraChannelType, std::string>>>
       extra_channels_cases = {{},
