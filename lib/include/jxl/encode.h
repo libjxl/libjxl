@@ -417,6 +417,14 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_OUTPUT_MODE = 40,
 
+  /** Strips the alpha channel from the frame/image.
+   * -1 = encoder chooses (default): strip empty (opaque) alpha for lossy, keep for lossless.
+   *  0 = always keep alpha.
+   *  1 = strip alpha if fully opaque (empty).
+   *  2 = always strip alpha.
+   */
+  JXL_ENC_FRAME_SETTING_STRIP_ALPHA = 41,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */

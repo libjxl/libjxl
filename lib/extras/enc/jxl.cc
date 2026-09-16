@@ -58,6 +58,10 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
   if (!SetFrameOptions(params.options, frame_index, &option_idx, settings)) {
     return false;
   }
+  if (params.strip_alpha != -1) {
+    JxlEncoderFrameSettingsSetOption(
+        settings, JXL_ENC_FRAME_SETTING_STRIP_ALPHA, params.strip_alpha);
+  }
   if (frame_index < ppf.frames.size()) {
     const auto& frame_name = ppf.frames[frame_index].name;
     if (!frame_name.empty()) {

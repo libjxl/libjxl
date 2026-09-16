@@ -142,16 +142,13 @@ struct CompressArgs {
         &alpha_distance, &ParseFloat, 1);
 
     cmdline->AddOptionValue(
-        '\0', "strip_empty_alpha", "0|1",
-        "0 = keep alpha channel even if it is fully opaque.\n"
-        "    1 = automatically detect and remove fully opaque alpha channel (default = 1).",
-        &strip_empty_alpha, &ParseOverride, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "strip_alpha", "0|1",
-        "0 = do not remove alpha channel.\n"
-        "    1 = remove alpha channel unconditionally (default = 0).",
-        &strip_alpha, &ParseOverride, 1);
+        '\0', "strip_alpha", "-1|0|1|2",
+        "Alpha stripping mode:\n"
+        "    -1 = Encoder chooses (default: strip if empty for lossy, keep for lossless).\n"
+        "     0 = Always keep alpha.\n"
+        "     1 = Strip if empty (fully opaque).\n"
+        "     2 = Always strip alpha.",
+        &strip_alpha, &ParseInt64, 1);
 
     cmdline->AddOptionFlag('p', "progressive",
                            "More progressive/responsive decoding.",
@@ -582,8 +579,7 @@ struct CompressArgs {
   CommandLineParser::OptionId opt_alpha_distance_id = -1;
   CommandLineParser::OptionId opt_quality_id = -1;
   CommandLineParser::OptionId opt_modular_group_size_id = -1;
-  jxl::Override strip_empty_alpha = jxl::Override::kDefault;
-  jxl::Override strip_alpha = jxl::Override::kDefault;
+  int64_t strip_alpha = -1;
 };
 
 const char* ModeFromArgs(const CompressArgs& args) {
@@ -730,6 +726,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessBoolFlag(args->noise, JXL_ENC_FRAME_SETTING_NOISE, params);
 
   params->allow_expert_options = args->allow_expert_options;
+  params->strip_alpha = static_cast<int32_t>(args->strip_alpha);
   if (args->disable_perceptual_optimizations) {
     params->AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS, 1);
   }
@@ -1138,19 +1135,6 @@ int main(int argc, char** argv) {
           }
           return true;
         });
-      }
-    }
-  }
-
-  if (jpeg_bytes == nullptr && ppf.HasAlpha()) {
-    bool strip_alpha = (args.strip_alpha == jxl::Override::kOn);
-    bool strip_empty_alpha = (args.strip_empty_alpha != jxl::Override::kOff);
-    if (strip_alpha || (strip_empty_alpha && ppf.HasOpaqueAlpha())) {
-      cmdline.VerbosePrintf(1, "Detected %salpha channel, stripping it.\n",
-                            strip_alpha ? "" : "fully opaque ");
-      if (!ppf.DropAlpha()) {
-        std::cerr << "Failed to drop alpha channel.\n";
-        exit(EXIT_FAILURE);
       }
     }
   }
