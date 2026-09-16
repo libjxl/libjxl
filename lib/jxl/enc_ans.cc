@@ -1381,7 +1381,7 @@ HistogramParams HistogramParams::ForModular(
             : cparams.speed_tier >= SpeedTier::kHare
             ? HistogramParams::LZ77Method::kRLE
             : cparams.speed_tier >= SpeedTier::kKitten
-            ? HistogramParams::LZ77Method::kLZ77b3w3f
+            ? HistogramParams::LZ77Method::kLZ77b7w3f
             : HistogramParams::LZ77Method::kOptc256;
     }
   return params;
