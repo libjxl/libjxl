@@ -356,11 +356,11 @@ struct CompressArgs {
         &jpeg_reconstruction_cfl, &ParseOverride, 3);
 
     cmdline->AddOptionValue(
-        '\0', "jpeg_reconstruction_lfs", "0|1",
+        '\0', "jpeg_reconstruction_lfs", "-1|0|1",
         "Disable/enable LF Smoothing for lossless "
         "JPEG reconstruction.\n"
-        "    0 = disable. 1 = enable.",
-        &jpeg_reconstruction_lfs, &ParseOverride, 3);
+        "    -1 = default (let encoder decide), 0 = disable, 1 = enable.",
+        &jpeg_reconstruction_lfs, &ParseInt64, -1);
 
     cmdline->AddOptionValue('\0', "num_reps", "REPS",
                             "How many times to compress, for benchmarking.",
@@ -377,9 +377,10 @@ struct CompressArgs {
 
     cmdline->AddOptionValue(
         '\0', "output_mode", "-1..2",
-        "Output mode: -1=default (let encoder decide), 0=buffer output "
-        "internally, 1=streaming with seeking, 2=OOO jxlp (ftyp v1, no "
-        "seeking required).",
+        "Output mode: -1 = default (let encoder decide),"
+        "0 = buffer output internally./n"
+        "    1 = streaming with seeking, 2 = OOO jxlp"
+        "(ftyp v1, no seeking required).",
         &output_mode, &ParseInt64, 3);
 
     cmdline->AddOptionFlag('\0', "disable_output",
@@ -531,10 +532,10 @@ struct CompressArgs {
   bool modular_lossy_palette = false;
   int64_t progressive_dc = -1;
   int64_t upsampling_mode = -1;
+  int64_t jpeg_reconstruction_lfs = -1;
   int32_t premultiply = -1;
   bool already_downsampled = false;
   jxl::Override jpeg_reconstruction_cfl = jxl::Override::kDefault;
-  jxl::Override jpeg_reconstruction_lfs = jxl::Override::kDefault;
   jxl::Override modular = jxl::Override::kDefault;
   jxl::Override keep_invisible = jxl::Override::kDefault;
   jxl::Override dots = jxl::Override::kDefault;
@@ -915,8 +916,11 @@ void ProcessFlags(const jxl::extras::Codec codec,
   if (jpeg_bytes) {
     ProcessBoolFlag(args->jpeg_reconstruction_cfl,
                     JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL, params);
-    ProcessBoolFlag(args->jpeg_reconstruction_lfs,
-                    JXL_ENC_FRAME_SETTING_JPEG_RECON_LFS, params);
+    ProcessFlag<int64_t>(
+      "jpeg_reconstruction_lfs", args->jpeg_reconstruction_lfs,
+      JXL_ENC_FRAME_SETTING_JPEG_RECON_LFS, params,
+      [](int64_t x) { return (-1 <= x && x <= 1); },
+      "Valid values are -1, 0, 1.");
     ProcessBoolFlag(args->compress_boxes,
                     JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES, params);
   }
