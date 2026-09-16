@@ -80,7 +80,10 @@ struct ModularOptions {
   // NW-N, N-NE, N-NN
   std::vector<uint32_t> splitting_heuristics_properties;
   float splitting_heuristics_node_threshold = 96;
+  float node_base_cost = 92.0f;
+  float node_log_cost = 1.2f;
   size_t max_property_values = 32;
+  size_t max_pairs = 12;
 
   // Predictor to use for each channel.
   Predictor predictor = kUndefinedPredictor;
@@ -117,6 +120,24 @@ struct ModularOptions {
     k2PropertyDP = 2,
     kJoint2dDP = 3,
     kGrid2dDP = 4,
+    kMainGreedy = 5,
+    k3PropertyDP = 6,
+    k3PropNestedSingle = 7,
+    k3PropNestedStaged = 8,
+    k3PropNestedDouble = 9,
+    kGrid3dDP = 10,
+    kGrid2dDP_15 = 11,
+    kGrid3dDP_15 = 12,
+    kGrid2dDynDP = 13,
+    kGrid3dDynDP = 14,
+    kGridDynDP = 15,
+    kGridDyn2DP = 16,
+    kGridDynTop5DP = 17,
+    kGridDynTop10DP = 18,
+    kGridDynTop20DP = 19,
+    kGridDyn2Top5DP = 20,
+    kGridDyn2Top10DP = 21,
+    kGridDyn2Top20DP = 22,
   };
   TreeLearningMode tree_learning_mode = TreeLearningMode::kGreedy;
 

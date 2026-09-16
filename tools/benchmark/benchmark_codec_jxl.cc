@@ -154,6 +154,12 @@ class JxlCodec : public ImageCodec {
       parser >> ec_resampling;
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING,
                          ec_resampling);
+    } else if (param.rfind("cbase=", 0) == 0) {
+      cparams_.AddFloatOption(JXL_ENC_FRAME_SETTING_MODULAR_NODE_BASE_COST,
+                              strtof(param.substr(6).c_str(), nullptr));
+    } else if (param.rfind("clog=", 0) == 0) {
+      cparams_.AddFloatOption(JXL_ENC_FRAME_SETTING_MODULAR_NODE_LOG_COST,
+                              strtof(param.substr(5).c_str(), nullptr));
     } else if (ImageCodec::ParseParam(param)) {
       // Nothing to do.
     } else if (param == "uint8") {
@@ -268,9 +274,49 @@ class JxlCodec : public ImageCodec {
     } else if (param == "tree=joint" || param == "tree=nested" ||
                param == "tree=2d") {
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 3);
-    } else if (param == "tree=grid") {
+    } else if (param == "tree=grid" || param == "tree=grid2d" || param == "tree=grid2d_7") {
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 4);
-    } else if (param == "wp=0" || param == "nowp") {
+    } else if (param == "tree=grid2d_15") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 11);
+    } else if (param == "tree=grid3d" || param == "tree=grid3d_7") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 10);
+    } else if (param == "tree=grid3d_15") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 12);
+    } else if (param == "tree=grid2d_dyn" || param == "tree=grid2d_d") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 13);
+    } else if (param == "tree=grid3d_dyn" || param == "tree=grid3d_d") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 14);
+    } else if (param == "tree=griddyn" || param == "tree=grid_dyn" ||
+               param == "tree=griddyn3" || param == "tree=griddyn_3d") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 15);
+    } else if (param == "tree=griddyn2" || param == "tree=griddyn_2d" || param == "tree=grid2dyn") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 16);
+    } else if (param == "tree=griddyn_top5" || param == "tree=griddyn5" ||
+               param == "tree=griddyn3_top5" || param == "tree=griddyn3_5") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 17);
+    } else if (param == "tree=griddyn_top10" || param == "tree=griddyn10") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 18);
+    } else if (param == "tree=griddyn_top20" || param == "tree=griddyn20") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 19);
+    } else if (param == "tree=griddyn2_top5" || param == "tree=griddyn2_5") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 20);
+    } else if (param == "tree=griddyn2_top10" || param == "tree=griddyn2_10") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 21);
+    } else if (param == "tree=griddyn2_top20" || param == "tree=griddyn2_20") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 22);
+    } else if (param == "tree=main" || param == "tree=orig") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 5);
+    } else if (param == "tree=dp3" || param == "tree=3prop") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 6);
+    } else if (param == "tree=n3single" || param == "tree=nested3_single") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 7);
+    } else if (param == "tree=n3staged" || param == "tree=nested3_staged") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 8);
+    } else if (param == "tree=n3double" || param == "tree=nested3_double") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE, 9);
+    } else if (param == "nowp" || param == "nowp_pure") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_WP_TREE_MODE, 2);
+    } else if (param == "wp=0" || param == "ds=1") {
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, 1);
     } else if (param == "wp=1" || param == "wp") {
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, 0);

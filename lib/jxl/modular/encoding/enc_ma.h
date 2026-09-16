@@ -38,7 +38,9 @@ struct TreeSamples {
                       ModularOptions::TreeMode wp_tree_mode);
   // Set the properties to use. Must be called before adding any samples.
   Status SetProperties(const std::vector<uint32_t> &properties,
-                       ModularOptions::TreeMode wp_tree_mode);
+                       ModularOptions::TreeMode wp_tree_mode,
+                       ModularOptions::TreeLearningMode tree_learning_mode =
+                           ModularOptions::TreeLearningMode::kGreedy);
 
   const std::vector<ResidualToken>& RTokens(size_t pred) const {
     return residuals[pred];
@@ -173,13 +175,15 @@ void CollectPixelSamples(const Image &image, const ModularOptions &options,
                          std::vector<pixel_type> &pixel_samples,
                          std::vector<pixel_type> &diff_samples);
 
-Status ComputeBestTree(TreeSamples &tree_samples, float threshold,
+Status ComputeBestTree(TreeSamples &tree_samples, float scale,
                        const std::vector<ModularMultiplierInfo> &mul_info,
                        StaticPropRange static_prop_range,
                        float fast_decode_multiplier, Tree *tree,
                        float nb_repeats = 1.0f,
                        ModularOptions::TreeLearningMode tree_learning_mode =
-                           ModularOptions::TreeLearningMode::kGreedy);
+                           ModularOptions::TreeLearningMode::kGreedy,
+                       float base_node_cost = 92.0f,
+                       float log_node_cost = 1.2f);
 
 }  // namespace jxl
 #endif  // LIB_JXL_MODULAR_ENCODING_ENC_MA_H_

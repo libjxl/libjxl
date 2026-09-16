@@ -1861,12 +1861,20 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
           default_to_true(value);
       break;
     case JXL_ENC_FRAME_SETTING_MODULAR_TREE_LEARNING_MODE:
-      if (value < 0 || value > 4) {
+      if (value < 0 || value > 22) {
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-                             "Tree learning mode has to be in [0..4]");
+                             "Tree learning mode has to be in [0..22]");
       }
       frame_settings->values.cparams.options.tree_learning_mode =
           static_cast<jxl::ModularOptions::TreeLearningMode>(value);
+      break;
+    case JXL_ENC_FRAME_SETTING_MODULAR_WP_TREE_MODE:
+      if (value < 0 || value > 3) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Modular WP tree mode has to be in [0..3]");
+      }
+      frame_settings->values.cparams.options.wp_tree_mode =
+          static_cast<jxl::ModularOptions::TreeMode>(value);
       break;
     case JXL_ENC_FRAME_INDEX_BOX:
       if (value < 0 || value > 1) {
@@ -1876,6 +1884,8 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       frame_settings->values.frame_index_box = true;
       break;
     case JXL_ENC_FRAME_SETTING_PHOTON_NOISE:
+    case JXL_ENC_FRAME_SETTING_MODULAR_NODE_BASE_COST:
+    case JXL_ENC_FRAME_SETTING_MODULAR_NODE_LOG_COST:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                            "Float option, try setting it with "
                            "JxlEncoderFrameSettingsSetFloatOption");
@@ -1988,6 +1998,20 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
       } else {
         frame_settings->values.cparams.channel_colors_percent = value;
       }
+      return JxlErrorOrStatus::Success();
+    case JXL_ENC_FRAME_SETTING_MODULAR_NODE_BASE_COST:
+      if (value < 0.0f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Node base cost cannot be negative");
+      }
+      frame_settings->values.cparams.options.node_base_cost = value;
+      return JxlErrorOrStatus::Success();
+    case JXL_ENC_FRAME_SETTING_MODULAR_NODE_LOG_COST:
+      if (value < 0.0f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Node log cost cannot be negative");
+      }
+      frame_settings->values.cparams.options.node_log_cost = value;
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_EFFORT:
     case JXL_ENC_FRAME_SETTING_DECODING_SPEED:

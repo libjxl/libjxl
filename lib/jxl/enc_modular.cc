@@ -492,6 +492,9 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
     switch (cparams_.decoding_speed_tier) {
       case 0:
         cparams_.options.fast_decode_multiplier = 1.001f;
+        if (cparams_.options.wp_tree_mode == ModularOptions::TreeMode::kNoWP) {
+          disable_wp();
+        }
         break;
       case 1:  // No Weighted predictor
         cparams_.options.fast_decode_multiplier = 1.005f;
@@ -538,6 +541,28 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       10 * cparams_.decoding_speed_tier;
 
   {
+    const char* env_tree_mode = getenv("JXL_TREE_LEARNING_MODE");
+    if (env_tree_mode != nullptr) {
+      if (strcmp(env_tree_mode, "1d") == 0 || strcmp(env_tree_mode, "dp1") == 0) {
+        cparams_.options.tree_learning_mode = ModularOptions::TreeLearningMode::k1dDP;
+      } else if (strcmp(env_tree_mode, "2prop") == 0 || strcmp(env_tree_mode, "dp2") == 0) {
+        cparams_.options.tree_learning_mode = ModularOptions::TreeLearningMode::k2PropertyDP;
+      } else if (strcmp(env_tree_mode, "nested") == 0 || strcmp(env_tree_mode, "joint") == 0) {
+        cparams_.options.tree_learning_mode = ModularOptions::TreeLearningMode::kJoint2dDP;
+      } else if (strcmp(env_tree_mode, "3prop") == 0 || strcmp(env_tree_mode, "dp3") == 0) {
+        cparams_.options.tree_learning_mode = ModularOptions::TreeLearningMode::k3PropertyDP;
+      } else if (strcmp(env_tree_mode, "n3single") == 0 || strcmp(env_tree_mode, "nested3_single") == 0) {
+        cparams_.options.tree_learning_mode = ModularOptions::TreeLearningMode::k3PropNestedSingle;
+      } else if (strcmp(env_tree_mode, "n3staged") == 0 || strcmp(env_tree_mode, "nested3_staged") == 0) {
+        cparams_.options.tree_learning_mode = ModularOptions::TreeLearningMode::k3PropNestedStaged;
+      } else if (strcmp(env_tree_mode, "n3double") == 0 || strcmp(env_tree_mode, "nested3_double") == 0) {
+        cparams_.options.tree_learning_mode = ModularOptions::TreeLearningMode::k3PropNestedDouble;
+      } else if (strcmp(env_tree_mode, "greedy") == 0) {
+        cparams_.options.tree_learning_mode = ModularOptions::TreeLearningMode::kGreedy;
+      } else if (strcmp(env_tree_mode, "main") == 0 || strcmp(env_tree_mode, "orig") == 0) {
+        cparams_.options.tree_learning_mode = ModularOptions::TreeLearningMode::kMainGreedy;
+      }
+    }
     // Set properties.
     std::vector<uint32_t> prop_order;
     if (cparams_.responsive) {
@@ -547,10 +572,28 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
     } else {
       // Same, but for the non-Squeeze case.
       prop_order = {0, 1, 15, 9, 10, 11, 12, 13, 14, 2, 3, 4, 5, 6, 7, 8};
-      // if few groups, don't use group as a property
+    }
+    if (cparams_.options.tree_learning_mode ==
+        ModularOptions::TreeLearningMode::kMainGreedy) {
+      cparams_.options.node_base_cost = 96.0f;
+      cparams_.options.node_log_cost = 0.0f;
       if (num_streams < 30 && cparams_.speed_tier > SpeedTier::kTortoise &&
           cparams_orig.ModularPartIsLossless()) {
         prop_order.erase(prop_order.begin() + 1);
+      }
+    } else {
+      // Don't use group as a property for lossless
+      if (cparams_orig.ModularPartIsLossless()) {
+        prop_order.erase(
+            std::remove(prop_order.begin(), prop_order.end(), 1),
+            prop_order.end());
+      }
+      if (cparams_.options.wp_tree_mode == ModularOptions::TreeMode::kNoWP ||
+          cparams_.options.wp_tree_mode == ModularOptions::TreeMode::kGradientOnly) {
+        prop_order.erase(
+            std::remove(prop_order.begin(), prop_order.end(),
+                        static_cast<uint32_t>(kWPProp)),
+            prop_order.end());
       }
     }
     int max_properties = std::min<int>(
@@ -607,6 +650,17 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
         cparams_.options.splitting_heuristics_properties.push_back(
             kNumNonrefProperties + i);
       }
+    }
+
+    const char* env_mpv = getenv("JXL_MAX_PROPERTY_VALUES");
+    if (env_mpv != nullptr) {
+      cparams_.options.max_property_values = atoi(env_mpv);
+    }
+    const char* env_mpv_mult = getenv("JXL_MAX_PROPERTY_VALUES_MULT");
+    if (env_mpv_mult != nullptr) {
+      float mult = strtof(env_mpv_mult, nullptr);
+      cparams_.options.max_property_values = std::min<size_t>(
+          256, std::max<size_t>(16, static_cast<size_t>(cparams_.options.max_property_values * mult)));
     }
   }
   cparams_.options.nb_repeats = std::min(1.0f, cparams_.options.nb_repeats);

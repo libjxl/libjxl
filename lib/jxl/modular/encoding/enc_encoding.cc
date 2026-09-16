@@ -226,12 +226,19 @@ StatusOr<Tree> LearnTree(
     return tree;
   }
   float pixel_fraction = tree_samples.NumSamples() * 1.0f / total_pixels;
-  float required_cost = pixel_fraction * 0.9 + 0.1;
+  float scale = (options.splitting_heuristics_node_threshold / 96.0f) *
+                (pixel_fraction * 0.9f + 0.1f);
+  float base_cost = (options.tree_learning_mode == ModularOptions::TreeLearningMode::kMainGreedy)
+                        ? 96.0f
+                        : options.node_base_cost;
+  float log_cost = (options.tree_learning_mode == ModularOptions::TreeLearningMode::kMainGreedy)
+                       ? 0.0f
+                       : options.node_log_cost;
   tree_samples.AllSamplesDone();
   JXL_RETURN_IF_ERROR(ComputeBestTree(
-      tree_samples, options.splitting_heuristics_node_threshold * required_cost,
-      multiplier_info, static_prop_range, options.fast_decode_multiplier,
-      &tree, options.nb_repeats, options.tree_learning_mode));
+      tree_samples, scale, multiplier_info, static_prop_range,
+      options.fast_decode_multiplier, &tree, options.nb_repeats,
+      options.tree_learning_mode, base_cost, log_cost));
   return tree;
 }
 
@@ -576,7 +583,8 @@ StatusOr<Tree> LearnTree(
                                                 options[start].wp_tree_mode));
   JXL_RETURN_IF_ERROR(
       tree_samples.SetProperties(options[start].splitting_heuristics_properties,
-                                 options[start].wp_tree_mode));
+                                 options[start].wp_tree_mode,
+                                 options[start].tree_learning_mode));
   uint32_t max_c = 0;
   std::vector<pixel_type> pixel_samples;
   std::vector<pixel_type> diff_samples;
