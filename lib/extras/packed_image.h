@@ -242,7 +242,21 @@ class PackedPixelFile {
 
   // Logical resize; storage is not reallocated; stride is unchanged.
   Status ShrinkTo(size_t new_xsize, size_t new_ysize);
+
+  // Checks if the image file has an alpha channel (interleaved or extra channel).
+  bool HasAlpha() const;
+
+  // Returns true if an alpha channel is present and all alpha values across
+  // all frames (and preview frame) are fully opaque.
+  bool HasOpaqueAlpha() const;
+
+  // Removes the alpha channel from ppf (interleaved or extra channel).
+  Status DropAlpha();
 };
+
+bool HasAlpha(const PackedPixelFile& ppf);
+bool HasOpaqueAlpha(const PackedPixelFile& ppf);
+Status DropAlpha(PackedPixelFile* ppf);
 
 }  // namespace extras
 }  // namespace jxl

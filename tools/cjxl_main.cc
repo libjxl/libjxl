@@ -141,6 +141,18 @@ struct CompressArgs {
         "    Recommended range: 0.5 .. 3.0.",
         &alpha_distance, &ParseFloat, 1);
 
+    cmdline->AddOptionValue(
+        '\0', "strip_empty_alpha", "0|1",
+        "0 = keep alpha channel even if it is fully opaque.\n"
+        "    1 = automatically detect and remove fully opaque alpha channel (default = 1).",
+        &strip_empty_alpha, &ParseOverride, 1);
+
+    cmdline->AddOptionValue(
+        '\0', "strip_alpha", "0|1",
+        "0 = do not remove alpha channel.\n"
+        "    1 = remove alpha channel unconditionally (default = 0).",
+        &strip_alpha, &ParseOverride, 1);
+
     cmdline->AddOptionFlag('p', "progressive",
                            "More progressive/responsive decoding.",
                            &progressive, &SetBooleanTrue, 1);
@@ -570,6 +582,8 @@ struct CompressArgs {
   CommandLineParser::OptionId opt_alpha_distance_id = -1;
   CommandLineParser::OptionId opt_quality_id = -1;
   CommandLineParser::OptionId opt_modular_group_size_id = -1;
+  jxl::Override strip_empty_alpha = jxl::Override::kDefault;
+  jxl::Override strip_alpha = jxl::Override::kDefault;
 };
 
 const char* ModeFromArgs(const CompressArgs& args) {
@@ -1124,6 +1138,19 @@ int main(int argc, char** argv) {
           }
           return true;
         });
+      }
+    }
+  }
+
+  if (jpeg_bytes == nullptr && ppf.HasAlpha()) {
+    bool strip_alpha = (args.strip_alpha == jxl::Override::kOn);
+    bool strip_empty_alpha = (args.strip_empty_alpha != jxl::Override::kOff);
+    if (strip_alpha || (strip_empty_alpha && ppf.HasOpaqueAlpha())) {
+      cmdline.VerbosePrintf(1, "Detected %salpha channel, stripping it.\n",
+                            strip_alpha ? "" : "fully opaque ");
+      if (!ppf.DropAlpha()) {
+        std::cerr << "Failed to drop alpha channel.\n";
+        exit(EXIT_FAILURE);
       }
     }
   }
