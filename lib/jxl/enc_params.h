@@ -114,17 +114,15 @@ struct CompressParams {
   int colorspace = -1;
   int move_to_front_from_channel = -1;
 
-  // Use Global channel palette if #colors < this percentage of range
-  float channel_colors_pre_transform_percent = 95.f;
-  // Bypasses size clamping for global channel compact.
-  bool custom_channel_colors_pre_transform_percent = false;
-  // Use Local channel palette if #colors < this percentage of range
-  float channel_colors_percent = 80.f;
-  // Bypasses size clamping for local channel compact.
-  bool custom_channel_colors_percent = false;
-  int palette_colors = 1 << 10;  // up to 10-bit palette is probably worthwhile
-  // Bypasses heuristic clamping for palette size.
-  bool custom_palette_colors = false;
+  // Use Global channel palette if #colors < this percentage of range;
+  // -1.f = encoder chooses (defaults to 95.f).
+  float channel_colors_pre_transform_percent = -1.f;
+  // Use Local channel palette if #colors < this percentage of range;
+  // -1.f = encoder chooses (defaults to 80.f).
+  float channel_colors_percent = -1.f;
+  // Maximum palette colors to try; -1 = encoder chooses (defaults to 1024 with
+  // heuristics).
+  int palette_colors = -1;
   bool lossy_palette = false;
   Predictor lossy_palette_predictor = Predictor::Average4;
 
