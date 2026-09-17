@@ -320,6 +320,14 @@ class JxlCodec : public ImageCodec {
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, 1);
     } else if (param == "wp=1" || param == "wp") {
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, 0);
+    } else if (param == "lz77_pre=auto" || param == "lz77_pre=1" || param == "lz77_pre") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_LZ77_PRE_TREE, 1);
+    } else if (param == "lz77_pre=zero" || param == "lz77_pre=z") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_LZ77_PRE_TREE, 2);
+    } else if (param == "lz77_pre=grad" || param == "lz77_pre=gradient" || param == "lz77_pre=g") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_LZ77_PRE_TREE, 3);
+    } else if (param == "lz77_pre=0" || param == "lz77_pre=off") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_LZ77_PRE_TREE, 0);
     } else {
       return JXL_FAILURE("Unrecognized param");
     }

@@ -141,6 +141,15 @@ struct ModularOptions {
   };
   TreeLearningMode tree_learning_mode = TreeLearningMode::kGreedy;
 
+  enum class LZ77PreTreeMode {
+    kDisabled = 0,
+    kAuto = 1,
+    kForceZero = 2,
+    kForceGradient = 3,
+  };
+  LZ77PreTreeMode lz77_pre_tree_mode = LZ77PreTreeMode::kDisabled;
+  float lz77_pre_tree_threshold = 0.08f;
+
   HistogramParams histogram_params;
 
   // Ignore the image and just pretend all tokens are zeroes

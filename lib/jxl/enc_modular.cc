@@ -563,6 +563,22 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
         cparams_.options.tree_learning_mode = ModularOptions::TreeLearningMode::kMainGreedy;
       }
     }
+    const char* env_lz77_pre = getenv("JXL_LZ77_PRE_TREE");
+    if (env_lz77_pre != nullptr) {
+      if (strcmp(env_lz77_pre, "auto") == 0 || strcmp(env_lz77_pre, "1") == 0) {
+        cparams_.options.lz77_pre_tree_mode = ModularOptions::LZ77PreTreeMode::kAuto;
+      } else if (strcmp(env_lz77_pre, "zero") == 0 || strcmp(env_lz77_pre, "z") == 0) {
+        cparams_.options.lz77_pre_tree_mode = ModularOptions::LZ77PreTreeMode::kForceZero;
+      } else if (strcmp(env_lz77_pre, "grad") == 0 || strcmp(env_lz77_pre, "gradient") == 0 || strcmp(env_lz77_pre, "g") == 0) {
+        cparams_.options.lz77_pre_tree_mode = ModularOptions::LZ77PreTreeMode::kForceGradient;
+      } else if (strcmp(env_lz77_pre, "off") == 0 || strcmp(env_lz77_pre, "0") == 0) {
+        cparams_.options.lz77_pre_tree_mode = ModularOptions::LZ77PreTreeMode::kDisabled;
+      }
+    }
+    const char* env_lz77_th = getenv("JXL_LZ77_PRE_THRESHOLD");
+    if (env_lz77_th != nullptr) {
+      cparams_.options.lz77_pre_tree_threshold = strtof(env_lz77_th, nullptr);
+    }
     // Set properties.
     std::vector<uint32_t> prop_order;
     if (cparams_.responsive) {
@@ -1355,6 +1371,16 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
         return true;
       }));
   if (skip_rest) return true;
+
+  ModularOptions::LZ77PreTreeMode winning_mode =
+      ModularOptions::LZ77PreTreeMode::kDisabled;
+  for (const auto& opt : stream_options_) {
+    if (opt.lz77_pre_tree_mode != ModularOptions::LZ77PreTreeMode::kDisabled) {
+      winning_mode = opt.lz77_pre_tree_mode;
+      break;
+    }
+  }
+  cparams_.options.lz77_pre_tree_mode = winning_mode;
 
   // Write tree
   HistogramParams params =

@@ -65,6 +65,9 @@ struct TreeSamples {
   size_t NumPropertyValues(size_t property_index) const {
     return compact_properties[property_index].size() + 1;
   }
+  const std::vector<int32_t>& CompactProperties(size_t property_index) const {
+    return compact_properties[property_index];
+  }
   size_t NumStaticProps() const { return num_static_props; }
   // Returns the *quantized* property value.
   template<bool S>
@@ -97,6 +100,8 @@ struct TreeSamples {
   // Add a sample.
   void AddSample(pixel_type_w pixel, const Properties &properties,
                  const pixel_type_w *predictions);
+  // Add a pre-processed LZ77 symbol sample (literal or length token).
+  void AddLZ77SymbolSample(ResidualToken token, const Properties &properties);
   // Pre-cluster property values.
   void PreQuantizeProperties(
       const StaticPropRange &range,
@@ -183,6 +188,10 @@ Status ComputeBestTree(TreeSamples &tree_samples, float scale,
                        ModularOptions::TreeLearningMode tree_learning_mode =
                            ModularOptions::TreeLearningMode::kGreedy,
                        float base_node_cost = 92.0f,
+                       float log_node_cost = 1.2f);
+
+float EstimateTreeCost(const Tree& tree, const TreeSamples& tree_samples,
+                       float scale, float base_node_cost = 92.0f,
                        float log_node_cost = 1.2f);
 
 }  // namespace jxl

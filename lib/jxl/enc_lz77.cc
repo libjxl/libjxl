@@ -20,6 +20,9 @@
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_ans_params.h"
+#include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/pack_signed.h"
 
 namespace jxl {
 
@@ -832,6 +835,84 @@ std::vector<std::vector<Token>> ApplyLZ77(
     default:
       return {};
   }
+}
+
+TrialLZ77MatchResult RunFastTrialLZ77(const Image& image, Predictor pred,
+                                     size_t min_len, size_t max_chan_size) {
+  TrialLZ77MatchResult result;
+  result.predictor = pred;
+  size_t total_pixels = 0;
+  for (size_t c = 0; c < image.channel.size(); c++) {
+    const Channel& ch = image.channel[c];
+    if (c >= image.nb_meta_channels &&
+        (ch.w > max_chan_size || ch.h > max_chan_size)) {
+      break;
+    }
+    if (!ch.w || !ch.h || ch.plane.xsize() == 0 || ch.plane.ysize() == 0) {
+      continue;
+    }
+    total_pixels += ch.w * ch.h;
+  }
+  if (total_pixels == 0) return result;
+  result.total_pixels = total_pixels;
+
+  std::vector<uint32_t> data;
+  data.reserve(total_pixels);
+
+  for (size_t c = 0; c < image.channel.size(); c++) {
+    const Channel& ch = image.channel[c];
+    if (c >= image.nb_meta_channels &&
+        (ch.w > max_chan_size || ch.h > max_chan_size)) {
+      break;
+    }
+    if (!ch.w || !ch.h || ch.plane.xsize() == 0 || ch.plane.ysize() == 0) {
+      continue;
+    }
+    const ptrdiff_t onerow = ch.plane.PixelsPerRow();
+    for (size_t y = 0; y < ch.h; y++) {
+      const pixel_type* r = ch.Row(y);
+      if (pred == Predictor::Zero) {
+        for (size_t x = 0; x < ch.w; x++) {
+          data.push_back(PackSigned(r[x]));
+        }
+      } else if (pred == Predictor::Gradient) {
+        for (size_t x = 0; x < ch.w; x++) {
+          pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+          pixel_type_w top = (y ? *(r + x - onerow) : left);
+          pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+          int32_t guess = ClampedGradient(top, left, topleft);
+          int32_t residual = r[x] - guess;
+          data.push_back(PackSigned(residual));
+        }
+      }
+    }
+  }
+
+  size_t distance_multiplier = image.channel.empty() ? 0 : image.channel[0].w;
+  LZ77HashMap<7, 3> hash_map(data, distance_multiplier);
+  result.match_info.assign(data.size(), 0);
+
+  for (size_t pos = 0; pos < data.size(); pos++) {
+    if (pos + 3 >= data.size()) continue;
+    size_t len = 0;
+    size_t dist_symbol = 0;
+    hash_map.FindMatch(pos, len, dist_symbol, min_len);
+    if (len < min_len) continue;
+
+    result.matched_pixels += len;
+    result.num_matches++;
+    result.match_info[pos] = len;
+    for (size_t offset = 1; offset < len; offset++) {
+      result.match_info[pos + offset] = kLZ77SkipMarker;
+      hash_map.Update(pos + offset);
+    }
+    pos += len - 1;
+  }
+
+  if (result.matched_pixels > 0) {
+    result.has_matches = true;
+  }
+  return result;
 }
 
 }  // namespace jxl

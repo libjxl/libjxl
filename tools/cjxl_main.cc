@@ -452,6 +452,11 @@ struct CompressArgs {
         &modular_nb_prev_channels, &ParseInt64, 4);
 
     cmdline->AddOptionValue(
+        '\0', "modular_lz77_pre_tree", "-1..3",
+        "Pre-tree LZ77 mode: -1 = default, 0 = off, 1 = auto tournament, 2 = force zero, 3 = force gradient.",
+        &modular_lz77_pre_tree, &ParseInt64, 4);
+
+    cmdline->AddOptionValue(
         '\0', "modular_palette_colors", "COLORS",
         "Use palette if number of colors is smaller than or equal to this.",
         &modular_palette_colors, &ParseInt64, 4);
@@ -552,6 +557,7 @@ struct CompressArgs {
   float modular_channel_colors_group_percent = -1.f;
   int64_t modular_palette_colors = -1;
   int64_t modular_nb_prev_channels = -1;
+  int64_t modular_lz77_pre_tree = -1;
   float modular_ma_tree_learning_percent = -1.f;
   float photon_noise_iso = 0;
   int64_t codestream_level = -1;
@@ -869,6 +875,11 @@ void ProcessFlags(const jxl::extras::Codec codec,
       JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS, params,
       [](int64_t x) { return (-1 <= x && x <= 11); },
       "Valid range is {-1, 0, 1, ..., 11}.");
+  ProcessFlag<int64_t>(
+      "modular_lz77_pre_tree", args->modular_lz77_pre_tree,
+      JXL_ENC_FRAME_SETTING_MODULAR_LZ77_PRE_TREE, params,
+      [](int64_t x) { return (-1 <= x && x <= 3); },
+      "Valid range is {-1, 0, 1, 2, 3}.");
   if (args->modular_lossy_palette) {
     if (args->progressive || args->qprogressive_ac) {
       fprintf(stderr,

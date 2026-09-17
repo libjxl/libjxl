@@ -1876,6 +1876,14 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       frame_settings->values.cparams.options.wp_tree_mode =
           static_cast<jxl::ModularOptions::TreeMode>(value);
       break;
+    case JXL_ENC_FRAME_SETTING_MODULAR_LZ77_PRE_TREE:
+      if (value < 0 || value > 3) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "LZ77 pre-tree mode has to be in [0..3]");
+      }
+      frame_settings->values.cparams.options.lz77_pre_tree_mode =
+          static_cast<jxl::ModularOptions::LZ77PreTreeMode>(value);
+      break;
     case JXL_ENC_FRAME_INDEX_BOX:
       if (value < 0 || value > 1) {
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,

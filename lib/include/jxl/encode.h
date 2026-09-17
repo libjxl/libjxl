@@ -433,6 +433,10 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_MODULAR_NODE_LOG_COST = 44,
 
+  /** Modular LZ77 pre-tree trial mode (0=disabled, 1=auto, 2=zero, 3=gradient).
+   */
+  JXL_ENC_FRAME_SETTING_MODULAR_LZ77_PRE_TREE = 45,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */

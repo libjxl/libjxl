@@ -1375,14 +1375,19 @@ HistogramParams HistogramParams::ForModular(
   }
     // No predictor requires LZ77 to compress residuals.
     // Effort 3 and lower have forced predictors, so kNone is set.
-    if (cparams.options.predictor == Predictor::Zero && cparams.modular_mode) {
-        params.lz77_method = cparams.speed_tier >= SpeedTier::kFalcon
-            ? HistogramParams::LZ77Method::kNone
-            : cparams.speed_tier >= SpeedTier::kHare
-            ? HistogramParams::LZ77Method::kRLE
-            : cparams.speed_tier >= SpeedTier::kKitten
-            ? HistogramParams::LZ77Method::kLZ77b3w3t
-            : HistogramParams::LZ77Method::kOptc256;
+    if ((cparams.options.lz77_pre_tree_mode ==
+             ModularOptions::LZ77PreTreeMode::kForceZero ||
+         cparams.options.lz77_pre_tree_mode ==
+             ModularOptions::LZ77PreTreeMode::kForceGradient ||
+         (cparams.options.predictor == Predictor::Zero && cparams.modular_mode)) &&
+        cparams.modular_mode) {
+      if (cparams.speed_tier <= SpeedTier::kTortoise) {
+        params.lz77_method = HistogramParams::LZ77Method::kOptc256;
+      } else if (cparams.speed_tier <= SpeedTier::kHare) {
+        params.lz77_method = HistogramParams::LZ77Method::kLZ77b3w3t;
+      } else {
+        params.lz77_method = HistogramParams::LZ77Method::kNone;
+      }
     }
   return params;
 }

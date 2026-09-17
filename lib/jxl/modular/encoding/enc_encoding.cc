@@ -25,11 +25,13 @@
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_fields.h"
+#include "lib/jxl/enc_lz77.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
+#include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
@@ -206,11 +208,116 @@ Status GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
   return true;
 }
 
+Status GatherTreeDataLZ77(const Image &image, pixel_type chan, size_t group_id,
+                          const weighted::Header &wp_header,
+                          const ModularOptions &options,
+                          const std::vector<uint32_t> &match_info,
+                          size_t *match_info_offset,
+                          TreeSamples &tree_samples,
+                          size_t *total_pixels) {
+  const Channel &channel = image.channel[chan];
+  JxlMemoryManager *memory_manager = channel.memory_manager();
+
+  JXL_DEBUG_V(7, "Learning LZ77 %" PRIuS "x%" PRIuS " channel %d", channel.w,
+              channel.h, chan);
+
+  std::array<pixel_type, kNumStaticProperties> static_props = {
+      {chan, static_cast<int>(group_id)}};
+  Properties properties(kNumNonrefProperties +
+                        kExtraPropsPerChannel * options.max_properties);
+  double pixel_fraction = std::min(1.0f, options.nb_repeats);
+  if (pixel_fraction > 0) {
+    pixel_fraction = std::max(pixel_fraction,
+                              std::min(1.0, 1024.0 / (channel.w * channel.h)));
+  }
+  uint64_t threshold =
+      (std::numeric_limits<uint64_t>::max() >> 32) * pixel_fraction;
+  uint64_t s[2] = {static_cast<uint64_t>(0x94D049BB133111EBull),
+                   static_cast<uint64_t>(0xBF58476D1CE4E5B9ull)};
+  auto use_sample = [&]() {
+    auto s1 = s[0];
+    const auto s0 = s[1];
+    const auto bits = s1 + s0;
+    s[0] = s0;
+    s1 ^= s1 << 23;
+    s1 ^= s0 ^ (s1 >> 18) ^ (s0 >> 5);
+    s[1] = s1;
+    return (bits >> 32) <= threshold;
+  };
+
+  const ptrdiff_t onerow = channel.plane.PixelsPerRow();
+  JXL_ASSIGN_OR_RETURN(
+      Channel references,
+      Channel::Create(memory_manager, properties.size() - kNumNonrefProperties,
+                      channel.w));
+  weighted::State wp_state(wp_header, channel.w, channel.h);
+  tree_samples.PrepareForSamples(pixel_fraction * channel.h * channel.w + 64);
+  const Predictor pred = tree_samples.PredictorFromIndex(0);
+
+  size_t idx = *match_info_offset;
+  auto compute_sample = [&](const pixel_type *p, size_t x, size_t y, bool nec) {
+    uint32_t match = (idx < match_info.size()) ? match_info[idx++] : 0;
+    if (match == kLZ77SkipMarker) {
+      return;
+    }
+    pixel_type_w guess = 0;
+    if (nec) {
+      guess = PredictLearnNEC(&properties, channel.w, p + x, onerow, x, y,
+                              pred, references, &wp_state).guess;
+    } else {
+      guess = PredictLearn(&properties, channel.w, p + x, onerow, x, y,
+                           pred, references, &wp_state).guess;
+    }
+    (*total_pixels)++;
+    if (use_sample()) {
+      ResidualToken rtoken;
+      if (match == 0) {
+        pixel_type residual = p[x] - guess;
+        uint32_t tok, nbits, bits;
+        HybridUintConfig(4, 1, 2).Encode(PackSigned(residual), &tok, &nbits, &bits);
+        rtoken = {static_cast<uint8_t>(tok), static_cast<uint8_t>(nbits)};
+      } else {
+        uint32_t len_val = match - 3;
+        uint32_t tok, nbits, bits;
+        HybridUintConfig(0, 0, 0).Encode(len_val, &tok, &nbits, &bits);
+        tok = std::min<uint32_t>(255, tok + 224);
+        rtoken = {static_cast<uint8_t>(tok), static_cast<uint8_t>(nbits)};
+      }
+      tree_samples.AddLZ77SymbolSample(rtoken, properties);
+    }
+  };
+
+  for (size_t y = 0; y < channel.h; y++) {
+    const pixel_type *JXL_RESTRICT p = channel.Row(y);
+    PrecomputeReferences(channel, y, image, chan, &references);
+    InitPropsRow(&properties, static_props, y);
+
+    if (y > 1 && channel.w > 8 && references.w == 0) {
+      for (size_t x = 0; x < 2; x++) {
+        compute_sample(p, x, y, /*nec=*/false);
+      }
+      for (size_t x = 2; x < channel.w - 2; x++) {
+        compute_sample(p, x, y, /*nec=*/true);
+      }
+      for (size_t x = channel.w - 2; x < channel.w; x++) {
+        compute_sample(p, x, y, /*nec=*/false);
+      }
+    } else {
+      for (size_t x = 0; x < channel.w; x++) {
+        compute_sample(p, x, y, /*nec=*/false);
+      }
+    }
+  }
+  *match_info_offset = idx;
+  return true;
+}
+
 StatusOr<Tree> LearnTree(
     TreeSamples &&tree_samples, size_t total_pixels,
     const ModularOptions &options,
     const std::vector<ModularMultiplierInfo> &multiplier_info = {},
-    StaticPropRange static_prop_range = {}) {
+    StaticPropRange static_prop_range = {},
+    float *out_cost = nullptr) {
   Tree tree;
   for (size_t i = 0; i < kNumStaticProperties; i++) {
     if (static_prop_range[i][1] == 0) {
@@ -223,6 +330,7 @@ StatusOr<Tree> LearnTree(
     tree.back().property = -1;
     tree.back().predictor_offset = 0;
     tree.back().multiplier = 1;
+    if (out_cost != nullptr) *out_cost = 0.0f;
     return tree;
   }
   float pixel_fraction = tree_samples.NumSamples() * 1.0f / total_pixels;
@@ -239,6 +347,9 @@ StatusOr<Tree> LearnTree(
       tree_samples, scale, multiplier_info, static_prop_range,
       options.fast_decode_multiplier, &tree, options.nb_repeats,
       options.tree_learning_mode, base_cost, log_cost));
+  if (out_cost != nullptr) {
+    *out_cost = EstimateTreeCost(tree, tree_samples, scale, base_cost, log_cost);
+  }
   return tree;
 }
 
@@ -574,17 +685,85 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels,
   return {};
 }
 
+static StatusOr<size_t> EvaluateCandidateBits(
+    const Image *images, const ModularOptions *options, Predictor pred,
+    ModularOptions::LZ77PreTreeMode lz77_mode, const Tree &tree,
+    size_t start, size_t stop) {
+  JxlMemoryManager *memory_manager = images[start].memory_manager();
+
+  Tree decoded_tree;
+  std::vector<std::vector<Token>> tree_tokens(1);
+  JXL_RETURN_IF_ERROR(TokenizeTree(tree, tree_tokens.data(), &decoded_tree));
+  BitWriter tree_writer(memory_manager);
+  EntropyEncodingData tree_code;
+  JXL_ASSIGN_OR_RETURN(
+      size_t tree_cost,
+      BuildAndEncodeHistograms(memory_manager, options[start].histogram_params,
+                               kNumTreeContexts, tree_tokens, &tree_code,
+                               &tree_writer, LayerType::ModularTree,
+                               /*aux_out=*/nullptr));
+  (void)tree_cost;
+  JXL_RETURN_IF_ERROR(WriteTokens(tree_tokens[0], tree_code, 0, &tree_writer,
+                                  LayerType::ModularTree, /*aux_out=*/nullptr));
+
+  std::vector<std::vector<Token>> tokens(stop - start);
+  HistogramParams histo_params = options[start].histogram_params;
+  if (lz77_mode != ModularOptions::LZ77PreTreeMode::kDisabled) {
+    if (histo_params.lz77_method == HistogramParams::LZ77Method::kNone ||
+        histo_params.lz77_method == HistogramParams::LZ77Method::kRLE) {
+      histo_params.lz77_method = HistogramParams::LZ77Method::kLZ77b3w3t;
+    }
+  }
+
+  BitWriter data_writer(memory_manager);
+  histo_params.image_widths.assign(stop - start, 0);
+  for (size_t i = start; i < stop; i++) {
+    if (images[i].w == 0 || images[i].h == 0 || images[i].channel.empty()) {
+      continue;
+    }
+    ModularOptions eval_opt = options[i];
+    eval_opt.predictor = pred;
+    eval_opt.lz77_pre_tree_mode = lz77_mode;
+
+    GroupHeader header;
+    Bundle::Init(&header);
+    if (PredictorHasWeighted(pred)) {
+      weighted::PredictorMode(eval_opt.wp_mode, &header.wp_header);
+    }
+    header.transforms = images[i].transform;
+    header.use_global_tree = true;
+
+    size_t width = 0;
+    JXL_RETURN_IF_ERROR(ModularCompress(images[i], eval_opt, i, decoded_tree,
+                                        header, tokens[i - start], &width));
+    histo_params.image_widths[i - start] = width;
+    JXL_RETURN_IF_ERROR(
+        Bundle::Write(header, &data_writer, LayerType::ModularGlobal, nullptr));
+  }
+
+  EntropyEncodingData data_code;
+  JXL_ASSIGN_OR_RETURN(
+      size_t data_cost,
+      BuildAndEncodeHistograms(memory_manager, histo_params,
+                               (decoded_tree.size() + 1) / 2, tokens,
+                               &data_code, &data_writer,
+                               LayerType::ModularGlobal, /*aux_out=*/nullptr));
+  (void)data_cost;
+  for (size_t i = start; i < stop; i++) {
+    if (!tokens[i - start].empty()) {
+      JXL_RETURN_IF_ERROR(WriteTokens(tokens[i - start], data_code, 0,
+                                      &data_writer, LayerType::ModularGlobal,
+                                      nullptr));
+    }
+  }
+
+  return tree_writer.BitsWritten() + data_writer.BitsWritten();
+}
+
 StatusOr<Tree> LearnTree(
-    const Image *images, const ModularOptions *options, const uint32_t start,
-    const uint32_t stop,
-    const std::vector<ModularMultiplierInfo> &multiplier_info = {}) {
-  TreeSamples tree_samples;
-  JXL_RETURN_IF_ERROR(tree_samples.SetPredictor(options[start].predictor,
-                                                options[start].wp_tree_mode));
-  JXL_RETURN_IF_ERROR(
-      tree_samples.SetProperties(options[start].splitting_heuristics_properties,
-                                 options[start].wp_tree_mode,
-                                 options[start].tree_learning_mode));
+    const Image *images, ModularOptions *options, uint32_t start,
+    uint32_t stop,
+    const std::vector<ModularMultiplierInfo> &multiplier_info) {
   uint32_t max_c = 0;
   std::vector<pixel_type> pixel_samples;
   std::vector<pixel_type> diff_samples;
@@ -599,61 +778,282 @@ StatusOr<Tree> LearnTree(
   range[0] = {{0, max_c}};
   range[1] = {{start, stop}};
 
-  tree_samples.PreQuantizeProperties(
-      range, multiplier_info, group_pixel_count, channel_pixel_count,
-      pixel_samples, diff_samples, options[start].max_property_values);
-
-  size_t total_pixels = 0;
-  for (size_t i = 0; i < images[start].channel.size(); i++) {
-    if (i >= images[start].nb_meta_channels &&
-        (images[start].channel[i].w > options[start].max_chan_size ||
-         images[start].channel[i].h > options[start].max_chan_size)) {
-      break;
-    }
-    total_pixels += images[start].channel[i].w * images[start].channel[i].h;
-  }
-  total_pixels = std::max<size_t>(total_pixels, 1);
-
-  weighted::Header wp_header;
-
+  size_t total_chunk_pixels = 0;
   for (size_t i = start; i < stop; i++) {
-    size_t nb_channels = images[i].channel.size();
-
-    if (images[i].w == 0 || images[i].h == 0 || nb_channels < 1)
-      continue;  // is there any use for a zero-channel image?
-    if (images[i].error) return JXL_FAILURE("Invalid image");
-    JXL_ENSURE(options[i].tree_kind == ModularOptions::TreeKind::kLearn);
-
-    JXL_DEBUG_V(
-        2, "Encoding %" PRIuS "-channel, %i-bit, %" PRIuS "x%" PRIuS " image.",
-        nb_channels, images[i].bitdepth, images[i].w, images[i].h);
-
-    // encode transforms
-    Bundle::Init(&wp_header);
-    if (PredictorHasWeighted(options[i].predictor)) {
-      weighted::PredictorMode(options[i].wp_mode, &wp_header);
-    }
-
-    // Gather tree data
-    for (size_t c = 0; c < nb_channels; c++) {
+    for (size_t c = 0; c < images[i].channel.size(); c++) {
       if (c >= images[i].nb_meta_channels &&
           (images[i].channel[c].w > options[i].max_chan_size ||
            images[i].channel[c].h > options[i].max_chan_size)) {
         break;
       }
-      if (!images[i].channel[c].w || !images[i].channel[c].h) {
-        continue;  // skip empty channels
+      total_chunk_pixels += images[i].channel[c].w * images[i].channel[c].h;
+    }
+  }
+  total_chunk_pixels = std::max<size_t>(total_chunk_pixels, 1);
+
+  auto gather_lz77_candidate =
+      [&](Predictor pred, const std::vector<TrialLZ77MatchResult> &trials,
+          TreeSamples &out_samples, size_t *out_total_tokens) -> Status {
+    JXL_RETURN_IF_ERROR(
+        out_samples.SetPredictor(pred, options[start].wp_tree_mode));
+    JXL_RETURN_IF_ERROR(out_samples.SetProperties(
+        options[start].splitting_heuristics_properties,
+        options[start].wp_tree_mode, options[start].tree_learning_mode));
+    out_samples.PreQuantizeProperties(
+        range, multiplier_info, group_pixel_count, channel_pixel_count,
+        pixel_samples, diff_samples, options[start].max_property_values);
+
+    *out_total_tokens = 0;
+    weighted::Header wp_hdr;
+    for (size_t i = start; i < stop; i++) {
+      size_t nb_channels = images[i].channel.size();
+      if (images[i].w == 0 || images[i].h == 0 || nb_channels < 1) continue;
+      if (images[i].error) return JXL_FAILURE("Invalid image");
+      Bundle::Init(&wp_hdr);
+      size_t match_info_offset = 0;
+      for (size_t c = 0; c < nb_channels; c++) {
+        if (c >= images[i].nb_meta_channels &&
+            (images[i].channel[c].w > options[i].max_chan_size ||
+             images[i].channel[c].h > options[i].max_chan_size)) {
+          break;
+        }
+        if (!images[i].channel[c].w || !images[i].channel[c].h ||
+            images[i].channel[c].plane.xsize() == 0 ||
+            images[i].channel[c].plane.ysize() == 0) {
+          continue;
+        }
+        JXL_RETURN_IF_ERROR(GatherTreeDataLZ77(
+            images[i], c, i, wp_hdr, options[i],
+            trials[i - start].match_info, &match_info_offset,
+            out_samples, out_total_tokens));
       }
-      JXL_RETURN_IF_ERROR(GatherTreeData(images[i], c, i, wp_header, options[i],
-                                         tree_samples, &total_pixels));
+    }
+    *out_total_tokens = std::max<size_t>(*out_total_tokens, 1);
+    return true;
+  };
+
+  auto gather_regular_candidate =
+      [&](TreeSamples &out_samples, size_t *out_total_pixels) -> Status {
+    JXL_RETURN_IF_ERROR(out_samples.SetPredictor(
+        options[start].predictor, options[start].wp_tree_mode));
+    JXL_RETURN_IF_ERROR(out_samples.SetProperties(
+        options[start].splitting_heuristics_properties,
+        options[start].wp_tree_mode, options[start].tree_learning_mode));
+    out_samples.PreQuantizeProperties(
+        range, multiplier_info, group_pixel_count, channel_pixel_count,
+        pixel_samples, diff_samples, options[start].max_property_values);
+
+    *out_total_pixels = 0;
+    weighted::Header wp_hdr;
+    for (size_t i = start; i < stop; i++) {
+      size_t nb_channels = images[i].channel.size();
+      if (images[i].w == 0 || images[i].h == 0 || nb_channels < 1) continue;
+      if (images[i].error) return JXL_FAILURE("Invalid image");
+      JXL_ENSURE(options[i].tree_kind == ModularOptions::TreeKind::kLearn);
+      Bundle::Init(&wp_hdr);
+      if (PredictorHasWeighted(options[i].predictor)) {
+        weighted::PredictorMode(options[i].wp_mode, &wp_hdr);
+      }
+      for (size_t c = 0; c < nb_channels; c++) {
+        if (c >= images[i].nb_meta_channels &&
+            (images[i].channel[c].w > options[i].max_chan_size ||
+             images[i].channel[c].h > options[i].max_chan_size)) {
+          break;
+        }
+        if (!images[i].channel[c].w || !images[i].channel[c].h ||
+            images[i].channel[c].plane.xsize() == 0 ||
+            images[i].channel[c].plane.ysize() == 0) {
+          continue;
+        }
+        JXL_RETURN_IF_ERROR(GatherTreeData(images[i], c, i, wp_hdr, options[i],
+                                           out_samples, out_total_pixels));
+      }
+    }
+    *out_total_pixels = std::max<size_t>(*out_total_pixels, 1);
+    return true;
+  };
+
+  constexpr size_t kMinTrialLen = 5;
+
+  // Forced Zero predictor pre-tree
+  if (options[start].lz77_pre_tree_mode ==
+      ModularOptions::LZ77PreTreeMode::kForceZero) {
+    std::vector<TrialLZ77MatchResult> trials(stop - start);
+    for (size_t i = start; i < stop; i++) {
+      trials[i - start] =
+          RunFastTrialLZ77(images[i], Predictor::Zero, kMinTrialLen, options[i].max_chan_size);
+    }
+    TreeSamples tree_samples;
+    size_t total_tokens = 0;
+    JXL_RETURN_IF_ERROR(gather_lz77_candidate(
+        Predictor::Zero, trials, tree_samples, &total_tokens));
+    for (size_t i = start; i < stop; i++) {
+      options[i].predictor = Predictor::Zero;
+    }
+    return LearnTree(std::move(tree_samples), total_tokens, options[start],
+                     multiplier_info, range);
+  }
+
+  // Forced Gradient predictor pre-tree
+  if (options[start].lz77_pre_tree_mode ==
+      ModularOptions::LZ77PreTreeMode::kForceGradient) {
+    std::vector<TrialLZ77MatchResult> trials(stop - start);
+    for (size_t i = start; i < stop; i++) {
+      trials[i - start] =
+          RunFastTrialLZ77(images[i], Predictor::Gradient, kMinTrialLen, options[i].max_chan_size);
+    }
+    TreeSamples tree_samples;
+    size_t total_tokens = 0;
+    JXL_RETURN_IF_ERROR(gather_lz77_candidate(
+        Predictor::Gradient, trials, tree_samples, &total_tokens));
+    for (size_t i = start; i < stop; i++) {
+      options[i].predictor = Predictor::Gradient;
+    }
+    return LearnTree(std::move(tree_samples), total_tokens, options[start],
+                     multiplier_info, range);
+  }
+
+  // Disabled pre-tree
+  if (options[start].lz77_pre_tree_mode ==
+      ModularOptions::LZ77PreTreeMode::kDisabled) {
+    TreeSamples regular_samples;
+    size_t total_pixels_reg = 0;
+    JXL_RETURN_IF_ERROR(
+        gather_regular_candidate(regular_samples, &total_pixels_reg));
+    return LearnTree(std::move(regular_samples), total_pixels_reg,
+                     options[start], multiplier_info, range);
+  }
+
+  // Auto mode: evaluate eligible LZ77 trials (Zero and Gradient) against Regular tree
+  std::vector<TrialLZ77MatchResult> trials_zero(stop - start);
+  std::vector<TrialLZ77MatchResult> trials_grad(stop - start);
+  size_t matched_zero = 0;
+  size_t matched_grad = 0;
+  for (size_t i = start; i < stop; i++) {
+    trials_zero[i - start] =
+        RunFastTrialLZ77(images[i], Predictor::Zero, kMinTrialLen, options[i].max_chan_size);
+    matched_zero += trials_zero[i - start].matched_pixels;
+
+    trials_grad[i - start] =
+        RunFastTrialLZ77(images[i], Predictor::Gradient, kMinTrialLen, options[i].max_chan_size);
+    matched_grad += trials_grad[i - start].matched_pixels;
+  }
+  const float threshold =
+      total_chunk_pixels * options[start].lz77_pre_tree_threshold;
+  bool eligible_zero = (matched_zero >= threshold && matched_zero > 0);
+  bool eligible_grad = (matched_grad >= threshold && matched_grad > 0);
+
+  // If neither LZ77 mode is eligible, learn regular tree and disable LZ77
+  if (!eligible_zero && !eligible_grad) {
+    for (size_t i = start; i < stop; i++) {
+      options[i].lz77_pre_tree_mode =
+          ModularOptions::LZ77PreTreeMode::kDisabled;
+    }
+    TreeSamples regular_samples;
+    size_t total_pixels_reg = 0;
+    JXL_RETURN_IF_ERROR(
+        gather_regular_candidate(regular_samples, &total_pixels_reg));
+    return LearnTree(std::move(regular_samples), total_pixels_reg,
+                     options[start], multiplier_info, range);
+  }
+
+  // Candidate 1: Regular tree
+  TreeSamples regular_samples;
+  size_t total_pixels_reg = 0;
+  JXL_RETURN_IF_ERROR(
+      gather_regular_candidate(regular_samples, &total_pixels_reg));
+  JXL_ASSIGN_OR_RETURN(
+      Tree tree_regular,
+      LearnTree(std::move(regular_samples), total_pixels_reg, options[start],
+                multiplier_info, range));
+  JXL_ASSIGN_OR_RETURN(
+      size_t bits_regular,
+      EvaluateCandidateBits(images, options, options[start].predictor,
+                            ModularOptions::LZ77PreTreeMode::kDisabled,
+                            tree_regular, start, stop));
+
+  size_t best_bits = bits_regular;
+  Tree best_tree = std::move(tree_regular);
+  Predictor best_pred = options[start].predictor;
+  ModularOptions::LZ77PreTreeMode best_mode =
+      ModularOptions::LZ77PreTreeMode::kDisabled;
+  size_t bits_zero = 0;
+  size_t bits_grad = 0;
+
+  // Candidate 2: LZ77 Zero
+  if (eligible_zero) {
+    TreeSamples lz77_samples_zero;
+    size_t total_tokens_zero = 0;
+    JXL_RETURN_IF_ERROR(gather_lz77_candidate(Predictor::Zero, trials_zero,
+                                              lz77_samples_zero, &total_tokens_zero));
+    JXL_ASSIGN_OR_RETURN(
+        Tree tree_lz77_zero,
+        LearnTree(std::move(lz77_samples_zero), total_tokens_zero, options[start],
+                  multiplier_info, range));
+    JXL_ASSIGN_OR_RETURN(
+        bits_zero,
+        EvaluateCandidateBits(images, options, Predictor::Zero,
+                              ModularOptions::LZ77PreTreeMode::kForceZero,
+                              tree_lz77_zero, start, stop));
+
+    if (bits_zero < best_bits) {
+      best_bits = bits_zero;
+      best_tree = std::move(tree_lz77_zero);
+      best_pred = Predictor::Zero;
+      best_mode = ModularOptions::LZ77PreTreeMode::kForceZero;
     }
   }
 
-  // TODO(veluca): parallelize more.
-  JXL_ASSIGN_OR_RETURN(Tree tree,
-                       LearnTree(std::move(tree_samples), total_pixels,
-                                 options[start], multiplier_info, range));
-  return tree;
+  // Candidate 3: LZ77 Gradient
+  if (eligible_grad) {
+    TreeSamples lz77_samples_grad;
+    size_t total_tokens_grad = 0;
+    JXL_RETURN_IF_ERROR(gather_lz77_candidate(Predictor::Gradient, trials_grad,
+                                              lz77_samples_grad, &total_tokens_grad));
+    JXL_ASSIGN_OR_RETURN(
+        Tree tree_lz77_grad,
+        LearnTree(std::move(lz77_samples_grad), total_tokens_grad, options[start],
+                  multiplier_info, range));
+    JXL_ASSIGN_OR_RETURN(
+        bits_grad,
+        EvaluateCandidateBits(images, options, Predictor::Gradient,
+                              ModularOptions::LZ77PreTreeMode::kForceGradient,
+                              tree_lz77_grad, start, stop));
+
+    if (bits_grad < best_bits) {
+      best_bits = bits_grad;
+      best_tree = std::move(tree_lz77_grad);
+      best_pred = Predictor::Gradient;
+      best_mode = ModularOptions::LZ77PreTreeMode::kForceGradient;
+    }
+  }
+
+  for (size_t i = start; i < stop; i++) {
+    options[i].predictor = best_pred;
+    options[i].lz77_pre_tree_mode = best_mode;
+    if (best_mode != ModularOptions::LZ77PreTreeMode::kDisabled) {
+      if (options[i].histogram_params.lz77_method ==
+              HistogramParams::LZ77Method::kNone ||
+          options[i].histogram_params.lz77_method ==
+              HistogramParams::LZ77Method::kRLE) {
+        options[i].histogram_params.lz77_method =
+            HistogramParams::LZ77Method::kLZ77b3w3t;
+      }
+    }
+  }
+  if (getenv("JXL_LOG_TOURNAMENT")) {
+    fprintf(stderr,
+            "[TOURNAMENT] group=%u-%u winner=%s | reg=%zu bits | zero=%zu bits | grad=%zu bits (tree_reg=%zu tree_grad=%zu)\n",
+            static_cast<uint32_t>(start), static_cast<uint32_t>(stop),
+            best_mode == ModularOptions::LZ77PreTreeMode::kForceZero
+                ? "ZERO"
+                : best_mode == ModularOptions::LZ77PreTreeMode::kForceGradient
+                      ? "GRADIENT"
+                      : "REGULAR",
+            bits_regular, bits_zero, bits_grad,
+            tree_regular.size(), best_tree.size());
+  }
+  return best_tree;
 }
 
 Status ModularCompress(const Image &image, const ModularOptions &options,

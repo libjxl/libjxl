@@ -6388,6 +6388,100 @@ void FindBestTreeDispatch(
   }
 }
 
+float EstimateTreeCost(const Tree& tree, const TreeSamples& tree_samples,
+                       float scale, float base_node_cost, float log_node_cost) {
+  if (tree.empty()) return 0.0f;
+  const size_t num_samples = tree_samples.NumDistinctSamples();
+  if (num_samples == 0) return 0.0f;
+
+  float split_penalties = 0.0f;
+  for (size_t i = 0; i < tree.size(); i++) {
+    if (tree[i].property != -1) {
+      int32_t unquant = tree[i].splitval;
+      split_penalties += (base_node_cost + log_node_cost * FastLog2f(std::abs(unquant) + 1.0f)) * scale;
+    }
+  }
+
+  const size_t P = tree_samples.NumPredictors();
+  size_t S = 0;
+  for (size_t pred = 0; pred < P; pred++) {
+    size_t max_sym = 0;
+    for (size_t s = 0; s < num_samples; s++) {
+      max_sym = std::max(max_sym, static_cast<size_t>(tree_samples.Token(pred, s) + 1));
+    }
+    S = std::max(S, Padded(max_sym));
+  }
+  if (S == 0) S = 16;
+
+  std::vector<int32_t> leaf_hists(tree.size() * S, 0);
+  std::vector<int64_t> leaf_extra(tree.size(), 0);
+  std::vector<size_t> leaf_counts(tree.size(), 0);
+
+  const size_t num_static = tree_samples.NumStaticProps();
+  std::vector<int> global_to_internal(256, -1);
+  for (size_t i = 0; i < tree_samples.NumProperties(); i++) {
+    uint32_t gp = tree_samples.PropertyFromIndex(i);
+    if (gp < global_to_internal.size()) {
+      global_to_internal[gp] = i;
+    }
+  }
+
+  std::vector<int> node_internal_prop(tree.size(), -1);
+  std::vector<int> node_thresh(tree.size(), -1);
+  for (size_t node = 0; node < tree.size(); node++) {
+    if (tree[node].property == -1) continue;
+    int gp = tree[node].property;
+    int internal_prop =
+        (gp >= 0 && gp < static_cast<int>(global_to_internal.size()))
+            ? global_to_internal[gp]
+            : -1;
+    if (internal_prop < 0) {
+      internal_prop = tree_samples.PropertyIndex(gp);
+    }
+    node_internal_prop[node] = internal_prop;
+    const auto &cp = tree_samples.CompactProperties(internal_prop);
+    auto it = std::lower_bound(cp.begin(), cp.end(), tree[node].splitval);
+    node_thresh[node] = static_cast<int>(it - cp.begin());
+  }
+
+  for (size_t s = 0; s < num_samples; s++) {
+    size_t node = 0;
+    while (tree[node].property != -1) {
+      int ip = node_internal_prop[node];
+      size_t quant_val = (static_cast<size_t>(ip) < num_static)
+                             ? tree_samples.Property<true>(ip, s)
+                             : tree_samples.Property<false>(ip - num_static, s);
+      if (static_cast<int>(quant_val) > node_thresh[node]) {
+        node = tree[node].lchild;
+      } else {
+        node = tree[node].rchild;
+      }
+    }
+    Predictor pred = tree[node].predictor;
+    size_t pred_idx = 0;
+    for (size_t p = 0; p < P; p++) {
+      if (tree_samples.PredictorFromIndex(p) == pred) {
+        pred_idx = p;
+        break;
+      }
+    }
+    size_t cnt = tree_samples.Count(s);
+    uint32_t tok = tree_samples.Token(pred_idx, s);
+    leaf_hists[node * S + (tok < S ? tok : S - 1)] += cnt;
+    leaf_extra[node] += tree_samples.RTokens(pred_idx)[s].nbits * cnt;
+    leaf_counts[node] += cnt;
+  }
+
+  float total_bits = 0.0f;
+  for (size_t node = 0; node < tree.size(); node++) {
+    if (tree[node].property == -1 && leaf_counts[node] > 0) {
+      total_bits += EstimateBits(&leaf_hists[node * S], S) + leaf_extra[node];
+    }
+  }
+
+  return total_bits + split_penalties;
+}
+
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace jxl
@@ -6397,6 +6491,14 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 
 HWY_EXPORT(FindBestTreeDispatch);  // Local function.
+HWY_EXPORT(EstimateTreeCost);
+
+float EstimateTreeCost(const Tree& tree, const TreeSamples& tree_samples,
+                       float scale, float base_node_cost,
+                       float log_node_cost) {
+  return HWY_DYNAMIC_DISPATCH(EstimateTreeCost)(tree, tree_samples, scale,
+                                                base_node_cost, log_node_cost);
+}
 
 Status ComputeBestTree(TreeSamples &tree_samples, float scale,
                        const std::vector<ModularMultiplierInfo> &mul_info,
@@ -6715,6 +6817,26 @@ void TreeSamples::AddSample(pixel_type_w pixel, const Properties &properties,
   num_samples++;
   if (AddToTableAndMerge(sample_counts.size() - 1)) {
     for (auto &r : residuals) r.pop_back();
+    for (size_t i = 0; i < num_static_props; ++i) static_props[i].pop_back();
+    for (auto &p : props) p.pop_back();
+    sample_counts.pop_back();
+  }
+}
+
+void TreeSamples::AddLZ77SymbolSample(ResidualToken token,
+                                      const Properties &properties) {
+  residuals[0].push_back(token);
+  for (size_t i = 0; i < num_static_props; ++i) {
+    static_props[i].push_back(QuantizeStaticProperty(i, properties[i]));
+  }
+  for (size_t i = num_static_props; i < props_to_use.size(); i++) {
+    props[i - num_static_props].push_back(
+        QuantizeProperty(i, properties[props_to_use[i]]));
+  }
+  sample_counts.push_back(1);
+  num_samples++;
+  if (AddToTableAndMerge(sample_counts.size() - 1)) {
+    residuals[0].pop_back();
     for (size_t i = 0; i < num_static_props; ++i) static_props[i].pop_back();
     for (auto &p : props) p.pop_back();
     sample_counts.pop_back();
