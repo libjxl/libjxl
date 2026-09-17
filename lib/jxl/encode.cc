@@ -844,14 +844,25 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
   // box.
 
   if (!wrote_bytes) {
+    // Find the first frame in the queue to inspect frame settings (input_queue[0]
+    // may be a metadata box like Exif or XMP, which has no frame attached).
+    const jxl::JxlEncoderQueuedFrame* first_frame = nullptr;
+    for (const auto& qi : input_queue) {
+      if (qi.frame) {
+        first_frame = qi.frame.get();
+        break;
+      }
+    }
+
     if (metadata.m.HasAlpha()) {
       const jxl::ExtraChannelInfo* alpha_eci =
           metadata.m.Find(jxl::ExtraChannel::kAlpha);
       size_t alpha_ec_idx = alpha_eci - metadata.m.extra_channel_info.data();
+
       int strip_alpha =
-          input.frame ? input.frame->option_values.strip_alpha : -1;
+          first_frame ? first_frame->option_values.strip_alpha : -1;
       bool is_lossless =
-          input.frame ? input.frame->option_values.lossless : false;
+          first_frame ? first_frame->option_values.lossless : false;
 
       bool should_strip = false;
       if (strip_alpha == 2) {
@@ -861,12 +872,11 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
         if (metadata.m.have_animation &&
             (!frames_closed || num_queued_frames == 0)) {
           all_opaque = false;
+        } else if (num_queued_frames == 0) {
+          all_opaque = false;
         } else {
           for (const auto& qi : input_queue) {
-            if (!qi.frame) {
-              all_opaque = false;
-              break;
-            }
+            if (!qi.frame) continue;  // Skip metadata boxes!
             JxlChunkedFrameInputSource src =
                 qi.frame->frame_data.GetInputSource();
             JxlPixelFormat color_fmt;
@@ -966,7 +976,7 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
               .c_str());
     }
     jxl::AuxOut* aux_out =
-        input.frame ? input.frame->option_values.aux_out : nullptr;
+        first_frame ? first_frame->option_values.aux_out : nullptr;
     jxl::BitWriter writer{&memory_manager};
     if (!WriteCodestreamHeaders(&metadata, &writer, aux_out)) {
       return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,

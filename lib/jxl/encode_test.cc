@@ -2236,8 +2236,8 @@ TEST(EncodeTest, OutputModeComparisonTest) {
 }
 
 TEST(EncodeTest, StripAlphaSetting) {
-  auto encode_rgba = [](bool opaque, int strip_alpha,
-                         float distance) -> uint32_t {
+  auto encode_rgba = [](bool opaque, int strip_alpha, float distance,
+                         bool with_box = false) -> uint32_t {
     size_t xsize = 16;
     size_t ysize = 16;
     std::vector<uint8_t> pixels(xsize * ysize * 4);
@@ -2286,6 +2286,15 @@ TEST(EncodeTest, StripAlphaSetting) {
       EXPECT_EQ(JXL_ENC_SUCCESS,
                 JxlEncoderFrameSettingsSetOption(
                     fs, JXL_ENC_FRAME_SETTING_STRIP_ALPHA, strip_alpha));
+    }
+
+    if (with_box) {
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseBoxes(enc.get()));
+      std::vector<uint8_t> exif_data = {1, 2, 3, 4};
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddBox(enc.get(), "Exif", exif_data.data(),
+                                 exif_data.size(), JXL_FALSE));
+      JxlEncoderCloseBoxes(enc.get());
     }
 
     JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
@@ -2346,5 +2355,13 @@ TEST(EncodeTest, StripAlphaSetting) {
   // 2 (always strip): lossy -> forces alpha strip (0 extra channels)
   EXPECT_EQ(0u, encode_rgba(/*opaque=*/false, /*strip_alpha=*/2,
                             /*distance=*/1.0f));
+
+  // 3. Image with metadata boxes (e.g. Exif) preceding image frames:
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1,
+                            /*distance=*/1.0f, /*with_box=*/true));
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/2,
+                            /*distance=*/1.0f, /*with_box=*/true));
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/0,
+                            /*distance=*/1.0f, /*with_box=*/true));
 }
 
