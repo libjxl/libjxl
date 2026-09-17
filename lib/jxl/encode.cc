@@ -844,8 +844,6 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
   // box.
 
   if (!wrote_bytes) {
-    // Find the first frame in the queue to inspect frame settings (input_queue[0]
-    // may be a metadata box like Exif or XMP, which has no frame attached).
     const jxl::JxlEncoderQueuedFrame* first_frame = nullptr;
     for (const auto& qi : input_queue) {
       if (qi.frame) {
@@ -855,36 +853,30 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
     }
 
     if (metadata.m.HasAlpha()) {
-      const jxl::ExtraChannelInfo* alpha_eci =
-          metadata.m.Find(jxl::ExtraChannel::kAlpha);
-      size_t alpha_ec_idx = alpha_eci - metadata.m.extra_channel_info.data();
-
-      int strip_alpha =
+      const size_t alpha_ec_idx =
+          metadata.m.Find(jxl::ExtraChannel::kAlpha) -
+          metadata.m.extra_channel_info.data();
+      const int strip_alpha =
           first_frame ? first_frame->option_values.strip_alpha : -1;
-      bool is_lossless =
-          first_frame ? first_frame->option_values.lossless : false;
+      const bool is_lossless =
+          first_frame && first_frame->option_values.lossless;
 
-      bool should_strip = false;
-      if (strip_alpha == 2) {
-        should_strip = true;
-      } else if (strip_alpha == 1 || (strip_alpha == -1 && !is_lossless)) {
-        bool all_opaque = true;
-        if (metadata.m.have_animation &&
-            (!frames_closed || num_queued_frames == 0)) {
-          all_opaque = false;
-        } else if (num_queued_frames == 0) {
-          all_opaque = false;
-        } else {
+      bool should_strip = (strip_alpha == 2);
+      if (!should_strip &&
+          (strip_alpha == 1 || (strip_alpha == -1 && !is_lossless))) {
+        if (!metadata.m.have_animation ||
+            (frames_closed && num_queued_frames > 0)) {
+          should_strip = (num_queued_frames > 0);
           for (const auto& qi : input_queue) {
-            if (!qi.frame) continue;  // Skip metadata boxes!
+            if (!qi.frame) continue;
             JxlChunkedFrameInputSource src =
                 qi.frame->frame_data.GetInputSource();
             JxlPixelFormat color_fmt;
             src.get_color_channels_pixel_format(src.opaque, &color_fmt);
-            bool has_interleaved =
+            const bool has_interleaved =
                 color_fmt.num_channels == 2 || color_fmt.num_channels == 4;
+            size_t row_offset = 0;
             if (has_interleaved) {
-              size_t row_offset = 0;
               auto buf = jxl::GetColorBuffer(src, 0, 0, metadata.xsize(),
                                              metadata.ysize(), &row_offset);
               if (!buf ||
@@ -892,14 +884,13 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
                                        metadata.ysize(), row_offset,
                                        color_fmt.num_channels - 1,
                                        basic_info.alpha_bits)) {
-                all_opaque = false;
+                should_strip = false;
                 break;
               }
             } else {
               JxlPixelFormat ec_fmt;
               src.get_extra_channel_pixel_format(src.opaque, alpha_ec_idx,
                                                  &ec_fmt);
-              size_t row_offset = 0;
               auto buf = jxl::GetExtraChannelBuffer(
                   src, alpha_ec_idx, 0, 0, metadata.xsize(), metadata.ysize(),
                   &row_offset);
@@ -907,14 +898,11 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
                   !IsAlphaBufferOpaque(buf.get(), ec_fmt, metadata.xsize(),
                                        metadata.ysize(), row_offset, 0,
                                        basic_info.alpha_bits)) {
-                all_opaque = false;
+                should_strip = false;
                 break;
               }
             }
           }
-        }
-        if (all_opaque) {
-          should_strip = true;
         }
       }
 
