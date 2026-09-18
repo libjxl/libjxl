@@ -2237,8 +2237,8 @@ TEST(EncodeTest, OutputModeComparisonTest) {
 
 TEST(EncodeTest, StripAlphaSetting) {
   auto encode_rgba = [](bool opaque, int strip_alpha, float distance,
-                         bool with_box = false, bool animation = false,
-                         size_t num_frames = 1) -> uint32_t {
+                        bool animation = false, size_t num_frames = 1,
+                        bool with_box = false) -> uint32_t {
     size_t xsize = 16;
     size_t ysize = 16;
     std::vector<uint8_t> pixels(xsize * ysize * 4);
@@ -2334,63 +2334,36 @@ TEST(EncodeTest, StripAlphaSetting) {
     return decoded_info.num_extra_channels;
   };
 
-  // 1. Opaque image:
-  // -1 (default): lossy (distance 1.0) -> strips empty alpha (0 extra channels)
-  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1,
-                            /*distance=*/1.0f));
-  // -1 (default): lossless (distance 0.0) -> keeps alpha (1 extra channel)
-  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1,
-                            /*distance=*/0.0f));
-  // 0 (always keep): lossy -> keeps alpha (1 extra channel)
-  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/0,
-                            /*distance=*/1.0f));
-  // 1 (strip if empty): lossless -> strips empty alpha (0 extra channels)
-  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/1,
-                            /*distance=*/0.0f));
-  // 2 (always strip): lossless -> strips alpha (0 extra channels)
-  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/2,
-                            /*distance=*/0.0f));
+  // Opaque image.
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1, /*distance=*/1.0f));
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1, /*distance=*/0.0f));
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/0, /*distance=*/1.0f));
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/1, /*distance=*/0.0f));
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/2, /*distance=*/0.0f));
 
-  // 2. Image with transparency (x=0, y=0 has alpha=128):
-  // -1 (default): lossy -> keeps alpha because not empty (1 extra channel)
-  EXPECT_EQ(1u, encode_rgba(/*opaque=*/false, /*strip_alpha=*/-1,
-                            /*distance=*/1.0f));
-  // 1 (strip if empty): lossy -> keeps alpha because not empty (1 extra channel)
-  EXPECT_EQ(1u, encode_rgba(/*opaque=*/false, /*strip_alpha=*/1,
-                            /*distance=*/1.0f));
-  // 2 (always strip): lossy -> forces alpha strip (0 extra channels)
-  EXPECT_EQ(0u, encode_rgba(/*opaque=*/false, /*strip_alpha=*/2,
-                            /*distance=*/1.0f));
+  // Transparent image.
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/false, /*strip_alpha=*/-1, /*distance=*/1.0f));
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/false, /*strip_alpha=*/1, /*distance=*/1.0f));
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/false, /*strip_alpha=*/2, /*distance=*/1.0f));
 
-  // 3. Image with metadata boxes (e.g. Exif) preceding image frames:
-  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1,
-                            /*distance=*/1.0f, /*with_box=*/true));
-  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/2,
-                            /*distance=*/1.0f, /*with_box=*/true));
-  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/0,
-                            /*distance=*/1.0f, /*with_box=*/true));
+  // Metadata boxes preceding image frames.
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1, /*distance=*/1.0f,
+                            /*animation=*/false, /*num_frames=*/1, /*with_box=*/true));
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/0, /*distance=*/1.0f,
+                            /*animation=*/false, /*num_frames=*/1, /*with_box=*/true));
 
-  // 4. Animation and multi-frame images: skip alpha check and keep alpha channel
-  // Animation (have_animation = true):
-  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1,
-                            /*distance=*/1.0f, /*with_box=*/false,
+  // Animation and multi-frame images.
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1, /*distance=*/1.0f,
                             /*animation=*/true));
-  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/1,
-                            /*distance=*/1.0f, /*with_box=*/false,
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/1, /*distance=*/1.0f,
                             /*animation=*/true));
-  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/2,
-                            /*distance=*/1.0f, /*with_box=*/false,
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/2, /*distance=*/1.0f,
                             /*animation=*/true));
-
-  // Multi-frame (2 queued frames):
-  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1,
-                            /*distance=*/1.0f, /*with_box=*/false,
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1, /*distance=*/1.0f,
                             /*animation=*/false, /*num_frames=*/2));
-  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/1,
-                            /*distance=*/1.0f, /*with_box=*/false,
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/1, /*distance=*/1.0f,
                             /*animation=*/false, /*num_frames=*/2));
-  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/2,
-                            /*distance=*/1.0f, /*with_box=*/false,
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/2, /*distance=*/1.0f,
                             /*animation=*/false, /*num_frames=*/2));
 }
 
