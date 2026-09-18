@@ -2237,7 +2237,8 @@ TEST(EncodeTest, OutputModeComparisonTest) {
 
 TEST(EncodeTest, StripAlphaSetting) {
   auto encode_rgba = [](bool opaque, int strip_alpha, float distance,
-                         bool with_box = false) -> uint32_t {
+                         bool with_box = false, bool animation = false,
+                         size_t num_frames = 1) -> uint32_t {
     size_t xsize = 16;
     size_t ysize = 16;
     std::vector<uint8_t> pixels(xsize * ysize * 4);
@@ -2263,6 +2264,9 @@ TEST(EncodeTest, StripAlphaSetting) {
     basic_info.num_color_channels = 3;
     basic_info.num_extra_channels = 1;
     basic_info.alpha_bits = 8;
+    if (animation) {
+      basic_info.have_animation = JXL_TRUE;
+    }
     if (distance == 0.0f) {
       basic_info.uses_original_profile = JXL_TRUE;
       EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetFrameLossless(fs, JXL_TRUE));
@@ -2298,9 +2302,11 @@ TEST(EncodeTest, StripAlphaSetting) {
     }
 
     JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
-    EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderAddImageFrame(fs, &pixel_format, pixels.data(),
-                                      pixels.size()));
+    for (size_t f = 0; f < num_frames; ++f) {
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddImageFrame(fs, &pixel_format, pixels.data(),
+                                        pixels.size()));
+    }
     JxlEncoderCloseFrames(enc.get());
 
     std::vector<uint8_t> compressed(64);
@@ -2363,5 +2369,28 @@ TEST(EncodeTest, StripAlphaSetting) {
                             /*distance=*/1.0f, /*with_box=*/true));
   EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/0,
                             /*distance=*/1.0f, /*with_box=*/true));
+
+  // 4. Animation and multi-frame images: skip alpha check and keep alpha channel
+  // Animation (have_animation = true):
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1,
+                            /*distance=*/1.0f, /*with_box=*/false,
+                            /*animation=*/true));
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/1,
+                            /*distance=*/1.0f, /*with_box=*/false,
+                            /*animation=*/true));
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/2,
+                            /*distance=*/1.0f, /*with_box=*/false,
+                            /*animation=*/true));
+
+  // Multi-frame (2 queued frames):
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1,
+                            /*distance=*/1.0f, /*with_box=*/false,
+                            /*animation=*/false, /*num_frames=*/2));
+  EXPECT_EQ(1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/1,
+                            /*distance=*/1.0f, /*with_box=*/false,
+                            /*animation=*/false, /*num_frames=*/2));
+  EXPECT_EQ(0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/2,
+                            /*distance=*/1.0f, /*with_box=*/false,
+                            /*animation=*/false, /*num_frames=*/2));
 }
 

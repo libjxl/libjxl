@@ -861,46 +861,47 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
       const bool is_lossless =
           first_frame && first_frame->option_values.lossless;
 
+      const bool is_multiframe_or_animation =
+          metadata.m.have_animation || !frames_closed ||
+          num_queued_frames != 1;
+
       bool should_strip = (strip_alpha == 2);
-      if (!should_strip &&
+      if (!should_strip && !is_multiframe_or_animation && first_frame &&
           (strip_alpha == 1 || (strip_alpha == -1 && !is_lossless))) {
-        if (!metadata.m.have_animation ||
-            (frames_closed && num_queued_frames > 0)) {
-          should_strip = (num_queued_frames > 0);
-          for (const auto& qi : input_queue) {
-            if (!qi.frame) continue;
-            JxlChunkedFrameInputSource src =
-                qi.frame->frame_data.GetInputSource();
-            JxlPixelFormat color_fmt;
-            src.get_color_channels_pixel_format(src.opaque, &color_fmt);
-            const bool has_interleaved =
-                color_fmt.num_channels == 2 || color_fmt.num_channels == 4;
-            size_t row_offset = 0;
-            if (has_interleaved) {
-              auto buf = jxl::GetColorBuffer(src, 0, 0, metadata.xsize(),
-                                             metadata.ysize(), &row_offset);
-              if (!buf ||
-                  !IsAlphaBufferOpaque(buf.get(), color_fmt, metadata.xsize(),
-                                       metadata.ysize(), row_offset,
-                                       color_fmt.num_channels - 1,
-                                       basic_info.alpha_bits)) {
-                should_strip = false;
-                break;
-              }
-            } else {
-              JxlPixelFormat ec_fmt;
-              src.get_extra_channel_pixel_format(src.opaque, alpha_ec_idx,
-                                                 &ec_fmt);
-              auto buf = jxl::GetExtraChannelBuffer(
-                  src, alpha_ec_idx, 0, 0, metadata.xsize(), metadata.ysize(),
-                  &row_offset);
-              if (!buf ||
-                  !IsAlphaBufferOpaque(buf.get(), ec_fmt, metadata.xsize(),
-                                       metadata.ysize(), row_offset, 0,
-                                       basic_info.alpha_bits)) {
-                should_strip = false;
-                break;
-              }
+        should_strip = true;
+        for (const auto& qi : input_queue) {
+          if (!qi.frame) continue;
+          JxlChunkedFrameInputSource src =
+              qi.frame->frame_data.GetInputSource();
+          JxlPixelFormat color_fmt;
+          src.get_color_channels_pixel_format(src.opaque, &color_fmt);
+          const bool has_interleaved =
+              color_fmt.num_channels == 2 || color_fmt.num_channels == 4;
+          size_t row_offset = 0;
+          if (has_interleaved) {
+            auto buf = jxl::GetColorBuffer(src, 0, 0, metadata.xsize(),
+                                           metadata.ysize(), &row_offset);
+            if (!buf ||
+                !IsAlphaBufferOpaque(buf.get(), color_fmt, metadata.xsize(),
+                                     metadata.ysize(), row_offset,
+                                     color_fmt.num_channels - 1,
+                                     basic_info.alpha_bits)) {
+              should_strip = false;
+              break;
+            }
+          } else {
+            JxlPixelFormat ec_fmt;
+            src.get_extra_channel_pixel_format(src.opaque, alpha_ec_idx,
+                                               &ec_fmt);
+            auto buf = jxl::GetExtraChannelBuffer(
+                src, alpha_ec_idx, 0, 0, metadata.xsize(), metadata.ysize(),
+                &row_offset);
+            if (!buf ||
+                !IsAlphaBufferOpaque(buf.get(), ec_fmt, metadata.xsize(),
+                                     metadata.ysize(), row_offset, 0,
+                                     basic_info.alpha_bits)) {
+              should_strip = false;
+              break;
             }
           }
         }
