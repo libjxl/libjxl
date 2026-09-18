@@ -190,6 +190,16 @@ set(JPEGXL_ENABLE_WASM_THREADS true CACHE BOOL
 set(JPEGXL_ENABLE_LTO false CACHE BOOL
     "Set flags to enable LTO.")
 
+# Optional Clang -fbounds-safety. Default OFF: JXL_*COUNTED_BY* macros in
+# lib/jxl/base/bounds_safety.h are inert and the ABI/build is unchanged. When
+# ON, requires a Clang that provides -fbounds-safety / <ptrcheck.h>.
+option(JPEGXL_ENABLE_FBOUNDS_SAFETY
+       "Enable Clang -fbounds-safety annotations (experimental toolchain)" OFF)
+if(JPEGXL_ENABLE_FBOUNDS_SAFETY)
+  add_definitions(-DJPEGXL_SUPPORT_FBOUNDS_SAFETY)
+  add_compile_options(-fbounds-safety)
+endif()
+
 # HWY codegen levers
 foreach(tgt IN LISTS JPEGXL_HWY_TARGETS)
   set(JPEGXL_ENABLE_HWY_${tgt}_DEFAULT true)
