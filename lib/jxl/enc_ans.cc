@@ -1368,7 +1368,7 @@ HistogramParams HistogramParams::ForModular(
   } else if (cparams.speed_tier <= SpeedTier::kTortoise) {
     params.lz77_method = HistogramParams::LZ77Method::kOptc256;
   } else {
-    params.lz77_method = HistogramParams::LZ77Method::kLZ77b3w3f;
+    params.lz77_method = HistogramParams::LZ77Method::kLZ77b3w3t;
   }
   if (cparams.decoding_speed_tier >= 2) {
     params.max_histograms = 12;
@@ -1381,7 +1381,7 @@ HistogramParams HistogramParams::ForModular(
             : cparams.speed_tier >= SpeedTier::kHare
             ? HistogramParams::LZ77Method::kRLE
             : cparams.speed_tier >= SpeedTier::kKitten
-            ? HistogramParams::LZ77Method::kLZ77b3w3f
+            ? HistogramParams::LZ77Method::kLZ77b3w3t
             : HistogramParams::LZ77Method::kOptc256;
     }
   return params;
