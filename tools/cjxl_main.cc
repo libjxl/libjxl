@@ -141,6 +141,15 @@ struct CompressArgs {
         "    Recommended range: 0.5 .. 3.0.",
         &alpha_distance, &ParseFloat, 1);
 
+    cmdline->AddOptionValue(
+        '\0', "strip_alpha", "-1|0|1|2",
+        "Alpha stripping mode:\n"
+        "    -1 = Encoder chooses (default: strip if empty for lossy, keep for lossless).\n"
+        "     0 = Always keep alpha.\n"
+        "     1 = Strip if empty (fully opaque).\n"
+        "     2 = Always strip alpha.",
+        &strip_alpha, &ParseInt64, 1);
+
     cmdline->AddOptionFlag('p', "progressive",
                            "More progressive/responsive decoding.",
                            &progressive, &SetBooleanTrue, 1);
@@ -570,6 +579,7 @@ struct CompressArgs {
   CommandLineParser::OptionId opt_alpha_distance_id = -1;
   CommandLineParser::OptionId opt_quality_id = -1;
   CommandLineParser::OptionId opt_modular_group_size_id = -1;
+  int64_t strip_alpha = -1;
 };
 
 const char* ModeFromArgs(const CompressArgs& args) {
@@ -716,6 +726,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessBoolFlag(args->noise, JXL_ENC_FRAME_SETTING_NOISE, params);
 
   params->allow_expert_options = args->allow_expert_options;
+  params->strip_alpha = static_cast<int32_t>(args->strip_alpha);
   if (args->disable_perceptual_optimizations) {
     params->AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS, 1);
   }
