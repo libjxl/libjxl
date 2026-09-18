@@ -20,9 +20,13 @@ namespace jxl {
 
 bool NeedsBlending(const FrameHeader& frame_header);
 
+// Reads `bg` and writes `out` at offset `x0`; reads `fg` at offset `fg_x0`.
+// Splitting bg/out and fg offsets lets callers pre-shift `fg` to a non-negative
+// origin instead of relying on unsigned-wrap pointer arithmetic to align it.
 Status PerformBlending(JxlMemoryManager* memory_manager, const float* const* bg,
                        const float* const* fg, float* const* out, size_t x0,
-                       size_t xsize, const PatchBlending& color_blending,
+                       size_t fg_x0, size_t xsize,
+                       const PatchBlending& color_blending,
                        const PatchBlending* ec_blending,
                        const std::vector<ExtraChannelInfo>& extra_channel_info);
 
