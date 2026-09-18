@@ -1948,11 +1948,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                              "Option value has to be in [-1..70913]");
       }
-      if (value == -1) {
-        frame_settings->values.cparams.palette_colors = 1 << 10;
-      } else {
-        frame_settings->values.cparams.palette_colors = value;
-      }
+      frame_settings->values.cparams.palette_colors = value;
       break;
     case JXL_ENC_FRAME_SETTING_LOSSY_PALETTE:
       // TODO(lode): the defaults of some palette settings depend on others.
@@ -2125,24 +2121,16 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                              "Option value has to be in [-1..100]");
       }
-      if (value < -.5f) {
-        frame_settings->values.cparams.channel_colors_pre_transform_percent =
-            95.0f;
-      } else {
-        frame_settings->values.cparams.channel_colors_pre_transform_percent =
-            value;
-      }
+      frame_settings->values.cparams.channel_colors_pre_transform_percent =
+          value < -.5f ? -1.f : value;
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT:
       if (value < -1.f || value > 100.f) {
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                              "Option value has to be in [-1..100]");
       }
-      if (value < -.5f) {
-        frame_settings->values.cparams.channel_colors_percent = 80.0f;
-      } else {
-        frame_settings->values.cparams.channel_colors_percent = value;
-      }
+      frame_settings->values.cparams.channel_colors_percent =
+          value < -.5f ? -1.f : value;
       return JxlErrorOrStatus::Success();
     case JXL_ENC_FRAME_SETTING_EFFORT:
     case JXL_ENC_FRAME_SETTING_DECODING_SPEED:
