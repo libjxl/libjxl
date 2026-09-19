@@ -260,6 +260,65 @@ TEST(EncodeTest, FrameEncodingTest) {
   VerifyFrameEncoding(enc.get(), frame_settings);
 }
 
+TEST(EncodeTest, LosslessFloatMixedSignValues) {
+  constexpr float pixels[2] = {-1e-6f, 0.25f};
+  JxlPixelFormat pixel_format = {1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+
+  for (int effort : {1, 4, 7}) {
+    SCOPED_TRACE(testing::Message() << "effort=" << effort);
+
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    ASSERT_NE(nullptr, enc.get());
+
+    JxlBasicInfo basic_info;
+    JxlEncoderInitBasicInfo(&basic_info);
+    basic_info.xsize = 2;
+    basic_info.ysize = 1;
+    basic_info.bits_per_sample = 32;
+    basic_info.exponent_bits_per_sample = 8;
+    basic_info.num_color_channels = 1;
+    basic_info.uses_original_profile = JXL_TRUE;
+    ASSERT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+
+    JxlColorEncoding color_encoding;
+    JxlColorEncodingSetToLinearSRGB(&color_encoding, /*is_gray=*/JXL_TRUE);
+    ASSERT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+    ASSERT_NE(nullptr, frame_settings);
+    ASSERT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE));
+    ASSERT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderFrameSettingsSetOption(frame_settings,
+                                               JXL_ENC_FRAME_SETTING_EFFORT,
+                                               effort));
+    ASSERT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddImageFrame(frame_settings, &pixel_format, pixels,
+                                      sizeof(pixels)));
+    JxlEncoderCloseInput(enc.get());
+
+    std::vector<uint8_t> compressed(64);
+    uint8_t* next_out = compressed.data();
+    size_t avail_out = compressed.size();
+    JxlEncoderStatus status = JXL_ENC_NEED_MORE_OUTPUT;
+    while (status == JXL_ENC_NEED_MORE_OUTPUT) {
+      status = JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
+      if (status == JXL_ENC_NEED_MORE_OUTPUT) {
+        size_t offset = next_out - compressed.data();
+        compressed.resize(compressed.size() * 2);
+        next_out = compressed.data() + offset;
+        avail_out = compressed.size() - offset;
+      }
+    }
+
+    EXPECT_EQ(JXL_ENC_SUCCESS, status);
+  }
+}
+
+
+
 TEST(EncodeTest, EncoderResetTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_NE(nullptr, enc.get());
