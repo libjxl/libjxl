@@ -32,10 +32,12 @@ The following table describes what the various effort settings do:
 
 For the entropy coding (context clustering, lz77 search, hybriduint configuration): slower/more exhaustive search as effort goes up.
 
-<u>Chunked encoding (streaming) is also disabled under these circumstances:</u>
+* **Note on Patches:** Chunked encoding and patches are mutually exclusive. If chunked encoding is enabled, patches are disabled. Conversely, when chunked encoding is disabled (e.g., via `--buffering=0` or certain thresholds), patches can be enabled.
+
+<u>Chunked encoding is also disabled under these circumstances:</u>
 * When using default buffering (`--buffering=-1`):
-  * Effort 7 VarDCT at distances ≥3.0. (patches get enabled)
-  * Efforts 8 & 9 VarDCT at distances >0.5. (hidden check in code)
+  * Effort 7 VarDCT at distances ≥3.0.
+  * Efforts 8 & 9 VarDCT at distances >0.5.
 * When using `--buffering=0` (buffer entire image).
 * When using `--buffering=1` and the image is 2048x2048 or smaller.
 * When using any buffering mode, and the image has 8 or fewer total groups. The default group size is 256x256
@@ -55,5 +57,5 @@ For the entropy coding (context clustering, lz77 search, hybriduint configuratio
   * `--resampling >1`
   * `--disable_perceptual_optimizations`
 
-> [!NOTE]
-> In version 0.12, the new flags `--buffering` and `--output_mode` were introduced to explicitly control streaming behavior. `--buffering` controls input buffering (`0` for full buffering, `1` to stream large images, `2` to stream with a lower threshold). `--output_mode` controls output codestream buffering and streaming order. By default, output is buffered (`--output_mode 0`) to allow basic progressive loading.
+
+In version 0.12, the new flags `--buffering` and `--output_mode` were introduced to explicitly control streaming behavior. `--buffering` controls input buffering (`0` for full buffering, `1` to stream large images, `2` to stream with a lower threshold). `--output_mode` controls output codestream buffering and streaming order. By default, output is buffered (`--output_mode 0`) to allow basic progressive loading.
