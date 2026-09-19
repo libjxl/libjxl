@@ -340,12 +340,13 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES = 33,
 
-  /** Control what kind of input buffering is used, when using chunked image frames.
-   * When using streaming input the encoder minimizes memory usage, potentially at
-   * a cost in compression density (though not necessarily).
+  /** Control what kind of input buffering is used, when using chunked image
+   * frames.
+   * When using streaming input the encoder minimizes memory usage, potentially
+   * at a cost in compression density (though not necessarily).
    * -1 = default (let the encoder decide)
    * 0 = buffers everything, basically the same as non-streamed code path
-   (mainly for testing)
+   *     (mainly for testing)
    * 1 = buffers everything for images that are 2048 x 2048 or smaller, and
    *     uses streaming input and buffered output for larger images
    * 2 = same as 1, but the threshold to use streaming input is lower
@@ -418,10 +419,17 @@ typedef enum {
   JXL_ENC_FRAME_SETTING_OUTPUT_MODE = 40,
 
   /** Strips the alpha channel from the frame/image.
-   * -1 = encoder chooses (default): strip empty (opaque) alpha for lossy, keep for lossless.
-   *  0 = always keep alpha.
-   *  1 = strip alpha if fully opaque (empty).
-   *  2 = always strip alpha.
+   * -1 = default (let the encoder decide: strip if fully opaque in lossy mode,
+   *      keep in lossless).
+   *  0 = never strip (always keep alpha).
+   *  1 = always strip alpha (force strip).
+   *  2 = strip alpha if fully opaque.
+   *
+   * Note: Only applies when the image has exactly one extra channel (alpha).
+   * For single-frame auto-detection, the encoder must know there are no further
+   * frames (e.g. via @ref JxlEncoderCloseFrames or @ref JxlEncoderCloseInput)
+   * before output processing begins. The setting on the first frame dictates
+   * codestream behavior.
    */
   JXL_ENC_FRAME_SETTING_STRIP_ALPHA = 41,
 

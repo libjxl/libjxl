@@ -31,7 +31,6 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/exif.h"
-#include "lib/jxl/base/float.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/sanitizers.h"
@@ -451,6 +450,11 @@ uint32_t JxlEncoderVersion(void) {
 
 namespace {
 
+constexpr int kStripAlphaAuto = -1;
+constexpr int kStripAlphaNever = 0;
+constexpr int kStripAlphaForce = 1;
+constexpr int kStripAlphaIfOpaque = 2;
+
 void WriteJxlpBoxCounter(uint32_t counter, bool last, uint8_t* buffer) {
   if (last) counter |= 0x80000000;
   for (size_t i = 0; i < 4; i++) {
@@ -761,12 +765,13 @@ void FastLosslessRunnerAdapter(void* void_ticket, void* opaque,
   }
 }
 
-static bool IsAlphaBufferOpaque(const void* buffer, const JxlPixelFormat& format,
-                                size_t xsize, size_t ysize, size_t row_offset,
-                                size_t alpha_c, size_t alpha_bits) {
-  if (!buffer) return false;
-  const uint8_t* p = reinterpret_cast<const uint8_t*>(buffer);
+bool IsAlphaBufferOpaque(const void* buffer, const JxlPixelFormat& format,
+                         size_t xsize, size_t ysize, size_t row_offset,
+                         size_t alpha_c, size_t alpha_bits) {
+  if (!buffer || format.num_channels <= alpha_c) return false;
   size_t bytes_per_pixel = jxl::BytesPerPixel(format);
+  if (bytes_per_pixel == 0) return false;
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(buffer);
 
   if (format.data_type == JXL_TYPE_UINT8) {
     size_t offset = alpha_c;
@@ -775,7 +780,9 @@ static bool IsAlphaBufferOpaque(const void* buffer, const JxlPixelFormat& format
     for (size_t y = 0; y < ysize; ++y) {
       const uint8_t* row = p + y * row_offset;
       for (size_t x = 0; x < xsize; ++x) {
-        if (row[x * bytes_per_pixel + offset] != expected) return false;
+        if (row[x * bytes_per_pixel + offset] != expected) {
+          return false;
+        }
       }
     }
     return true;
@@ -790,7 +797,9 @@ static bool IsAlphaBufferOpaque(const void* buffer, const JxlPixelFormat& format
         uint16_t val;
         memcpy(&val, row + x * bytes_per_pixel + offset, 2);
         if (swap) val = JXL_BSWAP16(val);
-        if (val != expected) return false;
+        if (val != expected) {
+          return false;
+        }
       }
     }
     return true;
@@ -800,10 +809,12 @@ static bool IsAlphaBufferOpaque(const void* buffer, const JxlPixelFormat& format
     for (size_t y = 0; y < ysize; ++y) {
       const uint8_t* row = p + y * row_offset;
       for (size_t x = 0; x < xsize; ++x) {
-        float val;
-        memcpy(&val, row + x * bytes_per_pixel + offset, 4);
-        if (swap) val = BSwapFloat(val);
-        if (std::isnan(val) || val < 1.0f - 1e-5f) return false;
+        uint32_t bits;
+        memcpy(&bits, row + x * bytes_per_pixel + offset, 4);
+        if (swap) bits = JXL_BSWAP32(bits);
+        if (bits != 0x3F800000) {
+          return false;
+        }
       }
     }
     return true;
@@ -816,8 +827,9 @@ static bool IsAlphaBufferOpaque(const void* buffer, const JxlPixelFormat& format
         uint16_t bits;
         memcpy(&bits, row + x * bytes_per_pixel + offset, 2);
         if (swap) bits = JXL_BSWAP16(bits);
-        float val = jxl::detail::LoadFloat16(bits);
-        if (std::isnan(val) || val < 1.0f - 1e-4f) return false;
+        if (bits != 0x3C00) {
+          return false;
+        }
       }
     }
     return true;
@@ -855,23 +867,31 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
     }
 
     if (metadata.m.HasAlpha()) {
-      const size_t alpha_ec_idx =
-          metadata.m.Find(jxl::ExtraChannel::kAlpha) -
-          metadata.m.extra_channel_info.data();
+      const size_t alpha_ec_idx = metadata.m.Find(jxl::ExtraChannel::kAlpha) -
+                                  metadata.m.extra_channel_info.data();
       const size_t alpha_bits =
           metadata.m.extra_channel_info[alpha_ec_idx].bit_depth.bits_per_sample;
-      const int strip_alpha =
-          first_frame ? first_frame->option_values.strip_alpha : -1;
+      const int strip_alpha = first_frame
+                                  ? first_frame->option_values.strip_alpha
+                                  : kStripAlphaAuto;
       const bool is_lossless =
           first_frame && first_frame->option_values.lossless;
 
+      // Only auto-strip alpha for single-frame images with exactly one extra
+      // channel.
       const bool is_multiframe_or_animation =
           metadata.m.have_animation || !frames_closed ||
           num_queued_frames != 1 || metadata.m.num_extra_channels != 1;
 
-      bool should_strip = (strip_alpha == 2);
+      bool should_strip = (strip_alpha == kStripAlphaForce &&
+                           metadata.m.num_extra_channels == 1);
+
+      // Check if alpha can be stripped because it is fully opaque.
       if (!should_strip && !is_multiframe_or_animation && first_frame &&
-          (strip_alpha == 1 || (strip_alpha == -1 && !is_lossless))) {
+          alpha_ec_idx < first_frame->ec_initialized.size() &&
+          first_frame->ec_initialized[alpha_ec_idx] &&
+          (strip_alpha == kStripAlphaIfOpaque ||
+           (strip_alpha == kStripAlphaAuto && !is_lossless))) {
         JxlChunkedFrameInputSource src =
             first_frame->frame_data.GetInputSource();
         if (src.get_color_channels_pixel_format &&
@@ -880,27 +900,54 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
           src.get_color_channels_pixel_format(src.opaque, &color_fmt);
           const bool has_interleaved =
               color_fmt.num_channels == 2 || color_fmt.num_channels == 4;
-          size_t row_offset = 0;
-          if (has_interleaved) {
-            auto buf = jxl::GetColorBuffer(src, 0, 0, metadata.xsize(),
-                                           metadata.ysize(), &row_offset);
-            should_strip =
-                buf && IsAlphaBufferOpaque(buf.get(), color_fmt, metadata.xsize(),
-                                           metadata.ysize(), row_offset,
-                                           color_fmt.num_channels - 1,
-                                           alpha_bits);
-          } else if (src.get_extra_channel_pixel_format &&
-                     src.get_extra_channel_data_at) {
+          const bool has_extra_channel = !has_interleaved &&
+                                         src.get_extra_channel_pixel_format &&
+                                         src.get_extra_channel_data_at;
+
+          if (has_interleaved || has_extra_channel) {
             JxlPixelFormat ec_fmt;
-            src.get_extra_channel_pixel_format(src.opaque, alpha_ec_idx,
-                                               &ec_fmt);
-            auto buf = jxl::GetExtraChannelBuffer(
-                src, alpha_ec_idx, 0, 0, metadata.xsize(), metadata.ysize(),
-                &row_offset);
-            should_strip =
-                buf && IsAlphaBufferOpaque(buf.get(), ec_fmt, metadata.xsize(),
-                                           metadata.ysize(), row_offset, 0,
-                                           alpha_bits);
+            if (has_extra_channel) {
+              src.get_extra_channel_pixel_format(src.opaque, alpha_ec_idx,
+                                                 &ec_fmt);
+            }
+            const JxlPixelFormat& fmt = has_interleaved ? color_fmt : ec_fmt;
+            const size_t alpha_c =
+                has_interleaved ? (color_fmt.num_channels - 1) : 0;
+
+            auto is_chunk_opaque = [&](size_t x, size_t y, size_t xs,
+                                       size_t ys) -> bool {
+              size_t row_offset = 0;
+              if (has_interleaved) {
+                auto buf = jxl::GetColorBuffer(src, x, y, xs, ys, &row_offset);
+                return buf &&
+                       IsAlphaBufferOpaque(buf.get(), fmt, xs, ys, row_offset,
+                                           alpha_c, alpha_bits);
+              } else {
+                auto buf = jxl::GetExtraChannelBuffer(src, alpha_ec_idx, x, y,
+                                                      xs, ys, &row_offset);
+                return buf &&
+                       IsAlphaBufferOpaque(buf.get(), fmt, xs, ys, row_offset,
+                                           alpha_c, alpha_bits);
+              }
+            };
+
+            constexpr size_t kChunkDimY = 256;
+            constexpr size_t kChunkDimX = 2048;
+            const size_t xsize = metadata.xsize();
+            const size_t ysize = metadata.ysize();
+            bool all_opaque = true;
+
+            for (size_t y = 0; y < ysize && all_opaque; y += kChunkDimY) {
+              const size_t chunk_ysize = std::min(kChunkDimY, ysize - y);
+              for (size_t x = 0; x < xsize; x += kChunkDimX) {
+                const size_t chunk_xsize = std::min(kChunkDimX, xsize - x);
+                if (!is_chunk_opaque(x, y, chunk_xsize, chunk_ysize)) {
+                  all_opaque = false;
+                  break;
+                }
+              }
+            }
+            should_strip = all_opaque;
           }
         }
       }
@@ -917,8 +964,8 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
         for (auto& qi : input_queue) {
           if (qi.frame) {
             if (alpha_ec_idx < qi.frame->ec_initialized.size()) {
-              qi.frame->ec_initialized.erase(
-                  qi.frame->ec_initialized.begin() + alpha_ec_idx);
+              qi.frame->ec_initialized.erase(qi.frame->ec_initialized.begin() +
+                                             alpha_ec_idx);
             }
             if (alpha_ec_idx <
                 qi.frame->option_values.extra_channel_blend_info.size()) {
@@ -2595,7 +2642,7 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
   }
   if (has_interleaved_alpha >
       frame_settings->enc->metadata.m.num_extra_channels) {
-    if (frame_settings->values.strip_alpha == 2) {
+    if (frame_settings->values.strip_alpha == kStripAlphaForce) {
       has_interleaved_alpha = 0;
     } else {
       return JXL_API_ERROR(

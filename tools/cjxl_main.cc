@@ -144,10 +144,11 @@ struct CompressArgs {
     cmdline->AddOptionValue(
         '\0', "strip_alpha", "-1|0|1|2",
         "Alpha stripping mode:\n"
-        "    -1 = Encoder chooses (default: strip if empty for lossy, keep for lossless).\n"
-        "     0 = Always keep alpha.\n"
-        "     1 = Strip if empty (fully opaque).\n"
-        "     2 = Always strip alpha.",
+        "    -1 = Encoder chooses (default: strip if empty for lossy, "
+        "keep for lossless).\n"
+        "     0 = Never strip (always keep alpha).\n"
+        "     1 = Always strip alpha.\n"
+        "     2 = Strip if empty (fully opaque).",
         &strip_alpha, &ParseInt64, 1);
 
     cmdline->AddOptionFlag('p', "progressive",
@@ -726,6 +727,10 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessBoolFlag(args->noise, JXL_ENC_FRAME_SETTING_NOISE, params);
 
   params->allow_expert_options = args->allow_expert_options;
+  if (args->strip_alpha < -1 || args->strip_alpha > 2) {
+    std::cerr << "Invalid --strip_alpha. Must be -1, 0, 1, or 2.\n";
+    exit(EXIT_FAILURE);
+  }
   params->strip_alpha = static_cast<int32_t>(args->strip_alpha);
   if (args->disable_perceptual_optimizations) {
     params->AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS, 1);
@@ -1179,7 +1184,7 @@ int main(int argc, char** argv) {
   params.runner_opaque = runner.get();
 
   params.options.emplace_back(JXL_ENC_FRAME_SETTING_OUTPUT_MODE,
-                               args.output_mode, 0);
+                              args.output_mode, 0);
 
   jpegxl::tools::SpeedStats stats;
   jpegxl::tools::JxlOutputProcessor output_processor;
