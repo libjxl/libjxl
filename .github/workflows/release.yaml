@@ -410,7 +410,7 @@ jobs:
         merge-multiple: true
 
     - name: Attest release assets
-      uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+      uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
       with:
         subject-path: release_assets/*
 
