@@ -451,7 +451,6 @@ uint32_t JxlEncoderVersion(void) {
 namespace {
 
 constexpr int kStripAlphaAuto = -1;
-constexpr int kStripAlphaNever = 0;
 constexpr int kStripAlphaForce = 1;
 constexpr int kStripAlphaIfOpaque = 2;
 
