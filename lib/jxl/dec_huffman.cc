@@ -3,55 +3,61 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Headers are not converted yet; only this file is checked.
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
 #include "lib/jxl/dec_huffman.h"
 
-#include <jxl/types.h>
-
+#include <array>
 #include <cstdint>
-#include <cstring> /* for memset */
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/huffman_table.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 namespace jxl {
 
 static const int kCodeLengthCodes = 18;
-static const uint8_t kCodeLengthCodeOrder[kCodeLengthCodes] = {
+static const std::array<uint8_t, kCodeLengthCodes> kCodeLengthCodeOrder = {
     1, 2, 3, 4, 0, 5, 17, 6, 16, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 };
 static const uint8_t kDefaultCodeLength = 8;
 static const uint8_t kCodeLengthRepeatCode = 16;
 
-JXL_BOOL ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
-                                int num_symbols, uint8_t* code_lengths,
-                                BitReader* br) {
+static bool ReadHuffmanCodeLengths(
+    const std::array<uint8_t, kCodeLengthCodes>& code_length_code_lengths,
+    Span<uint8_t> code_lengths, BitReader* br) {
+  const int num_symbols = static_cast<int>(code_lengths.size());
   int symbol = 0;
   uint8_t prev_code_len = kDefaultCodeLength;
   int repeat = 0;
   uint8_t repeat_code_len = 0;
   int space = 32768;
-  HuffmanCode table[32];
+  std::array<HuffmanCode, 32> table = {};
 
-  uint16_t counts[16] = {0};
+  std::array<uint16_t, 16> counts = {};
   for (int i = 0; i < kCodeLengthCodes; ++i) {
     ++counts[code_length_code_lengths[i]];
   }
-  if (!BuildHuffmanTable(table, 5, code_length_code_lengths, kCodeLengthCodes,
-                         &counts[0])) {
-    return JXL_FALSE;
+  if (!BuildHuffmanTable(table.data(), 5, code_length_code_lengths.data(),
+                         kCodeLengthCodes, counts.data())) {
+    return false;
   }
 
   while (symbol < num_symbols && space > 0) {
-    const HuffmanCode* p = table;
-    uint8_t code_len;
     br->Refill();
-    p += br->PeekFixedBits<5>();
-    br->Consume(p->bits);
-    code_len = static_cast<uint8_t>(p->value);
+    const HuffmanCode& code = table[br->PeekFixedBits<5>()];
+    br->Consume(code.bits);
+    uint8_t code_len = static_cast<uint8_t>(code.value);
     if (code_len < kCodeLengthRepeatCode) {
       repeat = 0;
       code_lengths[symbol++] = code_len;
@@ -79,10 +85,11 @@ JXL_BOOL ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
       repeat += static_cast<int>(br->ReadBits(extra_bits) + 3);
       repeat_delta = repeat - old_repeat;
       if (symbol + repeat_delta > num_symbols) {
-        return 0;
+        return false;
       }
-      memset(&code_lengths[symbol], repeat_code_len,
-             static_cast<size_t>(repeat_delta));
+      for (int i = 0; i < repeat_delta; ++i) {
+        code_lengths[symbol + i] = repeat_code_len;
+      }
       symbol += repeat_delta;
       if (repeat_code_len != 0) {
         space -= repeat_delta << (15 - repeat_code_len);
@@ -90,20 +97,22 @@ JXL_BOOL ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
     }
   }
   if (space != 0) {
-    return JXL_FALSE;
+    return false;
   }
-  memset(&code_lengths[symbol], 0, static_cast<size_t>(num_symbols - symbol));
-  return JXL_TRUE;
+  for (int i = symbol; i < num_symbols; ++i) {
+    code_lengths[i] = 0;
+  }
+  return true;
 }
 
 static JXL_INLINE bool ReadSimpleCode(size_t alphabet_size, BitReader* br,
-                                      HuffmanCode* table) {
+                                      Span<HuffmanCode> table) {
   size_t max_bits =
       (alphabet_size > 1u) ? FloorLog2Nonzero(alphabet_size - 1u) + 1 : 0;
 
   size_t num_symbols = br->ReadFixedBits<2>() + 1;
 
-  uint16_t symbols[4] = {0};
+  std::array<uint16_t, 4> symbols = {};
   for (size_t i = 0; i < num_symbols; ++i) {
     uint16_t symbol = br->ReadBits(max_bits);
     if (symbol >= alphabet_size) {
@@ -178,10 +187,11 @@ static JXL_INLINE bool ReadSimpleCode(size_t alphabet_size, BitReader* br,
     }
   }
 
-  const uint32_t goal_size = 1u << kHuffmanTableBits;
+  const size_t goal_size = 1u << kHuffmanTableBits;
   while (table_size != goal_size) {
-    memcpy(&table[table_size], &table[0],
-           static_cast<size_t>(table_size) * sizeof(table[0]));
+    for (size_t i = 0; i < table_size; ++i) {
+      table[table_size + i] = table[i];
+    }
     table_size <<= 1;
   }
 
@@ -198,46 +208,47 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
   uint32_t simple_code_or_skip = br->ReadFixedBits<2>();
   if (simple_code_or_skip == 1u) {
     table_.resize(1u << kHuffmanTableBits);
-    return ReadSimpleCode(alphabet_size, br, table_.data());
+    return ReadSimpleCode(alphabet_size, br,
+                          Span<HuffmanCode>(table_.data(), table_.size()));
   }
 
   std::vector<uint8_t> code_lengths(alphabet_size, 0);
-  uint8_t code_length_code_lengths[kCodeLengthCodes] = {0};
+  std::array<uint8_t, kCodeLengthCodes> code_length_code_lengths = {};
   int space = 32;
   int num_codes = 0;
   /* Static Huffman code for the code length code lengths */
-  static const HuffmanCode huff[16] = {
+  /* clang-format off */
+  static const std::array<HuffmanCode, 16> huff = {{
       {2, 0}, {2, 4}, {2, 3}, {3, 2}, {2, 0}, {2, 4}, {2, 3}, {4, 1},
       {2, 0}, {2, 4}, {2, 3}, {3, 2}, {2, 0}, {2, 4}, {2, 3}, {4, 5},
-  };
+  }};
+  /* clang-format on */
   for (size_t i = simple_code_or_skip; i < kCodeLengthCodes && space > 0; ++i) {
     const int code_len_idx = kCodeLengthCodeOrder[i];
-    const HuffmanCode* p = huff;
-    uint8_t v;
     br->Refill();
-    p += br->PeekFixedBits<4>();
-    br->Consume(p->bits);
-    v = static_cast<uint8_t>(p->value);
+    const HuffmanCode& code = huff[br->PeekFixedBits<4>()];
+    br->Consume(code.bits);
+    uint8_t v = static_cast<uint8_t>(code.value);
     code_length_code_lengths[code_len_idx] = v;
     if (v != 0) {
       space -= (32u >> v);
       ++num_codes;
     }
   }
-  bool ok =
-      (num_codes == 1 || space == 0) &&
-      FROM_JXL_BOOL(ReadHuffmanCodeLengths(
-          code_length_code_lengths, alphabet_size, code_lengths.data(), br));
+  bool ok = (num_codes == 1 || space == 0) &&
+            ReadHuffmanCodeLengths(
+                code_length_code_lengths,
+                Span<uint8_t>(code_lengths.data(), code_lengths.size()), br);
 
   if (!ok) return false;
-  uint16_t counts[16] = {0};
+  std::array<uint16_t, 16> counts = {};
   for (size_t i = 0; i < alphabet_size; ++i) {
     ++counts[code_lengths[i]];
   }
   table_.resize(alphabet_size + 376);
   uint32_t table_size =
       BuildHuffmanTable(table_.data(), kHuffmanTableBits, code_lengths.data(),
-                        alphabet_size, &counts[0]);
+                        alphabet_size, counts.data());
   table_.resize(table_size);
   return (table_size > 0);
 }
