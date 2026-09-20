@@ -40,11 +40,12 @@ error in tests. This requires parametric curves, which are only supported for
 the common sRGB case in ICC v4 profiles. ArgyllCMS does not support v4. The
 other popular open-source CMS is LittleCMS. It is also used by color-managed
 editors (Krita/darktable), which increases the chances of interoperability.
-However, LCMS has race conditions and overflow issues that prevent fuzzing. We
-will later switch to the newer skcms. Note that this library does not intend to
+However, LCMS has race conditions and overflow issues that prevent fuzzing.
+We have since migrated to and currently bundle the newer `skcms` library as our 
+default CMS to address these issues. Note that `skcms` does not intend to
 support multiProcessElements, so HDR transfer functions cannot be represented
-accurately. Thus in the long term, we will probably migrate away from ICC
-profiles entirely.
+accurately via ICC profiles, favoring the use of CICP-style enum values for
+such use-cases.
 
 ## Which viewer
 
@@ -64,5 +65,7 @@ ICC profile.
 
 -   Create a PGM/PPM/PFM file in a known color space.
 -   Invoke `cjxl` with `-x color_space=RGB_D65_202_Rel_Lin` (linear 2020). For
-    details/possible values, see color_encoding.cc `Description`.
+    details/possible values, see color_encoding.cc `Description`. Note that 
+    the CLI also directly supports named color spaces like `ProPhoto` and 
+    `AdobeRGB` or `Adobe98` through arguments.
 -   Invoke `djxl` as above with no special arguments.

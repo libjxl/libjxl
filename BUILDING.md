@@ -75,7 +75,7 @@ sudo cmake --install .
 ```
 
 
-## Building JPEG XL for developers
+## Building JPEG XL for developers
 
 For experienced developers, we provide build instructions for several other environments:
 
