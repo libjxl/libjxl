@@ -80,7 +80,8 @@ Next set up the MING64 environment.  The following commands should be run within
 pacman -S --needed base-devel mingw-w64-x86_64-toolchain
 pacman -S git mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja \
     mingw-w64-x86_64-gtest mingw-w64-x86_64-giflib \
-    mingw-w64-x86_64-libpng mingw-w64-x86_64-libjpeg-turbo 
+    mingw-w64-x86_64-libjpeg-turbo mingw-w64-x86_64-libpng \
+    mingw-w64-x86_64-libtiff
 ```
 
 ## Build `libjxl`
