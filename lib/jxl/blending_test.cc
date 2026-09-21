@@ -54,5 +54,25 @@ TEST(BlendingTest, Crops) {
   }
 }
 
+TEST(BlendingTest, ZeroWidthBlendRegion) {
+  // Regression test for https://github.com/libjxl/libjxl/issues/4944.
+  // This 28-byte codestream decodes a frame whose blend region has zero width.
+  // PerformBlending() then took its kReplace/kNone color path and called
+  // memcpy() with a null destination row (obtained from the zero-width scratch
+  // image), which UndefinedBehaviorSanitizer aborts on. Decoding must not
+  // invoke undefined behavior regardless of whether it ultimately succeeds.
+  static const uint8_t kInput[] = {0xff, 0x0a, 0x00, 0x10, 0x10, 0x09, 0x08,
+                                   0x20, 0x00, 0x00, 0x10, 0x48, 0x00, 0x01,
+                                   0x00, 0x0c, 0x00, 0x00, 0x00, 0x40, 0x00,
+                                   0x04, 0x00, 0x4b, 0x20, 0x18, 0x03, 0x03};
+  extras::JXLDecompressParams dparams;
+  dparams.accepted_formats = {{3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0}};
+  extras::PackedPixelFile decoded;
+  // The return value is intentionally ignored: the point is that the decode
+  // runs to completion without tripping a sanitizer.
+  (void)DecodeImageJXL(kInput, sizeof(kInput), dparams,
+                       /*decoded_bytes=*/nullptr, &decoded);
+}
+
 }  // namespace
 }  // namespace jxl
