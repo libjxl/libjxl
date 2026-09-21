@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/bounds_safety.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -616,14 +617,18 @@ struct JxlDecoder {
   }
 #endif
 
-  const uint8_t* next_in;
+  /* avail_in is declared before next_in so JXL_COUNTED_BY_OR_NULL can name
+   * it. Capacity is assigned before the pointer at update sites.
+   */
   size_t avail_in;
+  const uint8_t* JXL_COUNTED_BY_OR_NULL(avail_in) next_in;
   bool input_closed;
 
   void AdvanceInput(size_t size) {
     JXL_DASSERT(avail_in >= size);
-    next_in += size;
+    /* counted_by: shrink capacity before advancing pointer */
     avail_in -= size;
+    next_in += size;
     file_pos += size;
   }
 
@@ -1580,13 +1585,15 @@ JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec, const uint8_t* data,
     return JXL_API_ERROR("input already closed");
   }
 
-  dec->next_in = data;
+  /* counted_by: set capacity before pointer */
   dec->avail_in = size;
+  dec->next_in = data;
   return JXL_DEC_SUCCESS;
 }
 
 size_t JxlDecoderReleaseInput(JxlDecoder* dec) {
   size_t result = dec->avail_in;
+  /* counted_by clear: drop pointer then size */
   dec->next_in = nullptr;
   dec->avail_in = 0;
   return result;
