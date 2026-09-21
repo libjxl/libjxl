@@ -43,6 +43,10 @@
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
+#include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
+#include "lib/jxl/render_pipeline/stage_gaborish.h"
+#include "lib/jxl/render_pipeline/stage_upsampling.h"
+#include "lib/jxl/render_pipeline/stage_write.h"
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/test_memory_manager.h"
@@ -189,6 +193,67 @@ TEST(RenderPipelineTest, CallAllGroupsFast) {
   }
 
   EXPECT_EQ(pipeline->PassesWithAllInput(), 1u);
+}
+
+StatusOr<Image3F> RunVirtualPaddingPipeline(JxlMemoryManager* memory_manager,
+                                            bool use_simple_pipeline) {
+  constexpr size_t kXSize = 17;
+  // Match the geometry that exposed the virtual-padding scheduling lead.
+  constexpr size_t kYSize = 229;
+  JXL_ASSIGN_OR_RETURN(Image3F output,
+                       Image3F::Create(memory_manager, kXSize, kYSize));
+
+  RenderPipeline::Builder builder(memory_manager, /*num_c=*/3);
+  JXL_RETURN_IF_ERROR(builder.AddStage(
+      GetChromaUpsamplingStage(/*channel=*/0, /*horizontal=*/false)));
+  JXL_RETURN_IF_ERROR(builder.AddStage(
+      GetChromaUpsamplingStage(/*channel=*/1, /*horizontal=*/true)));
+  JXL_RETURN_IF_ERROR(builder.AddStage(
+      GetChromaUpsamplingStage(/*channel=*/2, /*horizontal=*/true)));
+  LoopFilter loop_filter;
+  loop_filter.gab = true;
+  JXL_RETURN_IF_ERROR(builder.AddStage(GetGaborishStage(loop_filter)));
+  CustomTransformData transform_data;
+  for (size_t c = 0; c < 3; ++c) {
+    JXL_RETURN_IF_ERROR(builder.AddStage(
+        GetUpsamplingStage(memory_manager, transform_data, c, /*shift=*/3)));
+  }
+  JXL_RETURN_IF_ERROR(
+      builder.AddStage(GetWriteToImage3FStage(memory_manager, &output)));
+  if (use_simple_pipeline) builder.UseSimpleImplementation();
+
+  FrameDimensions dimensions;
+  dimensions.Set(kXSize, kYSize, /*group_size_shift=*/0,
+                 /*max_hshift=*/0, /*max_vshift=*/0,
+                 /*modular_mode=*/false, /*upsampling=*/8);
+  JXL_ASSIGN_OR_RETURN(auto pipeline, std::move(builder).Finalize(dimensions));
+  JXL_RETURN_IF_ERROR(pipeline->PrepareForThreads(1, /*use_group_ids=*/false));
+  for (size_t group = 0; group < dimensions.num_groups; ++group) {
+    auto input_buffers = pipeline->GetInputBuffers(group, 0);
+    for (size_t c = 0; c < 3; ++c) {
+      const auto& buffer = input_buffers.GetBuffer(c);
+      for (size_t y = 0; y < buffer.second.ysize(); ++y) {
+        float* row = buffer.second.Row(buffer.first, y);
+        for (size_t x = 0; x < buffer.second.xsize(); ++x) {
+          row[x] = static_cast<float>(100 * c + 10 * y + x);
+        }
+      }
+    }
+    JXL_RETURN_IF_ERROR(input_buffers.Done());
+  }
+  JXL_ENSURE(pipeline->PassesWithAllInput() == 1);
+  return output;
+}
+
+TEST(RenderPipelineTest, RetainsRowsAcrossVirtualPadding) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      Image3F low_memory,
+      RunVirtualPaddingPipeline(memory_manager, /*use_simple_pipeline=*/false));
+  JXL_TEST_ASSIGN_OR_DIE(
+      Image3F simple,
+      RunVirtualPaddingPipeline(memory_manager, /*use_simple_pipeline=*/true));
+  JXL_TEST_ASSERT_OK(VerifyRelativeError(simple, low_memory, 1e-6, 1e-6, _));
 }
 
 struct RenderPipelineTestInputSettings {
