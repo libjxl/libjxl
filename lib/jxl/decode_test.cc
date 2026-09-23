@@ -5779,3 +5779,123 @@ TEST(DecodeTest, CloseInput) {
   JxlDecoderCloseInput(dec.get());
   EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
 }
+
+// Issue #4670: the decoder should switch to an unrecoverable state when the
+// caller makes an invalid API call, so that a programming error surfaces at its
+// origin instead of producing unexpected output later. The canonical example
+// from the issue is setting the image-out callback after the image-out buffer.
+namespace {
+
+// Drives a fresh decoder to JXL_DEC_NEED_IMAGE_OUT_BUFFER and installs an
+// image-out buffer, i.e. the last valid state before the misuse under test.
+void SetUpDecoderWithImageOutBuffer(JxlDecoder* dec,
+                                    const std::vector<uint8_t>& data,
+                                    const JxlPixelFormat& format,
+                                    std::vector<uint8_t>* out) {
+  ASSERT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
+                                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
+  ASSERT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data(), data.size()));
+  ASSERT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  ASSERT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+  size_t buffer_size;
+  ASSERT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+  out->resize(buffer_size);
+  ASSERT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                 dec, &format, out->data(), out->size()));
+}
+
+}  // namespace
+
+TEST(DecodeTest, ApiMisuseLatchesUnhealthyState) {
+  size_t xsize = 57;
+  size_t ysize = 31;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
+  jxl::TestCodestreamParams params;
+  std::vector<uint8_t> data = jxl::CreateTestJXLCodestream(
+      jxl::Bytes(pixels.data(), pixels.size()), xsize, ysize, 3, params);
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  std::vector<uint8_t> out;
+  SetUpDecoderWithImageOutBuffer(dec.get(), data, format, &out);
+
+  // The misuse named in issue #4670: switching to the callback API after a
+  // buffer has already been installed.
+  EXPECT_EQ(JXL_DEC_ERROR,
+            JxlDecoderSetMultithreadedImageOutCallback(
+                dec.get(), &format,
+                [](void*, size_t, size_t) -> void* { return nullptr; },
+                [](void*, size_t, size_t, size_t, size_t, const void*) {},
+                [](void*) {}, nullptr));
+
+  // Per #4670, no further decoding may happen.
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
+}
+
+TEST(DecodeTest, ApiMisuseLatchClearedByReset) {
+  size_t xsize = 57;
+  size_t ysize = 31;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
+  jxl::TestCodestreamParams params;
+  std::vector<uint8_t> data = jxl::CreateTestJXLCodestream(
+      jxl::Bytes(pixels.data(), pixels.size()), xsize, ysize, 3, params);
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  std::vector<uint8_t> out;
+  SetUpDecoderWithImageOutBuffer(dec.get(), data, format, &out);
+
+  EXPECT_EQ(JXL_DEC_ERROR,
+            JxlDecoderSetMultithreadedImageOutCallback(
+                dec.get(), &format,
+                [](void*, size_t, size_t) -> void* { return nullptr; },
+                [](void*, size_t, size_t, size_t, size_t, const void*) {},
+                [](void*) {}, nullptr));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
+
+  // Reset returns the decoder to its initial configuration, so it must clear
+  // the latch and leave the object fully reusable.
+  JxlDecoderReset(dec.get());
+  std::vector<uint8_t> out2;
+  SetUpDecoderWithImageOutBuffer(dec.get(), data, format, &out2);
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
+}
+
+TEST(DecodeTest, ApiMisuseLatchesUnhealthyStateCallbackThenBuffer) {
+  size_t xsize = 57;
+  size_t ysize = 31;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
+  jxl::TestCodestreamParams params;
+  std::vector<uint8_t> data = jxl::CreateTestJXLCodestream(
+      jxl::Bytes(pixels.data(), pixels.size()), xsize, ysize, 3, params);
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  ASSERT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec.get(),
+                                      JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
+  ASSERT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec.get(), data.data(), data.size()));
+  ASSERT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec.get()));
+  ASSERT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
+
+  // Install the callback sink first, then attempt to switch to a buffer: the
+  // mirror of ApiMisuseLatchesUnhealthyState.
+  ASSERT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetMultithreadedImageOutCallback(
+                dec.get(), &format,
+                [](void*, size_t, size_t) -> void* { return nullptr; },
+                [](void*, size_t, size_t, size_t, size_t, const void*) {},
+                [](void*) {}, nullptr));
+
+  size_t buffer_size;
+  ASSERT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size));
+  std::vector<uint8_t> out(buffer_size);
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetImageOutBuffer(dec.get(), &format,
+                                                       out.data(), out.size()));
+
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
+}

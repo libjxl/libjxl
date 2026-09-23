@@ -2585,6 +2585,12 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
     return JXL_API_ERROR("No image out buffer needed at this time");
   }
   if (dec->image_out_buffer_set && !!dec->image_out_run_callback) {
+    // Mixing the callback and buffer output APIs is a programming error rather
+    // than a recoverable input condition: the caller may hold an incorrect
+    // belief about which output sink is installed. Per issue #4670, latch
+    // kError so no further decoding happens and the mistake surfaces at its
+    // origin. JxlDecoderReset returns the decoder to a usable state.
+    dec->stage = DecoderStage::kError;
     return JXL_API_ERROR(
         "Cannot change from image out callback to image out buffer");
   }
@@ -2682,6 +2688,10 @@ JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
     JxlImageOutInitCallback init_callback, JxlImageOutRunCallback run_callback,
     JxlImageOutDestroyCallback destroy_callback, void* init_opaque) {
   if (dec->image_out_buffer_set && !!dec->image_out_buffer) {
+    // See JxlDecoderSetImageOutBuffer: mixing the two output APIs is a
+    // programming error, so latch kError rather than continuing to decode after
+    // a call the caller may believe succeeded.
+    dec->stage = DecoderStage::kError;
     return JXL_API_ERROR(
         "Cannot change from image out buffer to image out callback");
   }
