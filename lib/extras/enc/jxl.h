@@ -66,6 +66,13 @@ struct JXLCompressParams {
   int32_t codestream_level = -1;
   int32_t premultiply = -1;
 
+  // Alpha channel stripping:
+  // -1 = encoder chooses (default: strip if empty for lossy, keep for lossless)
+  //  0 = always keep alpha
+  //  1 = always strip
+  //  2 = strip if empty (opaque)
+  int32_t strip_alpha = -1;
+
   // If runner_opaque is set, the encoder uses this parallel runner.
   JxlParallelRunner runner = JxlThreadParallelRunner;
   void* runner_opaque = nullptr;

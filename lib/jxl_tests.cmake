@@ -94,5 +94,5 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
     set_target_properties(${TESTNAME} PROPERTIES COMPILE_FLAGS "-Wno-error")
   endif ()
   # 240 seconds because some build types (e.g. coverage) can be quite slow.
-  gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 240)
+  gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 240 DISCOVERY_MODE PRE_TEST)
 endforeach ()

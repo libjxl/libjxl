@@ -82,7 +82,7 @@ EOF
   download_github third_party/sjpeg webmproject/sjpeg
   download_github third_party/skcms google/skcms
   download_github third_party/zlib madler/zlib
-  download_github third_party/libpng glennrp/libpng
+  download_github third_party/libpng pnggroup/libpng
   download_github third_party/libjpeg-turbo libjpeg-turbo/libjpeg-turbo
   echo "Done."
 }
