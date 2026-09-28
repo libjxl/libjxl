@@ -208,6 +208,15 @@ struct CompressParams {
   // the other positions keep their default order. The orders of the classes
   // with a non-empty entry are signaled.
   std::vector<std::vector<uint32_t>> custom_coeff_orders;
+  // With vardct_from_tree: the quantizer's global scale and LF quantization
+  // (quant_dc), 0 for the default ones (1024 and 64), and if not empty, the
+  // inverse LF quantization steps of the channels X, Y and B (by default 4096,
+  // 512 and 256). The LF step of channel c is
+  // (65536 / global scale) / quant_dc / vardct_lf_inv_quant[c], the HF step is
+  // (65536 / global scale) / quant field * the dequantization matrix.
+  uint32_t vardct_global_scale = 0;
+  uint32_t vardct_quant_dc = 0;
+  std::vector<float> vardct_lf_inv_quant;
   // If not empty, these custom splines will be used instead of the computed
   // ones. Used in jxl_from_tee tool.
   SplineDataView custom_splines{};

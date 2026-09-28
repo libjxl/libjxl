@@ -1164,7 +1164,40 @@ Status ComputeVarDCTDataFromTree(const FrameHeader& frame_header,
       shared.cmap, ColorCorrelationMap::Create(
                        memory_manager, frame_dim.xsize, frame_dim.ysize,
                        frame_header.color_transform == ColorTransform::kXYB));
-  shared.quantizer = Quantizer(shared.matrices);
+  const CompressParams& cparams = enc_state->cparams;
+  if (!cparams.vardct_lf_inv_quant.empty()) {
+    if (cparams.vardct_lf_inv_quant.size() != 3) {
+      return JXL_FAILURE("Need 3 inverse LF quantization steps");
+    }
+    for (float inv_quant : cparams.vardct_lf_inv_quant) {
+      // Signaled as 128 / inv_quant in a float16.
+      if (!(inv_quant >= 1.0f / 256 && inv_quant <= (1 << 24))) {
+        return JXL_FAILURE("Invalid inverse LF quantization step %f",
+                           inv_quant);
+      }
+    }
+    JXL_RETURN_IF_ERROR(DequantMatricesSetCustomDC(
+        memory_manager, &shared.matrices, cparams.vardct_lf_inv_quant.data()));
+  }
+  if (cparams.vardct_global_scale == 0 && cparams.vardct_quant_dc == 0) {
+    shared.quantizer = Quantizer(shared.matrices);
+  } else {
+    const Quantizer default_quantizer(shared.matrices);
+    const QuantizerParams defaults = default_quantizer.GetParams();
+    uint32_t global_scale = cparams.vardct_global_scale != 0
+                                ? cparams.vardct_global_scale
+                                : defaults.global_scale;
+    uint32_t quant_dc = cparams.vardct_quant_dc != 0 ? cparams.vardct_quant_dc
+                                                     : defaults.quant_dc;
+    // The ranges of QuantizerParams.
+    if (global_scale > 73728 || quant_dc > 65536) {
+      return JXL_FAILURE(
+          "Global scale %u (max 73728) or quant_dc %u (max "
+          "65536) out of range",
+          global_scale, quant_dc);
+    }
+    shared.quantizer = Quantizer(shared.matrices, quant_dc, global_scale);
+  }
   shared.quantizer.RecomputeFromGlobalScale();
   shared.ac_strategy.FillInvalid();
   if (enc_state->cparams.use_custom_block_ctx_map) {
@@ -1366,8 +1399,8 @@ Status SetCustomCoeffOrders(PassesEncoderState& enc_state) {
       size_t k = llf;
       for (uint32_t pos : custom[3 * ord + c]) {
         if (pos >= size || taken[pos]) {
-          return JXL_FAILURE("Invalid or repeated position %u in order %u",
-                             pos, ord);
+          return JXL_FAILURE("Invalid or repeated position %u in order %u", pos,
+                             ord);
         }
         if (pos / (columns * kBlockDim) < rows &&
             pos % (columns * kBlockDim) < columns) {

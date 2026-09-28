@@ -523,6 +523,39 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       return false;
     }
     frame.have_hf = true;
+  } else if (t == "GlobalScale" || t == "LFQuant") {
+    // GlobalScale <1..73728>, LFQuant <1..65536>: the quantizer of VarDCT
+    // frames (defaults 1024 and 64). The LF step is 65536 / GlobalScale /
+    // LFQuant / LFChannelQuant, the HF step 65536 / GlobalScale / quant field
+    // times the dequantization matrix.
+    bool global_scale = t == "GlobalScale";
+    t = tok();
+    size_t num = 0;
+    size_t v = std::stoul(t, &num);
+    if (num != t.size() || v < 1 || v > (global_scale ? 73728 : 65536)) {
+      fprintf(stderr, "Invalid %s: %s\n",
+              global_scale ? "GlobalScale (1..73728)" : "LFQuant (1..65536)",
+              t.c_str());
+      return false;
+    }
+    (global_scale ? cparams.vardct_global_scale : cparams.vardct_quant_dc) = v;
+  } else if (t == "LFChannelQuant") {
+    // LFChannelQuant <Y> <X> <B>: inverse LF quantization steps of the XYB
+    // channels (defaults 512 4096 256: at the default GlobalScale and LFQuant,
+    // an LF value of 512 is 1.0 in Y), rounded to float16 (as 128 / value).
+    float v[3];
+    for (float& f : v) {
+      t = tok();
+      size_t num = 0;
+      f = std::stof(t, &num);
+      if (num != t.size() || !(f >= 1.0f / 256 && f <= (1 << 24))) {
+        fprintf(stderr, "Invalid LFChannelQuant (1/256..2^24): %s\n",
+                t.c_str());
+        return false;
+      }
+    }
+    // libjxl order: X, Y, B
+    cparams.vardct_lf_inv_quant = {v[1], v[0], v[2]};
   } else if (t == "CoeffOrder") {
     // CoeffOrder <order class> [Y|X|B] <n> <u1> <v1> ... <un> <vn>: in the
     // coefficient order of that class (0..12, or a DCT name like DCT64; for
@@ -1075,6 +1108,11 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     info.source = frame.blend_source;
     if (!cparams.custom_coeff_orders.empty() && !cparams.vardct_from_tree) {
       return JXL_FAILURE("CoeffOrder needs VarDCT");
+    }
+    if ((cparams.vardct_global_scale || cparams.vardct_quant_dc ||
+         !cparams.vardct_lf_inv_quant.empty()) &&
+        !cparams.vardct_from_tree) {
+      return JXL_FAILURE("GlobalScale, LFQuant and LFChannelQuant need VarDCT");
     }
     if (frame.have_hf) {
       if (!cparams.vardct_from_tree) {
