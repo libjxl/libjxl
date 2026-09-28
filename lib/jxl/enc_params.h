@@ -12,6 +12,7 @@
 #include <jxl/encode.h>
 #include <stddef.h>
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -217,6 +218,26 @@ struct CompressParams {
   uint32_t vardct_global_scale = 0;
   uint32_t vardct_quant_dc = 0;
   std::vector<float> vardct_lf_inv_quant;
+  // With vardct_from_tree: a custom dequantization matrix (quantization table
+  // of lib/jxl/quant_weights.h). The dequantization step of a coefficient is
+  // the inverse of its quantization weight.
+  struct CustomDequantTable {
+    // If not 0, a parametric table (QuantEncoding::DCT) with this many (1..17)
+    // distance bands: band_steps[c][i] is the step of channel c (0 X, 1 Y,
+    // 2 B) at distance band i, from the top-left coefficient (i = 0) to the
+    // opposite corner, with geometric interpolation in between.
+    size_t num_bands = 0;
+    std::array<std::array<float, 17>, 3> band_steps = {};
+    // If not 0, a RAW table (QuantEncoding::RAW): the integers (> 0) that
+    // custom_fixed_tree gives with zero residuals for the stream of this
+    // quantization table; the step of a coefficient is raw_den times its
+    // integer.
+    float raw_den = 0;
+  };
+  // If not empty (kNumQuantTables entries, by QuantTable index), custom
+  // dequantization matrices; the entries with neither num_bands nor raw_den
+  // keep the default table.
+  std::vector<CustomDequantTable> vardct_dequant;
   // If not empty, these custom splines will be used instead of the computed
   // ones. Used in jxl_from_tee tool.
   SplineDataView custom_splines{};

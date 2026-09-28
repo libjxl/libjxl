@@ -1848,6 +1848,9 @@ Status ModularFrameEncoder::AddQuantTable(size_t size_x, size_t size_y,
   JxlMemoryManager* memory_manager = image.memory_manager();
   JXL_ASSIGN_OR_RETURN(image,
                        Image::Create(memory_manager, size_x, size_y, 8, 3));
+  // Decoders read quantization tables without a channel size limit, so the
+  // table must not be cut off at the group size (tables are up to 256x256).
+  stream_options_[stream_id].max_chan_size = ModularOptions().max_chan_size;
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < size_y; y++) {
       int32_t* JXL_RESTRICT row = image.channel[c].Row(y);

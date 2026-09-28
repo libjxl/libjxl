@@ -1142,6 +1142,85 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
   return true;
 }
 
+// Sets the dequantization matrices of cparams.vardct_dequant (see
+// CompressParams::CustomDequantTable), for vardct_from_tree.
+Status SetDequantMatricesFromTree(const FrameDimensions& frame_dim,
+                                  const CompressParams& cparams,
+                                  ModularFrameEncoder* enc_modular,
+                                  PassesSharedState* shared) {
+  JxlMemoryManager* memory_manager = enc_modular->memory_manager();
+  if (cparams.vardct_dequant.size() != kNumQuantTables) {
+    return JXL_FAILURE("Need kNumQuantTables custom dequantization tables");
+  }
+  std::vector<QuantEncoding> encodings(kNumQuantTables,
+                                       QuantEncoding::Library<0>());
+  for (size_t idx = 0; idx < kNumQuantTables; idx++) {
+    const CompressParams::CustomDequantTable& custom =
+        cparams.vardct_dequant[idx];
+    if (custom.raw_den != 0) {
+      const size_t xsize = DequantMatrices::required_size_x[idx] * kBlockDim;
+      const size_t ysize = DequantMatrices::required_size_y[idx] * kBlockDim;
+      JXL_ASSIGN_OR_RETURN(Image image,
+                           Image::Create(memory_manager, xsize, ysize,
+                                         /*bitdepth=*/8, /*nb_chans=*/3));
+      JXL_ASSIGN_OR_RETURN(ModularStreamId stream,
+                           ModularStreamId::QuantTable(idx));
+      JXL_RETURN_IF_ERROR(EvaluateTreeWithZeroResiduals(
+          cparams.custom_fixed_tree, stream.ID(frame_dim), &image));
+      std::vector<int> qtable(3 * xsize * ysize);
+      for (size_t c = 0; c < 3; c++) {
+        for (size_t y = 0; y < ysize; y++) {
+          const int32_t* row = image.channel[c].Row(y);
+          for (size_t x = 0; x < xsize; x++) {
+            // The decoder checks this; the step (raw_den * value) must also be
+            // in the range of ComputeQuantTable.
+            double step = static_cast<double>(custom.raw_den) * row[x];
+            if (row[x] <= 0 || step > 1e8) {
+              return JXL_FAILURE(
+                  "Dequantization table %" PRIuS
+                  " has value %d at channel %" PRIuS " (x, y) = (%" PRIuS
+                  ", %" PRIuS
+                  "): values must be positive and at most 1e8 / den",
+                  idx, row[x], c, x, y);
+            }
+            qtable[(c * ysize + y) * xsize + x] = row[x];
+          }
+        }
+      }
+      encodings[idx] = QuantEncoding::RAW(std::move(qtable));
+      encodings[idx].qraw.qtable_den = custom.raw_den;
+    } else if (custom.num_bands != 0) {
+      if (custom.num_bands > DctQuantWeightParams::kMaxDistanceBands) {
+        return JXL_FAILURE("Too many distance bands");
+      }
+      // Quantization weights (inverse steps): the first band is signaled as
+      // is, the others as the ratio to the previous band, as a multiplier m
+      // (ratio 1 + m for m > 0, 1 / (1 - m) otherwise).
+      DctQuantWeightParams params;
+      params.num_distance_bands = custom.num_bands;
+      for (size_t c = 0; c < 3; c++) {
+        for (size_t i = 0; i < custom.num_bands; i++) {
+          float step = custom.band_steps[c][i];
+          if (!(step > 0)) return JXL_FAILURE("Invalid dequantization step");
+          float weight = 1.0f / step;
+          if (i == 0) {
+            params.distance_bands[c][i] = weight;
+          } else {
+            float ratio = step / custom.band_steps[c][i - 1];
+            // ratio of the weights is 1 / ratio.
+            params.distance_bands[c][i] =
+                ratio <= 1 ? 1.0f / ratio - 1.0f : 1.0f - ratio;
+          }
+        }
+      }
+      encodings[idx] = QuantEncoding::DCT(params);
+    }
+  }
+  JXL_RETURN_IF_ERROR(
+      DequantMatricesSetCustom(&shared->matrices, encodings, enc_modular));
+  return true;
+}
+
 // VarDCT data defined by cparams.custom_fixed_tree (see
 // CompressParams::vardct_from_tree). The LF and HF metadata streams are
 // encoded with that tree and zero residuals, so a decoder gets whatever the
@@ -1178,6 +1257,10 @@ Status ComputeVarDCTDataFromTree(const FrameHeader& frame_header,
     }
     JXL_RETURN_IF_ERROR(DequantMatricesSetCustomDC(
         memory_manager, &shared.matrices, cparams.vardct_lf_inv_quant.data()));
+  }
+  if (!cparams.vardct_dequant.empty()) {
+    JXL_RETURN_IF_ERROR(
+        SetDequantMatricesFromTree(frame_dim, cparams, enc_modular, &shared));
   }
   if (cparams.vardct_global_scale == 0 && cparams.vardct_quant_dc == 0) {
     shared.quantizer = Quantizer(shared.matrices);

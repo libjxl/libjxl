@@ -8,6 +8,7 @@
 #include <jxl/types.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -15,6 +16,7 @@
 #include <fstream>
 #include <iostream>
 #include <istream>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -45,9 +47,13 @@
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
+#include "lib/jxl/modular/encoding/enc_encoding.h"
+#include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/noise.h"
 #include "lib/jxl/pack_signed.h"
+#include "lib/jxl/quant_weights.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
@@ -314,6 +320,9 @@ struct FrameSettings {
   // HFMetaTree), combined with the frame's tree by stream ID.
   Tree lf_tree;
   Tree hf_meta_tree;
+  // Trees for RAW dequantization tables of a VarDCT frame (DequantTable), by
+  // quantization table index.
+  std::map<size_t, Tree> dequant_trees;
   // Image (canvas) size set by ImageSize; 0 = the first frame's size.
   size_t image_xsize = 0;
   size_t image_ysize = 0;
@@ -337,6 +346,36 @@ Status SplinesFromSplineData(const SplineData& spline_data,
   return true;
 }
 
+// Quantization tables (lib/jxl/quant_weights.h) by number (0..16), name, or
+// "all" (if allowed). Returns an empty list for an invalid name.
+std::vector<size_t> ParseQuantTables(std::string name, bool allow_all) {
+  static const std::unordered_map<std::string, size_t> table_names = {
+      {"DCT8", 0},        {"DCT", 0},     {"IDENTITY", 1},
+      {"DCT2x2", 2},      {"DCT4x4", 3},  {"DCT16", 4},
+      {"DCT32", 5},       {"DCT16x8", 6}, {"DCT8x16", 6},
+      {"DCT32x8", 7},     {"DCT8x32", 7}, {"DCT32x16", 8},
+      {"DCT16x32", 8},    {"DCT4x8", 9},  {"DCT8x4", 9},
+      {"AFV", 10},        {"DCT64", 11},  {"DCT64x32", 12},
+      {"DCT32x64", 12},   {"DCT128", 13}, {"DCT128x64", 14},
+      {"DCT64x128", 14},  {"DCT256", 15}, {"DCT256x128", 16},
+      {"DCT128x256", 16},
+  };
+  std::vector<size_t> tables;
+  if (allow_all && name == "all") {
+    for (size_t i = 0; i < jxl::kNumQuantTables; i++) tables.push_back(i);
+    return tables;
+  }
+  if (name.compare(0, 3, "DCT") == 0) {
+    std::replace(name.begin() + 3, name.end(), 'X', 'x');
+  }
+  if (table_names.count(name)) return {table_names.at(name)};
+  size_t num = 0;
+  size_t idx = 0;
+  if (!name.empty() && isdigit(name[0])) idx = std::stoul(name, &num);
+  if (num == 0 || num != name.size() || idx >= jxl::kNumQuantTables) return {};
+  return {idx};
+}
+
 // Appends a copy of `src` to `dst`, returns the index of its root.
 size_t AppendTree(const Tree& src, Tree* dst) {
   size_t offset = dst->size();
@@ -353,11 +392,16 @@ size_t AppendTree(const Tree& src, Tree* dst) {
 // Replaces `tree` by a tree that splits on the stream ID (property 1) of a
 // VarDCT frame of the given size: frame.lf_tree (if not empty) for the LF
 // image (VarDCT DC streams 1..n, for n DC groups), frame.hf_meta_tree (if not
-// empty) for the HF metadata (AC metadata streams 2n+1..3n), and `tree` for
-// all other streams, which only exist with extra channels.
+// empty) for the HF metadata (AC metadata streams 2n+1..3n), the trees of
+// frame.dequant_trees for the streams of their quantization tables (3n+1 +
+// the table index), and `tree` for all other streams, which only exist with
+// extra channels.
 void CombineVarDCTTrees(const FrameSettings& frame, size_t width, size_t height,
                         bool extra_channels, Tree* tree) {
-  if (frame.lf_tree.empty() && frame.hf_meta_tree.empty()) return;
+  if (frame.lf_tree.empty() && frame.hf_meta_tree.empty() &&
+      frame.dequant_trees.empty()) {
+    return;
+  }
   FrameDimensions frame_dim;
   frame_dim.Set(width, height, /*group_size_shift=*/1, /*max_hshift=*/0,
                 /*max_vshift=*/0, /*modular_mode=*/false, /*upsampling=*/1);
@@ -365,7 +409,7 @@ void CombineVarDCTTrees(const FrameSettings& frame, size_t width, size_t height,
   const Tree rest = *tree;
   Tree& out = *tree;
   out.clear();
-  // "if g > value", children set below.
+  // "if g > value" (then: lchild, else: rchild), children set below.
   auto split = [&](int value) {
     out.push_back(jxl::PropertyDecisionNode::Split(1, value, 0, 0));
     return out.size() - 1;
@@ -373,27 +417,128 @@ void CombineVarDCTTrees(const FrameSettings& frame, size_t width, size_t height,
   auto subtree = [&](const Tree& t) {
     return AppendTree(t.empty() ? rest : t, &out);
   };
-  if (!extra_channels) {
-    // if g > n: HF metadata, else LF
-    size_t root = split(n);
-    out[root].lchild = subtree(frame.hf_meta_tree);
-    out[root].rchild = subtree(frame.lf_tree);
+  auto set_children = [&](size_t node, size_t then_node, size_t else_node) {
+    out[node].lchild = then_node;
+    out[node].rchild = else_node;
+  };
+  // The streams up to the HF metadata (0..3n), and if not `bounded`, the
+  // others too. Decoders may reject splits outside the range of the property
+  // (jxl-rs does).
+  auto vardct_streams = [&](bool bounded) -> size_t {
+    if (frame.lf_tree.empty() && frame.hf_meta_tree.empty()) {
+      return subtree(rest);
+    }
+    if (!extra_channels) {
+      // if g > n: HF metadata, else LF
+      size_t root = split(n);
+      size_t hf = subtree(frame.hf_meta_tree);
+      size_t lf = subtree(frame.lf_tree);
+      set_children(root, hf, lf);
+      return root;
+    }
+    // if g > 2n (if g > 3n: rest, else HF metadata)
+    // else (if g > n: rest (modular LF), else (if g > 0: LF, else: rest))
+    size_t root = split(2 * n);
+    size_t hf = bounded ? 0 : split(3 * n);
+    size_t low = split(n);
+    size_t lf = split(0);
+    if (bounded) {
+      hf = subtree(frame.hf_meta_tree);
+    } else {
+      size_t hf_rest = subtree(rest);
+      size_t hf_meta = subtree(frame.hf_meta_tree);
+      set_children(hf, hf_rest, hf_meta);
+    }
+    set_children(root, hf, low);
+    size_t modular_lf = subtree(rest);
+    set_children(low, modular_lf, lf);
+    size_t lf_tree = subtree(frame.lf_tree);
+    size_t global = subtree(rest);
+    set_children(lf, lf_tree, global);
+    return root;
+  };
+  if (frame.dequant_trees.empty()) {
+    vardct_streams(/*bounded=*/false);
     return;
   }
-  // if g > 2n (if g > 3n: rest, else HF metadata)
-  // else (if g > n: rest (modular LF), else (if g > 0: LF, else: rest))
-  size_t root = split(2 * n);
-  size_t hf = split(3 * n);
-  size_t low = split(n);
-  size_t lf = split(0);
-  out[root].lchild = hf;
-  out[root].rchild = low;
-  out[hf].lchild = subtree(rest);
-  out[hf].rchild = subtree(frame.hf_meta_tree);
-  out[low].lchild = subtree(rest);
-  out[low].rchild = lf;
-  out[lf].lchild = subtree(frame.lf_tree);
-  out[lf].rchild = subtree(rest);
+  // if g > 3n: the quantization tables (if g > 3n + 1 + table: the next
+  // table ...), after them (with extra channels) the rest; else the streams
+  // up to the HF metadata.
+  size_t root = split(3 * n);
+  size_t tables_end = 0;
+  if (extra_channels) {
+    tables_end = split(3 * n + jxl::kNumQuantTables);
+    size_t after = subtree(rest);
+    out[tables_end].lchild = after;
+  }
+  std::vector<std::pair<size_t, const Tree*>> tables;
+  for (const auto& table : frame.dequant_trees) {
+    tables.emplace_back(table.first, &table.second);
+  }
+  size_t tables_root = 0;
+  size_t parent = 0;
+  for (size_t i = 0; i < tables.size(); i++) {
+    size_t node;
+    if (i + 1 == tables.size()) {
+      node = subtree(*tables[i].second);
+    } else {
+      node = split(3 * n + 1 + tables[i].first);
+      size_t table = subtree(*tables[i].second);
+      out[node].rchild = table;
+    }
+    if (i == 0) {
+      tables_root = node;
+    } else {
+      out[parent].lchild = node;
+    }
+    parent = node;
+  }
+  if (extra_channels) {
+    out[tables_end].rchild = tables_root;
+    tables_root = tables_end;
+  }
+  size_t low = vardct_streams(/*bounded=*/true);
+  set_children(root, tables_root, low);
+}
+
+// Checks the RAW dequantization tables that the tree gives (as
+// ComputeVarDCTDataFromTree will), with messages for the tree author.
+Status CheckDequantTables(JxlMemoryManager* memory_manager, const Tree& tree,
+                          size_t width, size_t height,
+                          const CompressParams& cparams) {
+  FrameDimensions frame_dim;
+  frame_dim.Set(width, height, /*group_size_shift=*/1, /*max_hshift=*/0,
+                /*max_vshift=*/0, /*modular_mode=*/false, /*upsampling=*/1);
+  for (size_t idx = 0; idx < cparams.vardct_dequant.size(); idx++) {
+    const float den = cparams.vardct_dequant[idx].raw_den;
+    if (den == 0) continue;
+    const size_t xsize = jxl::DequantMatrices::required_size_x[idx] * 8;
+    const size_t ysize = jxl::DequantMatrices::required_size_y[idx] * 8;
+    JXL_ASSIGN_OR_RETURN(
+        jxl::Image image,
+        jxl::Image::Create(memory_manager, xsize, ysize, 8, 3));
+    const size_t stream_id =
+        1 + 3 * frame_dim.num_dc_groups + idx;  // ModularStreamId::QuantTable
+    if (!jxl::EvaluateTreeWithZeroResiduals(tree, stream_id, &image)) {
+      fprintf(stderr, "Could not evaluate the tree of DequantTable %zu\n", idx);
+      return false;
+    }
+    for (size_t c = 0; c < 3; c++) {
+      for (size_t y = 0; y < ysize; y++) {
+        const int32_t* row = image.channel[c].Row(y);
+        for (size_t x = 0; x < xsize; x++) {
+          if (row[x] <= 0 || static_cast<double>(den) * row[x] > 1e8) {
+            fprintf(stderr,
+                    "DequantTable %zu: value %d at c = %zu, x = %zu, y = %zu; "
+                    "values must be positive (and den * value at most 1e8)\n",
+                    idx, row[x], c, x, y);
+            return false;
+          }
+        }
+      }
+    }
+  }
+  return true;
 }
 
 template <typename F>
@@ -628,6 +773,85 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     // libjxl order: X, Y, B
     cparams.vardct_lf_inv_quant = {v[1], v[0], v[2]};
+  } else if (t == "DequantFlat" || t == "DequantBands" || t == "DequantTable") {
+    // DequantFlat <table> <Y> <X> <B>: every coefficient of the table has the
+    // same dequantization step (per channel).
+    // DequantBands <table> <n> <n Y steps> <n X steps> <n B steps>: the steps
+    // at n (1..17) distance bands from the top-left coefficient to the
+    // opposite corner, interpolated geometrically (a parametric table).
+    // DequantTable <table> <den> <tree>: a RAW table, one integer (> 0) per
+    // coefficient, given by the tree (with zero residuals; channels 0 X, 1 Y,
+    // 2 B); the step is den * value.
+    // <table>: a quantization table 0..16, a name (DCT8, DCT16, DCT16X8,
+    // ...) or `all` (DequantFlat and DequantBands only).
+    std::string kind = t;
+    t = tok();
+    std::vector<size_t> tables = ParseQuantTables(t, kind != "DequantTable");
+    if (tables.empty()) {
+      fprintf(stderr,
+              "Invalid quantization table: %s (0..16, a name like DCT8, "
+              "DCT16X8, IDENTITY, AFV%s)\n",
+              t.c_str(), kind != "DequantTable" ? ", or all" : "");
+      return false;
+    }
+    cparams.vardct_dequant.resize(jxl::kNumQuantTables);
+    size_t num = 0;
+    if (kind == "DequantTable") {
+      t = tok();
+      float den = std::stof(t, &num);
+      if (num != t.size() || !(den >= 1.0f / (1 << 24) && den <= 65504)) {
+        fprintf(stderr, "Invalid DequantTable den (2^-24..65504): %s\n",
+                t.c_str());
+        return false;
+      }
+      Tree& subtree = frame.dequant_trees[tables[0]];
+      subtree.clear();
+      JXL_RETURN_IF_ERROR(ParseNode(tok, subtree, spline_data, frame, cparams,
+                                    W, H, io, have_next, x0, y0, buffer_size));
+      cparams.vardct_dequant[tables[0]] = {};
+      cparams.vardct_dequant[tables[0]].raw_den = den;
+    } else {
+      size_t n = 1;
+      if (kind == "DequantBands") {
+        t = tok();
+        n = std::stoul(t, &num);
+        if (num != t.size() || n < 1 ||
+            n > jxl::DctQuantWeightParams::kMaxDistanceBands) {
+          fprintf(stderr, "Invalid number of distance bands (1..17): %s\n",
+                  t.c_str());
+          return false;
+        }
+      }
+      CompressParams::CustomDequantTable table;
+      table.num_bands = n;
+      const size_t chan[3] = {1, 0, 2};  // Y, X, B -> libjxl order X, Y, B
+      for (size_t c : chan) {
+        for (size_t i = 0; i < n; i++) {
+          t = tok();
+          float step = std::stof(t, &num);
+          // Signaled as quantization weights (1 / step): the first band as a
+          // float16 of weight / 64, the others as float16 ratios.
+          if (num != t.size() || !(step >= 1e-6f && step <= 256)) {
+            fprintf(stderr, "Invalid dequantization step (1e-6..256): %s\n",
+                    t.c_str());
+            return false;
+          }
+          if (i > 0) {
+            float ratio = step / table.band_steps[c][i - 1];
+            if (!(ratio > 1.0f / 60000 && ratio < 60000)) {
+              fprintf(stderr, "Band steps %g and %g are too far apart\n",
+                      table.band_steps[c][i - 1], step);
+              return false;
+            }
+          }
+          table.band_steps[c][i] = step;
+        }
+      }
+      for (size_t i : tables) {
+        cparams.vardct_dequant[i] = table;
+        frame.dequant_trees.erase(i);
+      }
+    }
   } else if (t == "CoeffOrder") {
     // CoeffOrder <order class> [Y|X|B] <n> <u1> <v1> ... <un> <vn>: in the
     // coefficient order of that class (0..12, or a DCT name like DCT64; for
@@ -1098,9 +1322,10 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     io->metadata.m.modular_16_bit_buffer_sufficient = true;
   }
 
-  if (!frame.lf_tree.empty() || !frame.hf_meta_tree.empty()) {
+  if (!frame.lf_tree.empty() || !frame.hf_meta_tree.empty() ||
+      !frame.dequant_trees.empty()) {
     if (!cparams.vardct_from_tree) {
-      return JXL_FAILURE("LFTree and HFMetaTree need VarDCT");
+      return JXL_FAILURE("LFTree, HFMetaTree and DequantTable need VarDCT");
     }
     CombineVarDCTTrees(frame, width, height,
                        io->metadata.m.num_extra_channels > 0 ||
@@ -1196,6 +1421,13 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
         !cparams.vardct_from_tree) {
       return JXL_FAILURE("GlobalScale, LFQuant and LFChannelQuant need VarDCT");
     }
+    if (!cparams.vardct_dequant.empty() && !cparams.vardct_from_tree) {
+      return JXL_FAILURE("Dequantization tables need VarDCT");
+    }
+    if (!CheckDequantTables(memory_manager, cparams.custom_fixed_tree, width,
+                            height, cparams)) {
+      return JXL_FAILURE("Invalid dequantization table");
+    }
     if (frame.have_hf) {
       if (!cparams.vardct_from_tree) {
         return JXL_FAILURE("HF context keywords need VarDCT");
@@ -1227,13 +1459,17 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     cparams.manual_noise.clear();
     frame.lf_tree.clear();
     frame.hf_meta_tree.clear();
+    // RAW dequantization tables come from the frame's tree.
+    frame.dequant_trees.clear();
+    for (auto& table : cparams.vardct_dequant) table.raw_den = 0;
     if (!ParseNode(tok, tree, spline_data, frame, cparams, width, height, *io,
                    have_next, x0, y0, buffer_size)) {
       return JXL_FAILURE("Failed to ParseNode");
     }
-    if (!frame.lf_tree.empty() || !frame.hf_meta_tree.empty()) {
+    if (!frame.lf_tree.empty() || !frame.hf_meta_tree.empty() ||
+        !frame.dequant_trees.empty()) {
       if (!cparams.vardct_from_tree) {
-        return JXL_FAILURE("LFTree and HFMetaTree need VarDCT");
+        return JXL_FAILURE("LFTree, HFMetaTree and DequantTable need VarDCT");
       }
       CombineVarDCTTrees(frame, width, height,
                          metadata->m.num_extra_channels > 0, &tree);
