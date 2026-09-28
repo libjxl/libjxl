@@ -310,6 +310,10 @@ struct FrameSettings {
   // HF context model of VarDCT frames (persists).
   HFContextSettings hf;
   bool have_hf = false;
+  // Trees for the LF image and the HF metadata of a VarDCT frame (LFTree,
+  // HFMetaTree), combined with the frame's tree by stream ID.
+  Tree lf_tree;
+  Tree hf_meta_tree;
   // Image (canvas) size set by ImageSize; 0 = the first frame's size.
   size_t image_xsize = 0;
   size_t image_ysize = 0;
@@ -331,6 +335,65 @@ Status SplinesFromSplineData(const SplineData& spline_data,
     starting_points.push_back(spline.control_points.front());
   }
   return true;
+}
+
+// Appends a copy of `src` to `dst`, returns the index of its root.
+size_t AppendTree(const Tree& src, Tree* dst) {
+  size_t offset = dst->size();
+  for (jxl::PropertyDecisionNode node : src) {
+    if (node.property >= 0) {
+      node.lchild += offset;
+      node.rchild += offset;
+    }
+    dst->push_back(node);
+  }
+  return offset;
+}
+
+// Replaces `tree` by a tree that splits on the stream ID (property 1) of a
+// VarDCT frame of the given size: frame.lf_tree (if not empty) for the LF
+// image (VarDCT DC streams 1..n, for n DC groups), frame.hf_meta_tree (if not
+// empty) for the HF metadata (AC metadata streams 2n+1..3n), and `tree` for
+// all other streams, which only exist with extra channels.
+void CombineVarDCTTrees(const FrameSettings& frame, size_t width, size_t height,
+                        bool extra_channels, Tree* tree) {
+  if (frame.lf_tree.empty() && frame.hf_meta_tree.empty()) return;
+  FrameDimensions frame_dim;
+  frame_dim.Set(width, height, /*group_size_shift=*/1, /*max_hshift=*/0,
+                /*max_vshift=*/0, /*modular_mode=*/false, /*upsampling=*/1);
+  const int n = frame_dim.num_dc_groups;
+  const Tree rest = *tree;
+  Tree& out = *tree;
+  out.clear();
+  // "if g > value", children set below.
+  auto split = [&](int value) {
+    out.push_back(jxl::PropertyDecisionNode::Split(1, value, 0, 0));
+    return out.size() - 1;
+  };
+  auto subtree = [&](const Tree& t) {
+    return AppendTree(t.empty() ? rest : t, &out);
+  };
+  if (!extra_channels) {
+    // if g > n: HF metadata, else LF
+    size_t root = split(n);
+    out[root].lchild = subtree(frame.hf_meta_tree);
+    out[root].rchild = subtree(frame.lf_tree);
+    return;
+  }
+  // if g > 2n (if g > 3n: rest, else HF metadata)
+  // else (if g > n: rest (modular LF), else (if g > 0: LF, else: rest))
+  size_t root = split(2 * n);
+  size_t hf = split(3 * n);
+  size_t low = split(n);
+  size_t lf = split(0);
+  out[root].lchild = hf;
+  out[root].rchild = low;
+  out[hf].lchild = subtree(rest);
+  out[hf].rchild = subtree(frame.hf_meta_tree);
+  out[low].lchild = subtree(rest);
+  out[low].rchild = lf;
+  out[lf].lchild = subtree(frame.lf_tree);
+  out[lf].rchild = subtree(rest);
 }
 
 template <typename F>
@@ -523,6 +586,15 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       return false;
     }
     frame.have_hf = true;
+  } else if (t == "LFTree" || t == "HFMetaTree") {
+    // LFTree <tree>, HFMetaTree <tree>: the trees for the LF image and the HF
+    // metadata of a VarDCT frame, without splitting on the stream ID; the
+    // frame's tree is used for the other streams (and for these, if not
+    // given).
+    Tree& subtree = t == "LFTree" ? frame.lf_tree : frame.hf_meta_tree;
+    subtree.clear();
+    JXL_RETURN_IF_ERROR(ParseNode(tok, subtree, spline_data, frame, cparams, W,
+                                  H, io, have_next, x0, y0, buffer_size));
   } else if (t == "GlobalScale" || t == "LFQuant") {
     // GlobalScale <1..73728>, LFQuant <1..65536>: the quantizer of VarDCT
     // frames (defaults 1024 and 64). The LF step is 65536 / GlobalScale /
@@ -1026,6 +1098,16 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     io->metadata.m.modular_16_bit_buffer_sufficient = true;
   }
 
+  if (!frame.lf_tree.empty() || !frame.hf_meta_tree.empty()) {
+    if (!cparams.vardct_from_tree) {
+      return JXL_FAILURE("LFTree and HFMetaTree need VarDCT");
+    }
+    CombineVarDCTTrees(frame, width, height,
+                       io->metadata.m.num_extra_channels > 0 ||
+                           cparams.move_to_front_from_channel < -1,
+                       &tree);
+  }
+
   if (tree_out) {
     PrintTree(tree, tree_out);
   }
@@ -1143,9 +1225,18 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     frame.save_before_ct = false;
     have_next = JXL_FALSE;
     cparams.manual_noise.clear();
+    frame.lf_tree.clear();
+    frame.hf_meta_tree.clear();
     if (!ParseNode(tok, tree, spline_data, frame, cparams, width, height, *io,
                    have_next, x0, y0, buffer_size)) {
       return JXL_FAILURE("Failed to ParseNode");
+    }
+    if (!frame.lf_tree.empty() || !frame.hf_meta_tree.empty()) {
+      if (!cparams.vardct_from_tree) {
+        return JXL_FAILURE("LFTree and HFMetaTree need VarDCT");
+      }
+      CombineVarDCTTrees(frame, width, height,
+                         metadata->m.num_extra_channels > 0, &tree);
     }
     cparams.custom_fixed_tree = tree;
     // This frame's own splines (previously the first frame's were reused).
