@@ -1981,6 +1981,14 @@ Status ComputeEncodingData(
   if (enc_state.initialize_global_state && !jpeg_data) {
     ComputeChromacityAdjustments(cparams, color, group_rect,
                                  &mutable_frame_header);
+    if (cparams.vardct_from_tree) {
+      if (cparams.vardct_x_qm_scale >= 0) {
+        mutable_frame_header.x_qm_scale = cparams.vardct_x_qm_scale;
+      }
+      if (cparams.vardct_b_qm_scale >= 0) {
+        mutable_frame_header.b_qm_scale = cparams.vardct_b_qm_scale;
+      }
+    }
   }
 
   bool has_jpeg_data = (jpeg_data != nullptr);

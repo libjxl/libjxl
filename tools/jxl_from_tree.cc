@@ -713,6 +713,57 @@ bool SetHFContexts(const HFContextSettings& hf,
   return true;
 }
 
+// The name of tree property `p`, as written in tree files.
+std::string PropertyName(int p) {
+  static const char* kNames[16] = {
+      "c",           "g",      "y",    "x",    "|N|",  "|W|",  "N",    "W",
+      "W-WW-NW+NWW", "W+N-NW", "W-NW", "NW-N", "N-NE", "N-NN", "W-WW", "WGH"};
+  if (p < 16) return kNames[p];
+  static const char* kPrev[4] = {"Abs", "", "AbsErr", "Err"};
+  return "Prev" + std::to_string((p - 16) / 4 + 1) + kPrev[(p - 16) % 4];
+}
+
+// Decoders reject a tree with a split that the splits above it already
+// decide (DecodeTree: "Invalid tree"). Checks this, with a message.
+bool CheckTreeSplits(const Tree& tree, const char* what) {
+  struct Item {
+    size_t node;
+    std::vector<std::pair<int64_t, int64_t>> ranges;
+  };
+  std::vector<Item> stack;
+  stack.push_back({0, {}});
+  while (!stack.empty()) {
+    Item item = std::move(stack.back());
+    stack.pop_back();
+    const PropertyDecisionNode& node = tree[item.node];
+    if (node.property < 0) continue;
+    size_t p = node.property;
+    if (item.ranges.size() <= p) {
+      item.ranges.resize(p + 1, {std::numeric_limits<int32_t>::min(),
+                                 std::numeric_limits<int32_t>::max()});
+    }
+    int64_t lo = item.ranges[p].first;
+    int64_t hi = item.ranges[p].second;
+    if (node.splitval < lo || node.splitval >= hi) {
+      fprintf(stderr,
+              "Impossible split in the %s: 'if %s > %d' is always %s here "
+              "(the splits above give %s in %lld..%lld); decoders reject "
+              "such trees\n",
+              what, PropertyName(p).c_str(), node.splitval,
+              node.splitval < lo ? "true" : "false", PropertyName(p).c_str(),
+              static_cast<long long>(lo), static_cast<long long>(hi));
+      return false;
+    }
+    Item then_item{node.lchild, item.ranges};
+    then_item.ranges[p].first = node.splitval + 1;
+    Item else_item{node.rchild, item.ranges};
+    else_item.ranges[p].second = node.splitval;
+    stack.push_back(std::move(else_item));
+    stack.push_back(std::move(then_item));
+  }
+  return true;
+}
+
 // Per-frame settings besides the tree. Patches go to cparams.custom_patches.
 struct FrameSettings {
   // Reference slot to save this frame to; -1 = default (1 if not last).
@@ -1419,6 +1470,17 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       if (lists == 3) {
         frame.hf.lf_thresholds[c] = v;
       } else {
+        // The quant field of a block is 1..256 (QFTree / HF metadata value
+        // + 1); thresholds are coded as t - 1.
+        for (int q : v) {
+          if (q < 1 || q > 255) {
+            fprintf(stderr,
+                    "Invalid HFContextQF threshold %d: must be 1..255 (a "
+                    "block's quant field is its QFTree value + 1, 1..256)\n",
+                    q);
+            return false;
+          }
+        }
         frame.hf.qf_thresholds.assign(v.begin(), v.end());
       }
     }
@@ -1464,6 +1526,20 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       return false;
     }
     (global_scale ? cparams.vardct_global_scale : cparams.vardct_quant_dc) = v;
+  } else if (t == "XQMScale" || t == "BQMScale") {
+    // XQMScale <0..7>, BQMScale <0..7>: the HF steps of X (B) are multiplied
+    // by 0.8^(scale - 2) (XYB VarDCT frames only; by default 3 for X and 2
+    // for B here, so X steps are 0.8 times the dequantization table).
+    bool x = t == "XQMScale";
+    t = tok();
+    size_t num = 0;
+    int v = std::stoi(t, &num);
+    if (num != t.size() || v < 0 || v > 7) {
+      fprintf(stderr, "Invalid %s (0..7): %s\n", x ? "XQMScale" : "BQMScale",
+              t.c_str());
+      return false;
+    }
+    (x ? cparams.vardct_x_qm_scale : cparams.vardct_b_qm_scale) = v;
   } else if (t == "LFChannelQuant") {
     // LFChannelQuant <Y> <X> <B>: inverse LF quantization steps of the XYB
     // channels (defaults 512 4096 256: at the default GlobalScale and LFQuant,
@@ -1497,7 +1573,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     // DequantFlat <table> <Y> <X> <B>: every coefficient of the table has the
     // same dequantization step (per channel).
     // DequantBands <table> <n> <n Y steps> <n X steps> <n B steps>: the steps
-    // at n (1..17) distance bands from the top-left coefficient to the
+    // at n (1..16) distance bands from the top-left coefficient to the
     // opposite corner, interpolated geometrically (a parametric table).
     // DequantTable <table> <den> <tree>: a RAW table, one integer (> 0) per
     // coefficient, given by the tree (with zero residuals; channels 0 X, 1 Y,
@@ -1536,8 +1612,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
         t = tok();
         n = std::stoul(t, &num);
         if (num != t.size() || n < 1 ||
-            n > jxl::DctQuantWeightParams::kMaxDistanceBands) {
-          fprintf(stderr, "Invalid number of distance bands (1..17): %s\n",
+            n > (1u << jxl::DctQuantWeightParams::kLog2MaxDistanceBands)) {
+          fprintf(stderr, "Invalid number of distance bands (1..16): %s\n",
                   t.c_str());
           return false;
         }
@@ -2078,6 +2154,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   cparams.channel_colors_percent = 0;
   cparams.patches = jxl::Override::kOff;
   cparams.already_downsampled = true;
+  if (!CheckTreeSplits(tree, "tree")) {
+    return JXL_FAILURE("Invalid tree");
+  }
   cparams.custom_fixed_tree = tree;
 
   std::vector<QuantizedSpline> quantized_splines;
@@ -2225,6 +2304,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
         return JXL_FAILURE("Invalid ACSTree or QFTree");
       }
       CombineVarDCTTrees(frame, width, height, extra_channels, &tree);
+    }
+    if (!CheckTreeSplits(tree, "tree")) {
+      return JXL_FAILURE("Invalid tree");
     }
     cparams.custom_fixed_tree = tree;
     // This frame's own splines (previously the first frame's were reused).

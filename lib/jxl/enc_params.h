@@ -198,6 +198,11 @@ struct CompressParams {
   // With vardct_from_tree: optionally a custom block context map, and (if not
   // empty) one fixed token per HF context (block_ctx_map.NumACContexts() of
   // them): every HF symbol in a context is that token, so HF costs no bits.
+  // With vardct_from_tree and XYB: the frame header's x_qm_scale and
+  // b_qm_scale (0..7; -1 = the encoder's choice). A decoder multiplies the HF
+  // steps of X and B by 0.8^(scale - 2).
+  int vardct_x_qm_scale = -1;
+  int vardct_b_qm_scale = -1;
   bool use_custom_block_ctx_map = false;
   BlockCtxMap custom_block_ctx_map;
   std::vector<uint32_t> custom_hf_tokens;
