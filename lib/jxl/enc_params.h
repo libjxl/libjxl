@@ -180,6 +180,10 @@ struct CompressParams {
   // If not empty, this tree will be used for dc global section.
   // Used in jxl_from_tree tool.
   Tree custom_fixed_tree;
+  // Optimal LZ77 (slowest efforts) always uses the slower, more careful greedy
+  // first pass, instead of only for small inputs. Helps small files with large
+  // token streams, such as jxl_from_tree art. Used in jxl_from_tree tool.
+  bool lz77_careful_first_pass = false;
   // If not empty, these custom splines will be used instead of the computed
   // ones. Used in jxl_from_tee tool.
   SplineDataView custom_splines{};

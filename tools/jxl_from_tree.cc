@@ -506,6 +506,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   cparams.modular_group_size_shift = 3;
   cparams.colorspace = 0;
   cparams.speed_tier = jxl::SpeedTier::kGlacier;
+  // The token streams are huge (all-zero residuals) but most of the file is
+  // the tree: take the careful LZ77 first pass for all of them.
+  cparams.lz77_careful_first_pass = true;
   cparams.buffering = 0;
   JxlMemoryManager* memory_manager = jpegxl::tools::NoMemoryManager();
   auto io = jxl::make_unique<CodecInOut>(memory_manager);
