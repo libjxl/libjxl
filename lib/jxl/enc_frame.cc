@@ -1529,6 +1529,16 @@ Status ComputeEncodingData(
   }
 
   shared.image_features.patches.SetShared(&shared.reference_frames);
+  // Custom splines and patches (used by jxl_from_tree), for VarDCT and modular
+  // frames alike: the encoder does not search for its own.
+  if (cparams.custom_splines.HasAny()) {
+    shared.image_features.splines.SetData(cparams.custom_splines);
+  }
+  if (!cparams.custom_patches.empty()) {
+    JXL_RETURN_IF_ERROR(SetCustomPatches(cparams.custom_patches,
+                                         metadata->m.num_extra_channels,
+                                         &shared.image_features.patches));
+  }
   const FrameDimensions& frame_dim = shared.frame_dim;
   JXL_ASSIGN_OR_RETURN(
       shared.ac_strategy,

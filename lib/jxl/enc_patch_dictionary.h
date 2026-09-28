@@ -95,6 +95,11 @@ class PatchDictionaryEncoder {
   static Status SubtractFrom(const PatchDictionary& pdic, Image3F* opsin);
 };
 
+// Sets the patch dictionary to CompressParams::custom_patches, in the order
+// listed (later patches are drawn on top).
+Status SetCustomPatches(const std::vector<CompressParams::CustomPatch>& patches,
+                        size_t num_extra_channels, PatchDictionary* pdic);
+
 Status FindBestPatchDictionary(const Image3F& opsin,
                                PassesEncoderState* JXL_RESTRICT state,
                                const JxlCmsInterface& cms, ThreadPool* pool,
