@@ -323,6 +323,8 @@ struct FrameSettings {
   // Trees for RAW dequantization tables of a VarDCT frame (DequantTable), by
   // quantization table index.
   std::map<size_t, Tree> dequant_trees;
+  // Whether GroupShift was given (it does not apply to VarDCT frames).
+  bool group_shift_given = false;
   // Image (canvas) size set by ImageSize; 0 = the first frame's size.
   size_t image_xsize = 0;
   size_t image_ysize = 0;
@@ -677,6 +679,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     t = tok();
     size_t num = 0;
     cparams.modular_group_size_shift = std::stoul(t, &num);
+    frame.group_shift_given = true;
     if (num != t.size()) {
       fprintf(stderr, "Invalid GroupShift: %s\n", t.c_str());
       return false;
@@ -1393,6 +1396,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   JXL_RETURN_IF_ERROR(WriteCodestreamHeaders(metadata.get(), &writer, nullptr));
   writer.ZeroPadToByte();
 
+  bool warned_group_shift = false;
   while (true) {
     FrameInfo info;
     info.is_last = !FROM_JXL_BOOL(have_next);
@@ -1413,6 +1417,14 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     if (frame.save_before_ct) info.save_before_color_transform = true;
     info.source = frame.blend_source;
+    if (cparams.vardct_from_tree && frame.group_shift_given &&
+        !warned_group_shift) {
+      // The frame header has a group size only for modular frames.
+      fprintf(stderr,
+              "Note: GroupShift does not apply to VarDCT frames, which always "
+              "have 256x256 groups (and 2048x2048 LF groups)\n");
+      warned_group_shift = true;
+    }
     if (!cparams.custom_coeff_orders.empty() && !cparams.vardct_from_tree) {
       return JXL_FAILURE("CoeffOrder needs VarDCT");
     }
