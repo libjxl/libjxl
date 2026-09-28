@@ -16,8 +16,10 @@
 #include <fstream>
 #include <iostream>
 #include <istream>
+#include <limits>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -36,8 +38,11 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_patch_dictionary.h"
+#include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_context_map.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_params.h"
@@ -176,8 +181,206 @@ struct HFContextSettings {
   NamedTree coefficients;
 };
 
-// Builds the block context map and the fixed HF tokens for cparams.
-bool SetHFContexts(const HFContextSettings& hf, CompressParams& cparams) {
+// The blocks of a VarDCT frame as the decoder sees them, from the LF image and
+// the HF metadata that the tree gives (as in ComputeVarDCTDataFromTree).
+struct VarDCTBlocks {
+  size_t xsize_blocks, ysize_blocks;
+  // Per block: the LF context (bucket of the quantized LF), the quant field
+  // (1..256), and the AC strategy of the varblock starting there (-1 if the
+  // block is covered by a varblock starting elsewhere).
+  std::vector<uint8_t> lf_ctx;
+  std::vector<int32_t> qf;
+  std::vector<int> acs;
+};
+
+bool ComputeVarDCTBlocks(JxlMemoryManager* memory_manager, const Tree& tree,
+                         const FrameDimensions& frame_dim,
+                         const jxl::BlockCtxMap& map, VarDCTBlocks* blocks) {
+  const size_t xb = frame_dim.xsize_blocks;
+  const size_t yb = frame_dim.ysize_blocks;
+  blocks->xsize_blocks = xb;
+  blocks->ysize_blocks = yb;
+  blocks->lf_ctx.assign(xb * yb, 0);
+  blocks->qf.assign(xb * yb, 1);
+  blocks->acs.assign(xb * yb, -1);
+  std::vector<bool> covered(xb * yb);
+  const size_t n = frame_dim.num_dc_groups;
+  for (size_t g = 0; g < n; g++) {
+    const jxl::Rect r = frame_dim.DCGroupRect(g);
+    // LF: channels Y, X, B (VarDCT DC stream 1 + g).
+    auto lf = jxl::Image::Create(memory_manager, r.xsize(), r.ysize(), 8, 3);
+    if (!lf.ok()) return false;
+    jxl::Image lf_image = std::move(lf).value_();
+    if (!jxl::EvaluateTreeWithZeroResiduals(tree, 1 + g, &lf_image)) {
+      fprintf(stderr, "Could not evaluate the LF tree\n");
+      return false;
+    }
+    for (size_t y = 0; y < r.ysize(); y++) {
+      const int32_t* row_y = lf_image.channel[0].Row(y);
+      const int32_t* row_x = lf_image.channel[1].Row(y);
+      const int32_t* row_b = lf_image.channel[2].Row(y);
+      for (size_t x = 0; x < r.xsize(); x++) {
+        int bucket_x = 0;
+        int bucket_y = 0;
+        int bucket_b = 0;
+        for (int t : map.dc_thresholds[0]) bucket_x += row_x[x] > t;
+        for (int t : map.dc_thresholds[1]) bucket_y += row_y[x] > t;
+        for (int t : map.dc_thresholds[2]) bucket_b += row_b[x] > t;
+        int bucket = bucket_x * (map.dc_thresholds[2].size() + 1) + bucket_b;
+        bucket = bucket * (map.dc_thresholds[1].size() + 1) + bucket_y;
+        blocks->lf_ctx[(r.y0() + y) * xb + r.x0() + x] = bucket;
+      }
+    }
+    // HF metadata (stream 1 + 2n + g): c = 2 has the AC strategies (row 0)
+    // and quant fields (row 1) of the varblocks, in placement order.
+    auto meta = jxl::Image::Create(memory_manager, r.xsize(), r.ysize(), 8, 4);
+    if (!meta.ok()) return false;
+    jxl::Image meta_image = std::move(meta).value_();
+    const size_t tiles_x = (r.xsize() + 7) >> 3;
+    const size_t tiles_y = (r.ysize() + 7) >> 3;
+    for (size_t c = 0; c < 3; c++) {
+      auto ch = c < 2 ? jxl::Channel::Create(memory_manager, tiles_x, tiles_y)
+                      : jxl::Channel::Create(memory_manager,
+                                             r.xsize() * r.ysize(), 2);
+      if (!ch.ok()) return false;
+      meta_image.channel[c] = std::move(ch).value_();
+    }
+    if (!jxl::EvaluateTreeWithZeroResiduals(tree, 1 + 2 * n + g, &meta_image)) {
+      fprintf(stderr, "Could not evaluate the HF metadata tree\n");
+      return false;
+    }
+    const int32_t* acs_in = meta_image.channel[2].Row(0);
+    const int32_t* qf_in = meta_image.channel[2].Row(1);
+    size_t num = 0;
+    for (size_t iy = 0; iy < r.ysize(); iy++) {
+      for (size_t ix = 0; ix < r.xsize(); ix++) {
+        const size_t x = r.x0() + ix;
+        const size_t y = r.y0() + iy;
+        if (covered[y * xb + x]) continue;
+        const int32_t raw = acs_in[num];
+        if (!jxl::AcStrategy::IsRawStrategyValid(raw)) {
+          fprintf(stderr, "AC strategy %d (entry %zu) is not in 0..26\n", raw,
+                  num);
+          return false;
+        }
+        jxl::AcStrategy acs = jxl::AcStrategy::FromRawStrategy(raw);
+        const size_t group = jxl::kGroupDimInBlocks;
+        const size_t xend = std::min((x / group + 1) * group, xb);
+        const size_t yend = std::min((y / group + 1) * group, yb);
+        if (x + acs.covered_blocks_x() > xend ||
+            y + acs.covered_blocks_y() > yend) {
+          fprintf(stderr,
+                  "AC strategy %d (entry %zu) at block (%zu, %zu) crosses a "
+                  "group or image edge\n",
+                  raw, num, x, y);
+          return false;
+        }
+        for (size_t cy = 0; cy < acs.covered_blocks_y(); cy++) {
+          for (size_t cx = 0; cx < acs.covered_blocks_x(); cx++) {
+            if (covered[(y + cy) * xb + x + cx]) {
+              fprintf(stderr,
+                      "AC strategy %d (entry %zu) at block (%zu, %zu) "
+                      "overlaps an earlier block\n",
+                      raw, num, x, y);
+              return false;
+            }
+            covered[(y + cy) * xb + x + cx] = true;
+          }
+        }
+        blocks->acs[y * xb + x] = raw;
+        blocks->qf[y * xb + x] =
+            1 + std::max<int32_t>(0, std::min<int32_t>(255, qf_in[num]));
+        num++;
+      }
+    }
+  }
+  return true;
+}
+
+// Encoded size in bits of a context map.
+size_t ContextMapBits(JxlMemoryManager* memory_manager,
+                      const std::vector<uint8_t>& context_map) {
+  if (context_map.size() <= 1) return 0;
+  size_t num = *std::max_element(context_map.begin(), context_map.end()) + 1;
+  jxl::BitWriter writer{memory_manager};
+  if (!jxl::EncodeContextMap(context_map, num, &writer, jxl::LayerType::Ac,
+                             nullptr)) {
+    return std::numeric_limits<size_t>::max();
+  }
+  return writer.BitsWritten();
+}
+
+// Encoded size in bits of fixed HF tokens.
+size_t FixedTokensBits(JxlMemoryManager* memory_manager,
+                       const std::vector<uint32_t>& tokens) {
+  jxl::BitWriter writer{memory_manager};
+  jxl::EntropyEncodingData codes;
+  auto cost = jxl::EncodeFixedTokenHistograms(
+      memory_manager, tokens, &codes, &writer, jxl::LayerType::Ac, nullptr);
+  if (!cost.ok()) return std::numeric_limits<size_t>::max();
+  return writer.BitsWritten();
+}
+
+// Fills the entries of `values` that are -1 (don't care), in the way that
+// costs the fewest bits (as measured by `bits`): with the previous or the
+// next value that is set (longer runs), or with `fallback[i]` if that is not
+// -1 (else the previous value).
+template <typename T, typename Bits>
+std::vector<T> FillDontCares(const std::vector<int32_t>& values,
+                             const std::vector<int32_t>& fallback,
+                             const Bits& bits) {
+  std::vector<std::vector<T>> candidates;
+  for (size_t mode = 0; mode < 3; mode++) {
+    std::vector<int32_t> v = values;
+    if (mode == 0) {
+      for (size_t i = 0; i < v.size(); i++) {
+        if (v[i] < 0) v[i] = fallback[i];
+      }
+    }
+    if (mode == 2) std::reverse(v.begin(), v.end());
+    int32_t last = -1;
+    for (int32_t& x : v) {
+      if (x < 0) {
+        x = last;
+      } else {
+        last = x;
+      }
+    }
+    // Leading don't cares: the first value that is set.
+    int32_t first = 0;
+    for (int32_t x : v) {
+      if (x >= 0) {
+        first = x;
+        break;
+      }
+    }
+    for (int32_t& x : v) {
+      if (x < 0) x = first;
+    }
+    if (mode == 2) std::reverse(v.begin(), v.end());
+    candidates.emplace_back(v.begin(), v.end());
+  }
+  size_t best = 0;
+  size_t best_bits = std::numeric_limits<size_t>::max();
+  for (size_t i = 0; i < candidates.size(); i++) {
+    size_t b = bits(candidates[i]);
+    if (b < best_bits) {
+      best = i;
+      best_bits = b;
+    }
+  }
+  return candidates[best];
+}
+
+// Builds the block context map and the fixed HF tokens for cparams. With
+// fixed tokens, the decoder's behaviour is a function of the frame: this
+// replays it on the blocks of the frame (LF and HF metadata from `tree`), so
+// that only the contexts that are actually used get values from the
+// HFCoefficients tree (the others are chosen to make the context map cheap),
+// and unused block contexts are dropped.
+bool SetHFContexts(const HFContextSettings& hf,
+                   JxlMemoryManager* memory_manager, const Tree& tree,
+                   size_t width, size_t height, CompressParams& cparams) {
   jxl::BlockCtxMap& map = cparams.custom_block_ctx_map;
   map = jxl::BlockCtxMap();
   const size_t lf_chan[3] = {1, 0, 2};  // X, Y, B in libjxl order
@@ -224,76 +427,283 @@ bool SetHFContexts(const HFContextSettings& hf, CompressParams& cparams) {
     fprintf(stderr, "LF/QF thresholds need an HFBlockContext tree\n");
     return false;
   }
-  map.num_ctxs = *std::max_element(map.ctx_map.begin(), map.ctx_map.end()) + 1;
-  // The block context map is coded as a context map, which has to use every
-  // value below its maximum.
-  for (uint32_t ctx = 0; ctx < map.num_ctxs; ctx++) {
-    if (std::find(map.ctx_map.begin(), map.ctx_map.end(), ctx) ==
-        map.ctx_map.end()) {
-      fprintf(stderr,
-              "Block context %u is not used: block contexts have to be "
-              "0..n-1 without gaps\n",
-              ctx);
-      return false;
-    }
-  }
   cparams.use_custom_block_ctx_map = true;
+  // The ids of the block contexts as the tree gives them (0..15), the ids in
+  // the file are 0..n-1 without gaps (decoders reject a context map with an
+  // unused value).
+  const std::vector<uint8_t> tree_ctx_map = map.ctx_map;
 
-  if (hf.coefficients.nodes.empty()) return true;
-  // libjxl merges some (k, nzleft) pairs (and nzpred values) into one
-  // context. The first value assigned to a context wins: predicted counts in
-  // increasing order, coefficients densest first (k + nzleft = 64, the pairs
-  // of a block with all coefficients nonzero, then 63, ...).
-  std::vector<int64_t> tokens(map.NumACContexts(), -1);
-  size_t overridden = 0;
-  auto assign = [&](size_t ctx, uint32_t token) {
-    if (tokens[ctx] < 0) {
-      tokens[ctx] = token;
-    } else if (tokens[ctx] != token) {
-      overridden++;
+  if (hf.coefficients.nodes.empty()) {
+    // No fixed HF tokens: only renumber.
+    std::vector<int32_t> new_id(16, -1);
+    for (uint8_t v : tree_ctx_map) new_id[v] = 0;
+    map.num_ctxs = 0;
+    for (int32_t& id : new_id) {
+      if (id == 0) id = map.num_ctxs++;
     }
-  };
-  for (uint32_t bctx = 0; bctx < map.num_ctxs; bctx++) {
-    for (uint32_t nz = 0; nz <= 64; nz++) {
-      int32_t v = hf.coefficients.Eval(
-          {0, static_cast<int32_t>(bctx), static_cast<int32_t>(nz), 0, 0, 0});
+    for (uint8_t& v : map.ctx_map) v = new_id[v];
+    return true;
+  }
+
+  FrameDimensions frame_dim;
+  frame_dim.Set(width, height, /*group_size_shift=*/1, /*max_hshift=*/0,
+                /*max_vshift=*/0, /*modular_mode=*/false, /*upsampling=*/1);
+  VarDCTBlocks blocks;
+  if (!ComputeVarDCTBlocks(memory_manager, tree, frame_dim, map, &blocks)) {
+    return false;
+  }
+  // The value of each context: the tree's value for the first case that uses
+  // it (libjxl merges some nzpred values and (k, nzleft) pairs into one
+  // context), in this order: predicted counts in increasing order, then
+  // coefficients densest first (k + nzleft = 64, the pairs of a block with
+  // all coefficients nonzero, then 63, ...). Per tree block context: 37 slots
+  // for the number of nonzeros (by bucket of the predicted number), then
+  // kZeroDensityContextCount for the coefficients.
+  constexpr size_t kSlots =
+      jxl::kNonZeroBuckets + jxl::kZeroDensityContextCount;
+  std::vector<int32_t> slots(16 * kSlots, -1);
+  std::vector<int32_t> props(6);
+  // Token of the tree's value for `props`, or -1 after an error message.
+  auto tree_token = [&]() -> int32_t {
+    int32_t v = hf.coefficients.Eval(props);
+    if (props[0] == 0) {
       if (v < 0 || v > 255) {
         fprintf(stderr, "Number of nonzeros %d is not in 0..255\n", v);
-        return false;
+        return -1;
       }
-      assign(map.NonZeroContext(nz, bctx), v);
+      return v;
+    }
+    if (v < -128 || v > 127) {
+      fprintf(stderr, "Coefficient %d is not in -128..127\n", v);
+      return -1;
+    }
+    return jxl::PackSigned(v);
+  };
+  auto count_slot = [&](size_t pred) {
+    return (pred >= 64 ? 64 : pred < 8 ? pred : 4 + pred / 2);
+  };
+  for (uint32_t bctx = 0; bctx < 16; bctx++) {
+    if (std::find(tree_ctx_map.begin(), tree_ctx_map.end(), bctx) ==
+        tree_ctx_map.end()) {
+      continue;
+    }
+    int32_t* s = &slots[bctx * kSlots];
+    for (int32_t nz = 0; nz <= 64; nz++) {
+      props = {0, static_cast<int32_t>(bctx), nz, 0, 0, 0};
+      int32_t token = tree_token();
+      if (token < 0) return false;
+      if (s[count_slot(nz)] < 0) s[count_slot(nz)] = token;
     }
     for (uint32_t sum = 64; sum >= 2; sum--) {
       for (uint32_t k = 1; k < sum && k < 64; k++) {
         uint32_t nzleft = sum - k;
         if (nzleft >= 64) continue;
         for (uint32_t prev = 0; prev < 2; prev++) {
-          int32_t v = hf.coefficients.Eval(
-              {1, static_cast<int32_t>(bctx), 0, static_cast<int32_t>(k),
-               static_cast<int32_t>(nzleft), static_cast<int32_t>(prev)});
-          uint32_t token = jxl::PackSigned(v);
-          if (token > 255) {
-            fprintf(stderr, "Coefficient %d is not in -128..127\n", v);
-            return false;
-          }
-          assign(map.ZeroDensityContextsOffset(bctx) +
-                     jxl::ZeroDensityContext(nzleft, k, 1, 0, prev),
-                 token);
+          props = {1,
+                   static_cast<int32_t>(bctx),
+                   0,
+                   static_cast<int32_t>(k),
+                   static_cast<int32_t>(nzleft),
+                   static_cast<int32_t>(prev)};
+          int32_t token = tree_token();
+          if (token < 0) return false;
+          int32_t& t = s[jxl::kNonZeroBuckets +
+                         jxl::ZeroDensityContext(nzleft, k, 1, 0, prev)];
+          if (t < 0) t = token;
         }
       }
     }
   }
-  if (overridden) {
+
+  // Replay the decoder (DecodeACVarBlock), to find the contexts that are used
+  // and to check the blocks. A case that is used but has another value than
+  // its context is a conflict (the context's value is what decoders use).
+  std::vector<bool> reached(slots.size());
+  std::vector<bool> ctx_map_used(tree_ctx_map.size());
+  std::set<std::vector<int32_t>> conflicts;
+  std::string first_conflict;
+  const size_t xb = blocks.xsize_blocks;
+  const size_t yb = blocks.ysize_blocks;
+  auto slot_value = [&](size_t bctx, size_t slot, size_t bx, size_t by,
+                        size_t c) -> int32_t {
+    const size_t i = bctx * kSlots + slot;
+    reached[i] = true;
+    const int32_t s = slots[i] < 0 ? 0 : slots[i];
+    if (tree_token() != s && conflicts.insert(props).second &&
+        conflicts.size() == 1) {
+      char buf[300];
+      snprintf(buf, sizeof(buf),
+               "%s at block (%zu, %zu), channel %s (bctx %d, nzpred %d, "
+               "k %d, nzleft %d, prev %d): %d, but its context has %d",
+               props[0] == 0 ? "count" : "coefficient", bx, by,
+               c == 1   ? "Y"
+               : c == 0 ? "X"
+                        : "B",
+               props[1], props[2], props[3], props[4], props[5],
+               hf.coefficients.Eval(props),
+               props[0] == 0 ? s : jxl::UnpackSigned(s));
+      first_conflict = buf;
+    }
+    return s;
+  };
+  std::vector<int32_t> nz(3 * xb * yb);
+  for (size_t g = 0; g < frame_dim.num_groups; g++) {
+    const jxl::Rect r = frame_dim.BlockGroupRect(g);
+    for (size_t by = 0; by < r.ysize(); by++) {
+      for (size_t bx = 0; bx < r.xsize(); bx++) {
+        const size_t x = r.x0() + bx;
+        const size_t y = r.y0() + by;
+        const int raw = blocks.acs[y * xb + x];
+        if (raw < 0) continue;
+        jxl::AcStrategy acs = jxl::AcStrategy::FromRawStrategy(raw);
+        const size_t covered = acs.covered_blocks_x() * acs.covered_blocks_y();
+        const size_t log2_covered = jxl::CeilLog2Nonzero(covered);
+        const size_t size = covered * jxl::kDCTBlockSize;
+        const size_t ord = jxl::kStrategyOrder[raw];
+        const int32_t qf = blocks.qf[y * xb + x];
+        const size_t lf_ctx = blocks.lf_ctx[y * xb + x];
+        size_t qf_idx = 0;
+        for (uint32_t t : map.qf_thresholds) qf_idx += qf > t;
+        for (size_t c : {1, 0, 2}) {
+          int32_t* row_nz = &nz[c * xb * yb];
+          int32_t pred;
+          if (bx == 0) {
+            pred = by == 0 ? 32 : row_nz[(y - 1) * xb + x];
+          } else if (by == 0) {
+            pred = row_nz[y * xb + x - 1];
+          } else {
+            pred = (row_nz[(y - 1) * xb + x] + row_nz[y * xb + x - 1] + 1) / 2;
+          }
+          const size_t map_idx =
+              (((c < 2 ? c ^ 1 : 2) * jxl::kNumOrders + ord) * nqf + qf_idx) *
+                  map.num_dc_ctxs +
+              lf_ctx;
+          ctx_map_used[map_idx] = true;
+          const size_t bctx = tree_ctx_map[map_idx];
+          props = {0, static_cast<int32_t>(bctx), std::min(pred, 64), 0, 0, 0};
+          const int32_t count = slot_value(bctx, count_slot(pred), x, y, c);
+          if (static_cast<size_t>(count) > size - covered) {
+            fprintf(stderr,
+                    "Block (%zu, %zu), channel %s: %d nonzeros, but the block "
+                    "has only %zu HF coefficients\n",
+                    x, y,
+                    c == 1   ? "Y"
+                    : c == 0 ? "X"
+                             : "B",
+                    count, size - covered);
+            return false;
+          }
+          for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
+            for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
+              row_nz[(y + iy) * xb + x + ix] =
+                  (count + covered - 1) >> log2_covered;
+            }
+          }
+          size_t left = count;
+          size_t prev = (left > size / 16 ? 0 : 1);
+          size_t k = covered;
+          for (; k < size && left != 0; ++k) {
+            props = {1,
+                     static_cast<int32_t>(bctx),
+                     0,
+                     static_cast<int32_t>(k >> log2_covered),
+                     static_cast<int32_t>((left + covered - 1) >> log2_covered),
+                     static_cast<int32_t>(prev)};
+            const size_t slot =
+                jxl::kNonZeroBuckets +
+                jxl::ZeroDensityContext(left, k, covered, log2_covered, prev);
+            const int32_t token = slot_value(bctx, slot, x, y, c);
+            prev = token != 0;
+            left -= prev;
+          }
+          if (left != 0) {
+            fprintf(stderr,
+                    "Block (%zu, %zu), channel %s (block context %zu): %d "
+                    "nonzeros, but the coefficient values give only %zu (the "
+                    "decoder rejects the block)\n",
+                    x, y,
+                    c == 1   ? "Y"
+                    : c == 0 ? "X"
+                             : "B",
+                    bctx, count, count - left);
+            return false;
+          }
+        }
+      }
+    }
+  }
+  if (!conflicts.empty()) {
     fprintf(stderr,
-            "Note: %zu (k, nzleft, prev) or nzpred cases share a context with "
-            "an earlier case that has another value (libjxl merges them); the "
-            "earlier value is used\n",
-            overridden);
+            "Note: %zu used (nzpred) or (k, nzleft, prev) cases share a "
+            "context with an earlier case that has another value (libjxl "
+            "merges them); the earlier value is used. First: %s\n",
+            conflicts.size(), first_conflict.c_str());
   }
-  cparams.custom_hf_tokens.resize(tokens.size());
-  for (size_t i = 0; i < tokens.size(); i++) {
-    cparams.custom_hf_tokens[i] = tokens[i] < 0 ? 0 : tokens[i];
+
+  // Block contexts used by some block, renumbered without gaps; the entries
+  // of the block context map that no block uses may be any of them. Block
+  // contexts that no used context tells apart (the same value where both are
+  // used) are merged.
+  std::vector<bool> used(16);
+  for (size_t i = 0; i < tree_ctx_map.size(); i++) {
+    if (ctx_map_used[i]) used[tree_ctx_map[i]] = true;
   }
+  std::vector<int32_t> new_id(16, -1);
+  // Per merged block context: the values of its slots, -1 where not used.
+  std::vector<std::vector<int32_t>> merged;
+  for (size_t b = 0; b < 16; b++) {
+    if (!used[b]) continue;
+    std::vector<int32_t> values(kSlots, -1);
+    for (size_t i = 0; i < kSlots; i++) {
+      if (reached[b * kSlots + i])
+        values[i] = std::max(0, slots[b * kSlots + i]);
+    }
+    size_t m = 0;
+    for (; m < merged.size(); m++) {
+      bool compatible = true;
+      for (size_t i = 0; i < kSlots && compatible; i++) {
+        compatible =
+            values[i] < 0 || merged[m][i] < 0 || values[i] == merged[m][i];
+      }
+      if (compatible) break;
+    }
+    if (m == merged.size()) merged.emplace_back(kSlots, -1);
+    for (size_t i = 0; i < kSlots; i++) {
+      if (values[i] >= 0) merged[m][i] = values[i];
+    }
+    new_id[b] = m;
+  }
+  if (merged.empty()) merged.emplace_back(kSlots, -1);
+  map.num_ctxs = merged.size();
+  std::vector<int32_t> entries(tree_ctx_map.size());
+  std::vector<int32_t> fallback(tree_ctx_map.size());
+  for (size_t i = 0; i < tree_ctx_map.size(); i++) {
+    entries[i] = ctx_map_used[i] ? new_id[tree_ctx_map[i]] : -1;
+    fallback[i] = new_id[tree_ctx_map[i]];
+  }
+  map.ctx_map = FillDontCares<uint8_t>(
+      entries, fallback, [&](const std::vector<uint8_t>& m) {
+        return ContextMapBits(memory_manager, m);
+      });
+
+  // The fixed tokens: the used contexts get their values, the others are
+  // chosen to make the context map cheap.
+  const size_t num_ctxs = map.num_ctxs;
+  std::vector<int32_t> tokens(map.NumACContexts(), -1);
+  for (size_t m = 0; m < merged.size(); m++) {
+    for (size_t i = 0; i < jxl::kNonZeroBuckets; i++) {
+      tokens[i * num_ctxs + m] = merged[m][i];
+    }
+    for (size_t i = 0; i < jxl::kZeroDensityContextCount; i++) {
+      tokens[map.ZeroDensityContextsOffset(m) + i] =
+          merged[m][jxl::kNonZeroBuckets + i];
+    }
+  }
+  std::vector<int32_t> zeros(tokens.size(), 0);
+  cparams.custom_hf_tokens = FillDontCares<uint32_t>(
+      tokens, zeros, [&](const std::vector<uint32_t>& t) {
+        return FixedTokensBits(memory_manager, t);
+      });
   return true;
 }
 
@@ -1444,8 +1854,20 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       if (!cparams.vardct_from_tree) {
         return JXL_FAILURE("HF context keywords need VarDCT");
       }
-      if (!SetHFContexts(frame.hf, cparams)) {
+      if (!SetHFContexts(frame.hf, memory_manager, cparams.custom_fixed_tree,
+                         width, height, cparams)) {
         return JXL_FAILURE("Invalid HF context model");
+      }
+    } else if (cparams.vardct_from_tree) {
+      // Check the HF metadata (with messages).
+      FrameDimensions frame_dim;
+      frame_dim.Set(width, height, /*group_size_shift=*/1, /*max_hshift=*/0,
+                    /*max_vshift=*/0, /*modular_mode=*/false,
+                    /*upsampling=*/1);
+      VarDCTBlocks blocks;
+      if (!ComputeVarDCTBlocks(memory_manager, cparams.custom_fixed_tree,
+                               frame_dim, jxl::BlockCtxMap(), &blocks)) {
+        return JXL_FAILURE("Invalid HF metadata");
       }
     }
     for (const auto& p : cparams.custom_patches) {
