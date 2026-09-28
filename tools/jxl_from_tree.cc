@@ -7,6 +7,7 @@
 #include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -21,6 +22,7 @@
 #include <vector>
 
 #include "lib/extras/codec_in_out.h"
+#include "lib/jxl/ac_context.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
@@ -42,6 +44,7 @@
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/noise.h"
+#include "lib/jxl/pack_signed.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
@@ -78,6 +81,201 @@ struct SplineData {
   std::vector<Spline> splines;
 };
 
+// A decision tree over named integer properties, in the tree syntax
+// ("if <property> > <value>", "- Set <value>"): used for the HF context model
+// of VarDCT frames.
+struct NamedTree {
+  struct Node {
+    int property;  // -1 for a leaf
+    int32_t split_or_value;
+    size_t then_node, else_node;
+  };
+  std::vector<Node> nodes;
+
+  int32_t Eval(const std::vector<int32_t>& props) const {
+    size_t i = 0;
+    while (nodes[i].property >= 0) {
+      i = props[nodes[i].property] > nodes[i].split_or_value
+              ? nodes[i].then_node
+              : nodes[i].else_node;
+    }
+    return nodes[i].split_or_value;
+  }
+};
+
+template <typename F>
+bool ParseNamedTree(F& tok, const std::vector<std::string>& properties,
+                    NamedTree* tree) {
+  std::string t = tok();
+  while (t == "/*") {
+    while (t != "*/" && !t.empty()) t = tok();
+    t = tok();
+  }
+  size_t pos = tree->nodes.size();
+  tree->nodes.emplace_back();
+  size_t num = 0;
+  if (t == "if") {
+    std::string name = tok();
+    auto it = std::find(properties.begin(), properties.end(), name);
+    if (it == properties.end()) {
+      fprintf(stderr, "Unexpected property: %s (here:", name.c_str());
+      for (const std::string& p : properties) fprintf(stderr, " %s", p.c_str());
+      fprintf(stderr, ")\n");
+      return false;
+    }
+    if (tok() != ">") {
+      fprintf(stderr, "Expected >\n");
+      return false;
+    }
+    t = tok();
+    int32_t split = std::stoi(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid split value: %s\n", t.c_str());
+      return false;
+    }
+    tree->nodes[pos] = {static_cast<int>(it - properties.begin()), split, 0, 0};
+    tree->nodes[pos].then_node = tree->nodes.size();
+    if (!ParseNamedTree(tok, properties, tree)) return false;
+    tree->nodes[pos].else_node = tree->nodes.size();
+    return ParseNamedTree(tok, properties, tree);
+  }
+  if (t == "-" && tok() == "Set") {
+    t = tok();
+    int32_t value = std::stoi(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid value: %s\n", t.c_str());
+      return false;
+    }
+    tree->nodes[pos] = {-1, value, 0, 0};
+    return true;
+  }
+  fprintf(stderr, "Expected 'if' or '- Set' in HF context tree, got %s\n",
+          t.c_str());
+  return false;
+}
+
+// The HF context model of VarDCT frames (persists across frames).
+struct HFContextSettings {
+  // LF thresholds in the order of the LF channels (Y, X, B), QF thresholds.
+  std::vector<int> lf_thresholds[3];
+  std::vector<uint32_t> qf_thresholds;
+  bool custom_block_ctx = false;
+  // Properties c (0 Y, 1 X, 2 B), ord, qf, lfy, lfx, lfb -> block context.
+  NamedTree block_ctx;
+  // Properties hfkind (0 = number of nonzeros, 1 = coefficient), bctx,
+  // nzpred, k, nzleft, prev -> fixed value.
+  NamedTree coefficients;
+};
+
+// Builds the block context map and the fixed HF tokens for cparams.
+bool SetHFContexts(const HFContextSettings& hf, CompressParams& cparams) {
+  jxl::BlockCtxMap& map = cparams.custom_block_ctx_map;
+  map = jxl::BlockCtxMap();
+  const size_t lf_chan[3] = {1, 0, 2};  // X, Y, B in libjxl order
+  for (size_t c = 0; c < 3; c++) {
+    map.dc_thresholds[lf_chan[c]] = hf.lf_thresholds[c];
+  }
+  map.qf_thresholds = hf.qf_thresholds;
+  size_t nlf[3];  // buckets in libjxl order X, Y, B
+  map.num_dc_ctxs = 1;
+  for (size_t c = 0; c < 3; c++) {
+    nlf[c] = map.dc_thresholds[c].size() + 1;
+    map.num_dc_ctxs *= nlf[c];
+  }
+  const size_t nqf = map.qf_thresholds.size() + 1;
+  if (map.num_dc_ctxs * nqf > 64) {
+    fprintf(stderr, "Too many LF x QF buckets (at most 64)\n");
+    return false;
+  }
+  if (hf.custom_block_ctx) {
+    map.ctx_map.resize(3 * jxl::kNumOrders * nqf * map.num_dc_ctxs);
+    for (size_t c = 0; c < 3; c++) {
+      for (size_t ord = 0; ord < jxl::kNumOrders; ord++) {
+        for (size_t qf = 0; qf < nqf; qf++) {
+          for (size_t dc = 0; dc < map.num_dc_ctxs; dc++) {
+            // dc = (bucket_x * nB + bucket_b) * nY + bucket_y
+            int32_t lfy = dc % nlf[1];
+            int32_t lfb = (dc / nlf[1]) % nlf[2];
+            int32_t lfx = dc / nlf[1] / nlf[2];
+            int32_t v = hf.block_ctx.Eval(
+                {static_cast<int32_t>(c), static_cast<int32_t>(ord),
+                 static_cast<int32_t>(qf), lfy, lfx, lfb});
+            if (v < 0 || v > 15) {
+              fprintf(stderr, "Block context %d is not in 0..15\n", v);
+              return false;
+            }
+            map.ctx_map[((c * jxl::kNumOrders + ord) * nqf + qf) *
+                            map.num_dc_ctxs +
+                        dc] = v;
+          }
+        }
+      }
+    }
+  } else if (map.num_dc_ctxs * nqf > 1) {
+    fprintf(stderr, "LF/QF thresholds need an HFBlockContext tree\n");
+    return false;
+  }
+  map.num_ctxs = *std::max_element(map.ctx_map.begin(), map.ctx_map.end()) + 1;
+  cparams.use_custom_block_ctx_map = true;
+
+  if (hf.coefficients.nodes.empty()) return true;
+  // libjxl merges some (k, nzleft) pairs (and nzpred values) into one
+  // context. The first value assigned to a context wins: predicted counts in
+  // increasing order, coefficients densest first (k + nzleft = 64, the pairs
+  // of a block with all coefficients nonzero, then 63, ...).
+  std::vector<int64_t> tokens(map.NumACContexts(), -1);
+  size_t overridden = 0;
+  auto assign = [&](size_t ctx, uint32_t token) {
+    if (tokens[ctx] < 0) {
+      tokens[ctx] = token;
+    } else if (tokens[ctx] != token) {
+      overridden++;
+    }
+  };
+  for (uint32_t bctx = 0; bctx < map.num_ctxs; bctx++) {
+    for (uint32_t nz = 0; nz <= 64; nz++) {
+      int32_t v = hf.coefficients.Eval(
+          {0, static_cast<int32_t>(bctx), static_cast<int32_t>(nz), 0, 0, 0});
+      if (v < 0 || v > 255) {
+        fprintf(stderr, "Number of nonzeros %d is not in 0..255\n", v);
+        return false;
+      }
+      assign(map.NonZeroContext(nz, bctx), v);
+    }
+    for (uint32_t sum = 64; sum >= 2; sum--) {
+      for (uint32_t k = 1; k < sum && k < 64; k++) {
+        uint32_t nzleft = sum - k;
+        if (nzleft >= 64) continue;
+        for (uint32_t prev = 0; prev < 2; prev++) {
+          int32_t v = hf.coefficients.Eval(
+              {1, static_cast<int32_t>(bctx), 0, static_cast<int32_t>(k),
+               static_cast<int32_t>(nzleft), static_cast<int32_t>(prev)});
+          uint32_t token = jxl::PackSigned(v);
+          if (token > 255) {
+            fprintf(stderr, "Coefficient %d is not in -128..127\n", v);
+            return false;
+          }
+          assign(map.ZeroDensityContextsOffset(bctx) +
+                     jxl::ZeroDensityContext(nzleft, k, 1, 0, prev),
+                 token);
+        }
+      }
+    }
+  }
+  if (overridden) {
+    fprintf(stderr,
+            "Note: %zu (k, nzleft, prev) or nzpred cases share a context with "
+            "an earlier case that has another value (libjxl merges them); the "
+            "earlier value is used\n",
+            overridden);
+  }
+  cparams.custom_hf_tokens.resize(tokens.size());
+  for (size_t i = 0; i < tokens.size(); i++) {
+    cparams.custom_hf_tokens[i] = tokens[i] < 0 ? 0 : tokens[i];
+  }
+  return true;
+}
+
 // Per-frame settings besides the tree. Patches go to cparams.custom_patches.
 struct FrameSettings {
   // Reference slot to save this frame to; -1 = default (1 if not last).
@@ -94,6 +292,9 @@ struct FrameSettings {
   uint8_t patch_ec_mode = static_cast<uint8_t>(jxl::PatchBlendMode::kNone);
   // Whether subsequent patches clamp (kMul and alpha blend modes; persists).
   bool patch_clamp = false;
+  // HF context model of VarDCT frames (persists).
+  HFContextSettings hf;
+  bool have_hf = false;
   // Image (canvas) size set by ImageSize; 0 = the first frame's size.
   size_t image_xsize = 0;
   size_t image_ysize = 0;
@@ -261,6 +462,52 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     cparams.color_transform = ColorTransform::kXYB;
   } else if (t == "CbYCr") {
     cparams.color_transform = ColorTransform::kYCbCr;
+  } else if (t == "HFContextLF" || t == "HFContextQF") {
+    // HFContextLF <n> <thresholds> (for Y, X and B), HFContextQF <n>
+    // <thresholds>: buckets of the quantized LF and quant field for the block
+    // context of HF coefficients.
+    size_t lists = t == "HFContextLF" ? 3 : 1;
+    for (size_t c = 0; c < lists; c++) {
+      t = tok();
+      size_t num = 0;
+      size_t n = std::stoul(t, &num);
+      if (num != t.size() || n > 15) {
+        fprintf(stderr, "Invalid number of thresholds (max 15): %s\n",
+                t.c_str());
+        return false;
+      }
+      std::vector<int> v(n);
+      for (int& i : v) {
+        t = tok();
+        i = std::stoi(t, &num);
+        if (num != t.size()) {
+          fprintf(stderr, "Invalid threshold: %s\n", t.c_str());
+          return false;
+        }
+      }
+      if (lists == 3) {
+        frame.hf.lf_thresholds[c] = v;
+      } else {
+        frame.hf.qf_thresholds.assign(v.begin(), v.end());
+      }
+    }
+    frame.have_hf = true;
+  } else if (t == "HFBlockContext") {
+    frame.hf.block_ctx.nodes.clear();
+    if (!ParseNamedTree(tok, {"c", "ord", "qf", "lfy", "lfx", "lfb"},
+                        &frame.hf.block_ctx)) {
+      return false;
+    }
+    frame.hf.custom_block_ctx = true;
+    frame.have_hf = true;
+  } else if (t == "HFCoefficients") {
+    frame.hf.coefficients.nodes.clear();
+    if (!ParseNamedTree(tok,
+                        {"hfkind", "bctx", "nzpred", "k", "nzleft", "prev"},
+                        &frame.hf.coefficients)) {
+      return false;
+    }
+    frame.have_hf = true;
   } else if (t == "VarDCT") {
     // A VarDCT frame: the tree defines the LF image (stream IDs of the VarDCT
     // DC groups; channels Y, X, B of quantized LF) and the HF metadata (stream
@@ -726,6 +973,14 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     if (frame.save_before_ct) info.save_before_color_transform = true;
     info.source = frame.blend_source;
+    if (frame.have_hf) {
+      if (!cparams.vardct_from_tree) {
+        return JXL_FAILURE("HF context keywords need VarDCT");
+      }
+      if (!SetHFContexts(frame.hf, cparams)) {
+        return JXL_FAILURE("Invalid HF context model");
+      }
+    }
     for (const auto& p : cparams.custom_patches) {
       if (p.x + p.xsize > width || p.y + p.ysize > height) {
         fprintf(stderr,

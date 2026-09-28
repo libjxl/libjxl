@@ -1167,6 +1167,14 @@ Status ComputeVarDCTDataFromTree(const FrameHeader& frame_header,
   shared.quantizer = Quantizer(shared.matrices);
   shared.quantizer.RecomputeFromGlobalScale();
   shared.ac_strategy.FillInvalid();
+  if (enc_state->cparams.use_custom_block_ctx_map) {
+    shared.block_ctx_map = enc_state->cparams.custom_block_ctx_map;
+  }
+  if (!enc_state->cparams.custom_hf_tokens.empty() &&
+      enc_state->cparams.custom_hf_tokens.size() !=
+          shared.block_ctx_map.NumACContexts()) {
+    return JXL_FAILURE("Need one fixed HF token per HF context");
+  }
 
   enc_state->coeffs.clear();
   while (enc_state->coeffs.size() < enc_state->passes.size()) {
@@ -1456,6 +1464,16 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
     }
     hist_params.streaming_mode = enc_state->streaming_mode;
     hist_params.initialize_global_state = enc_state->initialize_global_state;
+    if (!enc_state->cparams.custom_hf_tokens.empty()) {
+      JXL_ENSURE(num_histogram_groups == 1);
+      JXL_ASSIGN_OR_RETURN(
+          size_t cost,
+          EncodeFixedTokenHistograms(
+              memory_manager, enc_state->cparams.custom_hf_tokens,
+              &enc_state->passes[i].codes, writer, LayerType::Ac, aux_out));
+      (void)cost;
+      continue;
+    }
     JXL_ASSIGN_OR_RETURN(
         size_t cost,
         BuildAndEncodeHistograms(
@@ -1830,8 +1848,11 @@ Status ComputeEncodingData(
       shared.num_histograms = 1;
       enc_state.histogram_idx.resize(frame_dim.num_groups);
     }
-    JXL_RETURN_IF_ERROR(
-        TokenizeAllCoefficients(frame_header, pool, &enc_state));
+    // With fixed HF tokens there is nothing to write per group.
+    if (cparams.custom_hf_tokens.empty()) {
+      JXL_RETURN_IF_ERROR(
+          TokenizeAllCoefficients(frame_header, pool, &enc_state));
+    }
   }
 
   if (cparams.modular_mode || !extra_channels.empty()) {

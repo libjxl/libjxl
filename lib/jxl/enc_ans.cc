@@ -1079,6 +1079,66 @@ Status EncodeHistograms(const EntropyEncodingData& codes, BitWriter* writer,
       /*finished_histogram=*/true);
 }
 
+StatusOr<size_t> EncodeFixedTokenHistograms(JxlMemoryManager* memory_manager,
+                                            const std::vector<uint32_t>& tokens,
+                                            EntropyEncodingData* codes,
+                                            BitWriter* writer, LayerType layer,
+                                            AuxOut* aux_out) {
+  // One cluster per distinct token, in order of first use.
+  std::vector<uint32_t> cluster_tokens;
+  std::vector<uint8_t> context_map(tokens.size());
+  for (size_t c = 0; c < tokens.size(); c++) {
+    if (tokens[c] >= 256) {
+      return JXL_FAILURE("Fixed token %u is not below 256", tokens[c]);
+    }
+    size_t i = 0;
+    while (i < cluster_tokens.size() && cluster_tokens[i] != tokens[c]) i++;
+    if (i == cluster_tokens.size()) {
+      if (i == kClustersLimit) return JXL_FAILURE("Too many fixed tokens");
+      cluster_tokens.push_back(tokens[c]);
+    }
+    context_map[c] = static_cast<uint8_t>(i);
+  }
+  codes->lz77 = LZ77Params();
+  codes->lz77.enabled = false;
+  codes->context_map = context_map;
+  codes->use_prefix_code = true;
+  codes->log_alpha_size = PREFIX_MAX_BITS;
+  // Values below 256 are the token itself (no raw bits).
+  codes->uint_config.assign(cluster_tokens.size(), HybridUintConfig(8, 0, 0));
+  codes->encoding_info.clear();
+  size_t cost = 0;
+  const auto& body = [&]() -> Status {
+    size_t b0 = writer->BitsWritten();
+    JXL_RETURN_IF_ERROR(Bundle::Write(codes->lz77, writer, layer, aux_out));
+    if (tokens.size() > 1) {
+      JXL_RETURN_IF_ERROR(EncodeContextMap(context_map, cluster_tokens.size(),
+                                           writer, layer, aux_out));
+    }
+    writer->Write(1, 1);  // prefix codes
+    EncodeUintConfigs(codes->uint_config, writer, codes->log_alpha_size);
+    for (uint32_t token : cluster_tokens) StoreVarLenUint16(token, writer);
+    for (uint32_t token : cluster_tokens) {
+      Histogram histogram;
+      histogram.Add(token);
+      codes->encoding_info.emplace_back();
+      codes->encoding_info.back().resize(token + 1);
+      JXL_ASSIGN_OR_RETURN(
+          size_t unused_cost,
+          codes->BuildAndStoreANSEncodingData(
+              memory_manager, HistogramParams::ANSHistogramStrategy::kPrecise,
+              histogram, writer));
+      (void)unused_cost;
+    }
+    cost = writer->BitsWritten() - b0;
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(writer->WithMaxBits(
+      1024 + tokens.size() * 16 + cluster_tokens.size() * 64, layer, aux_out,
+      body, /*finished_histogram=*/true));
+  return cost;
+}
+
 StatusOr<size_t> BuildAndEncodeHistograms(
     JxlMemoryManager* memory_manager, const HistogramParams& params,
     size_t num_contexts, std::vector<std::vector<Token>>& tokens,

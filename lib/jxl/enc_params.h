@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/ac_context.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_progressive_split.h"
@@ -193,6 +194,12 @@ struct CompressParams {
   // gives with all residuals zero, and all HF coefficients are zero. Used in
   // jxl_from_tree tool.
   bool vardct_from_tree = false;
+  // With vardct_from_tree: optionally a custom block context map, and (if not
+  // empty) one fixed token per HF context (block_ctx_map.NumACContexts() of
+  // them): every HF symbol in a context is that token, so HF costs no bits.
+  bool use_custom_block_ctx_map = false;
+  BlockCtxMap custom_block_ctx_map;
+  std::vector<uint32_t> custom_hf_tokens;
   // If not empty, these custom splines will be used instead of the computed
   // ones. Used in jxl_from_tee tool.
   SplineDataView custom_splines{};
