@@ -304,8 +304,13 @@ size_t ContextMapBits(JxlMemoryManager* memory_manager,
   if (context_map.size() <= 1) return 0;
   size_t num = *std::max_element(context_map.begin(), context_map.end()) + 1;
   jxl::BitWriter writer{memory_manager};
-  if (!jxl::EncodeContextMap(context_map, num, &writer, jxl::LayerType::Ac,
-                             nullptr)) {
+  // EncodeContextMap writes directly for a single histogram, so it needs an
+  // allotment (writing without one is out of bounds).
+  if (!writer.WithMaxBits(
+          1024 + 24 * context_map.size(), jxl::LayerType::Ac, nullptr, [&] {
+            return jxl::EncodeContextMap(context_map, num, &writer,
+                                         jxl::LayerType::Ac, nullptr);
+          })) {
     return std::numeric_limits<size_t>::max();
   }
   return writer.BitsWritten();
