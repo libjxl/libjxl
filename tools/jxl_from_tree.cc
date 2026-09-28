@@ -219,6 +219,18 @@ bool SetHFContexts(const HFContextSettings& hf, CompressParams& cparams) {
     return false;
   }
   map.num_ctxs = *std::max_element(map.ctx_map.begin(), map.ctx_map.end()) + 1;
+  // The block context map is coded as a context map, which has to use every
+  // value below its maximum.
+  for (uint32_t ctx = 0; ctx < map.num_ctxs; ctx++) {
+    if (std::find(map.ctx_map.begin(), map.ctx_map.end(), ctx) ==
+        map.ctx_map.end()) {
+      fprintf(stderr,
+              "Block context %u is not used: block contexts have to be "
+              "0..n-1 without gaps\n",
+              ctx);
+      return false;
+    }
+  }
   cparams.use_custom_block_ctx_map = true;
 
   if (hf.coefficients.nodes.empty()) return true;
@@ -521,10 +533,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     // DCT16X8, which is 8 wide and 16 tall); in the wide one (DCT8X16), the
     // same entry is frequency (v, u).
     static const std::unordered_map<std::string, size_t> order_names = {
-        {"DCT8", 0},       {"DCT16", 2},     {"DCT32", 3},
-        {"DCT16x8", 4},    {"DCT32x8", 5},   {"DCT32x16", 6},
-        {"DCT64", 7},      {"DCT64x32", 8},  {"DCT128", 9},
-        {"DCT128x64", 10}, {"DCT256", 11},   {"DCT256x128", 12},
+        {"DCT8", 0},    {"DCT16", 2},      {"DCT32", 3},   {"DCT16x8", 4},
+        {"DCT32x8", 5}, {"DCT32x16", 6},   {"DCT64", 7},   {"DCT64x32", 8},
+        {"DCT128", 9},  {"DCT128x64", 10}, {"DCT256", 11}, {"DCT256x128", 12},
     };
     t = tok();
     size_t num = 0;
@@ -578,8 +589,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
         return false;
       }
       if (uv[0] < rows && uv[1] < columns) {
-        fprintf(stderr, "Coefficient (%zu, %zu) is an LLF coefficient\n",
-                uv[0], uv[1]);
+        fprintf(stderr, "Coefficient (%zu, %zu) is an LLF coefficient\n", uv[0],
+                uv[1]);
         return false;
       }
       uint32_t pos = uv[0] * columns * 8 + uv[1];
