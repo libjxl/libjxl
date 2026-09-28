@@ -32,7 +32,11 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
                                size_t xsize, size_t ysize,
                                size_t num_extra_channels,
                                bool* uses_extra_channels) {
+  // The dictionary is reused across frames: blendings_ is indexed by position
+  // index, so stale entries from a previous frame must not remain.
   positions_.clear();
+  ref_positions_.clear();
+  blendings_.clear();
   blendings_stride_ = num_extra_channels + 1;
   std::vector<uint8_t> context_map;
   ANSCode code;
