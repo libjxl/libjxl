@@ -200,6 +200,14 @@ struct CompressParams {
   bool use_custom_block_ctx_map = false;
   BlockCtxMap custom_block_ctx_map;
   std::vector<uint32_t> custom_hf_tokens;
+  // With vardct_from_tree: if not empty (3 * kNumOrders entries, for order
+  // class o and channel c (0 X, 1 Y, 2 B) at 3 * o + c), custom coefficient
+  // orders. A non-empty entry lists the positions (row * columns + column, in
+  // the coefficient layout of the order class, which has at least as many
+  // columns as rows) that come right after the LLF coefficients, in that order;
+  // the other positions keep their default order. The orders of the classes
+  // with a non-empty entry are signaled.
+  std::vector<std::vector<uint32_t>> custom_coeff_orders;
   // If not empty, these custom splines will be used instead of the computed
   // ones. Used in jxl_from_tee tool.
   SplineDataView custom_splines{};

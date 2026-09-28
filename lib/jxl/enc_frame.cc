@@ -1334,6 +1334,64 @@ Status ComputeAllCoeffOrders(PassesEncoderState& enc_state,
   return true;
 }
 
+// Sets and signals the orders of cparams.custom_coeff_orders.
+Status SetCustomCoeffOrders(PassesEncoderState& enc_state) {
+  const auto& custom = enc_state.cparams.custom_coeff_orders;
+  if (custom.empty()) return true;
+  if (custom.size() != 3 * kNumOrders) {
+    return JXL_FAILURE("Need 3 * kNumOrders custom coefficient orders");
+  }
+  PassesSharedState& shared = enc_state.shared;
+  std::vector<coeff_order_t> natural_order;
+  uint16_t computed = 0;
+  for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
+    uint8_t ord = kStrategyOrder[o];
+    if (computed & (1 << ord)) continue;
+    computed |= 1 << ord;
+    if (custom[3 * ord].empty() && custom[3 * ord + 1].empty() &&
+        custom[3 * ord + 2].empty()) {
+      continue;
+    }
+    AcStrategy acs = AcStrategy::FromRawStrategy(o);
+    const size_t llf = acs.covered_blocks_x() * acs.covered_blocks_y();
+    const size_t size = kDCTBlockSize * llf;
+    size_t rows = acs.covered_blocks_y();
+    size_t columns = acs.covered_blocks_x();
+    CoefficientLayout(&rows, &columns);
+    natural_order.resize(size);
+    acs.ComputeNaturalCoeffOrder(natural_order.data());
+    for (size_t c = 0; c < 3; c++) {
+      std::vector<coeff_order_t> order(natural_order);
+      std::vector<bool> taken(size);
+      size_t k = llf;
+      for (uint32_t pos : custom[3 * ord + c]) {
+        if (pos >= size || taken[pos]) {
+          return JXL_FAILURE("Invalid or repeated position %u in order %u",
+                             pos, ord);
+        }
+        if (pos / (columns * kBlockDim) < rows &&
+            pos % (columns * kBlockDim) < columns) {
+          return JXL_FAILURE("Position %u in order %u is an LLF coefficient",
+                             pos, ord);
+        }
+        taken[pos] = true;
+        order[k++] = pos;
+      }
+      for (size_t i = llf; i < size; i++) {
+        if (!taken[natural_order[i]]) order[k++] = natural_order[i];
+      }
+      JXL_ENSURE(k == size);
+      for (size_t i = 0; i < enc_state.used_orders.size(); i++) {
+        memcpy(&shared.coeff_orders[i * shared.coeff_order_size +
+                                    CoeffOrderOffset(ord, c)],
+               order.data(), size * sizeof(coeff_order_t));
+        enc_state.used_orders[i] |= 1u << ord;
+      }
+    }
+  }
+  return true;
+}
+
 // Working area for TokenizeCoefficients (per-group!)
 struct EncCache {
   // Allocates memory when first called.
@@ -1844,6 +1902,9 @@ Status ComputeEncodingData(
           &enc_state, aux_out));
     }
     JXL_RETURN_IF_ERROR(ComputeAllCoeffOrders(enc_state, frame_dim));
+    if (cparams.vardct_from_tree) {
+      JXL_RETURN_IF_ERROR(SetCustomCoeffOrders(enc_state));
+    }
     if (!enc_state.streaming_mode) {
       shared.num_histograms = 1;
       enc_state.histogram_idx.resize(frame_dim.num_groups);

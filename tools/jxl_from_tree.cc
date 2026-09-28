@@ -23,11 +23,14 @@
 
 #include "lib/extras/codec_in_out.h"
 #include "lib/jxl/ac_context.h"
+#include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
+#include "lib/jxl/coeff_order.h"
+#include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_patch_dictionary.h"
@@ -508,6 +511,89 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       return false;
     }
     frame.have_hf = true;
+  } else if (t == "CoeffOrder") {
+    // CoeffOrder <order class> [Y|X|B] <n> <u1> <v1> ... <un> <vn>: in the
+    // coefficient order of that class (0..12, or a DCT name like DCT64; for
+    // all channels unless one is given), coefficients (u, v) come right after
+    // the LLF ones, so the first of them is at scan index covered_blocks; the
+    // other coefficients keep the default order. u and v are the horizontal and
+    // vertical frequency in the square or tall transform of the class (like
+    // DCT16X8, which is 8 wide and 16 tall); in the wide one (DCT8X16), the
+    // same entry is frequency (v, u).
+    static const std::unordered_map<std::string, size_t> order_names = {
+        {"DCT8", 0},       {"DCT16", 2},     {"DCT32", 3},
+        {"DCT16x8", 4},    {"DCT32x8", 5},   {"DCT32x16", 6},
+        {"DCT64", 7},      {"DCT64x32", 8},  {"DCT128", 9},
+        {"DCT128x64", 10}, {"DCT256", 11},   {"DCT256x128", 12},
+    };
+    t = tok();
+    size_t num = 0;
+    size_t ord;
+    std::string name = t;
+    std::replace(name.begin(), name.end(), 'X', 'x');
+    if (order_names.count(name)) {
+      ord = order_names.at(name);
+    } else {
+      ord = std::stoul(t, &num);
+      if (num != t.size() || ord >= jxl::kNumOrders) {
+        fprintf(stderr, "Invalid coefficient order class (0..12): %s\n",
+                t.c_str());
+        return false;
+      }
+    }
+    t = tok();
+    std::vector<size_t> channels = {0, 1, 2};  // libjxl order: X, Y, B
+    if (t == "Y" || t == "X" || t == "B") {
+      channels = {t == "X" ? 0u : t == "Y" ? 1u : 2u};
+      t = tok();
+    }
+    size_t n = std::stoul(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid number of coefficients: %s\n", t.c_str());
+      return false;
+    }
+    size_t raw = 0;
+    while (jxl::kStrategyOrder[raw] != ord) raw++;
+    jxl::AcStrategy acs = jxl::AcStrategy::FromRawStrategy(raw);
+    size_t rows = acs.covered_blocks_y();
+    size_t columns = acs.covered_blocks_x();
+    jxl::CoefficientLayout(&rows, &columns);
+    // In the coefficient layout (rows <= columns), the row is the horizontal
+    // and the column the vertical frequency of the square or tall transform.
+    std::vector<uint32_t> positions;
+    for (size_t i = 0; i < n; i++) {
+      size_t uv[2];
+      for (size_t& v : uv) {
+        t = tok();
+        v = std::stoul(t, &num);
+        if (num != t.size()) {
+          fprintf(stderr, "Invalid coefficient frequency: %s\n", t.c_str());
+          return false;
+        }
+      }
+      if (uv[0] >= rows * 8 || uv[1] >= columns * 8) {
+        fprintf(stderr,
+                "Coefficient (%zu, %zu) is not in the %zux%zu (WxH) block\n",
+                uv[0], uv[1], rows * 8, columns * 8);
+        return false;
+      }
+      if (uv[0] < rows && uv[1] < columns) {
+        fprintf(stderr, "Coefficient (%zu, %zu) is an LLF coefficient\n",
+                uv[0], uv[1]);
+        return false;
+      }
+      uint32_t pos = uv[0] * columns * 8 + uv[1];
+      if (std::find(positions.begin(), positions.end(), pos) !=
+          positions.end()) {
+        fprintf(stderr, "Coefficient (%zu, %zu) is repeated\n", uv[0], uv[1]);
+        return false;
+      }
+      positions.push_back(pos);
+    }
+    cparams.custom_coeff_orders.resize(3 * jxl::kNumOrders);
+    for (size_t c : channels) {
+      cparams.custom_coeff_orders[3 * ord + c] = positions;
+    }
   } else if (t == "VarDCT") {
     // A VarDCT frame: the tree defines the LF image (stream IDs of the VarDCT
     // DC groups; channels Y, X, B of quantized LF) and the HF metadata (stream
@@ -705,6 +791,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     spline_data.splines.push_back(std::move(spline));
   } else if (t == "Gaborish") {
     cparams.gaborish = jxl::Override::kOn;
+  } else if (t == "NoGaborish") {
+    // Gaborish is on by default in VarDCT frames.
+    cparams.gaborish = jxl::Override::kOff;
   } else if (t == "DeltaPalette") {
     cparams.lossy_palette = true;
     cparams.palette_colors = 0;
@@ -973,6 +1062,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     if (frame.save_before_ct) info.save_before_color_transform = true;
     info.source = frame.blend_source;
+    if (!cparams.custom_coeff_orders.empty() && !cparams.vardct_from_tree) {
+      return JXL_FAILURE("CoeffOrder needs VarDCT");
+    }
     if (frame.have_hf) {
       if (!cparams.vardct_from_tree) {
         return JXL_FAILURE("HF context keywords need VarDCT");
