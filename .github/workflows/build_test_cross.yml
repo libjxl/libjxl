@@ -23,8 +23,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  SDE_ID: "813591"
-  SDE_VERSION: "9.33.0-2024-01-07"
+  SDE_ID: "924984"
+  SDE_VERSION: "10.13.1-2026-07-28"
+  SDE_SHA256: "94e97d623fec54385686e1e7ba65ebc9941748c05ee451423948334892bf2b50"
 
 jobs:
   compile:
@@ -192,9 +193,10 @@ jobs:
         cd sde
         SDE_ARCHIVE=sde.tar.xz
         if [ ! -f "${SDE_ARCHIVE}" ]; then
-          curl -L --show-error -o "${SDE_ARCHIVE}" \
+          curl --fail -L --show-error -o "${SDE_ARCHIVE}" \
             https://downloadmirror.intel.com/${{ env.SDE_ID }}/sde-external-${{ env.SDE_VERSION }}-lin.tar.xz
         fi
+        printf '%s  %s\n' "${SDE_SHA256}" "${SDE_ARCHIVE}" | sha256sum --check
         tar --strip-components=1 -xJf "${SDE_ARCHIVE}"
         cd ..
 
