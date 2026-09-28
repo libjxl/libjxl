@@ -1795,6 +1795,11 @@ Status ModularFrameEncoder::AddACMetadata(const Rect& r, size_t group_index,
       num++;
     }
   }
+  if (cparams_.vardct_from_tree) {
+    // The AC strategies came from the tree, evaluated with one entry per block
+    // (see ComputeVarDCTDataFromTree): keep that count.
+    num = r.xsize() * r.ysize();
+  }
   image.channel[2].w = num;
   ac_metadata_size[group_index] = num;
   return true;

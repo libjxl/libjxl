@@ -37,6 +37,13 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
                               LayerType layer = static_cast<LayerType>(0),
                               size_t group_id = 0);
 
+// Computes the image a decoder would get from `tree` with all residuals zero
+// (as in a stream encoded with ModularOptions::zero_tokens and no transforms):
+// the channels of `image` must have their sizes set; their samples are
+// overwritten. `group_id` is the stream ID (tree property 1).
+Status EvaluateTreeWithZeroResiduals(const Tree& tree, size_t group_id,
+                                     Image* image);
+
 // For encoding with a given tree.
 Status ModularCompress(const Image &image, const ModularOptions &opts,
                        size_t group_id, const Tree &tree, GroupHeader &header,

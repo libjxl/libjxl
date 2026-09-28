@@ -648,6 +648,49 @@ StatusOr<Tree> LearnTree(
   return tree;
 }
 
+Status EvaluateTreeWithZeroResiduals(const Tree& tree, size_t group_id,
+                                     Image* image) {
+  JxlMemoryManager* memory_manager = image->memory_manager();
+  // The default header: what the encoder writes for streams without
+  // transforms, and what the decoder then uses.
+  weighted::Header wp_header;
+  for (size_t chan = 0; chan < image->channel.size(); chan++) {
+    Channel& channel = image->channel[chan];
+    if (channel.w == 0 || channel.h == 0) continue;
+    std::array<pixel_type, kNumStaticProperties> static_props = {
+        {static_cast<pixel_type>(chan), static_cast<int>(group_id)}};
+    bool has_wp;
+    bool is_wp_only;
+    bool is_gradient_only;
+    size_t num_props;
+    FlatTree flat_tree = FilterTree(tree, static_props, &num_props, &has_wp,
+                                    &is_wp_only, &is_gradient_only);
+    MATreeLookup tree_lookup(flat_tree);
+    Properties properties(num_props);
+    const ptrdiff_t onerow = channel.plane.PixelsPerRow();
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(memory_manager,
+                        properties.size() - kNumNonrefProperties, channel.w));
+    weighted::State wp_state(wp_header, channel.w, channel.h);
+    for (size_t y = 0; y < channel.h; y++) {
+      pixel_type* JXL_RESTRICT p = channel.Row(y);
+      InitPropsRow(&properties, static_props, y);
+      PrecomputeReferences(channel, y, *image, chan, &references);
+      for (size_t x = 0; x < channel.w; x++) {
+        // A zero residual: the sample is the prediction (a decoder computes
+        // residual * multiplier + guess).
+        PredictionResult res =
+            PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
+                          tree_lookup, references, &wp_state);
+        p[x] = res.guess;
+        wp_state.UpdateErrors(p[x], x, y, channel.w);
+      }
+    }
+  }
+  return true;
+}
+
 Status ModularCompress(const Image &image, const ModularOptions &options,
                        size_t group_id, const Tree &tree, GroupHeader &header,
                        std::vector<Token> &tokens, size_t *width) {

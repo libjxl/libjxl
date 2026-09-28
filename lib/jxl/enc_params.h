@@ -188,6 +188,11 @@ struct CompressParams {
   // first pass, instead of only for small inputs. Helps small files with large
   // token streams, such as jxl_from_tree art. Used in jxl_from_tree tool.
   bool lz77_careful_first_pass = false;
+  // VarDCT frames: the LF image and the HF metadata (chroma-from-luma maps, AC
+  // strategy, quantization field, EPF sharpness) are what custom_fixed_tree
+  // gives with all residuals zero, and all HF coefficients are zero. Used in
+  // jxl_from_tree tool.
+  bool vardct_from_tree = false;
   // If not empty, these custom splines will be used instead of the computed
   // ones. Used in jxl_from_tee tool.
   SplineDataView custom_splines{};

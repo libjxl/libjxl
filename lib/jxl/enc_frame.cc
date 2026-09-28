@@ -76,6 +76,7 @@
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/loop_filter.h"
+#include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/noise.h"
 #include "lib/jxl/padded_bytes.h"
@@ -1141,6 +1142,140 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
   return true;
 }
 
+// VarDCT data defined by cparams.custom_fixed_tree (see
+// CompressParams::vardct_from_tree). The LF and HF metadata streams are
+// encoded with that tree and zero residuals, so a decoder gets whatever the
+// tree predicts; the encoder evaluates the tree for the HF metadata only, since
+// the AC strategy determines the block layout.
+Status ComputeVarDCTDataFromTree(const FrameHeader& frame_header,
+                                 ThreadPool* pool,
+                                 ModularFrameEncoder* enc_modular,
+                                 PassesEncoderState* enc_state) {
+  PassesSharedState& shared = enc_state->shared;
+  JxlMemoryManager* memory_manager = enc_state->memory_manager();
+  const FrameDimensions& frame_dim = shared.frame_dim;
+  const Tree& tree = enc_state->cparams.custom_fixed_tree;
+  if (tree.empty()) return JXL_FAILURE("vardct_from_tree needs a tree");
+  if (!frame_header.chroma_subsampling.Is444()) {
+    return JXL_FAILURE("vardct_from_tree needs 4:4:4");
+  }
+
+  JXL_ASSIGN_OR_RETURN(
+      shared.cmap, ColorCorrelationMap::Create(
+                       memory_manager, frame_dim.xsize, frame_dim.ysize,
+                       frame_header.color_transform == ColorTransform::kXYB));
+  shared.quantizer = Quantizer(shared.matrices);
+  shared.quantizer.RecomputeFromGlobalScale();
+  shared.ac_strategy.FillInvalid();
+
+  enc_state->coeffs.clear();
+  while (enc_state->coeffs.size() < enc_state->passes.size()) {
+    JXL_ASSIGN_OR_RETURN(
+        std::unique_ptr<ACImageT<int32_t>> coeffs,
+        ACImageT<int32_t>::Make(memory_manager, kGroupDim * kGroupDim,
+                                frame_dim.num_groups));
+    coeffs->ZeroFill();
+    enc_state->coeffs.emplace_back(std::move(coeffs));
+  }
+
+  // HF metadata, laid out as the decoder does (DecodeAcMetadata), with one AC
+  // strategy entry per block (the unused ones cost nothing).
+  for (size_t group_index = 0; group_index < frame_dim.num_dc_groups;
+       group_index++) {
+    const Rect r = frame_dim.DCGroupRect(group_index);
+    JXL_ASSIGN_OR_RETURN(Image image,
+                         Image::Create(memory_manager, r.xsize(), r.ysize(),
+                                       /*bitdepth=*/8, 4));
+    Rect cr(r.x0() >> 3, r.y0() >> 3, (r.xsize() + 7) >> 3,
+            (r.ysize() + 7) >> 3);
+    JXL_ASSIGN_OR_RETURN(
+        image.channel[0],
+        Channel::Create(memory_manager, cr.xsize(), cr.ysize(), 3, 3));
+    JXL_ASSIGN_OR_RETURN(
+        image.channel[1],
+        Channel::Create(memory_manager, cr.xsize(), cr.ysize(), 3, 3));
+    JXL_ASSIGN_OR_RETURN(
+        image.channel[2],
+        Channel::Create(memory_manager, r.xsize() * r.ysize(), 2, 0, 0));
+    JXL_RETURN_IF_ERROR(EvaluateTreeWithZeroResiduals(
+        tree, ModularStreamId::ACMetadata(group_index).ID(frame_dim), &image));
+    JXL_RETURN_IF_ERROR(ConvertPlaneAndClamp(Rect(image.channel[0].plane),
+                                             image.channel[0].plane, cr,
+                                             &shared.cmap.ytox_map));
+    JXL_RETURN_IF_ERROR(ConvertPlaneAndClamp(Rect(image.channel[1].plane),
+                                             image.channel[1].plane, cr,
+                                             &shared.cmap.ytob_map));
+    size_t num = 0;
+    const size_t count = r.xsize() * r.ysize();
+    const int32_t* acs_in = image.channel[2].plane.Row(0);
+    const int32_t* qf_in = image.channel[2].plane.Row(1);
+    size_t xlim = std::min(shared.ac_strategy.xsize(), r.x0() + r.xsize());
+    size_t ylim = std::min(shared.ac_strategy.ysize(), r.y0() + r.ysize());
+    for (size_t iy = 0; iy < r.ysize(); iy++) {
+      size_t y = r.y0() + iy;
+      int32_t* row_qf = r.Row(&shared.raw_quant_field, iy);
+      uint8_t* row_epf = r.Row(&shared.epf_sharpness, iy);
+      const int32_t* row_sharpness = image.channel[3].plane.Row(iy);
+      for (size_t ix = 0; ix < r.xsize(); ix++) {
+        size_t x = r.x0() + ix;
+        int sharpness = row_sharpness[ix];
+        if (sharpness < 0 || sharpness >= LoopFilter::kEpfSharpEntries) {
+          return JXL_FAILURE("EPF sharpness %d at block (%" PRIuS ", %" PRIuS
+                             ") is not in 0..7",
+                             sharpness, x, y);
+        }
+        row_epf[ix] = sharpness;
+        if (shared.ac_strategy.IsValid(x, y)) continue;
+        JXL_ENSURE(num < count);
+        int32_t raw = acs_in[num];
+        if (!AcStrategy::IsRawStrategyValid(raw)) {
+          return JXL_FAILURE(
+              "AC strategy %d (entry %" PRIuS ") is not in 0..26", raw, num);
+        }
+        AcStrategy acs = AcStrategy::FromRawStrategy(raw);
+        size_t next_x_ac_block =
+            (x / kGroupDimInBlocks + 1) * kGroupDimInBlocks;
+        size_t next_y_ac_block =
+            (y / kGroupDimInBlocks + 1) * kGroupDimInBlocks;
+        if (x + acs.covered_blocks_x() > std::min(next_x_ac_block, xlim) ||
+            y + acs.covered_blocks_y() > std::min(next_y_ac_block, ylim)) {
+          return JXL_FAILURE("AC strategy %d at block (%" PRIuS ", %" PRIuS
+                             ") crosses a group or image edge",
+                             raw, x, y);
+        }
+        if (!shared.ac_strategy.SetNoBoundsCheck(x, y, AcStrategyType(raw))) {
+          return JXL_FAILURE("AC strategy %d at block (%" PRIuS ", %" PRIuS
+                             ") overlaps an earlier block",
+                             raw, x, y);
+        }
+        row_qf[ix] = 1 + std::max<int32_t>(
+                             0, std::min(Quantizer::kQuantMax - 1, qf_in[num]));
+        num++;
+      }
+    }
+  }
+
+  // The LF image comes from the tree; the encoder's copy stays zero.
+  JXL_ASSIGN_OR_RETURN(Image3F dc,
+                       Image3F::Create(memory_manager, frame_dim.xsize_blocks,
+                                       frame_dim.ysize_blocks));
+  ZeroFillImage(&dc);
+  auto compute_dc_coeffs = [&](const uint32_t group_index,
+                               size_t /* thread */) -> Status {
+    const Rect r = shared.frame_dim.DCGroupRect(group_index);
+    JXL_RETURN_IF_ERROR(enc_modular->AddVarDCTDC(
+        frame_header, dc, r, group_index, /*nl_dc=*/false, enc_state,
+        /*jpeg_transcode=*/false));
+    JXL_RETURN_IF_ERROR(enc_modular->AddACMetadata(
+        r, group_index, /*jpeg_transcode=*/false, enc_state));
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_dc_groups,
+                                ThreadPool::NoInit, compute_dc_coeffs,
+                                "Compute DC coeffs"));
+  return true;
+}
+
 Status ComputeVarDCTEncodingData(const FrameHeader& frame_header,
                                  const Image3F* linear,
                                  Image3F* JXL_RESTRICT opsin, const Rect& rect,
@@ -1682,6 +1817,9 @@ Status ComputeEncodingData(
     if (jpeg_data) {
       JXL_RETURN_IF_ERROR(ComputeJPEGTranscodingData(
           *jpeg_data, frame_header, pool, &enc_modular, &enc_state));
+    } else if (cparams.vardct_from_tree) {
+      JXL_RETURN_IF_ERROR(ComputeVarDCTDataFromTree(frame_header, pool,
+                                                    &enc_modular, &enc_state));
     } else {
       JXL_RETURN_IF_ERROR(ComputeVarDCTEncodingData(
           frame_header, linear, &color, group_rect, cms, pool, &enc_modular,

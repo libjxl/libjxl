@@ -261,6 +261,15 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     cparams.color_transform = ColorTransform::kXYB;
   } else if (t == "CbYCr") {
     cparams.color_transform = ColorTransform::kYCbCr;
+  } else if (t == "VarDCT") {
+    // A VarDCT frame: the tree defines the LF image (stream IDs of the VarDCT
+    // DC groups; channels Y, X, B of quantized LF) and the HF metadata (stream
+    // IDs of the AC metadata groups; channels YtoX, YtoB, AC strategy + quant
+    // field, EPF sharpness); all HF coefficients are zero.
+    cparams.modular_mode = false;
+    cparams.vardct_from_tree = true;
+    // For the default loop filters (Gaborish, EPF) of VarDCT frames.
+    cparams.butteraugli_distance = 1.0f;
   } else if (t == "HiddenChannel") {
     t = tok();
     size_t num = 0;
