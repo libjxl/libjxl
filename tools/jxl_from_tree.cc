@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <istream>
 #include <limits>
@@ -733,6 +734,10 @@ struct FrameSettings {
   // Trees for RAW dequantization tables of a VarDCT frame (DequantTable), by
   // quantization table index.
   std::map<size_t, Tree> dequant_trees;
+  // ACSTree and QFTree: the AC strategy and quant field of a varblock, from
+  // its position and LF.
+  NamedTree acs_tree;
+  NamedTree qf_tree;
   // Whether GroupShift was given (it does not apply to VarDCT frames).
   bool group_shift_given = false;
   // Image (canvas) size set by ImageSize; 0 = the first frame's size.
@@ -911,6 +916,291 @@ void CombineVarDCTTrees(const FrameSettings& frame, size_t width, size_t height,
   }
   size_t low = vardct_streams(/*bounded=*/true);
   set_children(root, tables_root, low);
+}
+
+// Appends to `dst` the subtree of `src` at `node`, without the splits on c
+// (property 0) or g (property 1) that the ranges [c_lo, c_hi] and [g_lo, g_hi]
+// decide; if `c2_tree` is not null, the part for c = 2 is replaced by it.
+// Returns the index of the root.
+size_t SpecializeTree(const Tree& src, size_t node, int c_lo, int c_hi,
+                      int g_lo, int g_hi, const Tree* c2_tree, Tree* dst) {
+  if (c2_tree && c_lo == 2 && c_hi == 2) return AppendTree(*c2_tree, dst);
+  const jxl::PropertyDecisionNode& n = src[node];
+  auto split = [&](int property, int value, int then_lo, int then_hi,
+                   int else_lo, int else_hi, size_t then_node,
+                   size_t else_node) {
+    size_t pos = dst->size();
+    dst->push_back(jxl::PropertyDecisionNode::Split(property, value, 0, 0));
+    size_t t = property == 0 ? SpecializeTree(src, then_node, then_lo, then_hi,
+                                              g_lo, g_hi, c2_tree, dst)
+                             : SpecializeTree(src, then_node, c_lo, c_hi,
+                                              then_lo, then_hi, c2_tree, dst);
+    size_t e = property == 0 ? SpecializeTree(src, else_node, else_lo, else_hi,
+                                              g_lo, g_hi, c2_tree, dst)
+                             : SpecializeTree(src, else_node, c_lo, c_hi,
+                                              else_lo, else_hi, c2_tree, dst);
+    (*dst)[pos].lchild = t;
+    (*dst)[pos].rchild = e;
+    return pos;
+  };
+  if (n.property < 0) {
+    if (c2_tree && c_lo <= 2 && c_hi >= 2) {
+      // A leaf for c = 2 and other channels: split off c = 2.
+      if (c_lo < 2) return split(0, 1, 2, c_hi, c_lo, 1, node, node);
+      return split(0, 2, 3, c_hi, 2, 2, node, node);
+    }
+    dst->push_back(n);
+    return dst->size() - 1;
+  }
+  if (n.property == 0 || n.property == 1) {
+    const int lo = n.property == 0 ? c_lo : g_lo;
+    const int hi = n.property == 0 ? c_hi : g_hi;
+    const int v = n.splitval;
+    if (lo > v) {
+      return SpecializeTree(src, n.lchild, c_lo, c_hi, g_lo, g_hi, c2_tree,
+                            dst);
+    }
+    if (hi <= v) {
+      return SpecializeTree(src, n.rchild, c_lo, c_hi, g_lo, g_hi, c2_tree,
+                            dst);
+    }
+    return split(n.property, v, v + 1, hi, lo, v, n.lchild, n.rchild);
+  }
+  size_t pos = dst->size();
+  dst->push_back(n);
+  size_t t =
+      SpecializeTree(src, n.lchild, c_lo, c_hi, g_lo, g_hi, c2_tree, dst);
+  size_t e =
+      SpecializeTree(src, n.rchild, c_lo, c_hi, g_lo, g_hi, c2_tree, dst);
+  (*dst)[pos].lchild = t;
+  (*dst)[pos].rchild = e;
+  return pos;
+}
+
+// Appends a tree over x (property 3) that gives values[x], as one leaf per
+// run of equal values (a balanced tree of splits at the run starts).
+size_t AppendRunsTree(const std::vector<int32_t>& values, Tree* dst) {
+  std::vector<std::pair<size_t, int32_t>> runs;  // start, value
+  for (size_t x = 0; x < values.size(); x++) {
+    if (runs.empty() || values[x] != runs.back().second) {
+      runs.emplace_back(x, values[x]);
+    }
+  }
+  if (runs.empty()) runs.emplace_back(0, 0);
+  std::function<size_t(size_t, size_t)> build = [&](size_t lo, size_t hi) {
+    if (hi - lo == 1) {
+      dst->push_back(
+          jxl::PropertyDecisionNode::Leaf(Predictor::Zero, runs[lo].second));
+      return dst->size() - 1;
+    }
+    size_t mid = (lo + hi) / 2;
+    size_t pos = dst->size();
+    dst->push_back(jxl::PropertyDecisionNode::Split(
+        3, static_cast<int>(runs[mid].first) - 1, 0, 0));
+    size_t t = build(mid, hi);
+    size_t e = build(lo, mid);
+    (*dst)[pos].lchild = t;
+    (*dst)[pos].rchild = e;
+    return pos;
+  };
+  return build(0, runs.size());
+}
+
+// ACSTree and QFTree: evaluates them per varblock (with the LF image and the
+// HF metadata of the frame's trees), and replaces channel 2 of the HF
+// metadata (the AC strategy and quant field lists, in placement order) by a
+// tree that gives these lists, in frame.hf_meta_tree.
+bool BuildHFMetaLists(JxlMemoryManager* memory_manager, FrameSettings& frame,
+                      const Tree& rest, size_t width, size_t height,
+                      bool extra_channels) {
+  if (frame.acs_tree.nodes.empty() && frame.qf_tree.nodes.empty()) {
+    return true;
+  }
+  Tree tree = rest;
+  CombineVarDCTTrees(frame, width, height, extra_channels, &tree);
+  FrameDimensions frame_dim;
+  frame_dim.Set(width, height, /*group_size_shift=*/1, /*max_hshift=*/0,
+                /*max_vshift=*/0, /*modular_mode=*/false, /*upsampling=*/1);
+  const size_t xb = frame_dim.xsize_blocks;
+  const size_t yb = frame_dim.ysize_blocks;
+  const int n = frame_dim.num_dc_groups;
+  std::vector<bool> covered(xb * yb);
+  Tree lists;  // channel 2 of the HF metadata streams
+  std::vector<size_t> group_roots;
+  for (int g = 0; g < n; g++) {
+    const jxl::Rect r = frame_dim.DCGroupRect(g);
+    auto lf = jxl::Image::Create(memory_manager, r.xsize(), r.ysize(), 8, 3);
+    auto meta = jxl::Image::Create(memory_manager, r.xsize(), r.ysize(), 8, 4);
+    if (!lf.ok() || !meta.ok()) return false;
+    jxl::Image lf_image = std::move(lf).value_();
+    jxl::Image meta_image = std::move(meta).value_();
+    for (size_t c = 0; c < 3; c++) {
+      auto ch =
+          c < 2
+              ? jxl::Channel::Create(memory_manager, (r.xsize() + 7) >> 3,
+                                     (r.ysize() + 7) >> 3)
+              : jxl::Channel::Create(memory_manager, r.xsize() * r.ysize(), 2);
+      if (!ch.ok()) return false;
+      meta_image.channel[c] = std::move(ch).value_();
+    }
+    if (!jxl::EvaluateTreeWithZeroResiduals(tree, 1 + g, &lf_image) ||
+        !jxl::EvaluateTreeWithZeroResiduals(tree, 1 + 2 * n + g, &meta_image)) {
+      fprintf(stderr, "Could not evaluate the LF or HF metadata tree\n");
+      return false;
+    }
+    std::vector<int32_t> acs_list(r.xsize() * r.ysize());
+    std::vector<int32_t> qf_list(r.xsize() * r.ysize());
+    const int32_t* acs_in = meta_image.channel[2].Row(0);
+    const int32_t* qf_in = meta_image.channel[2].Row(1);
+    size_t num = 0;
+    for (size_t iy = 0; iy < r.ysize(); iy++) {
+      for (size_t ix = 0; ix < r.xsize(); ix++) {
+        const size_t x = r.x0() + ix;
+        const size_t y = r.y0() + iy;
+        if (covered[y * xb + x]) continue;
+        std::vector<int32_t> props = {
+            static_cast<int32_t>(x), static_cast<int32_t>(y),
+            lf_image.channel[0].Row(iy)[ix], lf_image.channel[1].Row(iy)[ix],
+            lf_image.channel[2].Row(iy)[ix]};
+        int32_t raw = frame.acs_tree.nodes.empty() ? acs_in[num]
+                                                   : frame.acs_tree.Eval(props);
+        if (!jxl::AcStrategy::IsRawStrategyValid(raw)) {
+          fprintf(stderr,
+                  "AC strategy %d at block (%zu, %zu) is not in 0..26\n", raw,
+                  x, y);
+          return false;
+        }
+        jxl::AcStrategy acs = jxl::AcStrategy::FromRawStrategy(raw);
+        const size_t group = jxl::kGroupDimInBlocks;
+        if (x + acs.covered_blocks_x() >
+                std::min((x / group + 1) * group, xb) ||
+            y + acs.covered_blocks_y() >
+                std::min((y / group + 1) * group, yb)) {
+          fprintf(stderr,
+                  "AC strategy %d at block (%zu, %zu) crosses a group or "
+                  "image edge\n",
+                  raw, x, y);
+          return false;
+        }
+        for (size_t cy = 0; cy < acs.covered_blocks_y(); cy++) {
+          for (size_t cx = 0; cx < acs.covered_blocks_x(); cx++) {
+            if (covered[(y + cy) * xb + x + cx]) {
+              fprintf(stderr,
+                      "AC strategy %d at block (%zu, %zu) overlaps an earlier "
+                      "block\n",
+                      raw, x, y);
+              return false;
+            }
+            covered[(y + cy) * xb + x + cx] = true;
+          }
+        }
+        props.push_back(raw);
+        int32_t qf = frame.qf_tree.nodes.empty() ? qf_in[num]
+                                                 : frame.qf_tree.Eval(props);
+        if (!frame.qf_tree.nodes.empty() && (qf < 0 || qf > 255)) {
+          fprintf(stderr,
+                  "Quant field %d at block (%zu, %zu) is not in 0..255\n", qf,
+                  x, y);
+          return false;
+        }
+        acs_list[num] = raw;
+        qf_list[num] = qf;
+        num++;
+      }
+    }
+    // The entries after the last varblock are not used: extend the last run.
+    for (size_t i = num; i < acs_list.size() && num > 0; i++) {
+      acs_list[i] = acs_list[num - 1];
+      qf_list[i] = qf_list[num - 1];
+    }
+    // if y > 0: quant field, else AC strategy
+    size_t root = lists.size();
+    lists.push_back(jxl::PropertyDecisionNode::Split(2, 0, 0, 0));
+    // The quant field as a function of the AC strategy (property N: the
+    // entry above), if it is one and that takes fewer leaves than the runs.
+    std::map<int32_t, int32_t> qf_of_acs;
+    bool is_function = true;
+    for (size_t i = 0; i < num && is_function; i++) {
+      auto it = qf_of_acs.emplace(acs_list[i], qf_list[i]).first;
+      is_function = it->second == qf_list[i];
+    }
+    size_t qf_runs = 0;
+    for (size_t i = 0; i < qf_list.size(); i++) {
+      qf_runs += i == 0 || qf_list[i] != qf_list[i - 1];
+    }
+    size_t qf_root;
+    if (is_function && num > 0 && qf_of_acs.size() < qf_runs) {
+      std::vector<int32_t> acs_values;
+      std::vector<int32_t> qf_values;
+      for (const auto& e : qf_of_acs) {
+        acs_values.push_back(e.first);
+        qf_values.push_back(e.second);
+      }
+      std::function<size_t(size_t, size_t)> build = [&](size_t lo, size_t hi) {
+        if (hi - lo == 1) {
+          lists.push_back(
+              jxl::PropertyDecisionNode::Leaf(Predictor::Zero, qf_values[lo]));
+          return lists.size() - 1;
+        }
+        size_t mid = (lo + hi) / 2;
+        size_t pos = lists.size();
+        // Property 6: N.
+        lists.push_back(
+            jxl::PropertyDecisionNode::Split(6, acs_values[mid] - 1, 0, 0));
+        size_t t = build(mid, hi);
+        size_t e = build(lo, mid);
+        lists[pos].lchild = t;
+        lists[pos].rchild = e;
+        return pos;
+      };
+      qf_root = build(0, acs_values.size());
+    } else {
+      qf_root = AppendRunsTree(qf_list, &lists);
+    }
+    size_t acs_root = AppendRunsTree(acs_list, &lists);
+    lists[root].lchild = qf_root;
+    lists[root].rchild = acs_root;
+    group_roots.push_back(root);
+  }
+  // Per DC group: if g > 2n + 1: (if g > 2n + 2: ...) else group 0.
+  Tree c2_tree;
+  std::function<size_t(int)> chain = [&](int g) -> size_t {
+    const size_t begin = group_roots[g];
+    const size_t end = g + 1 < n ? group_roots[g + 1] : lists.size();
+    // The nodes of group g are lists[begin, end), with children in range.
+    auto copy_group = [&]() {
+      size_t offset = c2_tree.size();
+      for (size_t i = begin; i < end; i++) {
+        jxl::PropertyDecisionNode node = lists[i];
+        if (node.property >= 0) {
+          node.lchild = node.lchild - begin + offset;
+          node.rchild = node.rchild - begin + offset;
+        }
+        c2_tree.push_back(node);
+      }
+      return offset;
+    };
+    if (g + 1 == n) return copy_group();
+    size_t pos = c2_tree.size();
+    c2_tree.push_back(jxl::PropertyDecisionNode::Split(1, 2 * n + 1 + g, 0, 0));
+    size_t next = chain(g + 1);
+    size_t this_group = copy_group();
+    c2_tree[pos].lchild = next;
+    c2_tree[pos].rchild = this_group;
+    return pos;
+  };
+  chain(0);
+  const Tree& hf_part = frame.hf_meta_tree.empty() ? rest : frame.hf_meta_tree;
+  Tree hf_meta;
+  SpecializeTree(hf_part, 0, 0, 3, 2 * n + 1, 3 * n, &c2_tree, &hf_meta);
+  if (frame.lf_tree.empty()) {
+    // Without the HF metadata part of the frame's tree.
+    SpecializeTree(rest, 0, 0, 2, 1, n, nullptr, &frame.lf_tree);
+  }
+  frame.hf_meta_tree = std::move(hf_meta);
+  frame.acs_tree.nodes.clear();
+  frame.qf_tree.nodes.clear();
+  return true;
 }
 
 // Checks the RAW dequantization tables that the tree gives (as
@@ -1186,6 +1476,18 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     // libjxl order: X, Y, B
     cparams.vardct_lf_inv_quant = {v[1], v[0], v[2]};
+  } else if (t == "ACSTree" || t == "QFTree") {
+    // ACSTree <tree>, QFTree <tree>: the AC strategy and the quant field of
+    // each varblock, as trees over its (top-left) block position bx, by and
+    // the quantized LF there (lfy, lfx, lfb); the quant field tree can also
+    // use the AC strategy (acs). jxl_from_tree turns them into the lists of
+    // the HF metadata (channel 2, in placement order).
+    bool acs = t == "ACSTree";
+    NamedTree& named = acs ? frame.acs_tree : frame.qf_tree;
+    named.nodes.clear();
+    std::vector<std::string> props = {"bx", "by", "lfy", "lfx", "lfb"};
+    if (!acs) props.push_back("acs");
+    if (!ParseNamedTree(tok, props, &named)) return false;
   } else if (t == "DequantFlat" || t == "DequantBands" || t == "DequantTable") {
     // DequantFlat <table> <Y> <X> <B>: every coefficient of the table has the
     // same dequantization step (per channel).
@@ -1736,14 +2038,19 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   }
 
   if (!frame.lf_tree.empty() || !frame.hf_meta_tree.empty() ||
-      !frame.dequant_trees.empty()) {
+      !frame.dequant_trees.empty() || !frame.acs_tree.nodes.empty() ||
+      !frame.qf_tree.nodes.empty()) {
     if (!cparams.vardct_from_tree) {
-      return JXL_FAILURE("LFTree, HFMetaTree and DequantTable need VarDCT");
+      return JXL_FAILURE(
+          "LFTree, HFMetaTree, DequantTable, ACSTree and QFTree need VarDCT");
     }
-    CombineVarDCTTrees(frame, width, height,
-                       io->metadata.m.num_extra_channels > 0 ||
-                           cparams.move_to_front_from_channel < -1,
-                       &tree);
+    const bool extra_channels = io->metadata.m.num_extra_channels > 0 ||
+                                cparams.move_to_front_from_channel < -1;
+    if (!BuildHFMetaLists(memory_manager, frame, tree, width, height,
+                          extra_channels)) {
+      return JXL_FAILURE("Invalid ACSTree or QFTree");
+    }
+    CombineVarDCTTrees(frame, width, height, extra_channels, &tree);
   }
 
   if (tree_out) {
@@ -1901,12 +2208,18 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       return JXL_FAILURE("Failed to ParseNode");
     }
     if (!frame.lf_tree.empty() || !frame.hf_meta_tree.empty() ||
-        !frame.dequant_trees.empty()) {
+        !frame.dequant_trees.empty() || !frame.acs_tree.nodes.empty() ||
+        !frame.qf_tree.nodes.empty()) {
       if (!cparams.vardct_from_tree) {
-        return JXL_FAILURE("LFTree, HFMetaTree and DequantTable need VarDCT");
+        return JXL_FAILURE(
+            "LFTree, HFMetaTree, DequantTable, ACSTree and QFTree need VarDCT");
       }
-      CombineVarDCTTrees(frame, width, height,
-                         metadata->m.num_extra_channels > 0, &tree);
+      const bool extra_channels = metadata->m.num_extra_channels > 0;
+      if (!BuildHFMetaLists(memory_manager, frame, tree, width, height,
+                            extra_channels)) {
+        return JXL_FAILURE("Invalid ACSTree or QFTree");
+      }
+      CombineVarDCTTrees(frame, width, height, extra_channels, &tree);
     }
     cparams.custom_fixed_tree = tree;
     // This frame's own splines (previously the first frame's were reused).
