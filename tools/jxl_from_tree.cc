@@ -1427,7 +1427,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   static const std::set<std::string> vardct_keywords = {
       "HFContextLF",    "HFContextQF", "HFBlockContext", "HFCoefficients",
       "GlobalScale",    "LFQuant",     "XQMScale",       "BQMScale",
-      "LFChannelQuant", "DequantFlat", "DequantBands",   "CoeffOrder"};
+      "LFChannelQuant", "DequantFlat", "DequantBands",   "DequantDefault",
+      "CoeffOrder"};
   if (frame.vardct_keyword.empty() && vardct_keywords.count(t)) {
     frame.vardct_keyword = t;
   }
@@ -1720,6 +1721,30 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
         cparams.vardct_dequant[i] = table;
         frame.dequant_trees.erase(i);
       }
+    }
+  } else if (t == "DequantDefault") {
+    // DequantDefault <table>: the default table again (<table> as for
+    // DequantFlat, or `all`). Once all tables are default, frames signal them
+    // with one bit instead of all 17 tables.
+    t = tok();
+    std::vector<size_t> tables = ParseQuantTables(t, /*allow_all=*/true);
+    if (tables.empty()) {
+      fprintf(stderr,
+              "Invalid quantization table: %s (0..16, a name like DCT8, "
+              "DCT16X8, IDENTITY, AFV, or all)\n",
+              t.c_str());
+      return false;
+    }
+    for (size_t i : tables) {
+      if (i < cparams.vardct_dequant.size()) cparams.vardct_dequant[i] = {};
+      frame.dequant_trees.erase(i);
+    }
+    if (std::all_of(cparams.vardct_dequant.begin(),
+                    cparams.vardct_dequant.end(),
+                    [](const CompressParams::CustomDequantTable& table) {
+                      return table.num_bands == 0 && table.raw_den == 0;
+                    })) {
+      cparams.vardct_dequant.clear();
     }
   } else if (t == "CoeffOrder") {
     // CoeffOrder <order class> [Y|X|B] <n> <u1> <v1> ... <un> <vn>: in the
