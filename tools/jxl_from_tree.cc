@@ -821,8 +821,11 @@ struct FrameSettings {
   // Save a regular frame before the color transform (needed to use it as a
   // patch source; only allowed for kReplace, full-frame blending).
   bool save_before_ct = false;
-  // Reference slot this frame is blended onto (persists).
+  // Reference slot this frame is blended onto (persists). Without BlendSource,
+  // slot 1, unless it holds a frame saved before the color transform (see
+  // DefaultBlendSource).
   size_t blend_source = 1;
+  bool blend_source_given = false;
   // Patch blend mode for extra channels of subsequent patches (persists).
   uint8_t patch_ec_mode = static_cast<uint8_t>(jxl::PatchBlendMode::kNone);
   // Whether subsequent patches clamp (kMul and alpha blend modes; persists).
@@ -2058,6 +2061,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       frame.save_as_reference = static_cast<int>(slot);
     } else {
       frame.blend_source = slot;
+      frame.blend_source_given = true;
     }
   } else if (t == "Patch" || t == "PatchExtraBlendMode") {
     // Patch <ref> <x0> <y0> <xsize> <ysize> <x> <y> <blend mode>: blends the
@@ -2111,6 +2115,69 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   JXL_RETURN_IF_ERROR(ParseNode(tok, tree, spline_data, frame, cparams, W, H,
                                 io, have_next, x0, y0, buffer_size));
   return true;
+}
+// What a reference slot holds, as far as frame blending is concerned.
+enum class SlotState : uint8_t { kEmpty, kAfterCT, kBeforeCT };
+
+// The blend source of a frame without BlendSource: slot 1, unless it holds a
+// frame saved before the color transform (a ReferenceOnly or SaveBeforeCT
+// frame), which decoders do not blend from. Then the slot that was saved last
+// after the color transform (usually the previous displayed frame), or else an
+// empty slot (blending onto an empty canvas).
+size_t DefaultBlendSource(const SlotState* slots, int last_after_ct) {
+  if (slots[1] != SlotState::kBeforeCT) return 1;
+  if (last_after_ct >= 0 && slots[last_after_ct] == SlotState::kAfterCT) {
+    return last_after_ct;
+  }
+  for (size_t i = 0; i < jxl::kMaxNumReferenceFrames; i++) {
+    if (slots[i] == SlotState::kEmpty) return i;
+  }
+  return 1;
+}
+
+// The blending info of the extra channels as EncodeFrame writes it by default
+// (with blend source 1).
+std::vector<jxl::BlendingInfo> DefaultEcBlending(
+    const jxl::ImageBundle& ib, const CodecMetadata& metadata) {
+  const auto& ec = metadata.m.extra_channel_info;
+  size_t alpha = 0;
+  if (ec.size() > 1) {
+    for (size_t i = 0; i < ec.size(); i++) {
+      if (ec[i].type == jxl::ExtraChannel::kAlpha) {
+        alpha = i;
+        break;
+      }
+    }
+  }
+  std::vector<jxl::BlendingInfo> info(ec.size());
+  for (size_t i = 0; i < ec.size(); i++) {
+    info[i].alpha_channel = alpha;
+    // Extra channels other than the blending alpha channel are added.
+    BlendMode mode = ib.blendmode;
+    if (ec[i].type != jxl::ExtraChannel::kBlack && i != alpha) {
+      mode = BlendMode::kAdd;
+    }
+    info[i].mode = ib.blend ? mode : BlendMode::kReplace;
+    info[i].source = 1;
+  }
+  return info;
+}
+
+// Whether decoders blend a (displayed) frame with its blend source, as in
+// jxl-rs's FrameHeader::needs_blending: a cropped frame, or a blend mode other
+// than kReplace (for the color or an extra channel).
+bool FrameNeedsBlending(const jxl::ImageBundle& ib,
+                        const CodecMetadata& metadata, size_t xsize,
+                        size_t ysize) {
+  if (ib.origin.x0 != 0 || ib.origin.y0 != 0 || xsize != metadata.xsize() ||
+      ysize != metadata.ysize()) {
+    return true;
+  }
+  if (ib.blend && ib.blendmode != BlendMode::kReplace) return true;
+  for (const jxl::BlendingInfo& info : DefaultEcBlending(ib, metadata)) {
+    if (info.mode != BlendMode::kReplace) return true;
+  }
+  return false;
 }
 }  // namespace
 
@@ -2245,6 +2312,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   writer.ZeroPadToByte();
 
   bool warned_group_shift = false;
+  SlotState slots[jxl::kMaxNumReferenceFrames] = {};
+  int last_after_ct = -1;
   while (true) {
     FrameInfo info;
     info.is_last = !FROM_JXL_BOOL(have_next);
@@ -2265,6 +2334,31 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     if (frame.save_before_ct) info.save_before_color_transform = true;
     info.source = frame.blend_source;
+    if (!frame.reference_only) {
+      if (!frame.blend_source_given) {
+        info.source = DefaultBlendSource(slots, last_after_ct);
+      }
+      if (slots[info.source] == SlotState::kBeforeCT &&
+          FrameNeedsBlending(io->frames[0], *metadata,
+                             width * cparams.resampling,
+                             height * cparams.resampling)) {
+        fprintf(stderr,
+                "This frame is blended onto reference slot %zu, which holds a "
+                "frame saved before the color transform (ReferenceOnly or "
+                "SaveBeforeCT): decoders only take patches from such a slot. "
+                "Use BlendSource with another slot.\n",
+                info.source);
+        return JXL_FAILURE("Invalid blend source");
+      }
+      if (info.source != 1) {
+        // The blend source of the extra channels (by default 1) follows.
+        info.extra_channel_blending_info =
+            DefaultEcBlending(io->frames[0], *metadata);
+        for (jxl::BlendingInfo& ec : info.extra_channel_blending_info) {
+          ec.source = info.source;
+        }
+      }
+    }
     if (cparams.vardct_from_tree && frame.group_shift_given &&
         !warned_group_shift) {
       // The frame header has a group size only for modular frames.
@@ -2320,6 +2414,16 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     JXL_RETURN_IF_ERROR(jxl::EncodeFrame(
         memory_manager, cparams, info, metadata.get(), io->frames[0],
         *JxlGetDefaultCms(), nullptr, &writer, nullptr));
+    // What the reference slots hold now (as in FrameHeader::CanBeReferenced).
+    const bool has_duration =
+        metadata->m.have_animation && !frame.reference_only;
+    if (!info.is_last && (!has_duration || io->frames[0].duration == 0 ||
+                          info.save_as_reference != 0)) {
+      const bool before_ct = info.save_before_color_transform;
+      slots[info.save_as_reference] =
+          before_ct ? SlotState::kBeforeCT : SlotState::kAfterCT;
+      if (!before_ct) last_after_ct = info.save_as_reference;
+    }
     if (!have_next) break;
     tree.clear();
     spline_data.splines.clear();
