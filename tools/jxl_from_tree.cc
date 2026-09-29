@@ -837,6 +837,18 @@ struct FrameSettings {
   // HF context model of VarDCT frames (persists).
   HFContextSettings hf;
   bool have_hf = false;
+  // The first keyword of this frame that only applies to VarDCT frames (empty
+  // if none): an error in a modular frame. The VarDCT settings persist through
+  // modular frames, which do not use them.
+  std::string vardct_keyword;
+  // The loop filters (Gaborish, EPF) of the other mode: Modular and VarDCT
+  // swap them, so that each mode keeps its own.
+  struct LoopFilters {
+    jxl::Override gaborish = jxl::Override::kDefault;
+    int epf = -1;
+  };
+  LoopFilters other_filters;
+  bool have_other_filters = false;
   // Trees for the LF image and the HF metadata of a VarDCT frame (LFTree,
   // HFMetaTree), combined with the frame's tree by stream ID.
   Tree lf_tree;
@@ -1412,6 +1424,13 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       {"AvgAll", Predictor::Average4},
   };
   auto t = tok();
+  static const std::set<std::string> vardct_keywords = {
+      "HFContextLF",    "HFContextQF", "HFBlockContext", "HFCoefficients",
+      "GlobalScale",    "LFQuant",     "XQMScale",       "BQMScale",
+      "LFChannelQuant", "DequantFlat", "DequantBands",   "CoeffOrder"};
+  if (frame.vardct_keyword.empty() && vardct_keywords.count(t)) {
+    frame.vardct_keyword = t;
+  }
   if (t == "if") {
     // Decision node.
     int p;
@@ -1784,15 +1803,31 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     for (size_t c : channels) {
       cparams.custom_coeff_orders[3 * ord + c] = positions;
     }
-  } else if (t == "VarDCT") {
-    // A VarDCT frame: the tree defines the LF image (stream IDs of the VarDCT
-    // DC groups; channels Y, X, B of quantized LF) and the HF metadata (stream
+  } else if (t == "VarDCT" || t == "Modular") {
+    // VarDCT: a VarDCT frame (this one and the following ones, until
+    // Modular): the tree defines the LF image (stream IDs of the VarDCT DC
+    // groups; channels Y, X, B of quantized LF) and the HF metadata (stream
     // IDs of the AC metadata groups; channels YtoX, YtoB, AC strategy + quant
     // field, EPF sharpness); all HF coefficients are zero.
-    cparams.modular_mode = false;
-    cparams.vardct_from_tree = true;
-    // For the default loop filters (Gaborish, EPF) of VarDCT frames.
-    cparams.butteraugli_distance = 1.0f;
+    // Modular: back to modular frames. The VarDCT settings persist (for a
+    // later VarDCT frame) but do not apply to modular frames.
+    const bool vardct = t == "VarDCT";
+    if (vardct != cparams.vardct_from_tree) {
+      // Each mode has its own loop filters; those given before the first
+      // VarDCT apply to both.
+      FrameSettings::LoopFilters current{cparams.gaborish, cparams.epf};
+      if (frame.have_other_filters || !vardct) {
+        cparams.gaborish = frame.other_filters.gaborish;
+        cparams.epf = frame.other_filters.epf;
+      }
+      frame.other_filters = current;
+      frame.have_other_filters = true;
+    }
+    cparams.modular_mode = !vardct;
+    cparams.vardct_from_tree = vardct;
+    // For the default loop filters (Gaborish, EPF) of VarDCT frames; lossless
+    // modular frames.
+    cparams.butteraugli_distance = vardct ? 1.0f : 0.0f;
   } else if (t == "HiddenChannel") {
     t = tok();
     size_t num = 0;
@@ -2521,26 +2556,18 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
               "have 256x256 groups (and 2048x2048 LF groups)\n");
       warned_group_shift = true;
     }
-    if (!cparams.custom_coeff_orders.empty() && !cparams.vardct_from_tree) {
-      return FailWithMessage("CoeffOrder needs VarDCT");
-    }
-    if ((cparams.vardct_global_scale || cparams.vardct_quant_dc ||
-         !cparams.vardct_lf_inv_quant.empty()) &&
-        !cparams.vardct_from_tree) {
-      return FailWithMessage(
-          "GlobalScale, LFQuant and LFChannelQuant need VarDCT");
-    }
-    if (!cparams.vardct_dequant.empty() && !cparams.vardct_from_tree) {
-      return FailWithMessage("Dequantization tables need VarDCT");
+    if (!frame.vardct_keyword.empty() && !cparams.vardct_from_tree) {
+      fprintf(stderr,
+              "%s needs VarDCT (in a modular frame, the VarDCT settings are "
+              "kept for later VarDCT frames, but cannot be given)\n",
+              frame.vardct_keyword.c_str());
+      return JXL_FAILURE("VarDCT keyword in a modular frame");
     }
     if (!CheckDequantTables(memory_manager, cparams.custom_fixed_tree, width,
                             height, cparams)) {
       return JXL_FAILURE("Invalid dequantization table");
     }
-    if (frame.have_hf) {
-      if (!cparams.vardct_from_tree) {
-        return FailWithMessage("HF context keywords need VarDCT");
-      }
+    if (frame.have_hf && cparams.vardct_from_tree) {
       if (!SetHFContexts(frame.hf, memory_manager, cparams.custom_fixed_tree,
                          width, height, cparams)) {
         return JXL_FAILURE("Invalid HF context model");
@@ -2684,6 +2711,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     frame.save_as_reference = -1;
     frame.reference_only = false;
     frame.save_before_ct = false;
+    frame.vardct_keyword.clear();
     have_next = JXL_FALSE;
     cparams.manual_noise.clear();
     frame.lf_tree.clear();
