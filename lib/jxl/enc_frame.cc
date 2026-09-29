@@ -1244,6 +1244,12 @@ Status ComputeVarDCTDataFromTree(const FrameHeader& frame_header,
                        memory_manager, frame_dim.xsize, frame_dim.ysize,
                        frame_header.color_transform == ColorTransform::kXYB));
   const CompressParams& cparams = enc_state->cparams;
+  if (cparams.vardct_ytox_dc < -128 || cparams.vardct_ytox_dc > 127 ||
+      cparams.vardct_ytob_dc < -128 || cparams.vardct_ytob_dc > 127) {
+    return JXL_FAILURE("LF chroma from luma factors must be -128..127");
+  }
+  shared.cmap.mutable_base().SetYToXDC(cparams.vardct_ytox_dc);
+  shared.cmap.mutable_base().SetYToBDC(cparams.vardct_ytob_dc);
   if (!cparams.vardct_lf_inv_quant.empty()) {
     if (cparams.vardct_lf_inv_quant.size() != 3) {
       return JXL_FAILURE("Need 3 inverse LF quantization steps");

@@ -1483,7 +1483,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       "HFContextLF",    "HFContextQF", "HFBlockContext", "HFCoefficients",
       "GlobalScale",    "LFQuant",     "XQMScale",       "BQMScale",
       "LFChannelQuant", "DequantFlat", "DequantBands",   "DequantDefault",
-      "CoeffOrder"};
+      "CoeffOrder",     "LFCfL"};
   if (frame.vardct_keyword.empty() && vardct_keywords.count(t)) {
     frame.vardct_keyword = t;
   }
@@ -1689,6 +1689,21 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     // libjxl order: X, Y, B
     cparams.vardct_lf_inv_quant = {v[1], v[0], v[2]};
+  } else if (t == "LFCfL") {
+    // LFCfL <ytox> <ytob> (-128..127, default 0 0): chroma from luma for the
+    // LF of VarDCT frames: X += (ytox / 84) * Y, B += (1 + ytob / 84) * Y
+    // (after dequantization; the HF has its own factors, the YtoX and YtoB
+    // maps of the HF metadata).
+    int32_t* factors[2] = {&cparams.vardct_ytox_dc, &cparams.vardct_ytob_dc};
+    for (int32_t* f : factors) {
+      t = tok();
+      size_t num = 0;
+      *f = ParseInt(t, &num);
+      if (num != t.size() || *f < -128 || *f > 127) {
+        fprintf(stderr, "Invalid LFCfL factor (-128..127): %s\n", t.c_str());
+        return false;
+      }
+    }
   } else if (t == "ACSTree" || t == "QFTree") {
     // ACSTree <tree>, QFTree <tree>: the AC strategy and the quant field of
     // each varblock, as trees over its (top-left) block position bx, by and

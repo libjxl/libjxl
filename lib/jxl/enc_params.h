@@ -223,6 +223,11 @@ struct CompressParams {
   uint32_t vardct_global_scale = 0;
   uint32_t vardct_quant_dc = 0;
   std::vector<float> vardct_lf_inv_quant;
+  // With vardct_from_tree: the chroma from luma factors of the LF (-128..127,
+  // in units of 1 / color factor, 84, on top of the base correlations 0 for
+  // X and 1 for B): the LF X is X + ytox * Y, the LF B is B + ytob * Y.
+  int32_t vardct_ytox_dc = 0;
+  int32_t vardct_ytob_dc = 0;
   // With vardct_from_tree: a custom dequantization matrix (quantization table
   // of lib/jxl/quant_weights.h). The dequantization step of a coefficient is
   // the inverse of its quantization weight.
