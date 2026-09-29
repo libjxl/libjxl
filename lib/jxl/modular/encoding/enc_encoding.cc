@@ -20,6 +20,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -691,6 +692,100 @@ Status EvaluateTreeWithZeroResiduals(const Tree& tree, size_t group_id,
   return true;
 }
 
+// The tokens of a stream whose residuals are `pattern` (all zero if null), for
+// the channels [0, num_coded) of `image` (only their sizes are used), with LZ77
+// applied: the residuals of the first prefix + period samples as symbols, in
+// the contexts `tree` gives there (their samples are computed: prediction plus
+// residual), then one LZ77 copy with the period as distance for the rest.
+// `distance_multiplier` is the stream's (the widest channel), `num_contexts` the
+// tree's; the distance symbol goes to context num_contexts.
+Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
+                               const Image &image, size_t num_coded,
+                               const ResidualPattern *pattern,
+                               size_t distance_multiplier, size_t num_contexts,
+                               std::vector<Token> *tokens) {
+  static const ResidualPattern kZero = {{}, {0}};
+  const ResidualPattern &p = pattern ? *pattern : kZero;
+  JXL_ENSURE(!p.period.empty());
+  size_t total = 0;
+  for (size_t i = 0; i < num_coded; i++) {
+    total += image.channel[i].w * image.channel[i].h;
+  }
+  if (total == 0) return true;
+  const size_t period = p.period.size();
+  const auto residual = [&](size_t k) {
+    return k < p.prefix.size() ? p.prefix[k]
+                               : p.period[(k - p.prefix.size()) % period];
+  };
+  // Symbols up to here; the LZ77 copy needs at least min_length (3) values.
+  size_t literals = std::min(total, p.prefix.size() + period);
+  if (total - literals < 3) literals = total;
+  // Samples of the first literals (+ 1 for the copy's context).
+  const size_t needed = std::min(total, literals + 1);
+  JxlMemoryManager *memory_manager = image.memory_manager();
+  Image work(memory_manager);
+  work.w = image.w;
+  work.h = image.h;
+  work.bitdepth = image.bitdepth;
+  work.nb_meta_channels = image.nb_meta_channels;
+  weighted::Header wp_header;
+  size_t k = 0;
+  for (size_t chan = 0; chan < num_coded && k < needed; chan++) {
+    const Channel &from = image.channel[chan];
+    JXL_ASSIGN_OR_RETURN(Channel ch, Channel::Create(memory_manager, from.w,
+                                                     from.h, from.hshift,
+                                                     from.vshift));
+    work.channel.emplace_back(std::move(ch));
+    Channel &channel = work.channel.back();
+    if (channel.w == 0 || channel.h == 0) continue;
+    std::array<pixel_type, kNumStaticProperties> static_props = {
+        {static_cast<pixel_type>(chan), static_cast<int>(group_id)}};
+    bool has_wp;
+    bool is_wp_only;
+    bool is_gradient_only;
+    size_t num_props;
+    FlatTree flat_tree = FilterTree(tree, static_props, &num_props, &has_wp,
+                                    &is_wp_only, &is_gradient_only);
+    MATreeLookup tree_lookup(flat_tree);
+    Properties properties(num_props);
+    const ptrdiff_t onerow = channel.plane.PixelsPerRow();
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(memory_manager,
+                        properties.size() - kNumNonrefProperties, channel.w));
+    weighted::State wp_state(wp_header, channel.w, channel.h);
+    for (size_t y = 0; y < channel.h && k < needed; y++) {
+      pixel_type *JXL_RESTRICT row = channel.Row(y);
+      InitPropsRow(&properties, static_props, y);
+      PrecomputeReferences(channel, y, work, chan, &references);
+      for (size_t x = 0; x < channel.w && k < needed; x++, k++) {
+        PredictionResult res =
+            PredictTreeWP(&properties, channel.w, row + x, onerow, x, y,
+                          tree_lookup, references, &wp_state);
+        const int32_t r = residual(k);
+        row[x] = static_cast<pixel_type>(res.guess + static_cast<int64_t>(r) *
+                                                         res.multiplier);
+        wp_state.UpdateErrors(row[x], x, y, channel.w);
+        if (k < literals) {
+          tokens->emplace_back(res.context, PackSigned(r));
+        } else {
+          // The rest: a copy of the values `period` back (the pattern repeats
+          // with that period from the end of the prefix on).
+          tokens->emplace_back(res.context,
+                               static_cast<uint32_t>(total - literals - 3));
+          tokens->back().is_lz77_length = true;
+          tokens->emplace_back(
+              static_cast<uint32_t>(num_contexts),
+              static_cast<uint32_t>(distance_multiplier != 0
+                                        ? period + kNumSpecialDistances - 1
+                                        : period - 1));
+        }
+      }
+    }
+  }
+  return true;
+}
+
 Status ModularCompress(const Image &image, const ModularOptions &options,
                        size_t group_id, const Tree &tree, GroupHeader &header,
                        std::vector<Token> &tokens, size_t *width) {
@@ -723,7 +818,24 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
     if (image.channel[i].w > image_width) image_width = image.channel[i].w;
     total_tokens += image.channel[i].w * image.channel[i].h;
   }
-  if (options.zero_tokens && options.code_meta_channels &&
+  if (options.zero_tokens && options.residual_patterns != nullptr) {
+    size_t num_coded = 0;
+    while (num_coded < nb_channels &&
+           !(num_coded >= image.nb_meta_channels &&
+             (image.channel[num_coded].w > options.max_chan_size ||
+              image.channel[num_coded].h > options.max_chan_size))) {
+      num_coded++;
+    }
+    const ResidualPattern *pattern = nullptr;
+    auto it = options.residual_patterns->find(static_cast<int>(group_id));
+    if (it == options.residual_patterns->end()) {
+      it = options.residual_patterns->find(-1);
+    }
+    if (it != options.residual_patterns->end()) pattern = &it->second;
+    JXL_RETURN_IF_ERROR(TokenizeResidualPattern(
+        tree, group_id, image, num_coded, pattern, image_width,
+        (tree.size() + 1) / 2, &tokens));
+  } else if (options.zero_tokens && options.code_meta_channels &&
       image.nb_meta_channels > 0) {
     // The meta channels are coded from the image; the other channels are
     // what the tree gives with zero residuals, tokenized with their real

@@ -102,6 +102,9 @@ struct HistogramParams {
   }
 
   ClusteringType clustering = ClusteringType::kBest;
+  // The tokens already contain LZ77 lengths and distances (in the LZ77Params
+  // defaults): no LZ77 search, and LZ77 is signaled.
+  bool tokens_have_lz77 = false;
   HybridUintMethod uint_method = HybridUintMethod::kBest;
   LZ77Method lz77_method = LZ77Method::kRLE;
   // For the optimal LZ77 methods: always use the slower, more careful greedy

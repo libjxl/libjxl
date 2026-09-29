@@ -9,6 +9,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <vector>
 
 #include "lib/jxl/enc_ans_params.h"
@@ -54,6 +55,12 @@ using StaticPropRange =
 struct ModularMultiplierInfo {
   StaticPropRange range;
   uint32_t multiplier;
+};
+
+// A sequence of residuals: `prefix`, then `period` repeated forever.
+struct ResidualPattern {
+  std::vector<int32_t> prefix;
+  std::vector<int32_t> period;
 };
 
 struct ModularOptions {
@@ -118,6 +125,13 @@ struct ModularOptions {
   // With zero_tokens: the meta channels (e.g. palette entries) are still coded
   // from the image (real residuals); only the other channels are all zeroes.
   bool code_meta_channels = false;
+  // With zero_tokens: if not null, the residuals of the streams are these
+  // patterns (by stream ID, -1 for the streams not listed; all zero for the
+  // others), coded without materializing them: the prefix and one period as
+  // symbols (in the contexts the tree gives), the rest as one LZ77 copy.
+  // Every stream is then coded this way, and the tokens come with LZ77
+  // already applied (HistogramParams::tokens_have_lz77).
+  const std::map<int, ResidualPattern>* residual_patterns = nullptr;
 
   ModularOptions() {
     // GCC has complaints about inline vector initialization; do it manually.

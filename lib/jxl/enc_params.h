@@ -14,6 +14,7 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <vector>
 
 #include "lib/jxl/ac_context.h"
@@ -208,6 +209,11 @@ struct CompressParams {
     std::vector<std::vector<int32_t>> entries;
   };
   CustomPalette custom_palette;
+  // Modular data (with custom_fixed_tree and zero tokens, i.e. jxl_from_tree):
+  // if not empty, the residuals of the streams, by stream ID (the tree's
+  // property 1; -1 for every stream not listed): a prefix, then a period that
+  // repeats. Streams not covered keep all-zero residuals.
+  std::map<int, ResidualPattern> custom_residuals;
   // VarDCT frames: the LF image and the HF metadata (chroma-from-luma maps, AC
   // strategy, quantization field, EPF sharpness) are what custom_fixed_tree
   // gives with all residuals zero, and all HF coefficients are zero. Used in

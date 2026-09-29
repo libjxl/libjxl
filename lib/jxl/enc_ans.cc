@@ -1153,9 +1153,13 @@ StatusOr<size_t> BuildAndEncodeHistograms(
   // if (params.initialize_global_state) codes->lz77.enabled = false;
   codes->lz77.nonserialized_distance_context = num_contexts;
   codes->lz77.min_symbol = params.force_huffman ? 512 : 224;
-  std::vector<std::vector<Token>> tokens_lz77 =
-      ApplyLZ77(params, num_contexts, tokens, codes->lz77);
-  if (!tokens_lz77.empty()) codes->lz77.enabled = true;
+  std::vector<std::vector<Token>> tokens_lz77;
+  if (params.tokens_have_lz77) {
+    codes->lz77.enabled = true;
+  } else {
+    tokens_lz77 = ApplyLZ77(params, num_contexts, tokens, codes->lz77);
+    if (!tokens_lz77.empty()) codes->lz77.enabled = true;
+  }
   if (ans_fuzzer_friendly_) {
     codes->lz77.length_uint_config = HybridUintConfig(10, 0, 0);
     codes->lz77.min_symbol = 2048;
@@ -1184,8 +1188,10 @@ StatusOr<size_t> BuildAndEncodeHistograms(
         cost += size_writer.size;
       }
       num_contexts += 1;
-      JXL_DASSERT(!tokens_lz77.empty());
-      tokens = std::move(tokens_lz77);
+      if (!params.tokens_have_lz77) {
+        JXL_DASSERT(!tokens_lz77.empty());
+        tokens = std::move(tokens_lz77);
+      }
     }
     size_t total_tokens = 0;
     // Build histograms.

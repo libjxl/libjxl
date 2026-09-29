@@ -708,6 +708,9 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
   // TODO(veluca): figure out how to use different predictor sets per channel.
   stream_options_.resize(num_streams, cparams_.options);
 
+  if (!cparams_.custom_residuals.empty()) {
+    cparams_.options.residual_patterns = &cparams_.custom_residuals;
+  }
   stream_options_[0] = cparams_.options;
   if (cparams_.speed_tier == SpeedTier::kFalcon) {
     stream_options_[0].tree_kind = ModularOptions::TreeKind::kWPFixedDC;
@@ -1345,6 +1348,8 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
   params.streaming_mode = streaming_mode;
   params.add_missing_symbols = streaming_mode;
   params.image_widths = image_widths_;
+  // Residual patterns come as tokens with LZ77 applied.
+  params.tokens_have_lz77 = cparams_.options.residual_patterns != nullptr;
   // Write histograms.
   JXL_ASSIGN_OR_RETURN(
       size_t cost, BuildAndEncodeHistograms(

@@ -2446,6 +2446,43 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     pal.enabled = true;
     cparams.lossy_palette = false;
+  } else if (t == "Residuals") {
+    // Residuals <stream|*> [ <prefix values> ] [ <period values> ]: instead of
+    // all zeros, the residuals of modular stream <stream> (the tree's
+    // property g; * for every stream not listed) are the prefix, then the
+    // period repeated forever (coded with LZ77, so a short period is cheap).
+    t = tok();
+    int stream = -1;
+    if (t != "*") {
+      size_t num = 0;
+      stream = static_cast<int>(ParseUnsigned(t, &num));
+      if (num != t.size() || t.empty()) {
+        fprintf(stderr, "Invalid Residuals stream: %s\n", t.c_str());
+        return false;
+      }
+    }
+    jxl::ResidualPattern pattern;
+    for (std::vector<int32_t>* list : {&pattern.prefix, &pattern.period}) {
+      t = tok();
+      if (t != "[") {
+        fprintf(stderr, "Residuals: expected [, got %s\n", t.c_str());
+        return false;
+      }
+      for (t = tok(); t != "]"; t = tok()) {
+        size_t num = 0;
+        int64_t v = ParseInt(t, &num);
+        if (num != t.size() || t.empty() || v < -(1 << 30) || v > (1 << 30)) {
+          fprintf(stderr, "Invalid residual: %s\n", t.c_str());
+          return false;
+        }
+        list->push_back(static_cast<int32_t>(v));
+      }
+    }
+    if (pattern.period.empty()) {
+      fprintf(stderr, "Residuals: the repeating part must not be empty\n");
+      return false;
+    }
+    cparams.custom_residuals[stream] = std::move(pattern);
   } else if (t == "NoPalette") {
     frame.palette.enabled = false;
   } else if (t == "DeltaPalette") {
@@ -2851,6 +2888,11 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     cparams.custom_palette.enabled = frame.palette.enabled;
     cparams.options.code_meta_channels = false;
     palette_inline_tree.reset();
+    if (!cparams.custom_residuals.empty() && cparams.vardct_from_tree) {
+      return FailWithMessage(
+          "Residuals are for modular frames (the VarDCT tool computes its LF "
+          "and HF metadata with zero residuals)");
+    }
     if (frame.palette.enabled) {
       if (cparams.vardct_from_tree) {
         return FailWithMessage("Palette is for modular frames");
@@ -2865,7 +2907,10 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
       cparams.custom_palette.entries.clear();
       const size_t nb_entries =
           frame.palette.nb_deltas + frame.palette.nb_colors;
-      if (!frame.palette.implicit && nb_entries > 0) {
+      // (With Residuals, the entries stay in the tree: the meta channel's
+      // residuals are then those of the pattern.)
+      if (!frame.palette.implicit && nb_entries > 0 &&
+          cparams.custom_residuals.empty()) {
         // The entries are the meta channel's pixels: coded, not in the tree.
         cparams.custom_palette.entries.assign(
             frame.palette.num_c, std::vector<int32_t>(nb_entries));
@@ -3230,6 +3275,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     tree.clear();
     spline_data.splines.clear();
     cparams.custom_patches.clear();
+    cparams.custom_residuals.clear();
     frame.save_as_reference = -1;
     frame.reference_only = false;
     frame.save_before_ct = false;
