@@ -2447,7 +2447,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     pal.enabled = true;
     cparams.lossy_palette = false;
   } else if (t == "Residuals") {
-    // Residuals <stream|*> [ <prefix values> ] [ <period values> ]: instead of
+    // Residuals <stream|*> [ <prefix values> ] [ <period values> ] (a value
+    // may be written <value>*<count> for a run of equal values, and
+    // ( <values> )*<count> repeats a group): instead of
     // all zeros, the residuals of modular stream <stream> (the tree's
     // property g; * for every stream not listed) are the prefix, then the
     // period repeated forever (coded with LZ77, so a short period is cheap).
@@ -2468,14 +2470,68 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
         fprintf(stderr, "Residuals: expected [, got %s\n", t.c_str());
         return false;
       }
+      // ( <values> )*<count> repeats a group of values.
+      size_t group_start = std::string::npos;
       for (t = tok(); t != "]"; t = tok()) {
+        if (t == "(") {
+          if (group_start != std::string::npos) {
+            fprintf(stderr, "Residuals: nested ( groups\n");
+            return false;
+          }
+          group_start = list->size();
+          continue;
+        }
+        if (t.rfind(")", 0) == 0) {
+          if (group_start == std::string::npos) {
+            fprintf(stderr, "Residuals: ) without (\n");
+            return false;
+          }
+          uint64_t repeat = 1;
+          if (t.size() > 1) {
+            const std::string count_text = t.substr(t[1] == '*' ? 2 : 1);
+            size_t num = 0;
+            repeat = ParseUnsigned(count_text, &num);
+            if (t[1] != '*' || num != count_text.size() || count_text.empty() ||
+                repeat == 0 || repeat > (1u << 28)) {
+              fprintf(stderr, "Invalid residual group count: %s\n", t.c_str());
+              return false;
+            }
+          }
+          const std::vector<int32_t> group(list->begin() + group_start,
+                                           list->end());
+          for (uint64_t r = 1; r < repeat; r++) {
+            list->insert(list->end(), group.begin(), group.end());
+          }
+          group_start = std::string::npos;
+          continue;
+        }
+        // A value, or <value>*<count> for a run of equal values.
+        std::string value_text = t;
+        uint64_t count = 1;
+        const size_t star = t.find('*');
+        if (star != std::string::npos) {
+          value_text = t.substr(0, star);
+          const std::string count_text = t.substr(star + 1);
+          size_t num = 0;
+          count = ParseUnsigned(count_text, &num);
+          if (num != count_text.size() || count_text.empty() || count == 0 ||
+              count > (1u << 28)) {
+            fprintf(stderr, "Invalid residual count: %s\n", t.c_str());
+            return false;
+          }
+        }
         size_t num = 0;
-        int64_t v = ParseInt(t, &num);
-        if (num != t.size() || t.empty() || v < -(1 << 30) || v > (1 << 30)) {
+        int64_t v = ParseInt(value_text, &num);
+        if (num != value_text.size() || value_text.empty() ||
+            v < -(1 << 30) || v > (1 << 30)) {
           fprintf(stderr, "Invalid residual: %s\n", t.c_str());
           return false;
         }
-        list->push_back(static_cast<int32_t>(v));
+        list->insert(list->end(), count, static_cast<int32_t>(v));
+      }
+      if (group_start != std::string::npos) {
+        fprintf(stderr, "Residuals: ( without )\n");
+        return false;
       }
     }
     if (pattern.period.empty()) {
