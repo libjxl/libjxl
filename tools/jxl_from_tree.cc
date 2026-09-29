@@ -2753,9 +2753,14 @@ std::vector<jxl::BlendingInfo> DefaultEcBlending(
   std::vector<jxl::BlendingInfo> info(ec.size());
   for (size_t i = 0; i < ec.size(); i++) {
     info[i].alpha_channel = alpha;
-    // Extra channels other than the blending alpha channel are added.
+    // Hidden channels hold state that every frame computes anew: replaced.
+    // (Otherwise a lone hidden channel would be blended as if it were the
+    // alpha, and accumulate from frame to frame.) Other extra channels than
+    // the blending alpha channel are added.
     BlendMode mode = ib.blendmode;
-    if (ec[i].type != jxl::ExtraChannel::kBlack && i != alpha) {
+    if (ec[i].type == jxl::ExtraChannel::kOptional) {
+      mode = BlendMode::kReplace;
+    } else if (ec[i].type != jxl::ExtraChannel::kBlack && i != alpha) {
       mode = BlendMode::kAdd;
     }
     info[i].mode = ib.blend ? mode : BlendMode::kReplace;
@@ -3029,13 +3034,13 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
                 info.source);
         return JXL_FAILURE("Invalid blend source");
       }
-      if (info.source != 1) {
-        // The blend source of the extra channels (by default 1) follows.
-        info.extra_channel_blending_info =
-            DefaultEcBlending(io->frames[0], *metadata);
-        for (jxl::BlendingInfo& ec : info.extra_channel_blending_info) {
-          ec.source = info.source;
-        }
+      // The extra channels' blending, with the frame's blend source (the
+      // encoder's default would use slot 1, and blend a lone hidden channel as
+      // if it were the alpha channel).
+      info.extra_channel_blending_info =
+          DefaultEcBlending(io->frames[0], *metadata);
+      for (jxl::BlendingInfo& ec : info.extra_channel_blending_info) {
+        ec.source = info.source;
       }
     }
     if (cparams.vardct_from_tree && frame.group_shift_given &&
