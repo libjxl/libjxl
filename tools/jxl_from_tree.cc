@@ -54,6 +54,7 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
@@ -1820,6 +1821,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     io.metadata.m.SetAlphaBits(io.metadata.m.bit_depth.bits_per_sample);
     JXL_ASSIGN_OR_RETURN(
         ImageF alpha, ImageF::Create(jpegxl::tools::NoMemoryManager(), W, H));
+    jxl::ZeroFillImage(&alpha);
     if (!io.frames[0].SetAlpha(std::move(alpha))) {
       fprintf(stderr, "Internal: SetAlpha failed\n");
       return false;
@@ -2391,8 +2393,11 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
   if (tree_out) {
     PrintTree(tree, tree_out);
   }
+  // The encoder does not use the pixels, but it looks at them (e.g. for the
+  // chroma adjustments of VarDCT frames): they must not be uninitialized.
   JXL_ASSIGN_OR_RETURN(Image3F image,
                        Image3F::Create(memory_manager, width, height));
+  jxl::ZeroFillImage(&image);
   JXL_RETURN_IF_ERROR(
       io->SetFromImage(std::move(image), io->metadata.m.color_encoding));
   if (frame.image_xsize) {
@@ -2444,6 +2449,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
       eci.type = jxl::ExtraChannel::kOptional;
       JXL_ASSIGN_OR_RETURN(ImageF ch,
                            ImageF::Create(memory_manager, width, height));
+      jxl::ZeroFillImage(&ch);
       io->frames[0].extra_channels().emplace_back(std::move(ch));
     }
   }
@@ -2716,10 +2722,12 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     for (ImageF& ec : io->frames[0].extra_channels()) {
       if (ec.xsize() != width || ec.ysize() != height) {
         JXL_ASSIGN_OR_RETURN(ec, ImageF::Create(memory_manager, width, height));
+        jxl::ZeroFillImage(&ec);
       }
     }
     JXL_ASSIGN_OR_RETURN(Image3F image,
                          Image3F::Create(memory_manager, width, height));
+    jxl::ZeroFillImage(&image);
     JXL_RETURN_IF_ERROR(
         io->SetFromImage(std::move(image), ColorEncoding::SRGB()));
     io->frames[0].blend = true;
