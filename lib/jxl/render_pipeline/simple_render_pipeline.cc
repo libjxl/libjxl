@@ -31,7 +31,7 @@ Status SimpleRenderPipeline::PrepareForThreadsInternal(size_t num,
     return true;
   }
   auto ch_size = [](size_t frame_size, size_t shift) {
-    return DivCeil(frame_size, 1 << shift) + kRenderPipelineXOffset * 2;
+    return DivCeilPow2(frame_size, shift) + kRenderPipelineXOffset * 2;
   };
   for (auto& entry : channel_shifts_[0]) {
     JXL_ASSIGN_OR_RETURN(
@@ -60,11 +60,10 @@ Rect SimpleRenderPipeline::MakeChannelRect(size_t group_id, size_t channel) {
   return Rect(
       kRenderPipelineXOffset + gx * xgroupdim,
       kRenderPipelineXOffset + gy * ygroupdim, xgroupdim, ygroupdim,
-      kRenderPipelineXOffset + DivCeil(frame_dimensions_.xsize_upsampled,
-                                       1 << channel_shifts_[0][channel].first),
-      kRenderPipelineXOffset +
-          DivCeil(frame_dimensions_.ysize_upsampled,
-                  1 << channel_shifts_[0][channel].second));
+      kRenderPipelineXOffset + DivCeilPow2(frame_dimensions_.xsize_upsampled,
+                                           channel_shifts_[0][channel].first),
+      kRenderPipelineXOffset + DivCeilPow2(frame_dimensions_.ysize_upsampled,
+                                           channel_shifts_[0][channel].second));
 }
 
 std::vector<std::pair<ImageF*, Rect>> SimpleRenderPipeline::PrepareBuffers(
@@ -220,10 +219,10 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
     }
     for (size_t c = 0; c < channel_data_.size(); c++) {
       size_t next_stage = std::min(stage_id + 1, channel_shifts_.size() - 1);
-      size_t c_xsize = DivCeil(frame_dimensions_.xsize_upsampled,
-                               1 << channel_shifts_[next_stage][c].first);
-      size_t c_ysize = DivCeil(frame_dimensions_.ysize_upsampled,
-                               1 << channel_shifts_[next_stage][c].second);
+      size_t c_xsize = DivCeilPow2(frame_dimensions_.xsize_upsampled,
+                                   channel_shifts_[next_stage][c].first);
+      size_t c_ysize = DivCeilPow2(frame_dimensions_.ysize_upsampled,
+                                   channel_shifts_[next_stage][c].second);
       JXL_RETURN_IF_ERROR(
           channel_data_[c].ShrinkTo(c_xsize + 2 * kRenderPipelineXOffset,
                                     c_ysize + 2 * kRenderPipelineXOffset));

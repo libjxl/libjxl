@@ -131,7 +131,7 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
-  JXL_ENSURE(chin.w == DivCeil(chin.w + chin_residual.w, 2));
+  JXL_ENSURE(chin.w == DivCeil<size_t>(chin.w + chin_residual.w, 2));
   JXL_ENSURE(chin.h == chin_residual.h);
   JxlMemoryManager *memory_manager = input.memory_manager();
 
@@ -244,7 +244,7 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
-  JXL_ENSURE(chin.h == DivCeil(chin.h + chin_residual.h, 2));
+  JXL_ENSURE(chin.h == DivCeil<size_t>(chin.h + chin_residual.h, 2));
   JXL_ENSURE(chin.w == chin_residual.w);
   JxlMemoryManager *memory_manager = input.memory_manager();
 
@@ -271,7 +271,7 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
     return true;
   }
 
-  static constexpr const int kColsPerThread = 64;
+  static constexpr const size_t kColsPerThread = 64;
   const auto unsqueeze_slice = [&](const uint32_t task,
                                    size_t /* thread */) -> Status {
     const size_t x0 = task * kColsPerThread;
