@@ -2116,6 +2116,12 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
                                 io, have_next, x0, y0, buffer_size));
   return true;
 }
+// JXL_FAILURE prints its message only in debug builds.
+Status FailWithMessage(const char* message) {
+  fprintf(stderr, "%s\n", message);
+  return JXL_FAILURE("%s", message);
+}
+
 // What a reference slot holds, as far as frame blending is concerned.
 enum class SlotState : uint8_t { kEmpty, kAfterCT, kBeforeCT };
 
@@ -2312,6 +2318,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
   writer.ZeroPadToByte();
 
   bool warned_group_shift = false;
+  size_t frame_index = 0;
   SlotState slots[jxl::kMaxNumReferenceFrames] = {};
   int last_after_ct = -1;
   while (true) {
@@ -2327,6 +2334,9 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     }
     if (frame.reference_only) {
       if (info.is_last) {
+        fprintf(stderr,
+                "The last frame cannot be ReferenceOnly (it is not displayed): "
+                "give it NotLast and add a frame that uses it\n");
         return JXL_FAILURE("The last frame cannot be ReferenceOnly");
       }
       info.frame_type = jxl::FrameType::kReferenceOnly;
@@ -2368,15 +2378,16 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
       warned_group_shift = true;
     }
     if (!cparams.custom_coeff_orders.empty() && !cparams.vardct_from_tree) {
-      return JXL_FAILURE("CoeffOrder needs VarDCT");
+      return FailWithMessage("CoeffOrder needs VarDCT");
     }
     if ((cparams.vardct_global_scale || cparams.vardct_quant_dc ||
          !cparams.vardct_lf_inv_quant.empty()) &&
         !cparams.vardct_from_tree) {
-      return JXL_FAILURE("GlobalScale, LFQuant and LFChannelQuant need VarDCT");
+      return FailWithMessage(
+          "GlobalScale, LFQuant and LFChannelQuant need VarDCT");
     }
     if (!cparams.vardct_dequant.empty() && !cparams.vardct_from_tree) {
-      return JXL_FAILURE("Dequantization tables need VarDCT");
+      return FailWithMessage("Dequantization tables need VarDCT");
     }
     if (!CheckDequantTables(memory_manager, cparams.custom_fixed_tree, width,
                             height, cparams)) {
@@ -2384,7 +2395,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     }
     if (frame.have_hf) {
       if (!cparams.vardct_from_tree) {
-        return JXL_FAILURE("HF context keywords need VarDCT");
+        return FailWithMessage("HF context keywords need VarDCT");
       }
       if (!SetHFContexts(frame.hf, memory_manager, cparams.custom_fixed_tree,
                          width, height, cparams)) {
@@ -2411,9 +2422,13 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
       }
     }
 
-    JXL_RETURN_IF_ERROR(jxl::EncodeFrame(
-        memory_manager, cparams, info, metadata.get(), io->frames[0],
-        *JxlGetDefaultCms(), nullptr, &writer, nullptr));
+    if (!jxl::EncodeFrame(memory_manager, cparams, info, metadata.get(),
+                          io->frames[0], *JxlGetDefaultCms(), nullptr, &writer,
+                          nullptr)) {
+      fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
+      return JXL_FAILURE("Failed to encode frame");
+    }
+    frame_index++;
     // What the reference slots hold now (as in FrameHeader::CanBeReferenced).
     const bool has_duration =
         metadata->m.have_animation && !frame.reference_only;
@@ -2446,7 +2461,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
         !frame.dequant_trees.empty() || !frame.acs_tree.nodes.empty() ||
         !frame.qf_tree.nodes.empty()) {
       if (!cparams.vardct_from_tree) {
-        return JXL_FAILURE(
+        return FailWithMessage(
             "LFTree, HFMetaTree, DequantTable, ACSTree and QFTree need VarDCT");
       }
       const bool extra_channels = metadata->m.num_extra_channels > 0;
