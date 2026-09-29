@@ -1806,13 +1806,14 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
   } else if (t == "CoeffOrder") {
     // CoeffOrder <order class> [Y|X|B] <n> <u1> <v1> ... <un> <vn>: in the
-    // coefficient order of that class (0..12, or a DCT name like DCT64; for
-    // all channels unless one is given), coefficients (u, v) come right after
-    // the LLF ones, so the first of them is at scan index covered_blocks; the
-    // other coefficients keep the default order. u and v are the horizontal and
-    // vertical frequency in the square or tall transform of the class (like
-    // DCT16X8, which is 8 wide and 16 tall); in the wide one (DCT8X16), the
-    // same entry is frequency (v, u).
+    // coefficient order of that class (an entry can also be "fill <k>", the
+    // next k coefficients of the default order that the list does not have)
+    // (0..12, or a DCT name like DCT64; for all channels unless one is given),
+    // coefficients (u, v) come right after the LLF ones, so the first of them
+    // is at scan index covered_blocks; the other coefficients keep the default
+    // order. u and v are the horizontal and vertical frequency in the square or
+    // tall transform of the class (like DCT16X8, which is 8 wide and 16 tall);
+    // in the wide one (DCT8X16), the same entry is frequency (v, u).
     static const std::unordered_map<std::string, size_t> order_names = {
         {"DCT8", 0},    {"DCT16", 2},      {"DCT32", 3},   {"DCT16x8", 4},
         {"DCT32x8", 5}, {"DCT32x16", 6},   {"DCT64", 7},   {"DCT64x32", 8},
@@ -1852,12 +1853,27 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     jxl::CoefficientLayout(&rows, &columns);
     // In the coefficient layout (rows <= columns), the row is the horizontal
     // and the column the vertical frequency of the square or tall transform.
+    // An entry is a coefficient (u, v) or "fill <k>": the next k coefficients
+    // of the default order that the list does not have (resolved below).
     std::vector<uint32_t> positions;
+    std::vector<std::pair<size_t, size_t>> fills;  // (index, k)
     for (size_t i = 0; i < n; i++) {
-      size_t uv[2];
-      for (size_t& v : uv) {
+      t = tok();
+      if (t == "fill") {
         t = tok();
-        v = ParseUnsigned(t, &num);
+        size_t k = ParseUnsigned(t, &num);
+        if (num != t.size()) {
+          fprintf(stderr, "Invalid number of fill coefficients: %s\n",
+                  t.c_str());
+          return false;
+        }
+        fills.emplace_back(positions.size(), k);
+        continue;
+      }
+      size_t uv[2];
+      for (size_t j = 0; j < 2; j++) {
+        if (j > 0) t = tok();
+        uv[j] = ParseUnsigned(t, &num);
         if (num != t.size()) {
           fprintf(stderr, "Invalid coefficient frequency: %s\n", t.c_str());
           return false;
@@ -1881,6 +1897,39 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
         return false;
       }
       positions.push_back(pos);
+    }
+    if (!fills.empty()) {
+      // The fills take the default order (after the LLF coefficients), in
+      // order, skipping the coefficients that the list has.
+      const size_t size =
+          acs.covered_blocks_x() * acs.covered_blocks_y() * jxl::kDCTBlockSize;
+      std::vector<jxl::coeff_order_t> natural(size);
+      acs.ComputeNaturalCoeffOrder(natural.data());
+      std::vector<bool> listed(size);
+      for (uint32_t pos : positions) listed[pos] = true;
+      size_t next = acs.covered_blocks_x() * acs.covered_blocks_y();
+      std::vector<uint32_t> all;
+      size_t explicit_pos = 0;
+      for (const auto& fill : fills) {
+        while (explicit_pos < fill.first)
+          all.push_back(positions[explicit_pos++]);
+        for (size_t j = 0; j < fill.second; j++) {
+          while (next < size && listed[natural[next]]) next++;
+          if (next == size) {
+            fprintf(stderr,
+                    "fill %zu: not enough coefficients left in the order of "
+                    "class %zu\n",
+                    fill.second, ord);
+            return false;
+          }
+          listed[natural[next]] = true;
+          all.push_back(natural[next++]);
+        }
+      }
+      while (explicit_pos < positions.size()) {
+        all.push_back(positions[explicit_pos++]);
+      }
+      positions = std::move(all);
     }
     cparams.custom_coeff_orders.resize(3 * jxl::kNumOrders);
     for (size_t c : channels) {
