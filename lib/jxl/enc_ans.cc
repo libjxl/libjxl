@@ -1088,8 +1088,11 @@ StatusOr<size_t> EncodeFixedTokenHistograms(JxlMemoryManager* memory_manager,
   std::vector<uint32_t> cluster_tokens;
   std::vector<uint8_t> context_map(tokens.size());
   for (size_t c = 0; c < tokens.size(); c++) {
-    if (tokens[c] >= 256) {
-      return JXL_FAILURE("Fixed token %u is not below 256", tokens[c]);
+    // The alphabet size (token + 1) can be up to 2^15, but jxl-rs refuses
+    // 2^15 itself.
+    if (tokens[c] >= (1u << PREFIX_MAX_BITS) - 1) {
+      return JXL_FAILURE("Fixed token %u is not below %u", tokens[c],
+                         (1u << PREFIX_MAX_BITS) - 1);
     }
     size_t i = 0;
     while (i < cluster_tokens.size() && cluster_tokens[i] != tokens[c]) i++;
@@ -1104,8 +1107,10 @@ StatusOr<size_t> EncodeFixedTokenHistograms(JxlMemoryManager* memory_manager,
   codes->context_map = context_map;
   codes->use_prefix_code = true;
   codes->log_alpha_size = PREFIX_MAX_BITS;
-  // Values below 256 are the token itself (no raw bits).
-  codes->uint_config.assign(cluster_tokens.size(), HybridUintConfig(8, 0, 0));
+  // With split_exponent = log_alpha_size (the cheapest configuration to
+  // signal), every value below 2^15 is the token itself (no raw bits).
+  codes->uint_config.assign(cluster_tokens.size(),
+                            HybridUintConfig(PREFIX_MAX_BITS, 0, 0));
   codes->encoding_info.clear();
   size_t cost = 0;
   const auto& body = [&]() -> Status {

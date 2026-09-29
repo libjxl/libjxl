@@ -522,16 +522,18 @@ bool SetHFContexts(const HFContextSettings& hf,
   std::vector<int32_t> props(6);
   // Token of the tree's value for `props`, or -1 after an error message.
   auto tree_token = [&]() -> int32_t {
+    // Fixed tokens are below 2^15 - 1 (the largest prefix code alphabet that
+    // both decoders accept).
     int32_t v = hf.coefficients.Eval(props);
     if (props[0] == 0) {
-      if (v < 0 || v > 255) {
-        fprintf(stderr, "Number of nonzeros %d is not in 0..255\n", v);
+      if (v < 0 || v > 32766) {
+        fprintf(stderr, "Number of nonzeros %d is not in 0..32766\n", v);
         return -1;
       }
       return v;
     }
-    if (v < -128 || v > 127) {
-      fprintf(stderr, "Coefficient %d is not in -128..127\n", v);
+    if (v < -16383 || v > 16383) {
+      fprintf(stderr, "Coefficient %d is not in -16383..16383\n", v);
       return -1;
     }
     return jxl::PackSigned(v);
