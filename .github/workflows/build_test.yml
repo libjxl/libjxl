@@ -116,18 +116,18 @@ jobs:
           - name: release:gcc
             os: ubuntu-latest
             mode: release
-            cc: gcc
-            cxx: g++
+            cc: gcc-latest
+            cxx: g++-latest
           - name: release:gcc-old
             os: ubuntu-24.04
             mode: release
-            cc: gcc
-            cxx: g++
+            cc: gcc-latest
+            cxx: g++-latest
           - name: release:gcc-old-old
             os: ubuntu-22.04
             mode: release
-            cc: gcc
-            cxx: g++
+            cc: gcc-latest
+            cxx: g++-latest
           # Builds with old clang in release mode
           - name: release:clang-old
             os: ubuntu-24.04
@@ -152,8 +152,8 @@ jobs:
           - name: release_lto:gcc
             os: ubuntu-latest
             mode: release
-            cc: gcc
-            cxx: g++
+            cc: gcc-latest
+            cxx: g++-latest
             cmake_args: >-
               -DJPEGXL_ENABLE_LTO=ON
           # OSX builds
@@ -263,9 +263,21 @@ jobs:
           fi
         fi
         sudo ./tools/scripts/install_deps.sh build extras plugins ${INSTALL_BENCHMARK} -- ${{ matrix.apt_pkgs }}
+
+    - name: Select latest installed GCC
+      if: matrix.cc == 'gcc-latest'
+      run: |
+        LATEST_GCC_VER=$(compgen -c gcc- | grep -E '^gcc-[0-9]+$' | sort -V | tail -n 1 | cut -d- -f2)
+        echo "CC=gcc-${LATEST_GCC_VER}" >> $GITHUB_ENV
+        echo "CXX=g++-${LATEST_GCC_VER}" >> $GITHUB_ENV
+        echo "Selected GCC version: ${LATEST_GCC_VER}"
+
+    - name: Set CC/CXX
+      if: matrix.cc != 'gcc-latest'
+      run: |
         echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
-  
+
     - name: Setup the Homebrew prefixes
       if: startsWith(matrix.os, 'macos-')
       run: |

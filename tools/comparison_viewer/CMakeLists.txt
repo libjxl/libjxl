@@ -3,9 +3,17 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
+if (APPLE)
+  add_subdirectory(mac)
+endif ()
+
 find_package(Qt6 QUIET COMPONENTS Concurrent Widgets)
 if (NOT Qt6_FOUND)
-  message(WARNING "Qt6 was not found. The comparison tool will not be built.")
+  if (APPLE)
+    message(WARNING "Qt6 was not found. The codec comparison tool will not be built. (The image comparison tool will be.)")
+  else ()
+    message(WARNING "Qt6 was not found. The comparison tool will not be built.")
+  endif ()
   return()
 endif ()
 
@@ -58,19 +66,21 @@ target_link_libraries(compare_codecs
   icc_detect
 )
 
-add_executable(compare_images WIN32
-  compare_images.cc
-  settings.cc
-  settings.h
-  settings.ui
-  split_image_renderer.cc
-  split_image_renderer.h
-  split_image_view.cc
-  split_image_view.h
-  split_image_view.ui
-)
-target_link_libraries(compare_images
-  image_loading
-  Qt6::Widgets
-  icc_detect
-)
+if (NOT APPLE)
+  add_executable(compare_images WIN32
+    compare_images.cc
+    settings.cc
+    settings.h
+    settings.ui
+    split_image_renderer.cc
+    split_image_renderer.h
+    split_image_view.cc
+    split_image_view.h
+    split_image_view.ui
+  )
+  target_link_libraries(compare_images
+    image_loading
+    Qt6::Widgets
+    icc_detect
+  )
+endif ()
