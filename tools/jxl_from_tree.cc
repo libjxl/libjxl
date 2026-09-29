@@ -853,6 +853,8 @@ struct FrameSettings {
   // HFMetaTree), combined with the frame's tree by stream ID.
   Tree lf_tree;
   Tree hf_meta_tree;
+  // ExtraTree: the tree for the extra channels of a VarDCT frame.
+  Tree extra_tree;
   // Trees for RAW dequantization tables of a VarDCT frame (DequantTable), by
   // quantization table index.
   std::map<size_t, Tree> dequant_trees;
@@ -928,17 +930,53 @@ size_t AppendTree(const Tree& src, Tree* dst) {
   return offset;
 }
 
+// The extra channels (alpha, hidden channels) of a VarDCT frame, for the
+// stream IDs of their modular streams.
+struct ExtraChannelLayout {
+  bool present = false;
+  // Upsampling of the frame and of the extra channels (Upsample, Upsample_EC).
+  size_t upsampling = 1;
+  size_t ec_upsampling = 1;
+  // Squeeze: the channels are split over all kinds of streams.
+  bool responsive = false;
+};
+
+// The ranges [first, last] of the stream IDs that hold extra channels in a
+// VarDCT frame with n DC groups, as the decoders split them: channels of at
+// most 256x256 are in the global stream (0), others in the modular LF streams
+// (n+1..2n) if they are downsampled 8x or more, else in the modular group
+// streams (after the quantization tables). With Squeeze, all of these.
+std::vector<std::pair<size_t, size_t>> ExtraChannelStreams(
+    const ExtraChannelLayout& ec, size_t width, size_t height,
+    const FrameDimensions& frame_dim) {
+  const size_t n = frame_dim.num_dc_groups;
+  const size_t groups_first = 1 + 3 * n + jxl::kNumQuantTables;
+  const size_t groups_last = std::numeric_limits<int32_t>::max();
+  if (!ec.present) return {};
+  if (ec.responsive) {
+    return {{0, 0}, {n + 1, 2 * n}, {groups_first, groups_last}};
+  }
+  const size_t ups = std::max(ec.ec_upsampling, ec.upsampling);
+  const size_t xsize = jxl::DivCeil(width * ec.upsampling, ups);
+  const size_t ysize = jxl::DivCeil(height * ec.upsampling, ups);
+  if (xsize <= jxl::kGroupDim && ysize <= jxl::kGroupDim) return {{0, 0}};
+  const size_t shift =
+      jxl::CeilLog2Nonzero(ups) - jxl::CeilLog2Nonzero(ec.upsampling);
+  if (shift >= 3) return {{n + 1, 2 * n}};
+  return {{groups_first, groups_last}};
+}
+
 // Replaces `tree` by a tree that splits on the stream ID (property 1) of a
 // VarDCT frame of the given size: frame.lf_tree (if not empty) for the LF
 // image (VarDCT DC streams 1..n, for n DC groups), frame.hf_meta_tree (if not
 // empty) for the HF metadata (AC metadata streams 2n+1..3n), the trees of
 // frame.dequant_trees for the streams of their quantization tables (3n+1 +
-// the table index), and `tree` for all other streams, which only exist with
-// extra channels.
+// the table index), frame.extra_tree (if not empty) for the streams of the
+// extra channels, and `tree` for all other streams.
 void CombineVarDCTTrees(const FrameSettings& frame, size_t width, size_t height,
-                        bool extra_channels, Tree* tree) {
+                        const ExtraChannelLayout& ec, Tree* tree) {
   if (frame.lf_tree.empty() && frame.hf_meta_tree.empty() &&
-      frame.dequant_trees.empty()) {
+      frame.dequant_trees.empty() && frame.extra_tree.empty()) {
     return;
   }
   FrameDimensions frame_dim;
@@ -948,6 +986,56 @@ void CombineVarDCTTrees(const FrameSettings& frame, size_t width, size_t height,
   const Tree rest = *tree;
   Tree& out = *tree;
   out.clear();
+  if (ec.present) {
+    // The streams that are used, in order, each with its tree; the streams in
+    // between are empty, so any tree will do there. One split between
+    // consecutive ranges with different trees (balanced).
+    struct Range {
+      size_t first, last;
+      const Tree* tree;
+    };
+    std::vector<Range> ranges;
+    const Tree* lf = frame.lf_tree.empty() ? &rest : &frame.lf_tree;
+    const Tree* hf = frame.hf_meta_tree.empty() ? &rest : &frame.hf_meta_tree;
+    const Tree* extra = frame.extra_tree.empty() ? &rest : &frame.extra_tree;
+    ranges.push_back({1, static_cast<size_t>(n), lf});
+    ranges.push_back(
+        {2 * static_cast<size_t>(n) + 1, 3 * static_cast<size_t>(n), hf});
+    for (const auto& table : frame.dequant_trees) {
+      const size_t id = 1 + 3 * n + table.first;
+      ranges.push_back({id, id, &table.second});
+    }
+    for (const auto& r : ExtraChannelStreams(ec, width, height, frame_dim)) {
+      ranges.push_back({r.first, r.second, extra});
+    }
+    std::sort(ranges.begin(), ranges.end(),
+              [](const Range& a, const Range& b) { return a.first < b.first; });
+    std::vector<Range> merged;
+    for (const Range& r : ranges) {
+      if (!merged.empty() && merged.back().tree == r.tree) {
+        merged.back().last = r.last;
+      } else {
+        merged.push_back(r);
+      }
+    }
+    std::function<size_t(size_t, size_t)> build = [&](size_t lo, size_t hi) {
+      if (hi - lo == 1) return AppendTree(*merged[lo].tree, &out);
+      const size_t mid = (lo + hi) / 2;
+      const size_t pos = out.size();
+      // if g > (the last stream of the lower half)
+      out.push_back(jxl::PropertyDecisionNode::Split(
+          1, static_cast<int>(merged[mid - 1].last), 0, 0));
+      const size_t then_node = build(mid, hi);
+      const size_t else_node = build(lo, mid);
+      out[pos].lchild = then_node;
+      out[pos].rchild = else_node;
+      return pos;
+    };
+    build(0, merged.size());
+    return;
+  }
+  // Without extra channels: only the LF, HF metadata and quantization table
+  // streams.
   // "if g > value" (then: lchild, else: rchild), children set below.
   auto split = [&](int value) {
     out.push_back(jxl::PropertyDecisionNode::Split(1, value, 0, 0));
@@ -960,56 +1048,25 @@ void CombineVarDCTTrees(const FrameSettings& frame, size_t width, size_t height,
     out[node].lchild = then_node;
     out[node].rchild = else_node;
   };
-  // The streams up to the HF metadata (0..3n), and if not `bounded`, the
-  // others too. Decoders may reject splits outside the range of the property
-  // (jxl-rs does).
-  auto vardct_streams = [&](bool bounded) -> size_t {
+  // The streams up to the HF metadata (1..3n).
+  auto vardct_streams = [&]() -> size_t {
     if (frame.lf_tree.empty() && frame.hf_meta_tree.empty()) {
       return subtree(rest);
     }
-    if (!extra_channels) {
-      // if g > n: HF metadata, else LF
-      size_t root = split(n);
-      size_t hf = subtree(frame.hf_meta_tree);
-      size_t lf = subtree(frame.lf_tree);
-      set_children(root, hf, lf);
-      return root;
-    }
-    // if g > 2n (if g > 3n: rest, else HF metadata)
-    // else (if g > n: rest (modular LF), else (if g > 0: LF, else: rest))
-    size_t root = split(2 * n);
-    size_t hf = bounded ? 0 : split(3 * n);
-    size_t low = split(n);
-    size_t lf = split(0);
-    if (bounded) {
-      hf = subtree(frame.hf_meta_tree);
-    } else {
-      size_t hf_rest = subtree(rest);
-      size_t hf_meta = subtree(frame.hf_meta_tree);
-      set_children(hf, hf_rest, hf_meta);
-    }
-    set_children(root, hf, low);
-    size_t modular_lf = subtree(rest);
-    set_children(low, modular_lf, lf);
-    size_t lf_tree = subtree(frame.lf_tree);
-    size_t global = subtree(rest);
-    set_children(lf, lf_tree, global);
+    // if g > n: HF metadata, else LF
+    size_t root = split(n);
+    size_t hf = subtree(frame.hf_meta_tree);
+    size_t lf = subtree(frame.lf_tree);
+    set_children(root, hf, lf);
     return root;
   };
   if (frame.dequant_trees.empty()) {
-    vardct_streams(/*bounded=*/false);
+    vardct_streams();
     return;
   }
   // if g > 3n: the quantization tables (if g > 3n + 1 + table: the next
-  // table ...), after them (with extra channels) the rest; else the streams
-  // up to the HF metadata.
+  // table ...); else the streams up to the HF metadata.
   size_t root = split(3 * n);
-  size_t tables_end = 0;
-  if (extra_channels) {
-    tables_end = split(3 * n + jxl::kNumQuantTables);
-    size_t after = subtree(rest);
-    out[tables_end].lchild = after;
-  }
   std::vector<std::pair<size_t, const Tree*>> tables;
   for (const auto& table : frame.dequant_trees) {
     tables.emplace_back(table.first, &table.second);
@@ -1032,11 +1089,7 @@ void CombineVarDCTTrees(const FrameSettings& frame, size_t width, size_t height,
     }
     parent = node;
   }
-  if (extra_channels) {
-    out[tables_end].rchild = tables_root;
-    tables_root = tables_end;
-  }
-  size_t low = vardct_streams(/*bounded=*/true);
+  size_t low = vardct_streams();
   set_children(root, tables_root, low);
 }
 
@@ -1134,7 +1187,7 @@ size_t AppendRunsTree(const std::vector<int32_t>& values, Tree* dst) {
 // tree that gives these lists, in frame.hf_meta_tree.
 bool BuildHFMetaLists(JxlMemoryManager* memory_manager, FrameSettings& frame,
                       const Tree& rest, size_t width, size_t height,
-                      bool extra_channels) {
+                      const ExtraChannelLayout& extra_channels) {
   if (frame.acs_tree.nodes.empty() && frame.qf_tree.nodes.empty()) {
     return true;
   }
@@ -1575,12 +1628,15 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       return false;
     }
     frame.have_hf = true;
-  } else if (t == "LFTree" || t == "HFMetaTree") {
-    // LFTree <tree>, HFMetaTree <tree>: the trees for the LF image and the HF
-    // metadata of a VarDCT frame, without splitting on the stream ID; the
+  } else if (t == "LFTree" || t == "HFMetaTree" || t == "ExtraTree") {
+    // LFTree <tree>, HFMetaTree <tree>, ExtraTree <tree>: the trees for the
+    // LF image, the HF metadata and the extra channels (alpha, hidden
+    // channels) of a VarDCT frame, without splitting on the stream ID; the
     // frame's tree is used for the other streams (and for these, if not
     // given).
-    Tree& subtree = t == "LFTree" ? frame.lf_tree : frame.hf_meta_tree;
+    Tree& subtree = t == "LFTree"       ? frame.lf_tree
+                    : t == "HFMetaTree" ? frame.hf_meta_tree
+                                        : frame.extra_tree;
     subtree.clear();
     JXL_RETURN_IF_ERROR(ParseNode(tok, subtree, spline_data, frame, cparams, W,
                                   H, io, have_next, x0, y0, buffer_size));
@@ -2434,21 +2490,37 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     io->metadata.m.modular_16_bit_buffer_sufficient = true;
   }
 
-  if (!frame.lf_tree.empty() || !frame.hf_meta_tree.empty() ||
-      !frame.dequant_trees.empty() || !frame.acs_tree.nodes.empty() ||
-      !frame.qf_tree.nodes.empty()) {
-    if (!cparams.vardct_from_tree) {
-      return JXL_FAILURE(
-          "LFTree, HFMetaTree, DequantTable, ACSTree and QFTree need VarDCT");
+  // The sections of a VarDCT frame (LFTree, HFMetaTree, DequantTable,
+  // ACSTree, QFTree, ExtraTree), combined into the frame's tree.
+  const auto combine_sections = [&](bool have_extra_channels) -> Status {
+    if (frame.lf_tree.empty() && frame.hf_meta_tree.empty() &&
+        frame.dequant_trees.empty() && frame.acs_tree.nodes.empty() &&
+        frame.qf_tree.nodes.empty() && frame.extra_tree.empty()) {
+      return true;
     }
-    const bool extra_channels = io->metadata.m.num_extra_channels > 0 ||
-                                cparams.move_to_front_from_channel < -1;
-    if (!BuildHFMetaLists(memory_manager, frame, tree, width, height,
-                          extra_channels)) {
+    if (!cparams.vardct_from_tree) {
+      return FailWithMessage(
+          "LFTree, HFMetaTree, DequantTable, ACSTree, QFTree and ExtraTree "
+          "need VarDCT");
+    }
+    if (!frame.extra_tree.empty() && !have_extra_channels) {
+      return FailWithMessage(
+          "ExtraTree needs extra channels (Alpha or HiddenChannel)");
+    }
+    ExtraChannelLayout ec;
+    ec.present = have_extra_channels;
+    ec.upsampling = cparams.resampling;
+    ec.ec_upsampling = cparams.ec_resampling;
+    ec.responsive = cparams.responsive != 0;
+    if (!BuildHFMetaLists(memory_manager, frame, tree, width, height, ec)) {
       return JXL_FAILURE("Invalid ACSTree or QFTree");
     }
-    CombineVarDCTTrees(frame, width, height, extra_channels, &tree);
-  }
+    CombineVarDCTTrees(frame, width, height, ec, &tree);
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(
+      combine_sections(io->metadata.m.num_extra_channels > 0 ||
+                       cparams.move_to_front_from_channel < -1));
 
   if (tree_out) {
     PrintTree(tree, tree_out);
@@ -2741,6 +2813,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     cparams.manual_noise.clear();
     frame.lf_tree.clear();
     frame.hf_meta_tree.clear();
+    frame.extra_tree.clear();
     // RAW dequantization tables come from the frame's tree.
     frame.dequant_trees.clear();
     for (auto& table : cparams.vardct_dequant) table.raw_den = 0;
@@ -2748,20 +2821,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
                    have_next, x0, y0, buffer_size)) {
       return JXL_FAILURE("Failed to ParseNode");
     }
-    if (!frame.lf_tree.empty() || !frame.hf_meta_tree.empty() ||
-        !frame.dequant_trees.empty() || !frame.acs_tree.nodes.empty() ||
-        !frame.qf_tree.nodes.empty()) {
-      if (!cparams.vardct_from_tree) {
-        return FailWithMessage(
-            "LFTree, HFMetaTree, DequantTable, ACSTree and QFTree need VarDCT");
-      }
-      const bool extra_channels = metadata->m.num_extra_channels > 0;
-      if (!BuildHFMetaLists(memory_manager, frame, tree, width, height,
-                            extra_channels)) {
-        return JXL_FAILURE("Invalid ACSTree or QFTree");
-      }
-      CombineVarDCTTrees(frame, width, height, extra_channels, &tree);
-    }
+    JXL_RETURN_IF_ERROR(combine_sections(metadata->m.num_extra_channels > 0));
     if (!CheckTreeSplits(tree, "tree")) {
       return JXL_FAILURE("Invalid tree");
     }
