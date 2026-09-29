@@ -859,6 +859,108 @@ bool CheckTreeSplits(const Tree& tree, const char* what) {
 }
 
 // Per-frame settings besides the tree. Patches go to cparams.custom_patches.
+// An explicit palette for modular frames (Palette keyword; persists).
+struct PaletteSettings {
+  bool enabled = false;
+  uint32_t num_c = 3;
+  uint32_t nb_deltas = 0;
+  uint32_t nb_colors = 0;
+  Predictor predictor = Predictor::Zero;
+  // (nb_deltas + nb_colors) entries of num_c values: the deltas, then the
+  // colours.
+  std::vector<std::vector<int32_t>> entries;
+};
+
+// Copies the subtree of `src` at `node` into `dst`, knowing that property
+// `prop` is in lo..hi: splits that this decides are dropped. Returns the
+// index of the copy's root.
+size_t CopyRestricted(const Tree& src, size_t node, int prop, int64_t lo,
+                      int64_t hi, Tree* dst) {
+  const jxl::PropertyDecisionNode& n = src[node];
+  if (n.property == prop) {
+    if (n.splitval >= hi)
+      return CopyRestricted(src, n.rchild, prop, lo, hi, dst);
+    if (n.splitval < lo)
+      return CopyRestricted(src, n.lchild, prop, lo, hi, dst);
+  }
+  size_t pos = dst->size();
+  dst->push_back(n);
+  if (n.property < 0) return pos;
+  bool on_prop = n.property == prop;
+  size_t then_node = CopyRestricted(
+      src, n.lchild, prop, on_prop ? std::max<int64_t>(lo, n.splitval + 1) : lo,
+      hi, dst);
+  size_t else_node =
+      CopyRestricted(src, n.rchild, prop, lo,
+                     on_prop ? std::min<int64_t>(hi, n.splitval) : hi, dst);
+  (*dst)[pos].lchild = then_node;
+  (*dst)[pos].rchild = else_node;
+  return pos;
+}
+
+// Appends a tree over `prop` (from lo) choosing values[i] for prop in
+// [lo + i, lo + i + 1), merging runs of equal values; returns its root.
+size_t AppendRuns(const std::vector<int32_t>& values, int prop, int64_t lo,
+                  Tree* dst) {
+  std::vector<std::pair<size_t, int32_t>> runs;  // (first index, value)
+  for (size_t i = 0; i < values.size(); i++) {
+    if (runs.empty() || runs.back().second != values[i]) {
+      runs.emplace_back(i, values[i]);
+    }
+  }
+  std::function<size_t(size_t, size_t)> build = [&](size_t a, size_t b) {
+    size_t pos = dst->size();
+    if (a == b) {
+      dst->push_back(
+          jxl::PropertyDecisionNode::Leaf(Predictor::Zero, runs[a].second));
+      return pos;
+    }
+    size_t mid = (a + b + 1) / 2;
+    dst->push_back(jxl::PropertyDecisionNode::Split(
+        prop, lo + static_cast<int64_t>(runs[mid].first) - 1, 0, 0));
+    size_t then_node = build(mid, b);
+    size_t else_node = build(a, mid - 1);
+    (*dst)[pos].lchild = then_node;
+    (*dst)[pos].rchild = else_node;
+    return pos;
+  };
+  return build(0, runs.size() - 1);
+}
+
+// With an explicit palette, channel 0 is the palette meta channel (x = entry,
+// y = component): replaces `tree` by "if c > 0 then tree else the entries".
+void AddPaletteTree(const PaletteSettings& palette, Tree* tree) {
+  const size_t width = palette.nb_deltas + palette.nb_colors;
+  if (width == 0) return;  // the meta channel is empty
+  Tree out;
+  out.push_back(jxl::PropertyDecisionNode::Split(/*c=*/0, 0, 0, 0));
+  size_t user = CopyRestricted(*tree, 0, /*c=*/0, 1,
+                               std::numeric_limits<int32_t>::max(), &out);
+  // Entries: rows y = component, each a run tree over x.
+  std::vector<std::vector<int32_t>> rows(palette.num_c,
+                                         std::vector<int32_t>(width));
+  for (size_t i = 0; i < width; i++) {
+    for (size_t c = 0; c < palette.num_c; c++) {
+      rows[c][i] = palette.entries[i][c];
+    }
+  }
+  std::function<size_t(size_t, size_t)> build_rows = [&](size_t a, size_t b) {
+    if (a == b) return AppendRuns(rows[a], /*x=*/3, 0, &out);
+    size_t pos = out.size();
+    size_t mid = (a + b + 1) / 2;
+    out.push_back(jxl::PropertyDecisionNode::Split(/*y=*/2, mid - 1, 0, 0));
+    size_t then_node = build_rows(mid, b);
+    size_t else_node = build_rows(a, mid - 1);
+    out[pos].lchild = then_node;
+    out[pos].rchild = else_node;
+    return pos;
+  };
+  size_t entries = build_rows(0, palette.num_c - 1);
+  out[0].lchild = user;
+  out[0].rchild = entries;
+  *tree = std::move(out);
+}
+
 struct FrameSettings {
   // Reference slot to save this frame to; -1 = default (1 if not last).
   int save_as_reference = -1;
@@ -877,6 +979,8 @@ struct FrameSettings {
   uint8_t patch_ec_mode = static_cast<uint8_t>(jxl::PatchBlendMode::kNone);
   // Whether subsequent patches clamp (kMul and alpha blend modes; persists).
   bool patch_clamp = false;
+  // Explicit palette of modular frames (persists).
+  PaletteSettings palette;
   // HF context model of VarDCT frames (persists).
   HFContextSettings hf;
   bool have_hf = false;
@@ -2208,6 +2312,51 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "NoGaborish") {
     // Gaborish is on by default in VarDCT frames.
     cparams.gaborish = jxl::Override::kOff;
+  } else if (t == "Palette") {
+    // Palette <num_c> <nb_deltas> <nb_colors> <predictor> followed by
+    // (nb_deltas + nb_colors) x num_c values: an explicit palette on the
+    // first num_c channels. Channel 0 becomes the palette (the tool writes
+    // its tree), channel 1 the palette indices (then any other channels).
+    // An index i < 0 is a default delta, 0 <= i < nb_deltas a listed delta
+    // (added to <predictor>), then the listed colours, then the implicit
+    // colour cubes.
+    PaletteSettings& pal = frame.palette;
+    const char* what[3] = {"Palette channel count (1..16)",
+                           "Palette delta count", "Palette colour count"};
+    uint32_t* field[3] = {&pal.num_c, &pal.nb_deltas, &pal.nb_colors};
+    for (size_t i = 0; i < 3; i++) {
+      t = tok();
+      size_t num = 0;
+      uint64_t v = ParseUnsigned(t, &num);
+      if (num != t.size() || (i == 0 && (v < 1 || v > 16)) || v > 70000) {
+        fprintf(stderr, "Invalid %s: %s\n", what[i], t.c_str());
+        return false;
+      }
+      *field[i] = v;
+    }
+    t = tok();
+    if (!predictor_map.count(t)) {
+      fprintf(stderr, "Unexpected Palette predictor: %s\n", t.c_str());
+      return false;
+    }
+    pal.predictor = predictor_map.at(t);
+    pal.entries.assign(pal.nb_deltas + pal.nb_colors,
+                       std::vector<int32_t>(pal.num_c));
+    for (auto& entry : pal.entries) {
+      for (int32_t& v : entry) {
+        t = tok();
+        size_t num = 0;
+        v = ParseInt(t, &num);
+        if (num != t.size()) {
+          fprintf(stderr, "Invalid Palette value: %s\n", t.c_str());
+          return false;
+        }
+      }
+    }
+    pal.enabled = true;
+    cparams.lossy_palette = false;
+  } else if (t == "NoPalette") {
+    frame.palette.enabled = false;
   } else if (t == "DeltaPalette") {
     cparams.lossy_palette = true;
     cparams.palette_colors = 0;
@@ -2600,6 +2749,20 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
   // The sections of a VarDCT frame (LFTree, HFMetaTree, DequantTable,
   // ACSTree, QFTree, ExtraTree), combined into the frame's tree.
   const auto combine_sections = [&](bool have_extra_channels) -> Status {
+    cparams.custom_palette.enabled = frame.palette.enabled;
+    if (frame.palette.enabled) {
+      if (cparams.vardct_from_tree) {
+        return FailWithMessage("Palette is for modular frames");
+      }
+      if (cparams.move_to_front_from_channel != -1) {
+        return FailWithMessage("Palette with HiddenChannel is not supported");
+      }
+      cparams.custom_palette.num_c = frame.palette.num_c;
+      cparams.custom_palette.nb_deltas = frame.palette.nb_deltas;
+      cparams.custom_palette.nb_colors = frame.palette.nb_colors;
+      cparams.custom_palette.predictor = frame.palette.predictor;
+      AddPaletteTree(frame.palette, &tree);
+    }
     if (frame.lf_tree.empty() && frame.hf_meta_tree.empty() &&
         frame.dequant_trees.empty() && frame.acs_tree.nodes.empty() &&
         frame.qf_tree.nodes.empty() && frame.extra_tree.empty()) {

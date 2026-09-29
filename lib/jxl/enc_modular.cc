@@ -334,6 +334,23 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
                     const CompressParams& cparams_,
                     float channel_colors_percent,
                     jxl::ThreadPool* pool = nullptr) {
+  if (cparams_.custom_palette.enabled) {
+    const CompressParams::CustomPalette& cp = cparams_.custom_palette;
+    if (cp.num_c == 0 || gi.nb_meta_channels + cp.num_c > gi.channel.size()) {
+      return JXL_FAILURE("Custom palette: invalid number of channels");
+    }
+    Transform palette(TransformId::kPalette);
+    palette.begin_c = gi.nb_meta_channels;
+    palette.num_c = cp.num_c;
+    palette.nb_colors = cp.nb_colors;
+    palette.nb_deltas = cp.nb_deltas;
+    palette.predictor = cp.predictor;
+    // Only the channel layout changes: the pixels (indices) and the palette
+    // entries are what the encoder codes for them.
+    JXL_RETURN_IF_ERROR(palette.MetaApply(gi));
+    gi.transform.push_back(palette);
+    return true;
+  }
   float cost_before = 0.f;
   size_t did_palette = 0;
   float nb_pixels = gi.channel[0].w * gi.channel[0].h;
@@ -890,8 +907,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
     // Global palette causes bad progressive loading due to interpolation
     // but lossy palette is still required for JXL art.
-  if (!groupwise && (cparams_.lossy_palette ||
-      !(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
+  if (!groupwise &&
+      (cparams_.lossy_palette || cparams_.custom_palette.enabled ||
+       !(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
     JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams_,
                                      channel_colors_percent, pool));
   }

@@ -190,6 +190,20 @@ struct CompressParams {
   // first pass, instead of only for small inputs. Helps small files with large
   // token streams, such as jxl_from_tree art. Used in jxl_from_tree tool.
   bool lz77_careful_first_pass = false;
+  // Modular frames: if enabled, exactly this palette transform (on num_c
+  // channels starting at the first non-meta channel) instead of the palette
+  // heuristics. The palette entries themselves are the palette meta channel
+  // (nb_deltas + nb_colors wide, num_c high), which is coded like any other
+  // channel. Used in jxl_from_tree tool (with custom_fixed_tree and zero
+  // tokens, the tree defines the entries).
+  struct CustomPalette {
+    bool enabled = false;
+    uint32_t num_c = 3;
+    uint32_t nb_colors = 0;
+    uint32_t nb_deltas = 0;
+    Predictor predictor = Predictor::Zero;
+  };
+  CustomPalette custom_palette;
   // VarDCT frames: the LF image and the HF metadata (chroma-from-luma maps, AC
   // strategy, quantization field, EPF sharpness) are what custom_fixed_tree
   // gives with all residuals zero, and all HF coefficients are zero. Used in
