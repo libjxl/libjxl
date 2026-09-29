@@ -367,6 +367,16 @@ size_t ContextMapBits(JxlMemoryManager* memory_manager,
   return writer.BitsWritten();
 }
 
+// Encoded size in bits of a block context map.
+size_t BlockCtxMapBits(JxlMemoryManager* memory_manager,
+                       const jxl::BlockCtxMap& map) {
+  jxl::BitWriter writer{memory_manager};
+  if (!jxl::EncodeBlockCtxMap(map, &writer, nullptr)) {
+    return std::numeric_limits<size_t>::max();
+  }
+  return writer.BitsWritten();
+}
+
 // Encoded size in bits of fixed HF tokens.
 size_t FixedTokensBits(JxlMemoryManager* memory_manager,
                        const std::vector<uint32_t>& tokens) {
@@ -763,6 +773,37 @@ bool SetHFContexts(const HFContextSettings& hf,
       tokens, zeros, [&](const std::vector<uint32_t>& t) {
         return FixedTokensBits(memory_manager, t);
       });
+
+  // If all blocks behave the same and there are no LF/QF buckets, the default
+  // block context map (1 bit) works as well as a custom one (~20 bits), with
+  // the same values in each of its contexts: keep whichever is smaller.
+  if (merged.size() == 1 && map.num_dc_ctxs == 1 && map.qf_thresholds.empty()) {
+    jxl::BlockCtxMap default_map;
+    std::vector<int32_t> default_tokens(default_map.NumACContexts(), -1);
+    for (size_t m = 0; m < default_map.num_ctxs; m++) {
+      for (size_t i = 0; i < jxl::kNonZeroBuckets; i++) {
+        default_tokens[i * default_map.num_ctxs + m] = merged[0][i];
+      }
+      for (size_t i = 0; i < jxl::kZeroDensityContextCount; i++) {
+        default_tokens[default_map.ZeroDensityContextsOffset(m) + i] =
+            merged[0][jxl::kNonZeroBuckets + i];
+      }
+    }
+    std::vector<int32_t> default_zeros(default_tokens.size(), 0);
+    std::vector<uint32_t> default_hf_tokens = FillDontCares<uint32_t>(
+        default_tokens, default_zeros, [&](const std::vector<uint32_t>& t) {
+          return FixedTokensBits(memory_manager, t);
+        });
+    size_t custom_bits =
+        BlockCtxMapBits(memory_manager, map) +
+        FixedTokensBits(memory_manager, cparams.custom_hf_tokens);
+    size_t default_bits = BlockCtxMapBits(memory_manager, default_map) +
+                          FixedTokensBits(memory_manager, default_hf_tokens);
+    if (default_bits < custom_bits) {
+      map = default_map;
+      cparams.custom_hf_tokens = std::move(default_hf_tokens);
+    }
+  }
   return true;
 }
 
