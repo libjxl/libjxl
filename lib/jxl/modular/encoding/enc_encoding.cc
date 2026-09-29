@@ -708,17 +708,24 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
   const ResidualPattern &p = pattern ? *pattern : kZero;
   JXL_ENSURE(!p.period.empty());
   size_t total = 0;
+  // The meta channels (e.g. palette entries) keep zero residuals: the
+  // pattern starts at the first other channel.
+  size_t meta = 0;
   for (size_t i = 0; i < num_coded; i++) {
     total += image.channel[i].w * image.channel[i].h;
+    if (i < image.nb_meta_channels) {
+      meta += image.channel[i].w * image.channel[i].h;
+    }
   }
   if (total == 0) return true;
   const size_t period = p.period.size();
-  const auto residual = [&](size_t k) {
-    return k < p.prefix.size() ? p.prefix[k]
-                               : p.period[(k - p.prefix.size()) % period];
+  const size_t prefix = meta + p.prefix.size();
+  const auto residual = [&](size_t k) -> int32_t {
+    if (k < meta) return 0;
+    return k < prefix ? p.prefix[k - meta] : p.period[(k - prefix) % period];
   };
   // Symbols up to here; the LZ77 copy needs at least min_length (3) values.
-  size_t literals = std::min(total, p.prefix.size() + period);
+  size_t literals = std::min(total, prefix + period);
   if (total - literals < 3) literals = total;
   // Samples of the first literals (+ 1 for the copy's context).
   const size_t needed = std::min(total, literals + 1);

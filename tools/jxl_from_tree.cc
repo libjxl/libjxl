@@ -2907,10 +2907,11 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
       cparams.custom_palette.entries.clear();
       const size_t nb_entries =
           frame.palette.nb_deltas + frame.palette.nb_colors;
-      // (With Residuals, the entries stay in the tree: the meta channel's
-      // residuals are then those of the pattern.)
-      if (!frame.palette.implicit && nb_entries > 0 &&
-          cparams.custom_residuals.empty()) {
+      // (With Residuals, the entries stay in the tree; the meta channel keeps
+      // zero residuals, the pattern starts at the indices.)
+      const bool code_entries = !frame.palette.implicit && nb_entries > 0 &&
+                                cparams.custom_residuals.empty();
+      if (code_entries) {
         // The entries are the meta channel's pixels: coded, not in the tree.
         cparams.custom_palette.entries.assign(
             frame.palette.num_c, std::vector<int32_t>(nb_entries));
@@ -2933,7 +2934,8 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
         AddPaletteTree(frame.palette, multi_group, /*inline_entries=*/true,
                        &*palette_inline_tree);
       }
-      AddPaletteTree(frame.palette, multi_group, /*inline_entries=*/false,
+      AddPaletteTree(frame.palette, multi_group,
+                     /*inline_entries=*/!code_entries && !frame.palette.implicit,
                      &tree);
     }
     if (frame.lf_tree.empty() && frame.hf_meta_tree.empty() &&
