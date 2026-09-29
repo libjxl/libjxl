@@ -3219,7 +3219,28 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
                               io->frames[0], *JxlGetDefaultCms(), nullptr, w,
                               nullptr);
     };
-    if (palette_inline_tree) {
+    if (!cparams.custom_residuals.empty() && !palette_inline_tree) {
+      // Residual patterns with LZ77 inside the listed values or without:
+      // keep the smaller (the estimate that picks the matches is rough).
+      // The plain encoding goes first: a second EncodeFrame of the same frame
+      // can come out differently (see TODO.md), and this way it is the same
+      // as without the choice.
+      BitWriter with(memory_manager);
+      BitWriter without(memory_manager);
+      cparams.options.residual_inner_lz77 = false;
+      if (!encode_frame(&without)) {
+        fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
+        return JXL_FAILURE("Failed to encode frame");
+      }
+      cparams.options.residual_inner_lz77 = true;
+      if (!encode_frame(&with)) {
+        fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
+        return JXL_FAILURE("Failed to encode frame");
+      }
+      cparams.options.residual_inner_lz77 = true;
+      JXL_RETURN_IF_ERROR(writer.AppendUnaligned(
+          with.BitsWritten() < without.BitsWritten() ? with : without));
+    } else if (palette_inline_tree) {
       // Palette entries coded as pixels, or in the tree: keep the smaller.
       BitWriter coded(memory_manager);
       BitWriter inlined(memory_manager);

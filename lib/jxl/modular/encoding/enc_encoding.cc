@@ -13,6 +13,8 @@
 #include <limits>
 #include <queue>
 #include <utility>
+#include <cmath>
+#include <unordered_map>
 #include <vector>
 
 #include "lib/jxl/base/bits.h"
@@ -703,7 +705,7 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
                                const Image &image, size_t num_coded,
                                const ResidualPattern *pattern,
                                size_t distance_multiplier, size_t num_contexts,
-                               std::vector<Token> *tokens) {
+                               bool inner_lz77, std::vector<Token> *tokens) {
   static const ResidualPattern kZero = {{}, {0}};
   const ResidualPattern &p = pattern ? *pattern : kZero;
   JXL_ENSURE(!p.period.empty());
@@ -736,6 +738,11 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
   work.bitdepth = image.bitdepth;
   work.nb_meta_channels = image.nb_meta_channels;
   weighted::Header wp_header;
+  // Residual symbols and contexts of the first `needed` samples.
+  std::vector<uint32_t> values;
+  std::vector<int> contexts;
+  values.reserve(needed);
+  contexts.reserve(needed);
   size_t k = 0;
   for (size_t chan = 0; chan < num_coded && k < needed; chan++) {
     const Channel &from = image.channel[chan];
@@ -773,22 +780,94 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
         row[x] = static_cast<pixel_type>(res.guess + static_cast<int64_t>(r) *
                                                          res.multiplier);
         wp_state.UpdateErrors(row[x], x, y, channel.w);
-        if (k < literals) {
-          tokens->emplace_back(res.context, PackSigned(r));
-        } else {
-          // The rest: a copy of the values `period` back (the pattern repeats
-          // with that period from the end of the prefix on).
-          tokens->emplace_back(res.context,
-                               static_cast<uint32_t>(total - literals - 3));
-          tokens->back().is_lz77_length = true;
-          tokens->emplace_back(
-              static_cast<uint32_t>(num_contexts),
-              static_cast<uint32_t>(distance_multiplier != 0
-                                        ? period + kNumSpecialDistances - 1
-                                        : period - 1));
-        }
+        values.push_back(PackSigned(r));
+        contexts.push_back(res.context);
       }
     }
+  }
+  const auto distance_symbol = [&](size_t distance) {
+    return static_cast<uint32_t>(distance_multiplier != 0
+                                     ? distance + kNumSpecialDistances - 1
+                                     : distance - 1);
+  };
+  // The literal part, with LZ77 where it repeats itself (greedy: runs and
+  // repeated blocks of at least kMinMatch values, found with a hash of the
+  // next 4 values and the most recent candidates).
+  constexpr size_t kMinMatch = 8;
+  constexpr size_t kMaxCandidates = 32;
+  // Estimated cost of the literals (from their own frequencies), so that a
+  // match is only taken where it replaces more bits than it costs.
+  std::vector<double> lit_cost(literals + 1, 0.0);
+  {
+    std::unordered_map<uint32_t, size_t> freq;
+    for (size_t i = 0; i < literals; i++) freq[values[i]]++;
+    for (size_t i = 0; i < literals; i++) {
+      lit_cost[i + 1] =
+          lit_cost[i] +
+          std::max(0.05, std::log2(static_cast<double>(literals) /
+                                   static_cast<double>(freq[values[i]])));
+    }
+  }
+  const auto match_cost = [](size_t len, size_t dist) {
+    return 6.0 + 2.0 * std::log2(static_cast<double>(len)) +
+           std::log2(static_cast<double>(dist) + 1.0);
+  };
+  std::unordered_map<uint64_t, std::vector<uint32_t>> recent;
+  const auto hash_at = [&](size_t i) {
+    uint64_t h = 0;
+    for (size_t j = 0; j < 4; j++) h = h * 0x9E3779B97F4A7C15ull + values[i + j];
+    return h;
+  };
+  for (size_t i = 0; i < literals;) {
+    size_t best_len = 0;
+    if (!inner_lz77) {
+      tokens->emplace_back(contexts[i], values[i]);
+      i++;
+      continue;
+    }
+    size_t best_dist = 0;
+    const auto try_candidate = [&](size_t j) {
+      size_t len = 0;
+      while (i + len < literals && values[j + len] == values[i + len]) len++;
+      if (len >= kMinMatch &&
+          lit_cost[i + len] - lit_cost[i] > match_cost(len, i - j) &&
+          len > best_len) {
+        best_len = len;
+        best_dist = i - j;
+      }
+    };
+    if (i > 0) try_candidate(i - 1);
+    if (i + 4 <= literals) {
+      auto it = recent.find(hash_at(i));
+      if (it != recent.end()) {
+        for (size_t c = it->second.size(); c-- > 0;) try_candidate(it->second[c]);
+      }
+    }
+    const size_t step = best_len >= kMinMatch ? best_len : 1;
+    if (best_len >= kMinMatch) {
+      tokens->emplace_back(contexts[i], static_cast<uint32_t>(best_len - 3));
+      tokens->back().is_lz77_length = true;
+      tokens->emplace_back(static_cast<uint32_t>(num_contexts),
+                           distance_symbol(best_dist));
+    } else {
+      tokens->emplace_back(contexts[i], values[i]);
+    }
+    for (size_t e = i; e < i + step; e++) {
+      if (e + 4 > literals) break;
+      auto& list = recent[hash_at(e)];
+      if (list.size() == kMaxCandidates) list.erase(list.begin());
+      list.push_back(static_cast<uint32_t>(e));
+    }
+    i += step;
+  }
+  if (literals < total) {
+    // The rest: a copy of the values `period` back (the pattern repeats with
+    // that period from the end of the prefix on).
+    tokens->emplace_back(contexts[literals],
+                         static_cast<uint32_t>(total - literals - 3));
+    tokens->back().is_lz77_length = true;
+    tokens->emplace_back(static_cast<uint32_t>(num_contexts),
+                         distance_symbol(period));
   }
   return true;
 }
@@ -841,7 +920,7 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
     if (it != options.residual_patterns->end()) pattern = &it->second;
     JXL_RETURN_IF_ERROR(TokenizeResidualPattern(
         tree, group_id, image, num_coded, pattern, image_width,
-        (tree.size() + 1) / 2, &tokens));
+        (tree.size() + 1) / 2, options.residual_inner_lz77, &tokens));
   } else if (options.zero_tokens && options.code_meta_channels &&
       image.nb_meta_channels > 0) {
     // The meta channels are coded from the image; the other channels are

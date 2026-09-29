@@ -132,6 +132,9 @@ struct ModularOptions {
   // Every stream is then coded this way, and the tokens come with LZ77
   // already applied (HistogramParams::tokens_have_lz77).
   const std::map<int, ResidualPattern>* residual_patterns = nullptr;
+  // With residual_patterns: LZ77 also inside the prefix and the first period
+  // (where it pays off, by an estimate).
+  bool residual_inner_lz77 = false;
 
   ModularOptions() {
     // GCC has complaints about inline vector initialization; do it manually.
