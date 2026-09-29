@@ -24,6 +24,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -866,6 +867,8 @@ struct PaletteSettings {
   uint32_t nb_deltas = 0;
   uint32_t nb_colors = 0;
   Predictor predictor = Predictor::Zero;
+  // ImplicitPalette: no listed entries; the tree gives the meta channel.
+  bool implicit = false;
   // (nb_deltas + nb_colors) entries of num_c values: the deltas, then the
   // colours.
   std::vector<std::vector<int32_t>> entries;
@@ -927,37 +930,120 @@ size_t AppendRuns(const std::vector<int32_t>& values, int prop, int64_t lo,
   return build(0, runs.size() - 1);
 }
 
-// With an explicit palette, channel 0 is the palette meta channel (x = entry,
-// y = component): replaces `tree` by "if c > 0 then tree else the entries".
-void AddPaletteTree(const PaletteSettings& palette, Tree* tree) {
-  const size_t width = palette.nb_deltas + palette.nb_colors;
-  if (width == 0) return;  // the meta channel is empty
-  Tree out;
-  out.push_back(jxl::PropertyDecisionNode::Split(/*c=*/0, 0, 0, 0));
-  size_t user = CopyRestricted(*tree, 0, /*c=*/0, 1,
-                               std::numeric_limits<int32_t>::max(), &out);
-  // Entries: rows y = component, each a run tree over x.
-  std::vector<std::vector<int32_t>> rows(palette.num_c,
-                                         std::vector<int32_t>(width));
-  for (size_t i = 0; i < width; i++) {
-    for (size_t c = 0; c < palette.num_c; c++) {
-      rows[c][i] = palette.entries[i][c];
+// Estimated cost in bits of coding `rows` (the palette meta channel: row =
+// component, column = entry) with predictor `p` and zero offset, using the
+// modular edge rules.
+double MetaChannelCost(const std::vector<std::vector<int32_t>>& rows,
+                       Predictor p) {
+  double bits = 0;
+  for (size_t y = 0; y < rows.size(); y++) {
+    for (size_t x = 0; x < rows[y].size(); x++) {
+      int64_t w = x > 0 ? rows[y][x - 1] : (y > 0 ? rows[y - 1][x] : 0);
+      int64_t n = y > 0 ? rows[y - 1][x] : w;
+      int64_t nw = (x > 0 && y > 0) ? rows[y - 1][x - 1] : w;
+      int64_t pred = 0;
+      switch (p) {
+        case Predictor::Left: pred = w; break;
+        case Predictor::Top: pred = n; break;
+        case Predictor::Average0: pred = (w + n) / 2; break;
+        case Predictor::Gradient:
+          pred = std::min(std::max(w + n - nw, std::min(w, n)), std::max(w, n));
+          break;
+        default: pred = 0;
+      }
+      int64_t r = rows[y][x] - pred;
+      bits += 1 + 2 * std::log2(1.0 + static_cast<double>(std::abs(r)));
     }
   }
-  std::function<size_t(size_t, size_t)> build_rows = [&](size_t a, size_t b) {
-    if (a == b) return AppendRuns(rows[a], /*x=*/3, 0, &out);
-    size_t pos = out.size();
-    size_t mid = (a + b + 1) / 2;
-    out.push_back(jxl::PropertyDecisionNode::Split(/*y=*/2, mid - 1, 0, 0));
-    size_t then_node = build_rows(mid, b);
-    size_t else_node = build_rows(a, mid - 1);
-    out[pos].lchild = then_node;
-    out[pos].rchild = else_node;
-    return pos;
-  };
-  size_t entries = build_rows(0, palette.num_c - 1);
-  out[0].lchild = user;
-  out[0].rchild = entries;
+  return bits;
+}
+
+// Copies `src` restricted to channels c >= 1 (the channels after the palette
+// meta channel) and renumbers them for a group stream, which has no meta
+// channels: c - 1. Returns the copy's root.
+size_t CopyForGroupStreams(const Tree& src, Tree* dst) {
+  size_t first = dst->size();
+  size_t root = CopyRestricted(src, 0, /*c=*/0, 1,
+                               std::numeric_limits<int32_t>::max(), dst);
+  for (size_t i = first; i < dst->size(); i++) {
+    if ((*dst)[i].property == 0) (*dst)[i].splitval -= 1;
+  }
+  return root;
+}
+
+// With a palette, channel 0 is the palette meta channel (x = entry, y =
+// component) and channel 1 the indices. Replaces `tree` by the frame's tree:
+// - explicit entries: "if c > 0 then tree else <meta>", where <meta> is either
+//   (`inline_entries`) a tree of the entries (row = component, runs over x),
+//   or one predictor leaf (the cheapest of a few), the entries then being the
+//   meta channel's pixels, coded as residuals of that predictor;
+// - ImplicitPalette: the tree as given (it defines the meta channel too).
+// If the index channel is larger than a group (`multi_group`), it is coded in
+// group streams, which leave out the meta channel, so that channel numbers are
+// one lower there: the root then splits on the stream (g > 0: a group stream).
+void AddPaletteTree(const PaletteSettings& palette, bool multi_group,
+                    bool inline_entries, Tree* tree) {
+  const size_t width = palette.nb_deltas + palette.nb_colors;
+  Tree out;
+  if (multi_group) {
+    out.push_back(jxl::PropertyDecisionNode::Split(/*g=*/1, 0, 0, 0));
+    out[0].lchild = CopyForGroupStreams(*tree, &out);
+  }
+  size_t global = out.size();
+  if (palette.implicit || width == 0) {
+    // The meta channel is the tree's (or empty).
+    size_t first = out.size();
+    for (const auto& n : *tree) out.push_back(n);
+    for (size_t i = first; i < out.size(); i++) {
+      if (out[i].property >= 0) {
+        out[i].lchild += first;
+        out[i].rchild += first;
+      }
+    }
+  } else {
+    out.push_back(jxl::PropertyDecisionNode::Split(/*c=*/0, 0, 0, 0));
+    size_t user = CopyRestricted(*tree, 0, /*c=*/0, 1,
+                                 std::numeric_limits<int32_t>::max(), &out);
+    std::vector<std::vector<int32_t>> rows(palette.num_c,
+                                           std::vector<int32_t>(width));
+    for (size_t i = 0; i < width; i++) {
+      for (size_t c = 0; c < palette.num_c; c++) {
+        rows[c][i] = palette.entries[i][c];
+      }
+    }
+    size_t meta;
+    if (inline_entries) {
+      std::function<size_t(size_t, size_t)> build_rows = [&](size_t a,
+                                                             size_t b) {
+        if (a == b) return AppendRuns(rows[a], /*x=*/3, 0, &out);
+        size_t pos = out.size();
+        size_t mid = (a + b + 1) / 2;
+        out.push_back(jxl::PropertyDecisionNode::Split(/*y=*/2, mid - 1, 0, 0));
+        size_t then_node = build_rows(mid, b);
+        size_t else_node = build_rows(a, mid - 1);
+        out[pos].lchild = then_node;
+        out[pos].rchild = else_node;
+        return pos;
+      };
+      meta = build_rows(0, palette.num_c - 1);
+    } else {
+      Predictor best = Predictor::Zero;
+      double best_bits = MetaChannelCost(rows, best);
+      for (Predictor p : {Predictor::Left, Predictor::Top, Predictor::Gradient,
+                          Predictor::Average0}) {
+        double bits = MetaChannelCost(rows, p);
+        if (bits < best_bits) {
+          best_bits = bits;
+          best = p;
+        }
+      }
+      meta = out.size();
+      out.push_back(jxl::PropertyDecisionNode::Leaf(best, 0));
+    }
+    out[global].lchild = user;
+    out[global].rchild = meta;
+  }
+  if (multi_group) out[0].rchild = global;
   *tree = std::move(out);
 }
 
@@ -1609,6 +1695,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   }
   static const std::unordered_map<std::string, Predictor> predictor_map = {
       {"Set", Predictor::Zero},
+      {"Zero", Predictor::Zero},
       {"W", Predictor::Left},
       {"N", Predictor::Top},
       {"AvgW+N", Predictor::Average0},
@@ -2312,7 +2399,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "NoGaborish") {
     // Gaborish is on by default in VarDCT frames.
     cparams.gaborish = jxl::Override::kOff;
-  } else if (t == "Palette") {
+  } else if (t == "Palette" || t == "ImplicitPalette") {
     // Palette <num_c> <nb_deltas> <nb_colors> <predictor> followed by
     // (nb_deltas + nb_colors) x num_c values: an explicit palette on the
     // first num_c channels. Channel 0 becomes the palette (the tool writes
@@ -2320,7 +2407,11 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     // An index i < 0 is a default delta, 0 <= i < nb_deltas a listed delta
     // (added to <predictor>), then the listed colours, then the implicit
     // colour cubes.
+    // ImplicitPalette <num_c> <nb_deltas> <nb_colors> <predictor>: the same
+    // palette without listed entries: the tree gives the meta channel (c == 0,
+    // x = entry, y = component), so large palettes can be cheap.
     PaletteSettings& pal = frame.palette;
+    pal.implicit = t == "ImplicitPalette";
     const char* what[3] = {"Palette channel count (1..16)",
                            "Palette delta count", "Palette colour count"};
     uint32_t* field[3] = {&pal.num_c, &pal.nb_deltas, &pal.nb_colors};
@@ -2340,7 +2431,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       return false;
     }
     pal.predictor = predictor_map.at(t);
-    pal.entries.assign(pal.nb_deltas + pal.nb_colors,
+    pal.entries.assign(pal.implicit ? 0 : pal.nb_deltas + pal.nb_colors,
                        std::vector<int32_t>(pal.num_c));
     for (auto& entry : pal.entries) {
       for (int32_t& v : entry) {
@@ -2748,8 +2839,13 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
 
   // The sections of a VarDCT frame (LFTree, HFMetaTree, DequantTable,
   // ACSTree, QFTree, ExtraTree), combined into the frame's tree.
+  // With explicit palette entries: the frame's tree with the entries in the
+  // tree instead of coded (see combine_sections).
+  std::optional<Tree> palette_inline_tree;
   const auto combine_sections = [&](bool have_extra_channels) -> Status {
     cparams.custom_palette.enabled = frame.palette.enabled;
+    cparams.options.code_meta_channels = false;
+    palette_inline_tree.reset();
     if (frame.palette.enabled) {
       if (cparams.vardct_from_tree) {
         return FailWithMessage("Palette is for modular frames");
@@ -2761,7 +2857,34 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
       cparams.custom_palette.nb_deltas = frame.palette.nb_deltas;
       cparams.custom_palette.nb_colors = frame.palette.nb_colors;
       cparams.custom_palette.predictor = frame.palette.predictor;
-      AddPaletteTree(frame.palette, &tree);
+      cparams.custom_palette.entries.clear();
+      const size_t nb_entries =
+          frame.palette.nb_deltas + frame.palette.nb_colors;
+      if (!frame.palette.implicit && nb_entries > 0) {
+        // The entries are the meta channel's pixels: coded, not in the tree.
+        cparams.custom_palette.entries.assign(
+            frame.palette.num_c, std::vector<int32_t>(nb_entries));
+        for (size_t i = 0; i < nb_entries; i++) {
+          for (size_t c = 0; c < frame.palette.num_c; c++) {
+            cparams.custom_palette.entries[c][i] = frame.palette.entries[i][c];
+          }
+        }
+      }
+      cparams.options.code_meta_channels =
+          !cparams.custom_palette.entries.empty();
+      // The index channel is coded in group streams if it is larger than a
+      // group (it has the frame's coded size).
+      const size_t group_dim = 128u << cparams.modular_group_size_shift;
+      const bool multi_group = width > group_dim || height > group_dim;
+      if (!cparams.custom_palette.entries.empty()) {
+        // The entries can also be in the tree: EncodeOneFrame keeps whichever
+        // of the two is smaller (the tree is cheaper for a few entries).
+        palette_inline_tree = tree;
+        AddPaletteTree(frame.palette, multi_group, /*inline_entries=*/true,
+                       &*palette_inline_tree);
+      }
+      AddPaletteTree(frame.palette, multi_group, /*inline_entries=*/false,
+                     &tree);
     }
     if (frame.lf_tree.empty() && frame.hf_meta_tree.empty() &&
         frame.dequant_trees.empty() && frame.acs_tree.nodes.empty() &&
@@ -3039,9 +3162,36 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
                                             width, height, cparams.resampling,
                                             frame_index));
     }
-    if (!jxl::EncodeFrame(memory_manager, cparams, info, metadata.get(),
-                          io->frames[0], *JxlGetDefaultCms(), nullptr, &writer,
-                          nullptr)) {
+    const auto encode_frame = [&](BitWriter* w) {
+      return jxl::EncodeFrame(memory_manager, cparams, info, metadata.get(),
+                              io->frames[0], *JxlGetDefaultCms(), nullptr, w,
+                              nullptr);
+    };
+    if (palette_inline_tree) {
+      // Palette entries coded as pixels, or in the tree: keep the smaller.
+      BitWriter coded(memory_manager);
+      BitWriter inlined(memory_manager);
+      if (!encode_frame(&coded)) {
+        fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
+        return JXL_FAILURE("Failed to encode frame");
+      }
+      const Tree coded_tree = cparams.custom_fixed_tree;
+      const auto entries = cparams.custom_palette.entries;
+      cparams.custom_fixed_tree = *palette_inline_tree;
+      cparams.custom_palette.entries.clear();
+      cparams.options.code_meta_channels = false;
+      if (!encode_frame(&inlined)) {
+        fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
+        return JXL_FAILURE("Failed to encode frame");
+      }
+      const bool use_inlined = inlined.BitsWritten() <= coded.BitsWritten();
+      if (!use_inlined) {
+        cparams.custom_fixed_tree = coded_tree;
+        cparams.custom_palette.entries = entries;
+        cparams.options.code_meta_channels = true;
+      }
+      JXL_RETURN_IF_ERROR(writer.AppendUnaligned(use_inlined ? inlined : coded));
+    } else if (!encode_frame(&writer)) {
       fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
       return JXL_FAILURE("Failed to encode frame");
     }

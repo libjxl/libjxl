@@ -349,6 +349,20 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
     // entries are what the encoder codes for them.
     JXL_RETURN_IF_ERROR(palette.MetaApply(gi));
     gi.transform.push_back(palette);
+    if (!cp.entries.empty()) {
+      // The meta channel (channel 0 after MetaApply) holds the entries.
+      Channel& meta = gi.channel[0];
+      if (cp.entries.size() != meta.h) {
+        return JXL_FAILURE("Custom palette: wrong number of components");
+      }
+      for (size_t c = 0; c < meta.h; c++) {
+        if (cp.entries[c].size() != meta.w) {
+          return JXL_FAILURE("Custom palette: wrong number of entries");
+        }
+        pixel_type* row = meta.Row(c);
+        for (size_t i = 0; i < meta.w; i++) row[i] = cp.entries[c][i];
+      }
+    }
     return true;
   }
   float cost_before = 0.f;
@@ -1439,8 +1453,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // Local palette transforms
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
+    // (A custom palette is global: the group images already hold its
+    // indices.)
     if (cparams_.ModularPartIsLossless() && !cparams.responsive &&
-        !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
+        !cparams.lossy_palette && !cparams.custom_palette.enabled &&
+        cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
         channel_color_percent = cparams.channel_colors_percent;

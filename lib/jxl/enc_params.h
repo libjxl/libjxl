@@ -195,13 +195,17 @@ struct CompressParams {
   // heuristics. The palette entries themselves are the palette meta channel
   // (nb_deltas + nb_colors wide, num_c high), which is coded like any other
   // channel. Used in jxl_from_tree tool (with custom_fixed_tree and zero
-  // tokens, the tree defines the entries).
+  // tokens): if `entries` is empty, the tree defines the entries (whatever it
+  // gives for the meta channel with zero residuals); otherwise the meta channel
+  // holds `entries` (row c = component c, column i = entry i) and its residuals
+  // are coded (see ModularOptions::code_meta_channels).
   struct CustomPalette {
     bool enabled = false;
     uint32_t num_c = 3;
     uint32_t nb_colors = 0;
     uint32_t nb_deltas = 0;
     Predictor predictor = Predictor::Zero;
+    std::vector<std::vector<int32_t>> entries;
   };
   CustomPalette custom_palette;
   // VarDCT frames: the LF image and the HF metadata (chroma-from-luma maps, AC

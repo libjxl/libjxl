@@ -723,7 +723,49 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
     if (image.channel[i].w > image_width) image_width = image.channel[i].w;
     total_tokens += image.channel[i].w * image.channel[i].h;
   }
-  if (options.zero_tokens) {
+  if (options.zero_tokens && options.code_meta_channels &&
+      image.nb_meta_channels > 0) {
+    // The meta channels are coded from the image; the other channels are
+    // what the tree gives with zero residuals, tokenized with their real
+    // contexts (so that the meta channels' contexts only hold their tokens).
+    size_t num_coded = 0;
+    while (num_coded < nb_channels &&
+           !(num_coded >= image.nb_meta_channels &&
+             (image.channel[num_coded].w > options.max_chan_size ||
+              image.channel[num_coded].h > options.max_chan_size))) {
+      num_coded++;
+    }
+    // Only the channels of this stream (the others may be placeholders).
+    Image coded(image.memory_manager());
+    coded.w = image.w;
+    coded.h = image.h;
+    coded.bitdepth = image.bitdepth;
+    coded.nb_meta_channels = image.nb_meta_channels;
+    for (size_t i = 0; i < num_coded; i++) {
+      const Channel& from = image.channel[i];
+      JXL_ASSIGN_OR_RETURN(Channel ch,
+                           Channel::Create(image.memory_manager(), from.w,
+                                           from.h, from.hshift, from.vshift));
+      coded.channel.emplace_back(std::move(ch));
+    }
+    JXL_RETURN_IF_ERROR(EvaluateTreeWithZeroResiduals(tree, group_id, &coded));
+    for (size_t i = 0; i < image.nb_meta_channels && i < num_coded; i++) {
+      for (size_t y = 0; y < image.channel[i].h; y++) {
+        memcpy(coded.channel[i].Row(y), image.channel[i].Row(y),
+               image.channel[i].w * sizeof(pixel_type));
+      }
+    }
+    size_t pos = tokens.size();
+    tokens.resize(pos + total_tokens);
+    Token *tokenp = tokens.data() + pos;
+    for (size_t i = 0; i < num_coded; i++) {
+      if (!coded.channel[i].w || !coded.channel[i].h) continue;
+      JXL_RETURN_IF_ERROR(
+          EncodeModularChannelMAANS(coded, i, header.wp_header, tree, &tokenp,
+                                    group_id, options.skip_encoder_fast_path));
+    }
+    JXL_ENSURE(tokenp == tokens.data() + tokens.size());
+  } else if (options.zero_tokens) {
     tokens.resize(tokens.size() + total_tokens, {0, 0});
   } else {
     // Do one big allocation for all the tokens we'll need,

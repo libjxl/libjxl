@@ -115,6 +115,9 @@ struct ModularOptions {
 
   // Ignore the image and just pretend all tokens are zeroes
   bool zero_tokens = false;
+  // With zero_tokens: the meta channels (e.g. palette entries) are still coded
+  // from the image (real residuals); only the other channels are all zeroes.
+  bool code_meta_channels = false;
 
   ModularOptions() {
     // GCC has complaints about inline vector initialization; do it manually.
