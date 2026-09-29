@@ -341,16 +341,23 @@ Status PatchDictionary::AddOneRow(
     if (bx + patch_xsize < x0) continue;
     size_t patch_x0 = std::max(bx, x0);
     size_t patch_x1 = std::min(bx + patch_xsize, x0 + xsize);
+    // The net offset is in-bounds once PerformBlending adds the patch
+    // position back, but forming it through unsigned arithmetic wraps to a
+    // huge size_t first (pointer-overflow UB); compute it in signed arithmetic.
+    const ptrdiff_t offset = static_cast<ptrdiff_t>(ref_pos.x0) +
+                             static_cast<ptrdiff_t>(x0) -
+                             static_cast<ptrdiff_t>(bx);
     for (size_t c = 0; c < 3; c++) {
-      fg_ptrs[c] = reference_frames_->at(ref).frame->color()->ConstPlaneRow(
-                       c, ref_pos.y0 + iy) +
-                   ref_pos.x0 + x0 - bx;
+      fg_ptrs[c] =
+          reference_frames_->at(ref).frame->color()->ConstPlaneRow(
+              c, ref_pos.y0 + iy) +
+          offset;
     }
     for (size_t i = 0; i < num_ec; i++) {
       fg_ptrs[3 + i] =
           reference_frames_->at(ref).frame->extra_channels()[i].ConstRow(
               ref_pos.y0 + iy) +
-          ref_pos.x0 + x0 - bx;
+          offset;
     }
     JXL_RETURN_IF_ERROR(PerformBlending(
         memory_manager_, inout, fg_ptrs.data(), inout, patch_x0 - x0,
