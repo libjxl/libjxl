@@ -1704,9 +1704,18 @@ Status EncodeGroups(const FrameHeader& frame_header,
           aux_out));
     }
     if (frame_header.flags & FrameHeader::kSplines) {
+      HistogramParams spline_params;
+      if (enc_state->cparams.custom_splines.HasAny() &&
+          enc_state->cparams.speed_tier <= SpeedTier::kTortoise) {
+        // Given splines (jxl_from_tree): the control points of periodic
+        // curves repeat their double deltas, which LZ77 can take.
+        spline_params.lz77_method = HistogramParams::LZ77Method::kOptc256;
+        spline_params.lz77_careful_first_pass =
+            enc_state->cparams.lz77_careful_first_pass;
+      }
       JXL_RETURN_IF_ERROR(EncodeSplines(shared.image_features.splines,
                                         get_output(0), LayerType::Splines,
-                                        HistogramParams(), aux_out));
+                                        spline_params, aux_out));
     }
     if (frame_header.flags & FrameHeader::kNoise) {
       JXL_RETURN_IF_ERROR(EncodeNoise(shared.image_features.noise_params,
