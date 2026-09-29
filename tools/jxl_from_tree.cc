@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <cinttypes>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -89,6 +91,7 @@ using ::jxl::Span;
 using ::jxl::Spline;
 using ::jxl::Splines;
 using ::jxl::Status;
+using ::jxl::StatusOr;
 using ::jxl::Tree;
 
 namespace {
@@ -2116,6 +2119,133 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
                                 io, have_next, x0, y0, buffer_size));
   return true;
 }
+// The estimated area of the splines of a frame, as the decoders compute it
+// (QuantizedSpline::Dequantize in lib/jxl/splines.cc, jxl-rs's
+// QuantizedSpline::dequantize), with `area_limit` as the limit (which also caps
+// the width of a spline in the estimate). The decoders refuse a frame whose
+// estimate exceeds the limit: libjxl with min(1024 * pixels + 2^32, 2^42) for
+// the upsampled frame size, jxl-rs (level 5) with min(8 * pixels + 2^25, 2^30)
+// for the coded frame size. Returns the estimate, or area_limit + 1 if a spline
+// is longer than the limit (in Manhattan distance). `splines` are dequantized
+// without chroma from luma; the estimate uses the default factors (YtoX 0,
+// YtoB 1), as jxl_from_tree does not change them.
+uint64_t SplineAreaEstimate(const std::vector<Spline>& splines,
+                            int32_t quantization_adjustment,
+                            uint64_t area_limit) {
+  static constexpr float kChannelWeight[4] = {0.0042f, 0.075f, 0.07f, 0.3333f};
+  const float inv_quant = quantization_adjustment >= 0
+                              ? 1.f / (1.f + .125f * quantization_adjustment)
+                              : 1.f - .125f * quantization_adjustment;
+  // The quantized values, from the dequantized ones.
+  const auto quantized = [inv_quant](float v, int i, int c) {
+    const float factor =
+        (i == 0 ? 0.70710678f : 1.f) * kChannelWeight[c] * inv_quant;
+    return std::round(std::abs(v) / factor);
+  };
+  uint64_t total = 0;
+  for (const Spline& spline : splines) {
+    uint64_t manhattan_distance = 0;
+    for (size_t i = 1; i < spline.control_points.size(); i++) {
+      manhattan_distance +=
+          static_cast<uint64_t>(std::abs(spline.control_points[i].x -
+                                         spline.control_points[i - 1].x) +
+                                std::abs(spline.control_points[i].y -
+                                         spline.control_points[i - 1].y));
+    }
+    if (manhattan_distance > area_limit) return area_limit + 1;
+    uint64_t color[3] = {};
+    for (int c = 0; c < 3; c++) {
+      for (int i = 0; i < 32; i++) {
+        color[c] += static_cast<uint64_t>(
+            std::ceil(inv_quant * quantized(spline.color_dct[c][i], i, c)));
+      }
+    }
+    color[2] += color[1];  // YtoB 1
+    const uint64_t max_color = std::max({color[0], color[1], color[2]});
+    uint64_t logcolor = 0;
+    while ((uint64_t{1} << logcolor) < max_color + 1) logcolor++;
+    logcolor = std::max<uint64_t>(1, logcolor);
+    const float weight_limit =
+        std::ceil(std::sqrt((static_cast<float>(area_limit) / logcolor) /
+                            std::max<uint64_t>(1, manhattan_distance)));
+    uint64_t width_estimate = 0;
+    for (int i = 0; i < 32; i++) {
+      const float weight_f =
+          std::ceil(inv_quant * quantized(spline.sigma_dct[i], i, 3));
+      const uint64_t weight = static_cast<uint64_t>(
+          std::min(weight_limit, std::max(1.0f, weight_f)));
+      width_estimate += weight * weight * logcolor;
+    }
+    total += width_estimate * manhattan_distance;
+  }
+  return total;
+}
+
+// Checks the splines of a frame against the limits of libjxl (error) and of
+// jxl-rs, which applies the level 5 limits (a warning: libjxl decodes such
+// files).
+Status CheckSplineLimits(const std::vector<QuantizedSpline>& quantized_splines,
+                         const std::vector<Spline::Point>& starting_points,
+                         int32_t quantization_adjustment, size_t xsize,
+                         size_t ysize, size_t upsampling, size_t frame_index) {
+  if (quantized_splines.empty()) return true;
+  const uint64_t coded_pixels = static_cast<uint64_t>(xsize) * ysize;
+  const uint64_t pixels = coded_pixels * upsampling * upsampling;
+  std::vector<Spline> splines(quantized_splines.size());
+  size_t num_control_points = 0;
+  for (size_t s = 0; s < splines.size(); s++) {
+    uint64_t area = 0;
+    if (!quantized_splines[s].Dequantize(starting_points[s],
+                                         quantization_adjustment, 0.f, 0.f,
+                                         pixels, &area, splines[s])) {
+      fprintf(stderr,
+              "Spline %zu of frame %zu is invalid for decoders: a control "
+              "point is out of range, or the spline is too long or too wide "
+              "(estimated area over 1024 x pixels + 2^32)\n",
+              s, frame_index);
+      return JXL_FAILURE("Invalid spline");
+    }
+    num_control_points += splines[s].control_points.size() - 1;
+  }
+  // Number of control points (libjxl: of the coded frame size).
+  const size_t max_control_points =
+      std::min<size_t>(size_t{1} << 20, coded_pixels / 2);
+  if (splines.size() + 1 > max_control_points ||
+      num_control_points > max_control_points) {
+    fprintf(stderr,
+            "Frame %zu has %zu splines with %zu control points (after the "
+            "first ones), decoders allow at most %zu (half the coded pixels)\n",
+            frame_index, splines.size(), num_control_points,
+            max_control_points);
+    return JXL_FAILURE("Too many spline control points");
+  }
+  const uint64_t libjxl_limit =
+      std::min((pixels << 10) + (uint64_t{1} << 32), uint64_t{1} << 42);
+  const uint64_t libjxl_area =
+      SplineAreaEstimate(splines, quantization_adjustment, libjxl_limit);
+  if (libjxl_area > libjxl_limit) {
+    fprintf(stderr,
+            "The splines of frame %zu are too large for decoders: estimated "
+            "area %" PRIu64 ", limit %" PRIu64 " (1024 x pixels + 2^32)\n",
+            frame_index, libjxl_area, libjxl_limit);
+    return JXL_FAILURE("Too large spline area");
+  }
+  const uint64_t level5_limit =
+      std::min(8 * coded_pixels + (uint64_t{1} << 25), uint64_t{1} << 30);
+  const uint64_t level5_area =
+      SplineAreaEstimate(splines, quantization_adjustment, level5_limit);
+  if (level5_area > level5_limit) {
+    fprintf(stderr,
+            "Warning: the splines of frame %zu have an estimated area of "
+            "%" PRIu64 ", over the level 5 limit of %" PRIu64
+            " (8 x %zux%zu coded pixels + 2^25): jxl-rs refuses the file "
+            "(libjxl decodes it). The estimate grows with sigma^2, the length "
+            "and the log of the colour.\n",
+            frame_index, level5_area, level5_limit, xsize, ysize);
+  }
+  return true;
+}
+
 // JXL_FAILURE prints its message only in debug builds.
 Status FailWithMessage(const char* message) {
   fprintf(stderr, "%s\n", message);
@@ -2422,6 +2552,15 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
       }
     }
 
+    {
+      // The quantization adjustment that the encoder writes.
+      Splines splines(memory_manager);
+      splines.SetData(cparams.custom_splines);
+      JXL_RETURN_IF_ERROR(CheckSplineLimits(quantized_splines, starting_points,
+                                            splines.GetQuantizationAdjustment(),
+                                            width, height, cparams.resampling,
+                                            frame_index));
+    }
     if (!jxl::EncodeFrame(memory_manager, cparams, info, metadata.get(),
                           io->frames[0], *JxlGetDefaultCms(), nullptr, &writer,
                           nullptr)) {
