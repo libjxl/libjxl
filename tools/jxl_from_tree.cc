@@ -2299,16 +2299,20 @@ std::vector<jxl::BlendingInfo> DefaultEcBlending(
   return info;
 }
 
+// Whether a frame of this (upsampled) size is not a full frame.
+bool IsPartialFrame(const jxl::ImageBundle& ib, const CodecMetadata& metadata,
+                    size_t xsize, size_t ysize) {
+  return ib.origin.x0 != 0 || ib.origin.y0 != 0 || xsize != metadata.xsize() ||
+         ysize != metadata.ysize();
+}
+
 // Whether decoders blend a (displayed) frame with its blend source, as in
 // jxl-rs's FrameHeader::needs_blending: a cropped frame, or a blend mode other
 // than kReplace (for the color or an extra channel).
 bool FrameNeedsBlending(const jxl::ImageBundle& ib,
                         const CodecMetadata& metadata, size_t xsize,
                         size_t ysize) {
-  if (ib.origin.x0 != 0 || ib.origin.y0 != 0 || xsize != metadata.xsize() ||
-      ysize != metadata.ysize()) {
-    return true;
-  }
+  if (IsPartialFrame(ib, metadata, xsize, ysize)) return true;
   if (ib.blend && ib.blendmode != BlendMode::kReplace) return true;
   for (const jxl::BlendingInfo& info : DefaultEcBlending(ib, metadata)) {
     if (info.mode != BlendMode::kReplace) return true;
@@ -2450,6 +2454,10 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
   bool warned_group_shift = false;
   size_t frame_index = 0;
   SlotState slots[jxl::kMaxNumReferenceFrames] = {};
+  // The size of the frame in each slot (the upsampled size).
+  size_t slot_xsize[jxl::kMaxNumReferenceFrames] = {};
+  size_t slot_ysize[jxl::kMaxNumReferenceFrames] = {};
+  bool noted_upsampled_patches = false;
   int last_after_ct = -1;
   while (true) {
     FrameInfo info;
@@ -2543,12 +2551,82 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
         return JXL_FAILURE("Invalid HF metadata");
       }
     }
+    // Patches are drawn before the upsampling (in libjxl and jxl-rs alike):
+    // their position and size are in coded pixels of this frame, and they copy
+    // their rectangle of the reference frame 1:1, at the reference frame's own
+    // (upsampled) resolution.
+    const size_t ups = cparams.resampling;
+    uint64_t patch_area = 0;
     for (const auto& p : cparams.custom_patches) {
       if (p.x + p.xsize > width || p.y + p.ysize > height) {
         fprintf(stderr,
-                "Patch at (%zu, %zu) does not fit in the %zux%zu frame\n", p.x,
-                p.y, width, height);
+                "Patch at (%zu, %zu) of %zux%zu does not fit in the %zux%zu "
+                "frame\n",
+                p.x, p.y, p.xsize, p.ysize, width, height);
+        if (ups > 1) {
+          fprintf(stderr,
+                  "(With Upsample %zu, patches are drawn before the "
+                  "upsampling: position and size are in coded pixels, and the "
+                  "rectangle of the reference frame is copied 1:1 and then "
+                  "upsampled.)\n",
+                  ups);
+        }
         return JXL_FAILURE("Patch outside the frame");
+      }
+      if (slots[p.ref] != SlotState::kBeforeCT) {
+        fprintf(stderr,
+                "Patch from reference slot %zu, which holds %s: patches need "
+                "a frame saved before the color transform (ReferenceOnly, or "
+                "SaveBeforeCT on a full kReplace frame)\n",
+                p.ref,
+                slots[p.ref] == SlotState::kEmpty
+                    ? "no frame"
+                    : "a frame saved after the color transform");
+        return JXL_FAILURE("Invalid patch reference");
+      }
+      if (p.x0 + p.xsize > slot_xsize[p.ref] ||
+          p.y0 + p.ysize > slot_ysize[p.ref]) {
+        fprintf(stderr,
+                "Patch rectangle at (%zu, %zu) of %zux%zu does not fit in the "
+                "%zux%zu frame in reference slot %zu\n",
+                p.x0, p.y0, p.xsize, p.ysize, slot_xsize[p.ref],
+                slot_ysize[p.ref], p.ref);
+        return JXL_FAILURE("Patch outside the reference frame");
+      }
+      patch_area += static_cast<uint64_t>(p.xsize) * p.ysize;
+    }
+    if (!cparams.custom_patches.empty() && ups > 1) {
+      if (metadata->m.num_extra_channels > 0 && cparams.ec_resampling != ups) {
+        return FailWithMessage(
+            "Patches in an upsampled frame with extra channels need "
+            "Upsample_EC equal to Upsample (libjxl refuses the file)");
+      }
+      if (!noted_upsampled_patches) {
+        fprintf(stderr,
+                "Note: patches in an Upsample %zu frame are drawn before the "
+                "upsampling: position and size are in coded pixels, and the "
+                "rectangle of the reference frame (at its full resolution) is "
+                "copied 1:1 and then upsampled.\n",
+                ups);
+        noted_upsampled_patches = true;
+      }
+    }
+    {
+      // jxl-rs applies the level 5 limit on the total patch area, for the
+      // padded coded frame size.
+      const uint64_t padded_pixels =
+          cparams.vardct_from_tree
+              ? static_cast<uint64_t>(jxl::DivCeil(width, 8) * 8) *
+                    (jxl::DivCeil(height, 8) * 8)
+              : static_cast<uint64_t>(width) * height;
+      const uint64_t limit = std::max<uint64_t>(8 * padded_pixels, 1 << 20);
+      if (patch_area > limit) {
+        fprintf(stderr,
+                "Warning: the patches of frame %zu cover %" PRIu64
+                " pixels, over the level 5 limit of %" PRIu64
+                " (8 x coded pixels, at least 2^20): jxl-rs refuses the file "
+                "(libjxl decodes it).\n",
+                frame_index, patch_area, limit);
       }
     }
 
@@ -2573,10 +2651,25 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
         metadata->m.have_animation && !frame.reference_only;
     if (!info.is_last && (!has_duration || io->frames[0].duration == 0 ||
                           info.save_as_reference != 0)) {
-      const bool before_ct = info.save_before_color_transform;
-      slots[info.save_as_reference] =
-          before_ct ? SlotState::kBeforeCT : SlotState::kAfterCT;
-      if (!before_ct) last_after_ct = info.save_as_reference;
+      // A displayed frame can be saved before the color transform only as a
+      // full frame with kReplace (otherwise the flag is not signaled).
+      const bool partial =
+          IsPartialFrame(io->frames[0], *metadata, width * cparams.resampling,
+                         height * cparams.resampling);
+      const bool replace = !io->frames[0].blend ||
+                           io->frames[0].blendmode == BlendMode::kReplace;
+      const bool before_ct =
+          frame.reference_only ||
+          (info.save_before_color_transform && replace && !partial);
+      const size_t slot = info.save_as_reference;
+      slots[slot] = before_ct ? SlotState::kBeforeCT : SlotState::kAfterCT;
+      if (!before_ct) last_after_ct = slot;
+      // A ReferenceOnly frame is saved at its own (upsampled) size, a
+      // displayed frame at the image size (after blending).
+      slot_xsize[slot] =
+          frame.reference_only ? width * cparams.resampling : metadata->xsize();
+      slot_ysize[slot] = frame.reference_only ? height * cparams.resampling
+                                              : metadata->ysize();
     }
     if (!have_next) break;
     tree.clear();
