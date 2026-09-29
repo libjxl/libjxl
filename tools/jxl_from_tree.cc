@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -91,6 +92,52 @@ using ::jxl::Status;
 using ::jxl::Tree;
 
 namespace {
+
+// Like std::stoi, std::stoul and std::stof, but without exceptions: *num is the
+// number of characters parsed, or std::string::npos if `t` does not start with
+// a number in range, so that the callers' `*num != t.size()` checks report
+// every invalid token. Unsigned values cannot be negative.
+int32_t ParseInt(const std::string& t, size_t* num) {
+  const char* begin = t.c_str();
+  char* end = nullptr;
+  errno = 0;
+  long long v = strtoll(begin, &end, 10);
+  if (end == begin || errno == ERANGE ||
+      v < std::numeric_limits<int32_t>::min() ||
+      v > std::numeric_limits<int32_t>::max()) {
+    *num = std::string::npos;
+    return 0;
+  }
+  *num = end - begin;
+  return static_cast<int32_t>(v);
+}
+
+size_t ParseUnsigned(const std::string& t, size_t* num) {
+  const char* begin = t.c_str();
+  char* end = nullptr;
+  errno = 0;
+  unsigned long long v = strtoull(begin, &end, 10);
+  if (end == begin || errno == ERANGE || t.find('-') != std::string::npos ||
+      v > std::numeric_limits<size_t>::max()) {
+    *num = std::string::npos;
+    return 0;
+  }
+  *num = end - begin;
+  return static_cast<size_t>(v);
+}
+
+float ParseFloat(const std::string& t, size_t* num) {
+  const char* begin = t.c_str();
+  char* end = nullptr;
+  errno = 0;
+  float v = strtof(begin, &end);
+  if (end == begin || errno == ERANGE) {
+    *num = std::string::npos;
+    return 0;
+  }
+  *num = end - begin;
+  return v;
+}
 struct SplineData {
   int32_t quantization_adjustment = 1;
   std::vector<Spline> splines;
@@ -143,7 +190,7 @@ bool ParseNamedTree(F& tok, const std::vector<std::string>& properties,
       return false;
     }
     t = tok();
-    int32_t split = std::stoi(t, &num);
+    int32_t split = ParseInt(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid split value: %s\n", t.c_str());
       return false;
@@ -156,7 +203,7 @@ bool ParseNamedTree(F& tok, const std::vector<std::string>& properties,
   }
   if (t == "-" && tok() == "Set") {
     t = tok();
-    int32_t value = std::stoi(t, &num);
+    int32_t value = ParseInt(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid value: %s\n", t.c_str());
       return false;
@@ -844,7 +891,7 @@ std::vector<size_t> ParseQuantTables(std::string name, bool allow_all) {
   if (table_names.count(name)) return {table_names.at(name)};
   size_t num = 0;
   size_t idx = 0;
-  if (!name.empty() && isdigit(name[0])) idx = std::stoul(name, &num);
+  if (!name.empty() && isdigit(name[0])) idx = ParseUnsigned(name, &num);
   if (num == 0 || num != name.size() || idx >= jxl::kNumQuantTables) return {};
   return {idx};
 }
@@ -1374,7 +1421,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     t = tok();
     size_t num = 0;
-    int split = std::stoi(t, &num);
+    int split = ParseInt(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid splitval: %s\n", t.c_str());
       return false;
@@ -1402,7 +1449,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       t = tok();
     }
     size_t num = 0;
-    int offset = std::stoi(t, &num);
+    int offset = ParseInt(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid offset: %s\n", t.c_str());
       return false;
@@ -1413,7 +1460,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Width") {
     t = tok();
     size_t num = 0;
-    W = std::stoul(t, &num);
+    W = ParseUnsigned(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid width: %s\n", t.c_str());
       return false;
@@ -1421,7 +1468,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Height") {
     t = tok();
     size_t num = 0;
-    H = std::stoul(t, &num);
+    H = ParseUnsigned(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid height: %s\n", t.c_str());
       return false;
@@ -1434,7 +1481,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "GroupShift") {
     t = tok();
     size_t num = 0;
-    cparams.modular_group_size_shift = std::stoul(t, &num);
+    cparams.modular_group_size_shift = ParseUnsigned(t, &num);
     frame.group_shift_given = true;
     if (num != t.size()) {
       fprintf(stderr, "Invalid GroupShift: %s\n", t.c_str());
@@ -1452,7 +1499,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     for (size_t c = 0; c < lists; c++) {
       t = tok();
       size_t num = 0;
-      size_t n = std::stoul(t, &num);
+      size_t n = ParseUnsigned(t, &num);
       if (num != t.size() || n > 15) {
         fprintf(stderr, "Invalid number of thresholds (max 15): %s\n",
                 t.c_str());
@@ -1461,7 +1508,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       std::vector<int> v(n);
       for (int& i : v) {
         t = tok();
-        i = std::stoi(t, &num);
+        i = ParseInt(t, &num);
         if (num != t.size()) {
           fprintf(stderr, "Invalid threshold: %s\n", t.c_str());
           return false;
@@ -1518,7 +1565,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     bool global_scale = t == "GlobalScale";
     t = tok();
     size_t num = 0;
-    size_t v = std::stoul(t, &num);
+    size_t v = ParseUnsigned(t, &num);
     if (num != t.size() || v < 1 || v > (global_scale ? 73728 : 65536)) {
       fprintf(stderr, "Invalid %s: %s\n",
               global_scale ? "GlobalScale (1..73728)" : "LFQuant (1..65536)",
@@ -1533,7 +1580,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     bool x = t == "XQMScale";
     t = tok();
     size_t num = 0;
-    int v = std::stoi(t, &num);
+    int v = ParseInt(t, &num);
     if (num != t.size() || v < 0 || v > 7) {
       fprintf(stderr, "Invalid %s (0..7): %s\n", x ? "XQMScale" : "BQMScale",
               t.c_str());
@@ -1548,7 +1595,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     for (float& f : v) {
       t = tok();
       size_t num = 0;
-      f = std::stof(t, &num);
+      f = ParseFloat(t, &num);
       if (num != t.size() || !(f >= 1.0f / 256 && f <= (1 << 24))) {
         fprintf(stderr, "Invalid LFChannelQuant (1/256..2^24): %s\n",
                 t.c_str());
@@ -1594,7 +1641,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     size_t num = 0;
     if (kind == "DequantTable") {
       t = tok();
-      float den = std::stof(t, &num);
+      float den = ParseFloat(t, &num);
       if (num != t.size() || !(den >= 1.0f / (1 << 24) && den <= 65504)) {
         fprintf(stderr, "Invalid DequantTable den (2^-24..65504): %s\n",
                 t.c_str());
@@ -1610,7 +1657,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       size_t n = 1;
       if (kind == "DequantBands") {
         t = tok();
-        n = std::stoul(t, &num);
+        n = ParseUnsigned(t, &num);
         if (num != t.size() || n < 1 ||
             n > (1u << jxl::DctQuantWeightParams::kLog2MaxDistanceBands)) {
           fprintf(stderr, "Invalid number of distance bands (1..16): %s\n",
@@ -1624,7 +1671,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       for (size_t c : chan) {
         for (size_t i = 0; i < n; i++) {
           t = tok();
-          float step = std::stof(t, &num);
+          float step = ParseFloat(t, &num);
           // Signaled as quantization weights (1 / step): the first band as a
           // float16 of weight / 64, the others as float16 ratios.
           if (num != t.size() || !(step >= 1e-6f && step <= 256)) {
@@ -1670,7 +1717,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     if (order_names.count(name)) {
       ord = order_names.at(name);
     } else {
-      ord = std::stoul(t, &num);
+      ord = ParseUnsigned(t, &num);
       if (num != t.size() || ord >= jxl::kNumOrders) {
         fprintf(stderr, "Invalid coefficient order class (0..12): %s\n",
                 t.c_str());
@@ -1683,7 +1730,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       channels = {t == "X" ? 0u : t == "Y" ? 1u : 2u};
       t = tok();
     }
-    size_t n = std::stoul(t, &num);
+    size_t n = ParseUnsigned(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid number of coefficients: %s\n", t.c_str());
       return false;
@@ -1701,7 +1748,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       size_t uv[2];
       for (size_t& v : uv) {
         t = tok();
-        v = std::stoul(t, &num);
+        v = ParseUnsigned(t, &num);
         if (num != t.size()) {
           fprintf(stderr, "Invalid coefficient frequency: %s\n", t.c_str());
           return false;
@@ -1742,7 +1789,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "HiddenChannel") {
     t = tok();
     size_t num = 0;
-    cparams.move_to_front_from_channel = -1 - std::stoul(t, &num);
+    cparams.move_to_front_from_channel = -1 - ParseUnsigned(t, &num);
     if (num != t.size() || num > 16) {
       fprintf(stderr, "Invalid HiddenChannel (max 16): %s\n", t.c_str());
       return false;
@@ -1750,7 +1797,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "RCT") {
     t = tok();
     size_t num = 0;
-    cparams.colorspace = std::stoul(t, &num);
+    cparams.colorspace = ParseInt(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid RCT: %s\n", t.c_str());
       return false;
@@ -1758,7 +1805,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Orientation") {
     t = tok();
     size_t num = 0;
-    io.metadata.m.orientation = std::stoul(t, &num);
+    io.metadata.m.orientation = ParseUnsigned(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid Orientation: %s\n", t.c_str());
       return false;
@@ -1774,7 +1821,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Bitdepth") {
     t = tok();
     size_t num = 0;
-    uint32_t bits_per_sample = std::stoul(t, &num);
+    uint32_t bits_per_sample = ParseUnsigned(t, &num);
     if (num != t.size() || bits_per_sample < 1 || bits_per_sample > 32) {
       fprintf(stderr, "Invalid Bitdepth: %s\n", t.c_str());
       return false;
@@ -1788,7 +1835,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     t = tok();
     size_t num = 0;
     io.metadata.m.bit_depth.floating_point_sample = true;
-    io.metadata.m.bit_depth.exponent_bits_per_sample = std::stoul(t, &num);
+    io.metadata.m.bit_depth.exponent_bits_per_sample = ParseUnsigned(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid FloatExpBits: %s\n", t.c_str());
       return false;
@@ -1796,13 +1843,13 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "FramePos") {
     t = tok();
     size_t num = 0;
-    x0 = std::stoi(t, &num);
+    x0 = ParseInt(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid FramePos x0: %s\n", t.c_str());
       return false;
     }
     t = tok();
-    y0 = std::stoi(t, &num);
+    y0 = ParseInt(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid FramePos y0: %s\n", t.c_str());
       return false;
@@ -1812,7 +1859,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Upsample") {
     t = tok();
     size_t num = 0;
-    cparams.resampling = std::stoul(t, &num);
+    cparams.resampling = ParseUnsigned(t, &num);
     if (num != t.size() ||
         (cparams.resampling != 1 && cparams.resampling != 2 &&
          cparams.resampling != 4 && cparams.resampling != 8)) {
@@ -1822,7 +1869,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Upsample_EC") {
     t = tok();
     size_t num = 0;
-    cparams.ec_resampling = std::stoul(t, &num);
+    cparams.ec_resampling = ParseUnsigned(t, &num);
     if (num != t.size() ||
         (cparams.ec_resampling != 1 && cparams.ec_resampling != 2 &&
          cparams.ec_resampling != 4 && cparams.ec_resampling != 8)) {
@@ -1837,14 +1884,14 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "AnimationFPS") {
     t = tok();
     size_t num = 0;
-    io.metadata.m.animation.tps_numerator = std::stoul(t, &num);
+    io.metadata.m.animation.tps_numerator = ParseUnsigned(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid numerator: %s\n", t.c_str());
       return false;
     }
     t = tok();
     num = 0;
-    io.metadata.m.animation.tps_denominator = std::stoul(t, &num);
+    io.metadata.m.animation.tps_denominator = ParseUnsigned(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid denominator: %s\n", t.c_str());
       return false;
@@ -1852,7 +1899,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Duration") {
     t = tok();
     size_t num = 0;
-    io.frames[0].duration = std::stoul(t, &num);
+    io.frames[0].duration = ParseUnsigned(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid Duration: %s\n", t.c_str());
       return false;
@@ -1876,17 +1923,17 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "SplineQuantizationAdjustment") {
     t = tok();
     size_t num = 0;
-    spline_data.quantization_adjustment = std::stoul(t, &num);
+    spline_data.quantization_adjustment = ParseInt(t, &num);
     if (num != t.size()) {
       fprintf(stderr, "Invalid SplineQuantizationAdjustment: %s\n", t.c_str());
       return false;
     }
   } else if (t == "Spline") {
     Spline spline;
-    const auto ParseFloat = [&t, &tok](float& output) {
+    const auto parse_float = [&t, &tok](float& output) {
       t = tok();
       size_t num = 0;
-      output = std::stof(t, &num);
+      output = ParseFloat(t, &num);
       if (num != t.size()) {
         fprintf(stderr, "Invalid spline data: %s\n", t.c_str());
         return false;
@@ -1895,11 +1942,11 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     };
     for (auto& dct : spline.color_dct) {
       for (float& coefficient : dct) {
-        JXL_RETURN_IF_ERROR(ParseFloat(coefficient));
+        JXL_RETURN_IF_ERROR(parse_float(coefficient));
       }
     }
     for (float& coefficient : spline.sigma_dct) {
-      JXL_RETURN_IF_ERROR(ParseFloat(coefficient));
+      JXL_RETURN_IF_ERROR(parse_float(coefficient));
     }
 
     while (true) {
@@ -1907,10 +1954,10 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       if (t == "EndSpline") break;
       size_t num = 0;
       Spline::Point point;
-      point.x = std::stof(t, &num);
+      point.x = ParseFloat(t, &num);
       bool ok_x = num == t.size();
       auto t_y = tok();
-      point.y = std::stof(t_y, &num);
+      point.y = ParseFloat(t_y, &num);
       if (!ok_x || num != t_y.size()) {
         fprintf(stderr, "Invalid spline control point: %s %s\n", t.c_str(),
                 t_y.c_str());
@@ -1936,7 +1983,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "EPF") {
     t = tok();
     size_t num = 0;
-    cparams.epf = std::stoul(t, &num);
+    cparams.epf = ParseInt(t, &num);
     if (num != t.size() || cparams.epf > 3) {
       fprintf(stderr, "Invalid EPF: %s\n", t.c_str());
       return false;
@@ -1946,7 +1993,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     for (size_t i = 0; i < 8; i++) {
       t = tok();
       size_t num = 0;
-      float v = std::stof(t, &num);
+      float v = ParseFloat(t, &num);
       if (num != t.size() || v < 0.0f || v > 1.0f) {
         fprintf(stderr, "Invalid noise entry: %s\n", t.c_str());
         return false;
@@ -1958,7 +2005,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     for (size_t i = 0; i < 3; i++) {
       t = tok();
       size_t num = 0;
-      cparams.manual_xyb_factors[i] = std::stof(t, &num);
+      cparams.manual_xyb_factors[i] = ParseFloat(t, &num);
       if (num != t.size()) {
         fprintf(stderr, "Invalid XYB factor: %s\n", t.c_str());
         return false;
@@ -1988,7 +2035,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     for (size_t* v : {&frame.image_xsize, &frame.image_ysize}) {
       t = tok();
       size_t num = 0;
-      *v = std::stoul(t, &num);
+      *v = ParseUnsigned(t, &num);
       if (num != t.size() || *v == 0) {
         fprintf(stderr, "Invalid ImageSize: %s\n", t.c_str());
         return false;
@@ -2002,7 +2049,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     bool save = t == "SaveAsReference";
     t = tok();
     size_t num = 0;
-    size_t slot = std::stoul(t, &num);
+    size_t slot = ParseUnsigned(t, &num);
     if (num != t.size() || slot >= jxl::kMaxNumReferenceFrames) {
       fprintf(stderr, "Invalid reference slot: %s\n", t.c_str());
       return false;
@@ -2032,7 +2079,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     for (size_t i = 0; is_patch && i < 7; i++) {
       t = tok();
       size_t num = 0;
-      v[i] = std::stoul(t, &num);
+      v[i] = ParseUnsigned(t, &num);
       if (num != t.size()) {
         fprintf(stderr, "Invalid patch coordinate: %s\n", t.c_str());
         return false;
