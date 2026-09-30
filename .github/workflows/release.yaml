@@ -226,7 +226,7 @@ jobs:
   windows_build:
     name: vcpkg / ${{ matrix.triplet }} ${{ matrix.build_type || 'Release'}}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
-    runs-on: [windows-latest]
+    runs-on: ${{ matrix.runner || 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -245,6 +245,15 @@ jobs:
             static: 'OFF'
           - triplet: x64-windows
             arch: '-A x64'
+            static: 'OFF'
+          # ARM64 support
+          - triplet: arm64-windows-static
+            arch: '-A ARM64'
+            runner: windows-11-arm
+          # ARM64 support
+          - triplet: arm64-windows
+            arch: '-A ARM64'
+            runner: windows-11-arm
             static: 'OFF'
 
     env:
