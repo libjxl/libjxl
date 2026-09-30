@@ -139,14 +139,19 @@ Status MergeTrees(const std::vector<Tree>& trees,
 
 void QuantizeChannel(Channel& ch, const int q) {
   if (q == 1) return;
+  const int64_t q64 = q;
+  const int64_t half = q64 / 2;
   for (size_t y = 0; y < ch.plane.ysize(); y++) {
     pixel_type* row = ch.plane.Row(y);
     for (size_t x = 0; x < ch.plane.xsize(); x++) {
-      if (row[x] < 0) {
-        row[x] = -((-row[x] + q / 2) / q) * q;
-      } else {
-        row[x] = ((row[x] + q / 2) / q) * q;
-      }
+      // Compute in int64_t: -row[x] and row[x] + q/2 can overflow int32_t on
+      // crafted extreme sample values.
+      const int64_t v = row[x];
+      const int64_t r =
+          v < 0 ? -((-v + half) / q64) * q64 : ((v + half) / q64) * q64;
+      row[x] = static_cast<pixel_type>(std::clamp<int64_t>(
+          r, std::numeric_limits<pixel_type>::min(),
+          std::numeric_limits<pixel_type>::max()));
     }
   }
 }
