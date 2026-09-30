@@ -3378,6 +3378,13 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
                                             width, height, cparams.resampling,
                                             frame_index));
     }
+    // Decoded range of each channel (for the alpha check below).
+    std::vector<std::pair<int64_t, int64_t>> channel_ranges;
+    // (Displayed frames only: a reference-only sheet with out-of-range alpha
+    // is fine when its patches are clamped or blended onto opaque pixels.)
+    const bool check_alpha = metadata->m.HasAlpha() && !frame.reference_only;
+    cparams.modular_channel_ranges_out =
+        check_alpha ? &channel_ranges : nullptr;
     const auto encode_frame = [&](BitWriter* w) {
       return jxl::EncodeFrame(memory_manager, cparams, info, metadata.get(),
                               io->frames[0], *JxlGetDefaultCms(), nullptr, w,
@@ -3437,6 +3444,27 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     } else if (!encode_frame(&writer)) {
       fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
       return JXL_FAILURE("Failed to encode frame");
+    }
+    cparams.modular_channel_ranges_out = nullptr;
+    // Alpha outside 0..max looks fine in 8-bit checks (PNG output clamps it)
+    // but some browsers (Chrome) premultiply without clamping.
+    const size_t num_ec = metadata->m.extra_channel_info.size();
+    for (size_t k = 0; check_alpha && k < num_ec &&
+                       channel_ranges.size() >= num_ec;
+         k++) {
+      const auto& eci = metadata->m.extra_channel_info[k];
+      if (eci.type != jxl::ExtraChannel::kAlpha) continue;
+      const auto& r = channel_ranges[channel_ranges.size() - num_ec + k];
+      const int64_t max = (int64_t{1} << eci.bit_depth.bits_per_sample) - 1;
+      if (r.first < 0 || r.second > max) {
+        fprintf(stderr,
+                "Warning: frame %zu: alpha goes from %lld to %lld, outside "
+                "0..%lld (browsers that premultiply without clamping, like "
+                "Chrome, will show wrong colours)\n",
+                frame_index, static_cast<long long>(r.first),
+                static_cast<long long>(r.second),
+                static_cast<long long>(max));
+      }
     }
     frame_index++;
     // What the reference slots hold now (as in FrameHeader::CanBeReferenced).

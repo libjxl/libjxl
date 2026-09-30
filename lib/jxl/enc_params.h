@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/ac_context.h"
@@ -225,6 +226,11 @@ struct CompressParams {
   // transforms) are merged into [0] and [1], so that the caller can tell
   // whether 16-bit buffers suffice.
   int64_t* modular_range_out = nullptr;
+  // The same frames: if not null, the smallest and largest decoded value of
+  // each channel in the final layout (colour channels, if modular, then the
+  // extra channels), merged into the entries (resized as needed).
+  std::vector<std::pair<int64_t, int64_t>>* modular_channel_ranges_out =
+      nullptr;
   // VarDCT frames: the LF image and the HF metadata (chroma-from-luma maps, AC
   // strategy, quantization field, EPF sharpness) are what custom_fixed_tree
   // gives with all residuals zero, and all HF coefficients are zero. Used in

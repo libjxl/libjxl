@@ -1347,12 +1347,18 @@ Status ModularFrameEncoder::ComputeTokens(ThreadPool* pool) {
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_streams, ThreadPool::NoInit,
                                 process_stream, "ComputeTokens"));
-  if (cparams_.modular_range_out != nullptr && !cparams_.custom_fixed_tree.empty()) {
+  if ((cparams_.modular_range_out != nullptr ||
+       cparams_.modular_channel_ranges_out != nullptr) &&
+      !cparams_.custom_fixed_tree.empty()) {
     int64_t lo = std::numeric_limits<int64_t>::max();
     int64_t hi = std::numeric_limits<int64_t>::min();
     JXL_RETURN_IF_ERROR(ComputeDecodedRange(&lo, &hi));
-    cparams_.modular_range_out[0] = std::min(cparams_.modular_range_out[0], lo);
-    cparams_.modular_range_out[1] = std::max(cparams_.modular_range_out[1], hi);
+    if (cparams_.modular_range_out != nullptr) {
+      cparams_.modular_range_out[0] =
+          std::min(cparams_.modular_range_out[0], lo);
+      cparams_.modular_range_out[1] =
+          std::max(cparams_.modular_range_out[1], hi);
+    }
   }
   return true;
 }
@@ -1505,7 +1511,27 @@ Status ModularFrameEncoder::ComputeDecodedRange(int64_t* lo, int64_t* hi) {
     }
     full.transform = replayed;
   }
-  return UndoTransformsWithRange(full, stream_headers_[0].wp_header, lo, hi);
+  JXL_RETURN_IF_ERROR(
+      UndoTransformsWithRange(full, stream_headers_[0].wp_header, lo, hi));
+  if (auto* ranges = cparams_.modular_channel_ranges_out) {
+    if (ranges->size() < full.channel.size()) {
+      ranges->resize(full.channel.size(),
+                     {std::numeric_limits<int64_t>::max(),
+                      std::numeric_limits<int64_t>::min()});
+    }
+    for (size_t c = 0; c < full.channel.size(); c++) {
+      const Channel& ch = full.channel[c];
+      auto& r = (*ranges)[c];
+      for (size_t y = 0; y < ch.h; y++) {
+        const pixel_type* row = ch.Row(y);
+        for (size_t x = 0; x < ch.w; x++) {
+          r.first = std::min<int64_t>(r.first, row[x]);
+          r.second = std::max<int64_t>(r.second, row[x]);
+        }
+      }
+    }
+  }
+  return true;
 }
 
 Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,

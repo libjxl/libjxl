@@ -755,6 +755,10 @@ std::vector<std::vector<Token>> ApplyLZ77_LazyGreedy(
   return {};
 }
 
+// Matches longer than this: the optimal parse skips the positions inside
+// them (but the last ones).
+constexpr size_t kLongMatch = 4096;
+
 template <uint32_t kMaxChainLength>
 std::vector<std::vector<Token>> ApplyLZ77_Optimal(
     const HistogramParams& params, size_t num_contexts,
@@ -874,6 +878,13 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
         rle_length = 0;
       }
       if (rle_length >= 8 && dist_symbols.size() > 9) {
+        skip_lz77 = dist_symbols.size() - 10;
+        rle_length = 0;
+      } else if (dist_symbols.size() > kLongMatch) {
+        // Inside a long match (a repeated block, e.g. many identical splines)
+        // the matches that start there are mostly its own tails, and finding
+        // them costs as much as the match is long: skip to its last symbols,
+        // as for runs.
         skip_lz77 = dist_symbols.size() - 10;
         rle_length = 0;
       }
