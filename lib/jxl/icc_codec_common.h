@@ -55,7 +55,7 @@ static const Tag kXyz_Tag = {{'X', 'Y', 'Z', ' '}};
 
 // Tag names focused on RGB and GRAY monitor profiles
 static constexpr size_t kNumTagStrings = 17;
-static constexpr const Tag* kTagStrings[kNumTagStrings] = {
+static constexpr std::array<const Tag*, kNumTagStrings> kTagStrings = {
     &kCprtTag, &kWtptTag, &kBkptTag, &kRxyzTag, &kGxyzTag, &kBxyzTag,
     &kKxyzTag, &kRtrcTag, &kGtrcTag, &kBtrcTag, &kKtrcTag, &kChadTag,
     &kDescTag, &kChrmTag, &kDmndTag, &kDmddTag, &kLumiTag};
@@ -67,7 +67,7 @@ static constexpr size_t kCommandTagStringFirst = 4;
 
 // Tag types focused on RGB and GRAY monitor profiles
 static constexpr size_t kNumTypeStrings = 8;
-static constexpr const Tag* kTypeStrings[kNumTypeStrings] = {
+static constexpr std::array<const Tag*, kNumTypeStrings> kTypeStrings = {
     &kXyz_Tag, &kDescTag, &kTextTag, &kMlucTag,
     &kParaTag, &kCurvTag, &kSf32Tag, &kGbd_Tag};
 
