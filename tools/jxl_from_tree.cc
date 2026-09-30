@@ -2456,7 +2456,15 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     pal.enabled = true;
     cparams.lossy_palette = false;
-  } else if (t == "Residuals") {
+  } else if (t == "NibbleCode") {
+    // Prefix codes, and a flat 4-bit code for every histogram with more than
+    // two of the tokens 0..15 (residuals -8..7): those samples are raw
+    // nibbles of the file (bit-reversed canonical codes, LSB first).
+    cparams.flat_nibble_code = true;
+  } else if (t == "Residuals" || t == "MetaResiduals") {
+    // (MetaResiduals: the same, but the pattern starts at the meta channels,
+    // i.e. the palette entries are the tree's leaves plus the first values.)
+    const bool include_meta = t == "MetaResiduals";
     // Residuals <stream|*> [ <prefix values> ] [ <period values> ] (a value
     // may be written <value>*<count> for a run of equal values, and
     // ( <values> )*<count> repeats a group): instead of
@@ -2474,6 +2482,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       }
     }
     jxl::ResidualPattern pattern;
+    pattern.include_meta = include_meta;
     for (std::vector<int32_t>* list : {&pattern.prefix, &pattern.period}) {
       t = tok();
       if (t != "[") {
@@ -3305,7 +3314,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
         fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
         return JXL_FAILURE("Failed to encode frame");
       }
-      cparams.options.residual_inner_lz77 = true;
+      cparams.options.residual_inner_lz77 = !cparams.flat_nibble_code;
       if (!encode_frame(&with)) {
         fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
         return JXL_FAILURE("Failed to encode frame");

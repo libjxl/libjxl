@@ -214,6 +214,11 @@ struct CompressParams {
   // property 1; -1 for every stream not listed): a prefix, then a period that
   // repeats. Streams not covered keep all-zero residuals.
   std::map<int, ResidualPattern> custom_residuals;
+  // Modular frames (jxl_from_tree's NibbleCode): prefix codes, the default
+  // hybrid uint config, and every histogram that uses more than two of the
+  // tokens 0..15 (and no others) becomes the flat code of all 16 (4 bits
+  // each), so that those tokens are raw nibbles in the bitstream.
+  bool flat_nibble_code = false;
   // Modular frames with custom_fixed_tree and zero tokens (jxl_from_tree): if
   // not null, the smallest and largest value of any modular buffer when
   // decoding (the samples, and the intermediate values while undoing the

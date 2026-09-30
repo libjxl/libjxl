@@ -118,6 +118,8 @@ struct HistogramParams {
   bool streaming_mode = false;
   bool add_missing_symbols = false;
   bool add_fixed_histograms = false;
+  // See CompressParams::flat_nibble_code.
+  bool flat_nibble_code = false;
 };
 
 struct Histogram {

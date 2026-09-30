@@ -715,7 +715,7 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
   size_t meta = 0;
   for (size_t i = 0; i < num_coded; i++) {
     total += image.channel[i].w * image.channel[i].h;
-    if (i < image.nb_meta_channels) {
+    if (i < image.nb_meta_channels && !p.include_meta) {
       meta += image.channel[i].w * image.channel[i].h;
     }
   }
@@ -880,7 +880,9 @@ Status EvaluateTreeWithResiduals(const Tree &tree, size_t group_id,
   JxlMemoryManager *memory_manager = image->memory_manager();
   weighted::Header wp_header;
   size_t meta = 0;
-  for (size_t i = 0; i < image->nb_meta_channels && i < num_channels; i++) {
+  const bool include_meta = pattern != nullptr && pattern->include_meta;
+  for (size_t i = 0;
+       !include_meta && i < image->nb_meta_channels && i < num_channels; i++) {
     meta += image->channel[i].w * image->channel[i].h;
   }
   const size_t prefix = pattern ? meta + pattern->prefix.size() : 0;

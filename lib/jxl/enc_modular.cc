@@ -1516,6 +1516,11 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
   params.image_widths = image_widths_;
   // Residual patterns come as tokens with LZ77 applied.
   params.tokens_have_lz77 = cparams_.options.residual_patterns != nullptr;
+  if (cparams_.flat_nibble_code) {
+    params.force_huffman = true;
+    params.uint_method = HistogramParams::HybridUintMethod::kNone;
+    params.flat_nibble_code = true;
+  }
   // Write histograms.
   JXL_ASSIGN_OR_RETURN(
       size_t cost, BuildAndEncodeHistograms(

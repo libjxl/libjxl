@@ -61,6 +61,10 @@ struct ModularMultiplierInfo {
 struct ResidualPattern {
   std::vector<int32_t> prefix;
   std::vector<int32_t> period;
+  // The pattern starts at the first sample of the stream, meta channels
+  // (palette entries) included, instead of after them (jxl_from_tree's
+  // MetaResiduals).
+  bool include_meta = false;
 };
 
 struct ModularOptions {

@@ -964,6 +964,23 @@ StatusOr<size_t> EntropyEncodingData::BuildAndStoreEntropyCodes(
     }
   }
 
+  if (params.flat_nibble_code && use_prefix_code) {
+    for (size_t c = prev_histograms; c < clustered_histograms.size(); ++c) {
+      const Histogram& h = clustered_histograms[c];
+      size_t used = 0;
+      bool small = true;
+      for (size_t s = 0; s < h.counts.size(); ++s) {
+        if (h.counts[s] == 0) continue;
+        used++;
+        if (s >= 16) small = false;
+      }
+      if (small && used > 2) {
+        Histogram flat;
+        for (size_t s = 0; s < 16; ++s) flat.Add(s);
+        clustered_histograms[c] = flat;
+      }
+    }
+  }
   JXL_RETURN_IF_ERROR(
       ChooseUintConfigs(memory_manager, params, tokens, clustered_histograms));
 
