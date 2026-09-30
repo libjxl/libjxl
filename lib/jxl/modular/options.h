@@ -139,6 +139,8 @@ struct ModularOptions {
   // With residual_patterns: LZ77 also inside the prefix and the first period
   // (where it pays off, by an estimate).
   bool residual_inner_lz77 = false;
+  // Literal costs per context in the inner LZ77 match estimate.
+  bool residual_lz77_context_costs = false;
 
   ModularOptions() {
     // GCC has complaints about inline vector initialization; do it manually.

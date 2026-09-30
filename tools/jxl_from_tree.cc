@@ -52,6 +52,7 @@
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/dec_modular.h"
 #include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
@@ -967,9 +968,22 @@ double MetaChannelCost(const std::vector<std::vector<int32_t>>& rows,
 // Copies `src` restricted to channels c >= 1 (the channels after the palette
 // meta channel) and renumbers them for a group stream, which has no meta
 // channels: c - 1. Returns the copy's root.
+// `src` with the splits on `prop` resolved for prop in lo..hi (a new tree).
+Tree Restricted(const Tree& src, int prop, int64_t lo, int64_t hi) {
+  Tree out;
+  CopyRestricted(src, 0, prop, lo, hi, &out);
+  return out;
+}
+
+// Copies `src` restricted to channels c >= 1 (the channels after the palette
+// meta channel) and to the group streams (g >= 1), and renumbers the channels
+// for a group stream, which has no meta channels: c - 1. Returns the copy's
+// root.
 size_t CopyForGroupStreams(const Tree& src, Tree* dst) {
+  const Tree in_groups = Restricted(src, /*g=*/1, 1,
+                                    std::numeric_limits<int32_t>::max());
   size_t first = dst->size();
-  size_t root = CopyRestricted(src, 0, /*c=*/0, 1,
+  size_t root = CopyRestricted(in_groups, 0, /*c=*/0, 1,
                                std::numeric_limits<int32_t>::max(), dst);
   for (size_t i = first; i < dst->size(); i++) {
     if ((*dst)[i].property == 0) (*dst)[i].splitval -= 1;
@@ -995,20 +1009,16 @@ void AddPaletteTree(const PaletteSettings& palette, bool multi_group,
     out.push_back(jxl::PropertyDecisionNode::Split(/*g=*/1, 0, 0, 0));
     out[0].lchild = CopyForGroupStreams(*tree, &out);
   }
+  // The global stream (g = 0), which holds the palette's meta channel (a
+  // global transform) and, with a single group, everything.
+  const Tree global_tree = Restricted(*tree, /*g=*/1, 0, 0);
   size_t global = out.size();
   if (palette.implicit || width == 0) {
     // The meta channel is the tree's (or empty).
-    size_t first = out.size();
-    for (const auto& n : *tree) out.push_back(n);
-    for (size_t i = first; i < out.size(); i++) {
-      if (out[i].property >= 0) {
-        out[i].lchild += first;
-        out[i].rchild += first;
-      }
-    }
+    CopyRestricted(global_tree, 0, /*g=*/1, 0, 0, &out);
   } else {
     out.push_back(jxl::PropertyDecisionNode::Split(/*c=*/0, 0, 0, 0));
-    size_t user = CopyRestricted(*tree, 0, /*c=*/0, 1,
+    size_t user = CopyRestricted(global_tree, 0, /*c=*/0, 1,
                                  std::numeric_limits<int32_t>::max(), &out);
     std::vector<std::vector<int32_t>> rows(palette.num_c,
                                            std::vector<int32_t>(width));
@@ -2973,6 +2983,41 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
           "Residuals are for modular frames (the VarDCT tool computes its LF "
           "and HF metadata with zero residuals)");
     }
+    if (!cparams.custom_residuals.empty()) {
+      // Warn about streams that code no samples in this frame.
+      jxl::FrameDimensions fd;
+      fd.Set(width * cparams.resampling, height * cparams.resampling,
+             cparams.modular_group_size_shift, 0, 0, /*modular_mode=*/true,
+             cparams.resampling);
+      const size_t first_group = jxl::ModularStreamId::ModularAC(0, 0).ID(fd);
+      const size_t last_group =
+          jxl::ModularStreamId::ModularAC(fd.num_groups - 1, 0).ID(fd);
+      const size_t first_lf = jxl::ModularStreamId::ModularDC(0).ID(fd);
+      const size_t last_lf =
+          jxl::ModularStreamId::ModularDC(fd.num_dc_groups - 1).ID(fd);
+      const bool multi_group = fd.num_groups > 1;
+      for (const auto& kv : cparams.custom_residuals) {
+        const int id = kv.first;
+        if (id < 0) continue;
+        const bool group = id >= static_cast<int>(first_group) &&
+                           id <= static_cast<int>(last_group);
+        const bool lf = cparams.responsive && id >= static_cast<int>(first_lf) &&
+                        id <= static_cast<int>(last_lf);
+        const bool global_has_samples =
+            id == 0 && (!multi_group || frame.palette.enabled ||
+                        cparams.responsive);
+        if (!(group && multi_group) && !lf && !global_has_samples) {
+          fprintf(stderr,
+                  "Warning: Residuals for stream %d, which codes no samples in "
+                  "this %zux%zu frame (%s; the group streams are %zu..%zu)\n",
+                  id, width, height,
+                  multi_group ? "larger than one group: stream 0 only holds "
+                                "global data such as a palette"
+                              : "a single group: everything is in stream 0",
+                  first_group, last_group);
+        }
+      }
+    }
     if (frame.palette.enabled) {
       if (cparams.vardct_from_tree) {
         return FailWithMessage("Palette is for modular frames");
@@ -3055,6 +3100,14 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
   JXL_ASSIGN_OR_RETURN(Image3F image,
                        Image3F::Create(memory_manager, width, height));
   jxl::ZeroFillImage(&image);
+  // Extra channels have the size of the frame (Alpha may come before Width
+  // and Height, when their size was not known yet).
+  for (ImageF& ec : io->frames[0].extra_channels()) {
+    if (ec.xsize() != width || ec.ysize() != height) {
+      JXL_ASSIGN_OR_RETURN(ec, ImageF::Create(memory_manager, width, height));
+      jxl::ZeroFillImage(&ec);
+    }
+  }
   JXL_RETURN_IF_ERROR(
       io->SetFromImage(std::move(image), io->metadata.m.color_encoding));
   if (frame.image_xsize) {
@@ -3302,26 +3355,32 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
                               nullptr);
     };
     if (!cparams.custom_residuals.empty() && !palette_inline_tree) {
-      // Residual patterns with LZ77 inside the listed values or without:
-      // keep the smaller (the estimate that picks the matches is rough).
-      // The plain encoding goes first: a second EncodeFrame of the same frame
-      // can come out differently (see TODO.md), and this way it is the same
-      // as without the choice.
-      BitWriter with(memory_manager);
-      BitWriter without(memory_manager);
+      // Residual patterns with LZ77 inside the listed values or without, and
+      // with its matches picked from two rough cost estimates: keep the
+      // smallest. The plain encoding goes first: a second EncodeFrame of the
+      // same frame can come out differently (see TODO.md), and this way it is
+      // the same as without the choice.
+      BitWriter best(memory_manager);
       cparams.options.residual_inner_lz77 = false;
-      if (!encode_frame(&without)) {
+      if (!encode_frame(&best)) {
         fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
         return JXL_FAILURE("Failed to encode frame");
       }
-      cparams.options.residual_inner_lz77 = !cparams.flat_nibble_code;
-      if (!encode_frame(&with)) {
-        fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
-        return JXL_FAILURE("Failed to encode frame");
+      if (!cparams.flat_nibble_code) {
+        cparams.options.residual_inner_lz77 = true;
+        for (const bool context_costs : {false, true}) {
+          BitWriter with(memory_manager);
+          cparams.options.residual_lz77_context_costs = context_costs;
+          if (!encode_frame(&with)) {
+            fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
+            return JXL_FAILURE("Failed to encode frame");
+          }
+          if (with.BitsWritten() < best.BitsWritten()) best = std::move(with);
+        }
+        cparams.options.residual_lz77_context_costs = false;
       }
       cparams.options.residual_inner_lz77 = true;
-      JXL_RETURN_IF_ERROR(writer.AppendUnaligned(
-          with.BitsWritten() < without.BitsWritten() ? with : without));
+      JXL_RETURN_IF_ERROR(writer.AppendUnaligned(best));
     } else if (palette_inline_tree) {
       // Palette entries coded as pixels, or in the tree: keep the smaller.
       BitWriter coded(memory_manager);
@@ -3393,9 +3452,19 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     // RAW dequantization tables come from the frame's tree.
     frame.dequant_trees.clear();
     for (auto& table : cparams.vardct_dequant) table.raw_den = 0;
+    const int hidden_before = cparams.move_to_front_from_channel;
+    const size_t extra_before = io->metadata.m.num_extra_channels;
+    const bool alpha_before = io->metadata.m.HasAlpha();
     if (!ParseNode(tok, tree, spline_data, frame, cparams, width, height, *io,
                    have_next, x0, y0, buffer_size)) {
       return JXL_FAILURE("Failed to ParseNode");
+    }
+    if (cparams.move_to_front_from_channel != hidden_before ||
+        io->metadata.m.num_extra_channels != extra_before ||
+        io->metadata.m.HasAlpha() != alpha_before) {
+      return FailWithMessage(
+          "HiddenChannel and Alpha must be given in the first frame (extra "
+          "channels are the same for all frames)");
     }
     JXL_RETURN_IF_ERROR(combine_sections(metadata->m.num_extra_channels > 0));
     if (!CheckTreeSplits(tree, "tree")) {

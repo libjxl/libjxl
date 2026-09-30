@@ -705,7 +705,8 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
                                const Image &image, size_t num_coded,
                                const ResidualPattern *pattern,
                                size_t distance_multiplier, size_t num_contexts,
-                               bool inner_lz77, std::vector<Token> *tokens) {
+                               bool inner_lz77, bool context_costs,
+                               std::vector<Token> *tokens) {
   static const ResidualPattern kZero = {{}, {0}};
   const ResidualPattern &p = pattern ? *pattern : kZero;
   JXL_ENSURE(!p.period.empty());
@@ -795,17 +796,31 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
   // next 4 values and the most recent candidates).
   constexpr size_t kMinMatch = 8;
   constexpr size_t kMaxCandidates = 32;
-  // Estimated cost of the literals (from their own frequencies), so that a
-  // match is only taken where it replaces more bits than it costs.
+  // Estimated cost of the literals, so that a match is only taken where it
+  // replaces more bits than it costs: from the frequencies of the values
+  // (with a floor), or with context_costs from their frequencies in their own
+  // context. Neither is always better (contexts get clustered), so the tool
+  // tries both.
   std::vector<double> lit_cost(literals + 1, 0.0);
   {
-    std::unordered_map<uint32_t, size_t> freq;
-    for (size_t i = 0; i < literals; i++) freq[values[i]]++;
+    std::unordered_map<uint64_t, size_t> freq;
+    std::unordered_map<int, size_t> ctx_total;
+    const auto key = [&](size_t i) -> uint64_t {
+      if (!context_costs) return values[i];
+      return (static_cast<uint64_t>(static_cast<uint32_t>(contexts[i])) << 32) |
+             values[i];
+    };
     for (size_t i = 0; i < literals; i++) {
+      freq[key(i)]++;
+      ctx_total[contexts[i]]++;
+    }
+    for (size_t i = 0; i < literals; i++) {
+      const double f = static_cast<double>(freq[key(i)]);
       lit_cost[i + 1] =
           lit_cost[i] +
-          std::max(0.05, std::log2(static_cast<double>(literals) /
-                                   static_cast<double>(freq[values[i]])));
+          (context_costs
+               ? std::log2(static_cast<double>(ctx_total[contexts[i]]) / f)
+               : std::max(0.05, std::log2(static_cast<double>(literals) / f)));
     }
   }
   const auto match_cost = [](size_t len, size_t dist) {
@@ -991,7 +1006,8 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
     if (it != options.residual_patterns->end()) pattern = &it->second;
     JXL_RETURN_IF_ERROR(TokenizeResidualPattern(
         tree, group_id, image, num_coded, pattern, image_width,
-        (tree.size() + 1) / 2, options.residual_inner_lz77, &tokens));
+        (tree.size() + 1) / 2, options.residual_inner_lz77,
+        options.residual_lz77_context_costs, &tokens));
   } else if (options.zero_tokens && options.code_meta_channels &&
       image.nb_meta_channels > 0) {
     // The meta channels are coded from the image; the other channels are
