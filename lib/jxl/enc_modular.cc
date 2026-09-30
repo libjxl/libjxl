@@ -1453,7 +1453,8 @@ Status ModularFrameEncoder::ComputeDecodedRange(int64_t* lo, int64_t* hi) {
   const size_t first0 =
       stream_options_[0].code_meta_channels ? full.nb_meta_channels : 0;
   JXL_RETURN_IF_ERROR(EvaluateTreeWithResiduals(
-      tree_, 0, pattern_for(0), first0, coded0, &full, lo, hi));
+      tree_, 0, pattern_for(0), first0, coded0, &full, lo, hi,
+      stream_headers_[0].wp_header));
   std::vector<bool> covered(stream_images_.size(), false);
   covered[0] = true;
   if (!single_stream) {
@@ -1463,7 +1464,8 @@ Status ModularFrameEncoder::ComputeDecodedRange(int64_t* lo, int64_t* hi) {
       covered[stream] = true;
       JXL_ASSIGN_OR_RETURN(Image g, CopyLayout(stream_images_[stream]));
       JXL_RETURN_IF_ERROR(EvaluateTreeWithResiduals(
-          tree_, stream, pattern_for(stream), 0, g.channel.size(), &g, lo, hi));
+          tree_, stream, pattern_for(stream), 0, g.channel.size(), &g, lo, hi,
+          stream_headers_[stream].wp_header));
       JXL_RETURN_IF_ERROR(UndoTransformsWithRange(
           g, stream_headers_[stream].wp_header, lo, hi));
       for (size_t j = 0; j < g.channel.size() &&
@@ -1485,7 +1487,8 @@ Status ModularFrameEncoder::ComputeDecodedRange(int64_t* lo, int64_t* hi) {
     if (covered[stream] || stream_images_[stream].channel.empty()) continue;
     JXL_ASSIGN_OR_RETURN(Image g, CopyLayout(stream_images_[stream]));
     JXL_RETURN_IF_ERROR(EvaluateTreeWithResiduals(
-        tree_, stream, pattern_for(stream), 0, g.channel.size(), &g, lo, hi));
+        tree_, stream, pattern_for(stream), 0, g.channel.size(), &g, lo, hi,
+        stream_headers_[stream].wp_header));
     JXL_RETURN_IF_ERROR(UndoTransformsWithRange(
         g, stream_headers_[stream].wp_header, lo, hi));
   }

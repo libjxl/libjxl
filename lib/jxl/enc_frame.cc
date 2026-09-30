@@ -1165,8 +1165,10 @@ Status SetDequantMatricesFromTree(const FrameDimensions& frame_dim,
                                          /*bitdepth=*/8, /*nb_chans=*/3));
       JXL_ASSIGN_OR_RETURN(ModularStreamId stream,
                            ModularStreamId::QuantTable(idx));
+      weighted::Header wp_header;
+      SetWPHeader(cparams.options, &wp_header);
       JXL_RETURN_IF_ERROR(EvaluateTreeWithZeroResiduals(
-          cparams.custom_fixed_tree, stream.ID(frame_dim), &image));
+          cparams.custom_fixed_tree, stream.ID(frame_dim), &image, wp_header));
       std::vector<int> qtable(3 * xsize * ysize);
       for (size_t c = 0; c < 3; c++) {
         for (size_t y = 0; y < ysize; y++) {
@@ -1327,8 +1329,11 @@ Status ComputeVarDCTDataFromTree(const FrameHeader& frame_header,
     JXL_ASSIGN_OR_RETURN(
         image.channel[2],
         Channel::Create(memory_manager, r.xsize() * r.ysize(), 2, 0, 0));
+    weighted::Header wp_header;
+    SetWPHeader(cparams.options, &wp_header);
     JXL_RETURN_IF_ERROR(EvaluateTreeWithZeroResiduals(
-        tree, ModularStreamId::ACMetadata(group_index).ID(frame_dim), &image));
+        tree, ModularStreamId::ACMetadata(group_index).ID(frame_dim), &image,
+        wp_header));
     JXL_RETURN_IF_ERROR(ConvertPlaneAndClamp(Rect(image.channel[0].plane),
                                              image.channel[0].plane, cr,
                                              &shared.cmap.ytox_map));

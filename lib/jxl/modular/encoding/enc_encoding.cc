@@ -570,6 +570,22 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels,
   return {};
 }
 
+void SetWPHeader(const ModularOptions& options, weighted::Header* header) {
+  Bundle::Init(header);
+  weighted::PredictorMode(options.wp_mode, header);
+  if (options.has_wp_params) {
+    const auto& p = options.wp_params;
+    header->p1C = p[0];
+    header->p2C = p[1];
+    header->p3Ca = p[2];
+    header->p3Cb = p[3];
+    header->p3Cc = p[4];
+    header->p3Cd = p[5];
+    header->p3Ce = p[6];
+    for (size_t k = 0; k < 4; k++) header->w[k] = p[7 + k];
+  }
+}
+
 StatusOr<Tree> LearnTree(
     const Image *images, const ModularOptions *options, const uint32_t start,
     const uint32_t stop,
@@ -626,7 +642,7 @@ StatusOr<Tree> LearnTree(
     // encode transforms
     Bundle::Init(&wp_header);
     if (PredictorHasWeighted(options[i].predictor)) {
-      weighted::PredictorMode(options[i].wp_mode, &wp_header);
+      SetWPHeader(options[i], &wp_header);
     }
 
     // Gather tree data
@@ -651,12 +667,11 @@ StatusOr<Tree> LearnTree(
   return tree;
 }
 
+
 Status EvaluateTreeWithZeroResiduals(const Tree& tree, size_t group_id,
-                                     Image* image) {
+                                     Image* image,
+                                     const weighted::Header& wp_header) {
   JxlMemoryManager* memory_manager = image->memory_manager();
-  // The default header: what the encoder writes for streams without
-  // transforms, and what the decoder then uses.
-  weighted::Header wp_header;
   for (size_t chan = 0; chan < image->channel.size(); chan++) {
     Channel& channel = image->channel[chan];
     if (channel.w == 0 || channel.h == 0) continue;
@@ -706,6 +721,7 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
                                const ResidualPattern *pattern,
                                size_t distance_multiplier, size_t num_contexts,
                                bool inner_lz77, bool context_costs,
+                               const weighted::Header &wp_header,
                                std::vector<Token> *tokens) {
   static const ResidualPattern kZero = {{}, {0}};
   const ResidualPattern &p = pattern ? *pattern : kZero;
@@ -738,7 +754,6 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
   work.h = image.h;
   work.bitdepth = image.bitdepth;
   work.nb_meta_channels = image.nb_meta_channels;
-  weighted::Header wp_header;
   // Residual symbols and contexts of the first `needed` samples.
   std::vector<uint32_t> values;
   std::vector<int> contexts;
@@ -891,9 +906,9 @@ Status EvaluateTreeWithResiduals(const Tree &tree, size_t group_id,
                                  const ResidualPattern *pattern,
                                  size_t first_channel, size_t num_channels,
                                  Image *image, int64_t *min_value,
-                                 int64_t *max_value) {
+                                 int64_t *max_value,
+                                 const weighted::Header &wp_header) {
   JxlMemoryManager *memory_manager = image->memory_manager();
-  weighted::Header wp_header;
   size_t meta = 0;
   const bool include_meta = pattern != nullptr && pattern->include_meta;
   for (size_t i = 0;
@@ -973,8 +988,8 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
 
   // encode transforms
   Bundle::Init(&header);
-  if (PredictorHasWeighted(options.predictor)) {
-    weighted::PredictorMode(options.wp_mode, &header.wp_header);
+  if (PredictorHasWeighted(options.predictor) || options.has_wp_params) {
+    SetWPHeader(options, &header.wp_header);
   }
   header.transforms = image.transform;
   header.use_global_tree = true;
@@ -1007,7 +1022,7 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
     JXL_RETURN_IF_ERROR(TokenizeResidualPattern(
         tree, group_id, image, num_coded, pattern, image_width,
         (tree.size() + 1) / 2, options.residual_inner_lz77,
-        options.residual_lz77_context_costs, &tokens));
+        options.residual_lz77_context_costs, header.wp_header, &tokens));
   } else if (options.zero_tokens && options.code_meta_channels &&
       image.nb_meta_channels > 0) {
     // The meta channels are coded from the image; the other channels are
@@ -1033,7 +1048,8 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
                                            from.h, from.hshift, from.vshift));
       coded.channel.emplace_back(std::move(ch));
     }
-    JXL_RETURN_IF_ERROR(EvaluateTreeWithZeroResiduals(tree, group_id, &coded));
+    JXL_RETURN_IF_ERROR(
+        EvaluateTreeWithZeroResiduals(tree, group_id, &coded, header.wp_header));
     for (size_t i = 0; i < image.nb_meta_channels && i < num_coded; i++) {
       for (size_t y = 0; y < image.channel[i].h; y++) {
         memcpy(coded.channel[i].Row(y), image.channel[i].Row(y),
@@ -1104,8 +1120,8 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
   // encode transforms
   GroupHeader header;
   Bundle::Init(&header);
-  if (PredictorHasWeighted(options.predictor)) {
-    weighted::PredictorMode(options.wp_mode, &header.wp_header);
+  if (PredictorHasWeighted(options.predictor) || options.has_wp_params) {
+    SetWPHeader(options, &header.wp_header);
   }
   header.transforms = image.transform;
 

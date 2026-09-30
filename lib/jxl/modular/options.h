@@ -97,6 +97,10 @@ struct ModularOptions {
   Predictor predictor = kUndefinedPredictor;
 
   int wp_mode = 0;
+  // A custom weighted predictor header (jxl_from_tree's WPParams): p1C, p2C,
+  // p3Ca..p3Ce (0..31) and w0..w3 (0..15). Used instead of wp_mode's if set.
+  bool has_wp_params = false;
+  std::array<uint32_t, 11> wp_params = {};
 
   float fast_decode_multiplier = 1.01f;
 

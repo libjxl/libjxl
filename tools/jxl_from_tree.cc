@@ -1806,6 +1806,30 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "/*") {
     t = tok();
     while (t != "*/" && t != "") t = tok();
+  } else if (t == "WPParams" || t == "WPMode") {
+    // The weighted predictor's header: WPParams p1C p2C p3Ca p3Cb p3Cc p3Cd
+    // p3Ce (0..31) w0 w1 w2 w3 (0..15), or one of libjxl's presets (WPMode
+    // 0..4; 0 is the default). They shape what Weighted predicts and WGH.
+    const bool params = t == "WPParams";
+    const size_t n = params ? 11 : 1;
+    for (size_t i = 0; i < n; i++) {
+      t = tok();
+      size_t num = 0;
+      uint64_t v = ParseUnsigned(t, &num);
+      const uint64_t max = params ? (i < 7 ? 31 : 15) : 4;
+      if (num != t.size() || v > max) {
+        fprintf(stderr, "Invalid %s value (0..%u): %s\n",
+                params ? "WPParams" : "WPMode", static_cast<unsigned>(max),
+                t.c_str());
+        return false;
+      }
+      if (params) {
+        cparams.options.wp_params[i] = v;
+      } else {
+        cparams.options.wp_mode = v;
+      }
+    }
+    cparams.options.has_wp_params = params;
   } else if (t == "Squeeze") {
     cparams.responsive = true;
   } else if (t == "GroupShift") {
