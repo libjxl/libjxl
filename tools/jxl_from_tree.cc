@@ -25,6 +25,7 @@
 #include <memory>
 #include <set>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -144,7 +145,12 @@ float ParseFloat(const std::string& t, size_t* num) {
   return v;
 }
 struct SplineData {
+  // The adjustment the splines are quantized with. With the old keyword
+  // (SplineQuantizationAdjustment, and by default: 1) the file signals 0 all
+  // the same (kept for existing art: such splines render 1 + adj / 8 times
+  // stronger and wider than written); with SplineAdjustment it is signaled.
   int32_t quantization_adjustment = 1;
+  bool signal_adjustment = false;
   std::vector<Spline> splines;
 };
 
@@ -2342,7 +2348,11 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       fprintf(stderr, "Invalid BlendMode: %s\n", t.c_str());
       return false;
     }
-  } else if (t == "SplineQuantizationAdjustment") {
+  } else if (t == "SplineQuantizationAdjustment" || t == "SplineAdjustment") {
+    // SplineAdjustment <n>: quantize with n and signal it (the fixed
+    // behaviour); SplineQuantizationAdjustment <n>: the old one (see
+    // SplineData).
+    spline_data.signal_adjustment = t == "SplineAdjustment";
     t = tok();
     size_t num = 0;
     spline_data.quantization_adjustment = ParseInt(t, &num);
@@ -2884,8 +2894,13 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
 }
 }  // namespace
 
-::jxl::Status JxlFromTree(const char* in, const char* out,
-                          const char* tree_out) {
+// One encoding pass. With `auto_16bit`, frames of at most 12 bits get 16-bit
+// buffers unless the encoder finds modular values outside the 16-bit range
+// (samples or intermediate values of the transforms), in which case nothing is
+// written and *needs_32bit is set.
+::jxl::Status JxlFromTreePass(std::istream& input, const char* out,
+                              const char* tree_out, bool auto_16bit,
+                              bool* needs_32bit) {
   Tree tree;
   SplineData spline_data;
   FrameSettings frame;
@@ -2911,13 +2926,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
   int have_next = JXL_FALSE;
   int buffer_size = 0;
 
-  std::istream* f = &std::cin;
-  std::ifstream file;
-
-  if (strcmp(in, "-") > 0) {
-    file.open(in, std::ifstream::in);
-    f = &file;
-  }
+  std::istream* f = &input;
 
   auto tok = [&f]() {
     std::string out;
@@ -2929,11 +2938,17 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     return JXL_FAILURE("Failed to ParseNode");
   }
 
-  // Auto 16bit for multi-frame art would mean parsing all frames first,
-  // so for now just default to 32bit buffers instead.
-  if (buffer_size == 1 || (buffer_size == 3 && !have_next)) {
+  // 16-bit buffers (as a naked codestream, at level 5, implies) if asked for,
+  // or by default for up to 12 bits, if the encoder finds that the modular
+  // values fit (else JxlFromTree encodes again with 32-bit buffers).
+  // (buffer_size 0: no Bitdepth given, i.e. 8 bits: automatic as well.)
+  const bool auto16 = auto_16bit && (buffer_size == 3 || buffer_size == 0);
+  int64_t modular_range[2] = {std::numeric_limits<int64_t>::max(),
+                              std::numeric_limits<int64_t>::min()};
+  if (buffer_size == 1 || auto16) {
     io->metadata.m.modular_16_bit_buffer_sufficient = true;
   }
+  if (auto16) cparams.modular_range_out = modular_range;
 
   // The sections of a VarDCT frame (LFTree, HFMetaTree, DequantTable,
   // ACSTree, QFTree, ExtraTree), combined into the frame's tree.
@@ -3055,8 +3070,10 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
   std::vector<Spline::Point> starting_points;
   JXL_RETURN_IF_ERROR(
       SplinesFromSplineData(spline_data, quantized_splines, starting_points));
-  cparams.custom_splines = {Span<const QuantizedSpline>(quantized_splines),
-                            Span<const Spline::Point>(starting_points)};
+  cparams.custom_splines = {
+      Span<const QuantizedSpline>(quantized_splines),
+      Span<const Spline::Point>(starting_points),
+      spline_data.signal_adjustment ? spline_data.quantization_adjustment : 0};
   PaddedBytes compressed{memory_manager};
 
   JXL_RETURN_IF_ERROR(io->CheckMetadata());
@@ -3379,8 +3396,11 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     // This frame's own splines (previously the first frame's were reused).
     JXL_RETURN_IF_ERROR(
         SplinesFromSplineData(spline_data, quantized_splines, starting_points));
-    cparams.custom_splines = {Span<const QuantizedSpline>(quantized_splines),
-                              Span<const Spline::Point>(starting_points)};
+    cparams.custom_splines = {
+        Span<const QuantizedSpline>(quantized_splines),
+        Span<const Spline::Point>(starting_points),
+        spline_data.signal_adjustment ? spline_data.quantization_adjustment
+                                      : 0};
     // Extra channels (alpha, hidden channels) have the size of this frame.
     for (ImageF& ec : io->frames[0].extra_channels()) {
       if (ec.xsize() != width || ec.ysize() != height) {
@@ -3398,6 +3418,10 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
 
   compressed = std::move(writer).TakeBytes();
 
+  if (auto16 && (modular_range[0] < -32768 || modular_range[1] > 32767)) {
+    *needs_32bit = true;
+    return true;
+  }
   if (!WriteFile(out, compressed)) {
     fprintf(stderr, "Failed to write to \"%s\"\n", out);
     return JXL_FAILURE("Failed to write output");
@@ -3405,6 +3429,29 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
 
   return true;
 }
+::jxl::Status JxlFromTree(const char* in, const char* out,
+                          const char* tree_out) {
+  // The input is read twice if 32-bit buffers turn out to be needed.
+  std::stringstream text;
+  if (strcmp(in, "-") > 0) {
+    std::ifstream file(in, std::ifstream::in);
+    text << file.rdbuf();
+  } else {
+    text << std::cin.rdbuf();
+  }
+  const std::string source = text.str();
+  bool needs_32bit = false;
+  {
+    std::istringstream input(source);
+    JXL_RETURN_IF_ERROR(JxlFromTreePass(input, out, tree_out,
+                                        /*auto_16bit=*/true, &needs_32bit));
+  }
+  if (!needs_32bit) return true;
+  std::istringstream input(source);
+  return JxlFromTreePass(input, out, tree_out, /*auto_16bit=*/false,
+                         &needs_32bit);
+}
+
 }  // namespace tools
 }  // namespace jpegxl
 

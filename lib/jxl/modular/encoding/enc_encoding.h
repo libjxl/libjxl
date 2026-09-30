@@ -44,6 +44,16 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
 Status EvaluateTreeWithZeroResiduals(const Tree& tree, size_t group_id,
                                      Image* image);
 
+// The same with the residuals of `pattern` (as in ModularOptions::
+// residual_patterns: they start after the meta channels; null: all zero) for
+// the channels [first_channel, num_channels) of `image`, and the smallest and
+// largest sample values seen. Samples of the other channels are kept.
+Status EvaluateTreeWithResiduals(const Tree& tree, size_t group_id,
+                                 const ResidualPattern* pattern,
+                                 size_t first_channel, size_t num_channels,
+                                 Image* image, int64_t* min_value,
+                                 int64_t* max_value);
+
 // For encoding with a given tree.
 Status ModularCompress(const Image &image, const ModularOptions &opts,
                        size_t group_id, const Tree &tree, GroupHeader &header,

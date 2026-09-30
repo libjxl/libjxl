@@ -872,6 +872,75 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
   return true;
 }
 
+Status EvaluateTreeWithResiduals(const Tree &tree, size_t group_id,
+                                 const ResidualPattern *pattern,
+                                 size_t first_channel, size_t num_channels,
+                                 Image *image, int64_t *min_value,
+                                 int64_t *max_value) {
+  JxlMemoryManager *memory_manager = image->memory_manager();
+  weighted::Header wp_header;
+  size_t meta = 0;
+  for (size_t i = 0; i < image->nb_meta_channels && i < num_channels; i++) {
+    meta += image->channel[i].w * image->channel[i].h;
+  }
+  const size_t prefix = pattern ? meta + pattern->prefix.size() : 0;
+  const auto residual = [&](size_t k) -> int64_t {
+    if (!pattern || k < meta) return 0;
+    if (k < prefix) return pattern->prefix[k - meta];
+    return pattern->period[(k - prefix) % pattern->period.size()];
+  };
+  size_t k = 0;
+  for (size_t chan = 0; chan < num_channels; chan++) {
+    Channel &channel = image->channel[chan];
+    if (channel.w == 0 || channel.h == 0) continue;
+    if (chan < first_channel) {
+      k += channel.w * channel.h;
+      for (size_t y = 0; y < channel.h; y++) {
+        for (size_t x = 0; x < channel.w; x++) {
+          *min_value = std::min<int64_t>(*min_value, channel.Row(y)[x]);
+          *max_value = std::max<int64_t>(*max_value, channel.Row(y)[x]);
+        }
+      }
+      continue;
+    }
+    std::array<pixel_type, kNumStaticProperties> static_props = {
+        {static_cast<pixel_type>(chan), static_cast<int>(group_id)}};
+    bool has_wp;
+    bool is_wp_only;
+    bool is_gradient_only;
+    size_t num_props;
+    FlatTree flat_tree = FilterTree(tree, static_props, &num_props, &has_wp,
+                                    &is_wp_only, &is_gradient_only);
+    MATreeLookup tree_lookup(flat_tree);
+    Properties properties(num_props);
+    const ptrdiff_t onerow = channel.plane.PixelsPerRow();
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(memory_manager,
+                        properties.size() - kNumNonrefProperties, channel.w));
+    weighted::State wp_state(wp_header, channel.w, channel.h);
+    for (size_t y = 0; y < channel.h; y++) {
+      pixel_type *JXL_RESTRICT row = channel.Row(y);
+      InitPropsRow(&properties, static_props, y);
+      PrecomputeReferences(channel, y, *image, chan, &references);
+      for (size_t x = 0; x < channel.w; x++, k++) {
+        PredictionResult res =
+            PredictTreeWP(&properties, channel.w, row + x, onerow, x, y,
+                          tree_lookup, references, &wp_state);
+        const int64_t v = res.guess + residual(k) * res.multiplier;
+        *min_value = std::min(*min_value, v);
+        *max_value = std::max(*max_value, v);
+        // Saturate so that later predictions stay well defined.
+        row[x] = static_cast<pixel_type>(std::min<int64_t>(
+            std::max<int64_t>(v, std::numeric_limits<pixel_type>::min()),
+            std::numeric_limits<pixel_type>::max()));
+        wp_state.UpdateErrors(row[x], x, y, channel.w);
+      }
+    }
+  }
+  return true;
+}
+
 Status ModularCompress(const Image &image, const ModularOptions &options,
                        size_t group_id, const Tree &tree, GroupHeader &header,
                        std::vector<Token> &tokens, size_t *width) {

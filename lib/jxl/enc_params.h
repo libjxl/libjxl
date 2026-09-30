@@ -214,6 +214,12 @@ struct CompressParams {
   // property 1; -1 for every stream not listed): a prefix, then a period that
   // repeats. Streams not covered keep all-zero residuals.
   std::map<int, ResidualPattern> custom_residuals;
+  // Modular frames with custom_fixed_tree and zero tokens (jxl_from_tree): if
+  // not null, the smallest and largest value of any modular buffer when
+  // decoding (the samples, and the intermediate values while undoing the
+  // transforms) are merged into [0] and [1], so that the caller can tell
+  // whether 16-bit buffers suffice.
+  int64_t* modular_range_out = nullptr;
   // VarDCT frames: the LF image and the HF metadata (chroma-from-luma maps, AC
   // strategy, quantization field, EPF sharpness) are what custom_fixed_tree
   // gives with all residuals zero, and all HF coefficients are zero. Used in
