@@ -2412,6 +2412,17 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       fprintf(stderr, "Spline with no control point\n");
       return false;
     }
+    // The first spline's starting point is coded unsigned (the other
+    // starting points as signed deltas from the previous one).
+    if (spline_data.splines.empty() &&
+        (std::round(spline.control_points[0].x) < 0 ||
+         std::round(spline.control_points[0].y) < 0)) {
+      fprintf(stderr,
+              "The first spline of a frame must not start at a negative "
+              "position (%g %g); later splines may\n",
+              spline.control_points[0].x, spline.control_points[0].y);
+      return false;
+    }
 
     spline_data.splines.push_back(std::move(spline));
   } else if (t == "Gaborish") {
@@ -2947,10 +2958,28 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
 
   std::istream* f = &input;
 
-  auto tok = [&f]() {
-    std::string out;
-    *f >> out;
-    return out;
+  // Whitespace-separated tokens; comments (/* ... */) are dropped here, also
+  // when they touch a word (/*like this*/, or 12/*c*/34, which is 12 34).
+  std::string pending;
+  auto tok = [&f, &pending]() -> std::string {
+    for (;;) {
+      std::string w;
+      if (!pending.empty()) {
+        w.swap(pending);
+      } else if (!(*f >> w)) {
+        return "";
+      }
+      const size_t open = w.find("/*");
+      if (open == std::string::npos) return w;
+      std::string before = w.substr(0, open);
+      std::string rest = w.substr(open + 2);
+      size_t close;
+      while ((close = rest.find("*/")) == std::string::npos) {
+        if (!(*f >> rest)) break;  // unterminated: to the end
+      }
+      pending = close == std::string::npos ? "" : rest.substr(close + 2);
+      if (!before.empty()) return before;
+    }
   };
   if (!ParseNode(tok, tree, spline_data, frame, cparams, width, height, *io,
                  have_next, x0, y0, buffer_size)) {

@@ -369,6 +369,15 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
   size_t did_palette = 0;
   float nb_pixels = gi.channel[0].w * gi.channel[0].h;
   int nb_chans = gi.channel.size() - gi.nb_meta_channels;
+  // jxl_from_tree's hidden channels are not part of a delta palette: they
+  // were moved in front already (see ComputeEncodingData), the palette is on
+  // the channels after them.
+  size_t first_c = gi.nb_meta_channels;
+  if (cparams_.lossy_palette && cparams_.move_to_front_from_channel > 0 &&
+      nb_chans > cparams_.move_to_front_from_channel) {
+    first_c += nb_chans - cparams_.move_to_front_from_channel;
+    nb_chans = cparams_.move_to_front_from_channel;
+  }
   // arbitrary estimate: 4.8 bpp for 8-bit RGB
   float arbitrary_bpp_estimate = 0.2f * gi.bitdepth * nb_chans;
 
@@ -382,7 +391,7 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
     // all-channel palette (e.g. RGBA)
     if (nb_chans > 1) {
       Transform maybe_palette(TransformId::kPalette);
-      maybe_palette.begin_c = gi.nb_meta_channels;
+      maybe_palette.begin_c = first_c;
       maybe_palette.num_c = nb_chans;
       // Heuristic choice of max colors for a palette:
       // max_colors = nb_pixels * estimated_bpp_without_palette * 0.0005 +
@@ -923,6 +932,43 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
   pre_transform_meta_ = gi.nb_meta_channels;
 
+  // jxl_from_tree's hidden channels (the last ones) go in front of the
+  // others (after any meta channels), so the tree sees them first.
+  const size_t channels_before_palette = gi.channel.size();
+  const auto move_hidden_to_front = [&]() {
+    if (cparams_.move_to_front_from_channel <= 0 ||
+        channels_before_palette <=
+            static_cast<size_t>(cparams_.move_to_front_from_channel)) {
+      return;
+    }
+    const size_t nch =
+        channels_before_palette - cparams_.move_to_front_from_channel;
+    const size_t start = gi.nb_meta_channels;
+    const size_t dist = gi.channel.size() - nch - start;
+    for (size_t tgt = start; tgt < start + nch; tgt++) {
+      size_t pos = dist;
+      while (pos > 0) {
+        Transform move(TransformId::kRCT);
+        if (pos == 1) {
+          move.begin_c = tgt;
+          move.rct_type = 28;  // RGB -> GRB
+          pos -= 1;
+        } else {
+          move.begin_c = tgt + pos - 2;
+          move.rct_type = 14;  // RGB -> BRG
+          pos -= 2;
+        }
+        do_transform(gi, move, weighted::Header(), pool);
+      }
+    }
+  };
+  // Before a delta palette (which then covers the channels after them), else
+  // after the colour transforms.
+  bool hidden_moved = false;
+  if (cparams_.lossy_palette) {
+    move_hidden_to_front();
+    hidden_moved = true;
+  }
   // Global palette transforms
   float channel_colors_percent = 0;
   if (!cparams_.lossy_palette &&
@@ -959,25 +1005,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
   }
 
-  if (cparams_.move_to_front_from_channel > 0) {
-    for (size_t tgt = 0;
-         tgt + cparams_.move_to_front_from_channel < gi.channel.size(); tgt++) {
-      size_t pos = cparams_.move_to_front_from_channel;
-      while (pos > 0) {
-        Transform move(TransformId::kRCT);
-        if (pos == 1) {
-          move.begin_c = tgt;
-          move.rct_type = 28;  // RGB -> GRB
-          pos -= 1;
-        } else {
-          move.begin_c = tgt + pos - 2;
-          move.rct_type = 14;  // RGB -> BRG
-          pos -= 2;
-        }
-        do_transform(gi, move, weighted::Header(), pool);
-      }
-    }
-  }
+  if (!hidden_moved) move_hidden_to_front();
 
   // don't do squeeze if we don't have some spare bits
   if (!groupwise && cparams_.responsive && !gi.channel.empty() &&
