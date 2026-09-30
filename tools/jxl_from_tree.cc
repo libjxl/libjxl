@@ -1780,12 +1780,26 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     size_t num = 0;
     int offset = ParseInt(t, &num);
+    // An optional multiplier for the residuals of this leaf: offset*m
+    // (the sample is prediction + offset + m * residual).
+    uint32_t multiplier = 1;
+    if (num < t.size() && t[num] == '*') {
+      const std::string m = t.substr(num + 1);
+      size_t mnum = 0;
+      const uint64_t mv = ParseUnsigned(m, &mnum);
+      if (mnum != m.size() || mnum == 0 || mv < 1 || mv > (uint64_t{1} << 31)) {
+        fprintf(stderr, "Invalid leaf multiplier (1..2^31): %s\n", t.c_str());
+        return false;
+      }
+      multiplier = static_cast<uint32_t>(mv);
+      num = t.size();
+    }
     if (num != t.size()) {
       fprintf(stderr, "Invalid offset: %s\n", t.c_str());
       return false;
     }
     if (subtract) offset = -offset;
-    tree.emplace_back(PropertyDecisionNode::Leaf(p, offset));
+    tree.emplace_back(PropertyDecisionNode::Leaf(p, offset, multiplier));
     return true;
   } else if (t == "Width") {
     t = tok();

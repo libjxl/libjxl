@@ -856,9 +856,11 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
       continue;
     }
     size_t best_dist = 0;
+    size_t run_len = 0;
     const auto try_candidate = [&](size_t j) {
       size_t len = 0;
       while (i + len < literals && values[j + len] == values[i + len]) len++;
+      if (j + 1 == i) run_len = len;
       if (len >= kMinMatch &&
           lit_cost[i + len] - lit_cost[i] > match_cost(len, i - j) &&
           len > best_len) {
@@ -867,6 +869,21 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
       }
     };
     if (i > 0) try_candidate(i - 1);
+    if (best_len < kMinMatch && run_len >= kMinMatch) {
+      // A run that is not worth a match (its literals are cheap): no match
+      // starting inside it gains more, so it is all literals (and it is not
+      // scanned again from every position: quadratic on long runs).
+      for (size_t e = i; e < i + run_len; e++) {
+        tokens->emplace_back(contexts[e], values[e]);
+      }
+      for (size_t e = i; e < i + run_len && e + 4 <= literals; e++) {
+        auto& list = recent[hash_at(e)];
+        if (list.size() == kMaxCandidates) list.erase(list.begin());
+        list.push_back(static_cast<uint32_t>(e));
+      }
+      i += run_len;
+      continue;
+    }
     if (i + 4 <= literals) {
       auto it = recent.find(hash_at(i));
       if (it != recent.end()) {
