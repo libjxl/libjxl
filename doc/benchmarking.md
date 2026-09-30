@@ -32,7 +32,7 @@ during encoding.
 
 [Encode_effort.md](https://github.com/libjxl/libjxl/blob/main/doc/encode_effort.md) describes what the various effort settings do.
 
-Mode: JPEG XL has two modes. The default is Var-DCT mode, which is suitable for
+Mode: JPEG XL has two modes. The default is Var-DCT mode, which is suitable for
 lossy compression. The other mode is Modular mode, which is suitable for lossless
 compression. Modular mode can also do lossy compression (e.g. `jxl:m:q50`).
 
