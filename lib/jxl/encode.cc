@@ -1448,6 +1448,7 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
 }
 
 void JxlEncoderInitBasicInfo(JxlBasicInfo* info) {
+  if (!info) return;
   info->have_container = JXL_FALSE;
   info->xsize = 0;
   info->ysize = 0;
@@ -1477,6 +1478,7 @@ void JxlEncoderInitBasicInfo(JxlBasicInfo* info) {
 }
 
 void JxlEncoderInitFrameHeader(JxlFrameHeader* frame_header) {
+  if (!frame_header) return;
   // For each field, the default value of the specification is used. Depending
   // on whether an animation frame, or a composite still blending frame,
   // is used, different fields have to be set up by the user after initing
@@ -1503,6 +1505,7 @@ void JxlEncoderInitFrameHeader(JxlFrameHeader* frame_header) {
 }
 
 void JxlEncoderInitBlendInfo(JxlBlendInfo* blend_info) {
+  if (!blend_info) return;
   // Default blend mode in the specification is 0. Note that combining
   // blend mode of replace with a duration is not useful, but the user has to
   // manually set duration in case of animation, or manually change the blend
@@ -1516,6 +1519,7 @@ void JxlEncoderInitBlendInfo(JxlBlendInfo* blend_info) {
 
 JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
                                         const JxlBasicInfo* info) {
+  if (!enc || !info) return JXL_ENC_ERROR;
   if (!enc->metadata.size.Set(info->xsize, info->ysize)) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE, "Invalid dimensions");
   }
@@ -1632,6 +1636,7 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
 
 void JxlEncoderInitExtraChannelInfo(JxlExtraChannelType type,
                                     JxlExtraChannelInfo* info) {
+  if (!info) return;
   info->type = type;
   info->bits_per_sample = 8;
   info->exponent_bits_per_sample = 0;
@@ -1648,6 +1653,7 @@ void JxlEncoderInitExtraChannelInfo(JxlExtraChannelType type,
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetUpsamplingMode(JxlEncoder* enc,
                                                         const int64_t factor,
                                                         const int64_t mode) {
+  if (!enc) return JXL_ENC_ERROR;
   // for convenience, allow calling this with factor 1 and just make it a no-op
   if (factor == 1) return JxlErrorOrStatus::Success();
   if (factor != 2 && factor != 4 && factor != 8) {
@@ -2261,6 +2267,7 @@ JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
 }
 
 void JxlEncoderReset(JxlEncoder* enc) {
+  if (!enc) return;
   enc->thread_pool.reset();
   enc->input_queue.clear();
   enc->num_queued_frames = 0;
@@ -2300,10 +2307,14 @@ void JxlEncoderDestroy(JxlEncoder* enc) {
   }
 }
 
-JxlEncoderError JxlEncoderGetError(JxlEncoder* enc) { return enc->error; }
+JxlEncoderError JxlEncoderGetError(JxlEncoder* enc) {
+  if (!enc) return JXL_ENC_ERR_API_USAGE;
+  return enc->error;
+}
 
 JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
                                         JXL_BOOL use_container) {
+  if (!enc) return JXL_ENC_ERROR;
   if (enc->wrote_bytes) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "this setting can only be set at the beginning");
@@ -2314,6 +2325,7 @@ JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
 
 JxlEncoderStatus JxlEncoderStoreJPEGMetadata(JxlEncoder* enc,
                                              JXL_BOOL store_jpeg_metadata) {
+  if (!enc) return JXL_ENC_ERROR;
   if (enc->wrote_bytes) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "this setting can only be set at the beginning");
@@ -2323,6 +2335,7 @@ JxlEncoderStatus JxlEncoderStoreJPEGMetadata(JxlEncoder* enc,
 }
 
 JxlEncoderStatus JxlEncoderSetCodestreamLevel(JxlEncoder* enc, int level) {
+  if (!enc) return JXL_ENC_ERROR;
   if (level != -1 && level != 5 && level != 10) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_NOT_SUPPORTED, "invalid level");
   }
@@ -2335,10 +2348,12 @@ JxlEncoderStatus JxlEncoderSetCodestreamLevel(JxlEncoder* enc, int level) {
 }
 
 int JxlEncoderGetRequiredCodestreamLevel(const JxlEncoder* enc) {
+  if (!enc) return -1;
   return VerifyLevelSettings(enc, nullptr);
 }
 
 void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms) {
+  if (!enc) return;
   jxl::msan::MemoryIsInitialized(&cms, sizeof(cms));
   enc->cms = cms;
   enc->cms_set = true;
@@ -2347,6 +2362,7 @@ void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms) {
 JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
                                              JxlParallelRunner parallel_runner,
                                              void* parallel_runner_opaque) {
+  if (!enc) return JXL_ENC_ERROR;
   if (enc->thread_pool) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "parallel runner already set");
@@ -2385,6 +2401,13 @@ JxlEncoderStatus GetCurrentDimensions(
 JxlEncoderStatus JxlEncoderAddJPEGFrame(
     const JxlEncoderFrameSettings* frame_settings, const uint8_t* buffer,
     size_t size) {
+  if (!frame_settings || !frame_settings->enc) {
+    return JXL_ENC_ERROR;
+  }
+  if (!buffer && size > 0) {
+    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
+                         "input buffer is null with positive size");
+  }
   JxlMemoryManager* memory_manager = &frame_settings->enc->memory_manager;
   if (frame_settings->enc->frames_closed) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
@@ -2784,6 +2807,7 @@ JxlEncoderStatus JxlEncoderAddChunkedFrame(
 }
 
 JxlEncoderStatus JxlEncoderUseBoxes(JxlEncoder* enc) {
+  if (!enc) return JXL_ENC_ERROR;
   if (enc->wrote_bytes) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "this setting can only be set at the beginning");
@@ -2795,6 +2819,11 @@ JxlEncoderStatus JxlEncoderUseBoxes(JxlEncoder* enc) {
 JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, const JxlBoxType type,
                                   const uint8_t* contents, size_t size,
                                   JXL_BOOL compress_box) {
+  if (!enc) return JXL_ENC_ERROR;
+  if (!contents && size > 0) {
+    return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
+                         "box contents is null with positive size");
+  }
   if (!enc->use_boxes) {
     return JXL_API_ERROR(
         enc, JXL_ENC_ERR_API_USAGE,
@@ -2873,16 +2902,24 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
   return JxlErrorOrStatus::Success();
 }
 
-void JxlEncoderCloseFrames(JxlEncoder* enc) { enc->frames_closed = true; }
+void JxlEncoderCloseFrames(JxlEncoder* enc) {
+  if (!enc) return;
+  enc->frames_closed = true;
+}
 
-void JxlEncoderCloseBoxes(JxlEncoder* enc) { enc->boxes_closed = true; }
+void JxlEncoderCloseBoxes(JxlEncoder* enc) {
+  if (!enc) return;
+  enc->boxes_closed = true;
+}
 
 void JxlEncoderCloseInput(JxlEncoder* enc) {
+  if (!enc) return;
   JxlEncoderCloseFrames(enc);
   JxlEncoderCloseBoxes(enc);
 }
 
 JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc) {
+  if (!enc) return JXL_ENC_ERROR;
   if (!enc->output_processor.OutputProcessorSet()) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "Cannot flush input without setting output "
@@ -2898,6 +2935,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc) {
 
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
     JxlEncoder* enc, JxlEncoderOutputProcessor output_processor) {
+  if (!enc) return JXL_ENC_ERROR;
   if (enc->output_processor.HasAvailOut()) {
     return JXL_API_ERROR(
         enc, JXL_ENC_ERR_API_USAGE,
@@ -2915,6 +2953,9 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
 
 JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
                                          size_t* avail_out) {
+  if (!enc || !next_out || !avail_out) {
+    return JXL_ENC_ERROR;
+  }
   if (enc->output_processor.OutputProcessorSet()) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "Cannot call JxlEncoderProcessOutput after calling "
@@ -2938,6 +2979,9 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
 JxlEncoderStatus JxlEncoderSetFrameHeader(
     JxlEncoderFrameSettings* frame_settings,
     const JxlFrameHeader* frame_header) {
+  if (!frame_settings || !frame_header || !frame_settings->enc) {
+    return JXL_ENC_ERROR;
+  }
   if (frame_header->layer_info.blend_info.source > 3) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "invalid blending source index");
@@ -3004,23 +3048,27 @@ JxlEncoderStatus JxlEncoderSetFrameBitDepth(
 
 void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
                                JXL_BOOL is_gray) {
+  if (!color_encoding) return;
   *color_encoding =
       jxl::ColorEncoding::SRGB(FROM_JXL_BOOL(is_gray)).ToExternal();
 }
 
 void JxlColorEncodingSetToLinearSRGB(JxlColorEncoding* color_encoding,
                                      JXL_BOOL is_gray) {
+  if (!color_encoding) return;
   *color_encoding =
       jxl::ColorEncoding::LinearSRGB(FROM_JXL_BOOL(is_gray)).ToExternal();
 }
 
 void JxlEncoderAllowExpertOptions(JxlEncoder* enc) {
+  if (!enc) return;
   enc->allow_expert_options = true;
 }
 
 JXL_EXPORT void JxlEncoderSetDebugImageCallback(
     JxlEncoderFrameSettings* frame_settings, JxlDebugImageCallback callback,
     void* opaque) {
+  if (!frame_settings) return;
   frame_settings->values.cparams.debug_image = callback;
   frame_settings->values.cparams.debug_image_opaque = opaque;
 }
@@ -3035,7 +3083,11 @@ JXL_EXPORT void JxlEncoderStatsDestroy(JxlEncoderStats* stats) { delete stats; }
 
 JXL_EXPORT void JxlEncoderCollectStats(JxlEncoderFrameSettings* frame_settings,
                                        JxlEncoderStats* stats) {
-  if (!stats) return;
+  if (!frame_settings) return;
+  if (!stats) {
+    frame_settings->values.aux_out = nullptr;
+    return;
+  }
   frame_settings->values.aux_out = stats->aux_out.get();
 }
 

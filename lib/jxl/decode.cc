@@ -113,6 +113,8 @@ JxlDecoderStatus ConvertStatus(jxl::Status status) {
   }
 
 JxlSignature ReadSignature(const uint8_t* buf, size_t len, size_t* pos) {
+  if (!pos) return JXL_SIG_INVALID;
+  if (!buf && len > 0) return JXL_SIG_INVALID;
   if (*pos >= len) return JXL_SIG_NOT_ENOUGH_BYTES;
 
   buf += *pos;
@@ -735,6 +737,7 @@ bool CheckSizeLimit(JxlDecoder* dec, size_t xsize, size_t ysize) {
 
 // Resets the state that must be reset for both Rewind and Reset
 void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
+  if (!dec) return;
   dec->stage = DecoderStage::kInited;
   dec->got_signature = false;
   dec->last_codestream_seen = false;
@@ -825,6 +828,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
 }
 
 void JxlDecoderReset(JxlDecoder* dec) {
+  if (!dec) return;
   JxlDecoderRewindDecodingState(dec);
 
   dec->thread_pool.reset();
@@ -867,9 +871,13 @@ void JxlDecoderDestroy(JxlDecoder* dec) {
   }
 }
 
-void JxlDecoderRewind(JxlDecoder* dec) { JxlDecoderRewindDecodingState(dec); }
+void JxlDecoderRewind(JxlDecoder* dec) {
+  if (!dec) return;
+  JxlDecoderRewindDecodingState(dec);
+}
 
 void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
+  if (!dec) return;
   // Increment amount, rather than set it: making the amount smaller is
   // impossible because the decoder may already have skipped frames required to
   // decode earlier frames, and making the amount larger compared to an existing
@@ -902,6 +910,7 @@ void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
 }
 
 JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec) {
+  if (!dec) return JXL_DEC_ERROR;
   if (dec->frame_stage != FrameStage::kFull) {
     return JXL_API_ERROR("JxlDecoderSkipCurrentFrame called at the wrong time");
   }
@@ -917,6 +926,7 @@ JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec) {
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetParallelRunner(JxlDecoder* dec, JxlParallelRunner parallel_runner,
                             void* parallel_runner_opaque) {
+  if (!dec) return JXL_DEC_ERROR;
   if (dec->stage != DecoderStage::kInited) {
     return JXL_API_ERROR(
         "JxlDecoderSetParallelRunner must be called before starting");
@@ -927,11 +937,13 @@ JxlDecoderSetParallelRunner(JxlDecoder* dec, JxlParallelRunner parallel_runner,
 }
 
 size_t JxlDecoderSizeHintBasicInfo(const JxlDecoder* dec) {
+  if (!dec) return 0;
   if (dec->got_basic_info) return 0;
   return dec->basic_info_size_hint;
 }
 
 JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec, int events_wanted) {
+  if (!dec) return JXL_DEC_ERROR;
   if (dec->stage != DecoderStage::kInited) {
     return JXL_DEC_ERROR;  // Cannot subscribe to events after having started.
   }
@@ -945,6 +957,7 @@ JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec, int events_wanted) {
 
 JxlDecoderStatus JxlDecoderSetKeepOrientation(JxlDecoder* dec,
                                               JXL_BOOL skip_reorientation) {
+  if (!dec) return JXL_DEC_ERROR;
   if (dec->stage != DecoderStage::kInited) {
     return JXL_API_ERROR("Must set keep_orientation option before starting");
   }
@@ -954,6 +967,7 @@ JxlDecoderStatus JxlDecoderSetKeepOrientation(JxlDecoder* dec,
 
 JxlDecoderStatus JxlDecoderSetUnpremultiplyAlpha(JxlDecoder* dec,
                                                  JXL_BOOL unpremul_alpha) {
+  if (!dec) return JXL_DEC_ERROR;
   if (dec->stage != DecoderStage::kInited) {
     return JXL_API_ERROR("Must set unpremul_alpha option before starting");
   }
@@ -963,6 +977,7 @@ JxlDecoderStatus JxlDecoderSetUnpremultiplyAlpha(JxlDecoder* dec,
 
 JxlDecoderStatus JxlDecoderSetRenderSpotcolors(JxlDecoder* dec,
                                                JXL_BOOL render_spotcolors) {
+  if (!dec) return JXL_DEC_ERROR;
   if (dec->stage != DecoderStage::kInited) {
     return JXL_API_ERROR("Must set render_spotcolors option before starting");
   }
@@ -971,6 +986,7 @@ JxlDecoderStatus JxlDecoderSetRenderSpotcolors(JxlDecoder* dec,
 }
 
 JxlDecoderStatus JxlDecoderSetCoalescing(JxlDecoder* dec, JXL_BOOL coalescing) {
+  if (!dec) return JXL_DEC_ERROR;
   if (dec->stage != DecoderStage::kInited) {
     return JXL_API_ERROR("Must set coalescing option before starting");
   }
@@ -1573,6 +1589,10 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
 
 JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec, const uint8_t* data,
                                     size_t size) {
+  if (!dec) return JXL_DEC_ERROR;
+  if (!data && size > 0) {
+    return JXL_API_ERROR("input buffer is null with positive size");
+  }
   if (dec->next_in) {
     return JXL_API_ERROR("already set input, use JxlDecoderReleaseInput first");
   }
@@ -1586,16 +1606,22 @@ JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec, const uint8_t* data,
 }
 
 size_t JxlDecoderReleaseInput(JxlDecoder* dec) {
+  if (!dec) return 0;
   size_t result = dec->avail_in;
   dec->next_in = nullptr;
   dec->avail_in = 0;
   return result;
 }
 
-void JxlDecoderCloseInput(JxlDecoder* dec) { dec->input_closed = true; }
+void JxlDecoderCloseInput(JxlDecoder* dec) {
+  if (!dec) return;
+  dec->input_closed = true;
+}
 
 JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec, uint8_t* data,
                                          size_t size) {
+  if (!dec) return JXL_DEC_ERROR;
+  if (!data && size > 0) return JXL_DEC_ERROR;
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
   // JPEG reconstruction buffer can only set and updated before or during the
   // first frame, the reconstruction box refers to the first frame and in
@@ -1613,6 +1639,7 @@ JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec, uint8_t* data,
 }
 
 size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec) {
+  if (!dec) return 0;
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
   return dec->jpeg_decoder.ReleaseOutputBuffer();
 #else

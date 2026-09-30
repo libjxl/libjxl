@@ -42,6 +42,9 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
                                                size_t avail_in, size_t box_pos,
                                                uint8_t** next_out,
                                                size_t* avail_out) {
+  if (!next_out || !*next_out || !avail_out) return JXL_DEC_ERROR;
+  if (!next_in && avail_in > 0) return JXL_DEC_ERROR;
+
   // The caller provides `box_pos` as the current position (in bytes) within
   // the box contents corresponding to `next_in`. Our internal `pos_` tracks
   // how many bytes of box contents have been consumed/processed so far.
@@ -107,7 +110,9 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
     size_t can_read = avail_in;
     if (!box_until_eof_) can_read = std::min<size_t>(can_read, remaining_);
     size_t to_write = std::min<size_t>(can_read, *avail_out);
-    memcpy(*next_out, next_in, to_write);
+    if (to_write > 0) {
+      memcpy(*next_out, next_in, to_write);
+    }
 
     *next_out += to_write;
     *avail_out -= to_write;

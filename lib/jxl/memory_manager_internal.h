@@ -60,7 +60,11 @@ class MemoryManagerDeleteHelper {
       return;
     }
     address->~T();
-    return memory_manager_->free(memory_manager_->opaque, address);
+    if (memory_manager_ && memory_manager_->free) {
+      memory_manager_->free(memory_manager_->opaque, address);
+    } else {
+      free(address);
+    }
   }
 
  private:
@@ -75,6 +79,10 @@ using MemoryManagerUniquePtr = std::unique_ptr<T, MemoryManagerDeleteHelper>;
 template <typename T, typename... Args>
 JXL_INLINE MemoryManagerUniquePtr<T> MemoryManagerMakeUniquePrivate(
     const JxlMemoryManager* memory_manager, Args&&... args) {
+  if (!memory_manager || !memory_manager->alloc) {
+    return MemoryManagerUniquePtr<T>(nullptr,
+                                     MemoryManagerDeleteHelper(memory_manager));
+  }
   T* mem =
       static_cast<T*>(memory_manager->alloc(memory_manager->opaque, sizeof(T)));
   if (!mem) {

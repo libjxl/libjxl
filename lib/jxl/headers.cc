@@ -94,6 +94,10 @@ Status SizeHeader::Set(size_t xsize64, size_t ysize64) {
 }
 
 Status PreviewHeader::Set(size_t xsize64, size_t ysize64) {
+  constexpr size_t kDimensionCap = std::numeric_limits<uint32_t>::max();
+  if (xsize64 > kDimensionCap || ysize64 > kDimensionCap) {
+    return JXL_FAILURE("Preview image too large");
+  }
   const uint32_t xsize32 = static_cast<uint32_t>(xsize64);
   const uint32_t ysize32 = static_cast<uint32_t>(ysize64);
   if (xsize64 == 0 || ysize64 == 0) return JXL_FAILURE("Empty preview");

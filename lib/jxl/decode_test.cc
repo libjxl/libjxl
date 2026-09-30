@@ -5779,3 +5779,31 @@ TEST(DecodeTest, CloseInput) {
   JxlDecoderCloseInput(dec.get());
   EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
 }
+
+TEST(DecodeTest, NullInputAndDecoderGuards) {
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetInput(nullptr, nullptr, 0));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetJPEGBuffer(nullptr, nullptr, 0));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSubscribeEvents(nullptr, 0));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetKeepOrientation(nullptr, JXL_TRUE));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetUnpremultiplyAlpha(nullptr, JXL_TRUE));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetRenderSpotcolors(nullptr, JXL_TRUE));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetCoalescing(nullptr, JXL_TRUE));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSkipFrames(nullptr, 1));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSkipCurrentFrame(nullptr));
+  EXPECT_EQ(JXL_DEC_ERROR,
+            JxlDecoderSetParallelRunner(nullptr, nullptr, nullptr));
+  EXPECT_EQ(0u, JxlDecoderSizeHintBasicInfo(nullptr));
+  EXPECT_EQ(0u, JxlDecoderReleaseInput(nullptr));
+  JxlDecoderReleaseJPEGBuffer(nullptr);
+  JxlDecoderCloseInput(nullptr);
+  JxlDecoderRewind(nullptr);
+  JxlDecoderReset(nullptr);
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  ASSERT_NE(dec, nullptr);
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetInput(dec.get(), nullptr, 10));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetJPEGBuffer(dec.get(), nullptr, 10));
+
+  EXPECT_EQ(JXL_SIG_NOT_ENOUGH_BYTES, JxlSignatureCheck(nullptr, 0));
+  EXPECT_EQ(JXL_SIG_INVALID, JxlSignatureCheck(nullptr, 10));
+}

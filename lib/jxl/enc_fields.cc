@@ -84,6 +84,7 @@ class WriteVisitor : public VisitorBase {
 
 Status Bundle::Write(const Fields& fields, BitWriter* writer, LayerType layer,
                      AuxOut* aux_out) {
+  if (!writer) return JXL_FAILURE("BitWriter must not be null");
   size_t extension_bits;
   size_t total_bits;
   JXL_RETURN_IF_ERROR(Bundle::CanEncode(fields, &extension_bits, &total_bits));
@@ -98,6 +99,7 @@ Status Bundle::Write(const Fields& fields, BitWriter* writer, LayerType layer,
 // Returns false if the value is too large to encode.
 Status BitsCoder::Write(const size_t bits, const uint32_t value,
                         BitWriter* JXL_RESTRICT writer) {
+  if (!writer) return JXL_FAILURE("BitWriter must not be null");
   if (value >= (1ULL << bits)) {
     return JXL_FAILURE("Value %d too large to encode in %" PRIu64 " bits",
                        value, static_cast<uint64_t>(bits));
@@ -109,6 +111,7 @@ Status BitsCoder::Write(const size_t bits, const uint32_t value,
 // Returns false if the value is too large to encode.
 Status U32Coder::Write(const U32Enc enc, const uint32_t value,
                        BitWriter* JXL_RESTRICT writer) {
+  if (!writer) return JXL_FAILURE("BitWriter must not be null");
   uint32_t selector;
   size_t total_bits;
   JXL_RETURN_IF_ERROR(ChooseSelector(enc, value, &selector, &total_bits));
@@ -127,6 +130,7 @@ Status U32Coder::Write(const U32Enc enc, const uint32_t value,
 
 // Returns false if the value is too large to encode.
 Status U64Coder::Write(uint64_t value, BitWriter* JXL_RESTRICT writer) {
+  if (!writer) return JXL_FAILURE("BitWriter must not be null");
   if (value == 0) {
     // Selector: use 0 bits, value 0
     writer->Write(2, 0);
@@ -166,6 +170,7 @@ Status U64Coder::Write(uint64_t value, BitWriter* JXL_RESTRICT writer) {
 }
 
 Status F16Coder::Write(float value, BitWriter* JXL_RESTRICT writer) {
+  if (!writer) return JXL_FAILURE("BitWriter must not be null");
   uint32_t bits32;
   memcpy(&bits32, &value, sizeof(bits32));
   const uint32_t sign = bits32 >> 31;
@@ -208,6 +213,9 @@ Status F16Coder::Write(float value, BitWriter* JXL_RESTRICT writer) {
 
 Status WriteCodestreamHeaders(CodecMetadata* metadata, BitWriter* writer,
                               AuxOut* aux_out) {
+  if (!metadata || !writer) {
+    return JXL_FAILURE("Invalid metadata or writer pointer");
+  }
   // Marker/signature
   JXL_RETURN_IF_ERROR(writer->WithMaxBits(16, LayerType::Header, aux_out, [&] {
     writer->Write(8, 0xFF);

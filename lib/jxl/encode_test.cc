@@ -2482,3 +2482,43 @@ TEST(EncodeTest, StripAlphaSetting) {
     EXPECT_EQ(1u, encode_float(0.999995f, 2));
   }
 }
+
+TEST(EncodeTest, NullEncoderAndParamsGuards) {
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderReset(nullptr));
+  EXPECT_EQ(JXL_ENC_ERR_GENERIC, JxlEncoderGetError(nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderUseContainer(nullptr, JXL_TRUE));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderStoreJPEGMetadata(nullptr, JXL_TRUE));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetCodestreamLevel(nullptr, 5));
+  EXPECT_EQ(-1, JxlEncoderGetRequiredCodestreamLevel(nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetCms(nullptr, {}));
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderSetParallelRunner(nullptr, nullptr, nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderUseBoxes(nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderCloseFrames(nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderCloseBoxes(nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderCloseInput(nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderFlushInput(nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetBasicInfo(nullptr, nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetUpsamplingMode(nullptr, 0, 1));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderAllowExpertOptions(nullptr));
+
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetFrameHeader(nullptr, nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderAddJPEGFrame(nullptr, nullptr, 0));
+  JxlEncoderSetDebugImageCallback(nullptr, nullptr, nullptr);
+  JxlEncoderCollectStats(nullptr, nullptr);
+
+  JxlEncoderInitBasicInfo(nullptr);
+  JxlEncoderInitFrameHeader(nullptr);
+  JxlEncoderInitBlendInfo(nullptr);
+  JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, nullptr);
+  JxlColorEncodingSetToSRGB(nullptr, JXL_FALSE);
+  JxlColorEncodingSetToLinearSRGB(nullptr, JXL_FALSE);
+
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  ASSERT_NE(enc, nullptr);
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetBasicInfo(enc.get(), nullptr));
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderAddBox(enc.get(), "Exif", nullptr, 10, JXL_FALSE));
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderProcessOutput(enc.get(), nullptr, nullptr));
+}
