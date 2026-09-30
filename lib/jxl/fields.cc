@@ -395,6 +395,7 @@ Status Bundle::Read(BitReader* reader, Fields* fields) {
   return visitor.OK();
 }
 bool Bundle::CanRead(BitReader* reader, Fields* fields) {
+  if (!reader || !fields) return false;
   ReadVisitor visitor(reader);
   Status status = visitor.Visit(fields);
   // We are only checking here whether there are enough bytes. We still return
@@ -416,6 +417,7 @@ Status BitsCoder::CanEncode(const size_t bits, const uint32_t value,
 }
 
 uint32_t BitsCoder::Read(const size_t bits, BitReader* JXL_RESTRICT reader) {
+  if (!reader) return 0;
   return reader->ReadBits(bits);
 }
 
@@ -442,6 +444,7 @@ Status U32Coder::CanEncode(const U32Enc enc, const uint32_t value,
 }
 
 uint32_t U32Coder::Read(const U32Enc enc, BitReader* JXL_RESTRICT reader) {
+  if (!reader) return 0;
   const uint32_t selector = reader->ReadFixedBits<2>();
   const U32Distr d = enc.GetDistr(selector);
   if (d.IsDirect()) {
@@ -492,6 +495,7 @@ Status U32Coder::ChooseSelector(const U32Enc enc, const uint32_t value,
 }
 
 uint64_t U64Coder::Read(BitReader* JXL_RESTRICT reader) {
+  if (!reader) return 0;
   uint64_t selector = reader->ReadFixedBits<2>();
   if (selector == 0) {
     return 0;
@@ -549,6 +553,9 @@ Status U64Coder::CanEncode(uint64_t value, size_t* JXL_RESTRICT encoded_bits) {
 
 Status F16Coder::Read(BitReader* JXL_RESTRICT reader,
                       float* JXL_RESTRICT value) {
+  if (!reader || !value) {
+    return JXL_FAILURE("Invalid reader or destination pointer");
+  }
   const uint32_t bits16 = reader->ReadFixedBits<16>();
   const uint32_t sign = bits16 >> 15;
   const uint32_t biased_exp = (bits16 >> 10) & 0x1F;

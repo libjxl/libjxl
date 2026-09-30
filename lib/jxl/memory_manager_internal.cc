@@ -32,15 +32,28 @@ void MemoryManagerDefaultFree(void* opaque, void* address) { free(address); }
 }  // namespace
 
 void* MemoryManagerAlloc(const JxlMemoryManager* memory_manager, size_t size) {
+  if (!memory_manager || !memory_manager->alloc) {
+    return malloc(size);
+  }
   return memory_manager->alloc(memory_manager->opaque, size);
 }
 
 void MemoryManagerFree(const JxlMemoryManager* memory_manager, void* address) {
+  if (!address) {
+    return;
+  }
+  if (!memory_manager || !memory_manager->free) {
+    free(address);
+    return;
+  }
   memory_manager->free(memory_manager->opaque, address);
 }
 
 Status MemoryManagerInit(JxlMemoryManager* self,
                          const JxlMemoryManager* memory_manager) {
+  if (!self) {
+    return false;
+  }
   if (memory_manager) {
     *self = *memory_manager;
   } else {
@@ -112,7 +125,9 @@ StatusOr<AlignedMemory> AlignedMemory::Create(JxlMemoryManager* memory_manager,
                allocation_size)) {
     return JXL_FAILURE("Requested allocation is too large");
   }
-  JXL_ENSURE(memory_manager);
+  if (!memory_manager || !memory_manager->alloc) {
+    return JXL_FAILURE("Invalid memory manager");
+  }
   void* allocated =
       memory_manager->alloc(memory_manager->opaque, allocation_size);
   if (allocated == nullptr) {

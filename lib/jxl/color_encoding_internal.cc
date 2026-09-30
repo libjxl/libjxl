@@ -82,6 +82,7 @@ Status ColorEncoding::SetPrimariesType(const Primaries& p) {
 
 void ColorEncoding::DecideIfWantICC(const JxlCmsInterface& cms) {
   if (storage_.icc.empty()) return;
+  if (!cms.set_fields_from_icc) return;
 
   JxlColorEncoding c;
   JXL_BOOL cmyk;
