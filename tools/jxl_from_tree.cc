@@ -46,6 +46,8 @@
 #include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
+
+jxl::AuxOut* StatsAuxOut();  // (JXL_FROM_TREE_STATS, see main)
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_context_map.h"
@@ -3426,7 +3428,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     const auto encode_frame = [&](BitWriter* w) {
       return jxl::EncodeFrame(memory_manager, cparams, info, metadata.get(),
                               io->frames[0], *JxlGetDefaultCms(), nullptr, w,
-                              nullptr);
+                              StatsAuxOut());
     };
     if (!cparams.custom_residuals.empty() && !palette_inline_tree) {
       // Residual patterns with LZ77 inside the listed values or without, and
@@ -3628,6 +3630,25 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
 }  // namespace tools
 }  // namespace jpegxl
 
+// JXL_FROM_TREE_STATS=1: the encoded bytes per bitstream layer (summed over all frames), on stderr. Only for
+// looking: with a choice between encodings of a frame, every encoding tried is counted.
+jxl::AuxOut* StatsAuxOut() {
+  static jxl::AuxOut stats;
+  static const bool enabled = getenv("JXL_FROM_TREE_STATS") != nullptr;
+  return enabled ? &stats : nullptr;
+}
+
+void PrintStats() {
+  jxl::AuxOut* stats = StatsAuxOut();
+  if (!stats) return;
+  for (size_t i = 0; i < jxl::kNumImageLayers; i++) {
+    const jxl::LayerType l = static_cast<jxl::LayerType>(i);
+    if (stats->layer(l).total_bits == 0) continue;
+    fprintf(stderr, "%-24s %10.1f B (histograms %8.1f B)\n", jxl::LayerName(l),
+            stats->layer(l).total_bits / 8.0, stats->layer(l).histogram_bits / 8.0);
+  }
+}
+
 int main(int argc, char** argv) {
   if ((argc != 3 && argc != 4) ||
       ((strcmp(argv[1], "-") > 0) && !strcmp(argv[1], argv[2]))) {
@@ -3640,5 +3661,6 @@ int main(int argc, char** argv) {
     fprintf(stderr, "FAILURE\n");
     return EXIT_FAILURE;
   }
+  PrintStats();
   return EXIT_SUCCESS;
 }

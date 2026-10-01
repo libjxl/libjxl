@@ -850,6 +850,10 @@ Status EntropyEncodingData::ChooseUintConfigs(
       Histogram histo;
       histo.EnsureCapacity(capacity);
       size_t len = histo_volume[h];
+      // A context whose values are all 0 has one symbol at zero bits per token in every config: its cost does not
+      // depend on the number of tokens, so one token gives the same choice (and spares a pass over millions of
+      // zero residuals per config).
+      if (max_v == 0 && len > 1) len = 1;
       uint32_t* data = transposed.data() + histo_offset[h];
       size_t extra_bits = EstimateTokenCost(data, len, cfg, tmp);
       uint32_t* tmp_tokens = tmp.address<uint32_t>();
