@@ -23,8 +23,8 @@
 #include <limits>
 #include <map>
 #include <memory>
-#include <set>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -48,13 +48,13 @@
 #include "lib/jxl/enc_aux_out.h"
 
 jxl::AuxOut* StatsAuxOut();  // (JXL_FROM_TREE_STATS, see main)
+#include "lib/jxl/dec_modular.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_context_map.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_params.h"
-#include "lib/jxl/dec_modular.h"
 #include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
@@ -952,13 +952,20 @@ double MetaChannelCost(const std::vector<std::vector<int32_t>>& rows,
       int64_t nw = (x > 0 && y > 0) ? rows[y - 1][x - 1] : w;
       int64_t pred = 0;
       switch (p) {
-        case Predictor::Left: pred = w; break;
-        case Predictor::Top: pred = n; break;
-        case Predictor::Average0: pred = (w + n) / 2; break;
+        case Predictor::Left:
+          pred = w;
+          break;
+        case Predictor::Top:
+          pred = n;
+          break;
+        case Predictor::Average0:
+          pred = (w + n) / 2;
+          break;
         case Predictor::Gradient:
           pred = std::min(std::max(w + n - nw, std::min(w, n)), std::max(w, n));
           break;
-        default: pred = 0;
+        default:
+          pred = 0;
       }
       int64_t r = rows[y][x] - pred;
       bits += 1 + 2 * std::log2(1.0 + static_cast<double>(std::abs(r)));
@@ -982,8 +989,8 @@ Tree Restricted(const Tree& src, int prop, int64_t lo, int64_t hi) {
 // for a group stream, which has no meta channels: c - 1. Returns the copy's
 // root.
 size_t CopyForGroupStreams(const Tree& src, Tree* dst) {
-  const Tree in_groups = Restricted(src, /*g=*/1, 1,
-                                    std::numeric_limits<int32_t>::max());
+  const Tree in_groups =
+      Restricted(src, /*g=*/1, 1, std::numeric_limits<int32_t>::max());
   size_t first = dst->size();
   size_t root = CopyRestricted(in_groups, 0, /*c=*/0, 1,
                                std::numeric_limits<int32_t>::max(), dst);
@@ -2602,8 +2609,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
         }
         size_t num = 0;
         int64_t v = ParseInt(value_text, &num);
-        if (num != value_text.size() || value_text.empty() ||
-            v < -(1 << 30) || v > (1 << 30)) {
+        if (num != value_text.size() || value_text.empty() || v < -(1 << 30) ||
+            v > (1 << 30)) {
           fprintf(stderr, "Invalid residual: %s\n", t.c_str());
           return false;
         }
@@ -3070,11 +3077,12 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
         if (id < 0) continue;
         const bool group = id >= static_cast<int>(first_group) &&
                            id <= static_cast<int>(last_group);
-        const bool lf = cparams.responsive && id >= static_cast<int>(first_lf) &&
+        const bool lf = cparams.responsive &&
+                        id >= static_cast<int>(first_lf) &&
                         id <= static_cast<int>(last_lf);
         const bool global_has_samples =
-            id == 0 && (!multi_group || frame.palette.enabled ||
-                        cparams.responsive);
+            id == 0 &&
+            (!multi_group || frame.palette.enabled || cparams.responsive);
         if (!(group && multi_group) && !lf && !global_has_samples) {
           fprintf(stderr,
                   "Warning: Residuals for stream %d, which codes no samples in "
@@ -3107,8 +3115,8 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
                                 cparams.custom_residuals.empty();
       if (code_entries) {
         // The entries are the meta channel's pixels: coded, not in the tree.
-        cparams.custom_palette.entries.assign(
-            frame.palette.num_c, std::vector<int32_t>(nb_entries));
+        cparams.custom_palette.entries.assign(frame.palette.num_c,
+                                              std::vector<int32_t>(nb_entries));
         for (size_t i = 0; i < nb_entries; i++) {
           for (size_t c = 0; c < frame.palette.num_c; c++) {
             cparams.custom_palette.entries[c][i] = frame.palette.entries[i][c];
@@ -3128,9 +3136,9 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
         AddPaletteTree(frame.palette, multi_group, /*inline_entries=*/true,
                        &*palette_inline_tree);
       }
-      AddPaletteTree(frame.palette, multi_group,
-                     /*inline_entries=*/!code_entries && !frame.palette.implicit,
-                     &tree);
+      AddPaletteTree(
+          frame.palette, multi_group,
+          /*inline_entries=*/!code_entries && !frame.palette.implicit, &tree);
     }
     if (frame.lf_tree.empty() && frame.hf_meta_tree.empty() &&
         frame.dequant_trees.empty() && frame.acs_tree.nodes.empty() &&
@@ -3480,7 +3488,8 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
         cparams.custom_palette.entries = entries;
         cparams.options.code_meta_channels = true;
       }
-      JXL_RETURN_IF_ERROR(writer.AppendUnaligned(use_inlined ? inlined : coded));
+      JXL_RETURN_IF_ERROR(
+          writer.AppendUnaligned(use_inlined ? inlined : coded));
     } else if (!encode_frame(&writer)) {
       fprintf(stderr, "Failed to encode frame %zu\n", frame_index);
       return JXL_FAILURE("Failed to encode frame");
@@ -3489,9 +3498,8 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     // Alpha outside 0..max looks fine in 8-bit checks (PNG output clamps it)
     // but some browsers (Chrome) premultiply without clamping.
     const size_t num_ec = metadata->m.extra_channel_info.size();
-    for (size_t k = 0; check_alpha && k < num_ec &&
-                       channel_ranges.size() >= num_ec;
-         k++) {
+    for (size_t k = 0;
+         check_alpha && k < num_ec && channel_ranges.size() >= num_ec; k++) {
       const auto& eci = metadata->m.extra_channel_info[k];
       if (eci.type != jxl::ExtraChannel::kAlpha) continue;
       const auto& r = channel_ranges[channel_ranges.size() - num_ec + k];
@@ -3502,8 +3510,7 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
                 "0..%lld (browsers that premultiply without clamping, like "
                 "Chrome, will show wrong colours)\n",
                 frame_index, static_cast<long long>(r.first),
-                static_cast<long long>(r.second),
-                static_cast<long long>(max));
+                static_cast<long long>(r.second), static_cast<long long>(max));
       }
     }
     frame_index++;
@@ -3571,11 +3578,11 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
     // This frame's own splines (previously the first frame's were reused).
     JXL_RETURN_IF_ERROR(
         SplinesFromSplineData(spline_data, quantized_splines, starting_points));
-    cparams.custom_splines = {
-        Span<const QuantizedSpline>(quantized_splines),
-        Span<const Spline::Point>(starting_points),
-        spline_data.signal_adjustment ? spline_data.quantization_adjustment
-                                      : 0};
+    cparams.custom_splines = {Span<const QuantizedSpline>(quantized_splines),
+                              Span<const Spline::Point>(starting_points),
+                              spline_data.signal_adjustment
+                                  ? spline_data.quantization_adjustment
+                                  : 0};
     // Extra channels (alpha, hidden channels) have the size of this frame.
     for (ImageF& ec : io->frames[0].extra_channels()) {
       if (ec.xsize() != width || ec.ysize() != height) {
@@ -3630,8 +3637,9 @@ bool FrameNeedsBlending(const jxl::ImageBundle& ib,
 }  // namespace tools
 }  // namespace jpegxl
 
-// JXL_FROM_TREE_STATS=1: the encoded bytes per bitstream layer (summed over all frames), on stderr. Only for
-// looking: with a choice between encodings of a frame, every encoding tried is counted.
+// JXL_FROM_TREE_STATS=1: the encoded bytes per bitstream layer (summed over all
+// frames), on stderr. Only for looking: with a choice between encodings of a
+// frame, every encoding tried is counted.
 jxl::AuxOut* StatsAuxOut() {
   static jxl::AuxOut stats;
   static const bool enabled = getenv("JXL_FROM_TREE_STATS") != nullptr;
@@ -3645,7 +3653,8 @@ void PrintStats() {
     const jxl::LayerType l = static_cast<jxl::LayerType>(i);
     if (stats->layer(l).total_bits == 0) continue;
     fprintf(stderr, "%-24s %10.1f B (histograms %8.1f B)\n", jxl::LayerName(l),
-            stats->layer(l).total_bits / 8.0, stats->layer(l).histogram_bits / 8.0);
+            stats->layer(l).total_bits / 8.0,
+            stats->layer(l).histogram_bits / 8.0);
   }
 }
 

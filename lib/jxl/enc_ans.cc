@@ -850,10 +850,12 @@ Status EntropyEncodingData::ChooseUintConfigs(
       Histogram histo;
       histo.EnsureCapacity(capacity);
       size_t len = histo_volume[h];
-      // A context whose values are all 0 has one symbol at zero bits per token in every config: its cost does not
-      // depend on the number of tokens, so one token gives the same choice (and spares a pass over millions of
-      // zero residuals per config). The histogram kept for the context must still count all of them (LZ77 length
-      // symbols are added to it below), so the other tokens' count goes straight to that symbol.
+      // A context whose values are all 0 has one symbol at zero bits per token
+      // in every config: its cost does not depend on the number of tokens, so
+      // one token gives the same choice (and spares a pass over millions of
+      // zero residuals per config). The histogram kept for the context must
+      // still count all of them (LZ77 length symbols are added to it below), so
+      // the other tokens' count goes straight to that symbol.
       const bool all_zero = max_v == 0 && len > 1;
       if (all_zero) len = 1;
       uint32_t* data = transposed.data() + histo_offset[h];

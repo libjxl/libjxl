@@ -209,8 +209,8 @@ Status FastClusterHistograms(const std::vector<Histogram>& in,
     largest_idx = 0;
     for (size_t i = 0; i < in.size(); i++) {
       if (dists[i] == 0.0f) continue;
-      dists[i] = std::min(ClusterDistance(in[i], out->back(), prefix_codes),
-                          dists[i]);
+      dists[i] =
+          std::min(ClusterDistance(in[i], out->back(), prefix_codes), dists[i]);
       if (dists[i] > dists[largest_idx]) largest_idx = i;
     }
     if (dists[largest_idx] < kMinDistanceForDistinct) break;
@@ -221,8 +221,9 @@ Status FastClusterHistograms(const std::vector<Histogram>& in,
     size_t best = 0;
     float best_dist = std::numeric_limits<float>::max();
     for (size_t j = 0; j < out->size(); j++) {
-      float dist = j < prev_histograms ? HistogramKLDivergence(in[i], (*out)[j])
-                                       : ClusterDistance(in[i], (*out)[j], prefix_codes);
+      float dist = j < prev_histograms
+                       ? HistogramKLDivergence(in[i], (*out)[j])
+                       : ClusterDistance(in[i], (*out)[j], prefix_codes);
       if (dist < best_dist) {
         best = j;
         best_dist = dist;

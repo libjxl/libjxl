@@ -7,14 +7,14 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <queue>
-#include <utility>
-#include <cmath>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/bits.h"
@@ -667,7 +667,6 @@ StatusOr<Tree> LearnTree(
   return tree;
 }
 
-
 Status EvaluateTreeWithZeroResiduals(const Tree& tree, size_t group_id,
                                      Image* image,
                                      const weighted::Header& wp_header) {
@@ -714,17 +713,17 @@ Status EvaluateTreeWithZeroResiduals(const Tree& tree, size_t group_id,
 // applied: the residuals of the first prefix + period samples as symbols, in
 // the contexts `tree` gives there (their samples are computed: prediction plus
 // residual), then one LZ77 copy with the period as distance for the rest.
-// `distance_multiplier` is the stream's (the widest channel), `num_contexts` the
-// tree's; the distance symbol goes to context num_contexts.
-Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
-                               const Image &image, size_t num_coded,
-                               const ResidualPattern *pattern,
+// `distance_multiplier` is the stream's (the widest channel), `num_contexts`
+// the tree's; the distance symbol goes to context num_contexts.
+Status TokenizeResidualPattern(const Tree& tree, size_t group_id,
+                               const Image& image, size_t num_coded,
+                               const ResidualPattern* pattern,
                                size_t distance_multiplier, size_t num_contexts,
                                bool inner_lz77, bool context_costs,
-                               const weighted::Header &wp_header,
-                               std::vector<Token> *tokens) {
+                               const weighted::Header& wp_header,
+                               std::vector<Token>* tokens) {
   static const ResidualPattern kZero = {{}, {0}};
-  const ResidualPattern &p = pattern ? *pattern : kZero;
+  const ResidualPattern& p = pattern ? *pattern : kZero;
   JXL_ENSURE(!p.period.empty());
   size_t total = 0;
   // The meta channels (e.g. palette entries) keep zero residuals: the
@@ -748,7 +747,7 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
   if (total - literals < 3) literals = total;
   // Samples of the first literals (+ 1 for the copy's context).
   const size_t needed = std::min(total, literals + 1);
-  JxlMemoryManager *memory_manager = image.memory_manager();
+  JxlMemoryManager* memory_manager = image.memory_manager();
   Image work(memory_manager);
   work.w = image.w;
   work.h = image.h;
@@ -761,12 +760,12 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
   contexts.reserve(needed);
   size_t k = 0;
   for (size_t chan = 0; chan < num_coded && k < needed; chan++) {
-    const Channel &from = image.channel[chan];
-    JXL_ASSIGN_OR_RETURN(Channel ch, Channel::Create(memory_manager, from.w,
-                                                     from.h, from.hshift,
-                                                     from.vshift));
+    const Channel& from = image.channel[chan];
+    JXL_ASSIGN_OR_RETURN(
+        Channel ch, Channel::Create(memory_manager, from.w, from.h, from.hshift,
+                                    from.vshift));
     work.channel.emplace_back(std::move(ch));
-    Channel &channel = work.channel.back();
+    Channel& channel = work.channel.back();
     if (channel.w == 0 || channel.h == 0) continue;
     std::array<pixel_type, kNumStaticProperties> static_props = {
         {static_cast<pixel_type>(chan), static_cast<int>(group_id)}};
@@ -785,7 +784,7 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
                         properties.size() - kNumNonrefProperties, channel.w));
     weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h && k < needed; y++) {
-      pixel_type *JXL_RESTRICT row = channel.Row(y);
+      pixel_type* JXL_RESTRICT row = channel.Row(y);
       InitPropsRow(&properties, static_props, y);
       PrecomputeReferences(channel, y, work, chan, &references);
       for (size_t x = 0; x < channel.w && k < needed; x++, k++) {
@@ -845,7 +844,8 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
   std::unordered_map<uint64_t, std::vector<uint32_t>> recent;
   const auto hash_at = [&](size_t i) {
     uint64_t h = 0;
-    for (size_t j = 0; j < 4; j++) h = h * 0x9E3779B97F4A7C15ull + values[i + j];
+    for (size_t j = 0; j < 4; j++)
+      h = h * 0x9E3779B97F4A7C15ull + values[i + j];
     return h;
   };
   for (size_t i = 0; i < literals;) {
@@ -887,7 +887,8 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
     if (i + 4 <= literals) {
       auto it = recent.find(hash_at(i));
       if (it != recent.end()) {
-        for (size_t c = it->second.size(); c-- > 0;) try_candidate(it->second[c]);
+        for (size_t c = it->second.size(); c-- > 0;)
+          try_candidate(it->second[c]);
       }
     }
     const size_t step = best_len >= kMinMatch ? best_len : 1;
@@ -919,13 +920,13 @@ Status TokenizeResidualPattern(const Tree &tree, size_t group_id,
   return true;
 }
 
-Status EvaluateTreeWithResiduals(const Tree &tree, size_t group_id,
-                                 const ResidualPattern *pattern,
+Status EvaluateTreeWithResiduals(const Tree& tree, size_t group_id,
+                                 const ResidualPattern* pattern,
                                  size_t first_channel, size_t num_channels,
-                                 Image *image, int64_t *min_value,
-                                 int64_t *max_value,
-                                 const weighted::Header &wp_header) {
-  JxlMemoryManager *memory_manager = image->memory_manager();
+                                 Image* image, int64_t* min_value,
+                                 int64_t* max_value,
+                                 const weighted::Header& wp_header) {
+  JxlMemoryManager* memory_manager = image->memory_manager();
   size_t meta = 0;
   const bool include_meta = pattern != nullptr && pattern->include_meta;
   for (size_t i = 0;
@@ -940,7 +941,7 @@ Status EvaluateTreeWithResiduals(const Tree &tree, size_t group_id,
   };
   size_t k = 0;
   for (size_t chan = 0; chan < num_channels; chan++) {
-    Channel &channel = image->channel[chan];
+    Channel& channel = image->channel[chan];
     if (channel.w == 0 || channel.h == 0) continue;
     if (chan < first_channel) {
       k += channel.w * channel.h;
@@ -969,7 +970,7 @@ Status EvaluateTreeWithResiduals(const Tree &tree, size_t group_id,
                         properties.size() - kNumNonrefProperties, channel.w));
     weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h; y++) {
-      pixel_type *JXL_RESTRICT row = channel.Row(y);
+      pixel_type* JXL_RESTRICT row = channel.Row(y);
       InitPropsRow(&properties, static_props, y);
       PrecomputeReferences(channel, y, *image, chan, &references);
       for (size_t x = 0; x < channel.w; x++, k++) {
@@ -1030,7 +1031,7 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
               image.channel[num_coded].h > options.max_chan_size))) {
       num_coded++;
     }
-    const ResidualPattern *pattern = nullptr;
+    const ResidualPattern* pattern = nullptr;
     auto it = options.residual_patterns->find(static_cast<int>(group_id));
     if (it == options.residual_patterns->end()) {
       it = options.residual_patterns->find(-1);
@@ -1041,7 +1042,7 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
         (tree.size() + 1) / 2, options.residual_inner_lz77,
         options.residual_lz77_context_costs, header.wp_header, &tokens));
   } else if (options.zero_tokens && options.code_meta_channels &&
-      image.nb_meta_channels > 0) {
+             image.nb_meta_channels > 0) {
     // The meta channels are coded from the image; the other channels are
     // what the tree gives with zero residuals, tokenized with their real
     // contexts (so that the meta channels' contexts only hold their tokens).
@@ -1060,13 +1061,13 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
     coded.nb_meta_channels = image.nb_meta_channels;
     for (size_t i = 0; i < num_coded; i++) {
       const Channel& from = image.channel[i];
-      JXL_ASSIGN_OR_RETURN(Channel ch,
-                           Channel::Create(image.memory_manager(), from.w,
-                                           from.h, from.hshift, from.vshift));
+      JXL_ASSIGN_OR_RETURN(
+          Channel ch, Channel::Create(image.memory_manager(), from.w, from.h,
+                                      from.hshift, from.vshift));
       coded.channel.emplace_back(std::move(ch));
     }
-    JXL_RETURN_IF_ERROR(
-        EvaluateTreeWithZeroResiduals(tree, group_id, &coded, header.wp_header));
+    JXL_RETURN_IF_ERROR(EvaluateTreeWithZeroResiduals(tree, group_id, &coded,
+                                                      header.wp_header));
     for (size_t i = 0; i < image.nb_meta_channels && i < num_coded; i++) {
       for (size_t y = 0; y < image.channel[i].h; y++) {
         memcpy(coded.channel[i].Row(y), image.channel[i].Row(y),
@@ -1075,7 +1076,7 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
     }
     size_t pos = tokens.size();
     tokens.resize(pos + total_tokens);
-    Token *tokenp = tokens.data() + pos;
+    Token* tokenp = tokens.data() + pos;
     for (size_t i = 0; i < num_coded; i++) {
       if (!coded.channel[i].w || !coded.channel[i].h) continue;
       JXL_RETURN_IF_ERROR(

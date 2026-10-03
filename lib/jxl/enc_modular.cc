@@ -1414,8 +1414,9 @@ StatusOr<Image> CopyLayout(const Image& from) {
   out.nb_meta_channels = from.nb_meta_channels;
   out.transform = from.transform;
   for (const Channel& fc : from.channel) {
-    JXL_ASSIGN_OR_RETURN(Channel ch, Channel::Create(from.memory_manager(), fc.w,
-                                                     fc.h, fc.hshift, fc.vshift));
+    JXL_ASSIGN_OR_RETURN(Channel ch,
+                         Channel::Create(from.memory_manager(), fc.w, fc.h,
+                                         fc.hshift, fc.vshift));
     if (fc.plane.xsize() >= fc.w && fc.plane.ysize() >= fc.h) {
       for (size_t y = 0; y < fc.h; y++) {
         memcpy(ch.Row(y), fc.Row(y), fc.w * sizeof(pixel_type));
@@ -1452,9 +1453,9 @@ Status ModularFrameEncoder::ComputeDecodedRange(int64_t* lo, int64_t* hi) {
   // Coded palette entries (code_meta_channels) are samples, not predictions.
   const size_t first0 =
       stream_options_[0].code_meta_channels ? full.nb_meta_channels : 0;
-  JXL_RETURN_IF_ERROR(EvaluateTreeWithResiduals(
-      tree_, 0, pattern_for(0), first0, coded0, &full, lo, hi,
-      stream_headers_[0].wp_header));
+  JXL_RETURN_IF_ERROR(EvaluateTreeWithResiduals(tree_, 0, pattern_for(0),
+                                                first0, coded0, &full, lo, hi,
+                                                stream_headers_[0].wp_header));
   std::vector<bool> covered(stream_images_.size(), false);
   covered[0] = true;
   if (!single_stream) {
@@ -1468,12 +1469,13 @@ Status ModularFrameEncoder::ComputeDecodedRange(int64_t* lo, int64_t* hi) {
           stream_headers_[stream].wp_header));
       JXL_RETURN_IF_ERROR(UndoTransformsWithRange(
           g, stream_headers_[stream].wp_header, lo, hi));
-      for (size_t j = 0; j < g.channel.size() &&
-                         j < gi_channel_[stream].size(); j++) {
+      for (size_t j = 0; j < g.channel.size() && j < gi_channel_[stream].size();
+           j++) {
         Channel& fc = full.channel[gi_channel_[stream][j]];
         const Rect& rect = params.rect;
         Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
-               rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
+               rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w,
+               fc.h);
         for (size_t y = 0; y < r.ysize() && y < g.channel[j].h; y++) {
           memcpy(r.Row(&fc.plane, y), g.channel[j].Row(y),
                  std::min(r.xsize(), g.channel[j].w) * sizeof(pixel_type));
@@ -1489,8 +1491,8 @@ Status ModularFrameEncoder::ComputeDecodedRange(int64_t* lo, int64_t* hi) {
     JXL_RETURN_IF_ERROR(EvaluateTreeWithResiduals(
         tree_, stream, pattern_for(stream), 0, g.channel.size(), &g, lo, hi,
         stream_headers_[stream].wp_header));
-    JXL_RETURN_IF_ERROR(UndoTransformsWithRange(
-        g, stream_headers_[stream].wp_header, lo, hi));
+    JXL_RETURN_IF_ERROR(
+        UndoTransformsWithRange(g, stream_headers_[stream].wp_header, lo, hi));
   }
   // The global transforms with their parameters as a decoder derives them
   // (the default steps of a Squeeze are not kept), by replaying them on the
@@ -1502,9 +1504,9 @@ Status ModularFrameEncoder::ComputeDecodedRange(int64_t* lo, int64_t* hi) {
     layout.bitdepth = full.bitdepth;
     layout.nb_meta_channels = pre_transform_meta_;
     for (const ChannelLayout& cl : pre_transform_layout_) {
-      JXL_ASSIGN_OR_RETURN(Channel ch, Channel::Create(full.memory_manager(),
-                                                       cl.w, cl.h, cl.hshift,
-                                                       cl.vshift));
+      JXL_ASSIGN_OR_RETURN(Channel ch,
+                           Channel::Create(full.memory_manager(), cl.w, cl.h,
+                                           cl.hshift, cl.vshift));
       layout.channel.emplace_back(std::move(ch));
     }
     std::vector<Transform> replayed;
