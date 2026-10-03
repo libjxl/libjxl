@@ -489,7 +489,9 @@ set(JPEGXL_INTERNAL_TESTLIB_FILES
 set(JPEGXL_INTERNAL_TESTS
   extras/codec_test.cc
   extras/compressed_icc_test.cc
+  extras/dec/apng_test.cc
   extras/dec/color_description_test.cc
+  extras/dec/exr_test.cc
   extras/dec/pgx_test.cc
   extras/gain_map_test.cc
   jxl/ac_strategy_test.cc
