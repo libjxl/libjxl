@@ -1530,7 +1530,10 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   } else if (cparams.speed_tier <= SpeedTier::kKitten) {
     nb_wp_modes = 2;
   }
-  if (nb_wp_modes > 1 &&
+  // With a fixed tree (jxl_from_tree), the image is not what gets coded (it
+  // can hold placeholder channels), so a search on it only picks a mode at
+  // random: keep the default.
+  if (nb_wp_modes > 1 && cparams_.custom_fixed_tree.empty() &&
       PredictorHasWeighted(stream_options_[stream_id].predictor)) {
     float best_cost = std::numeric_limits<float>::max();
     stream_options_[stream_id].wp_mode = 0;
