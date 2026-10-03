@@ -451,9 +451,21 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
                                           ec_x_stride, ec_y_stride));
     }
 
-    // Read EXR data
-    input.setFrameBuffer(fb);
-    input.readPixels(y1, y2);
+    // Read EXR data. OpenEXR reports corrupt or truncated pixel data by
+    // throwing, so the calls have to be guarded to convert that into a
+    // Status failure; the constructor above is wrapped for the same reason.
+#ifdef __EXCEPTIONS
+    try
+#endif
+    {
+      input.setFrameBuffer(fb);
+      input.readPixels(y1, y2);
+    }
+#ifdef __EXCEPTIONS
+    catch (...) {
+      return JXL_FAILURE("EXR: failed to read pixel data");
+    }
+#endif
 
     const int x_data = x1 - data_window.min.x;
     const int x_out = x1 - display_window.min.x;
