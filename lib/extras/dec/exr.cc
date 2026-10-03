@@ -352,6 +352,9 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
     if (!SafeMul(pixel_stride, num_pixels, volume)) {
       return JXL_FAILURE("EXR: image too big");
     }
+    // The buffer is allocated in full before any pixel data is read;
+    // reject infeasible sizes instead of attempting the allocation.
+    JXL_RETURN_IF_ERROR(VerifyBufferSize(constraints, volume));
     std::vector<char> storage(volume);
     ec_data.emplace_back(std::move(storage));
 
@@ -382,6 +385,9 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   if (!SafeMul(color_pixel_bytes, num_pixels, color_data_size)) {
     return JXL_FAILURE("EXR: image too big");
   }
+  // The buffer is allocated in full before any pixel data is read; reject
+  // infeasible sizes instead of attempting the allocation.
+  JXL_RETURN_IF_ERROR(VerifyBufferSize(constraints, color_data_size));
   // Interleaved RGB{A} / Gray{A}
   std::vector<char> color_data(color_data_size);
 
