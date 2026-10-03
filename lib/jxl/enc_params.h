@@ -12,8 +12,13 @@
 #include <jxl/encode.h>
 #include <stddef.h>
 
+#include <array>
+#include <cstdint>
+#include <map>
+#include <utility>
 #include <vector>
 
+#include "lib/jxl/ac_context.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_progressive_split.h"
@@ -183,9 +188,122 @@ struct CompressParams {
   // If not empty, this tree will be used for dc global section.
   // Used in jxl_from_tree tool.
   Tree custom_fixed_tree;
+  // Optimal LZ77 (slowest efforts) always uses the slower, more careful greedy
+  // first pass, instead of only for small inputs. Helps small files with large
+  // token streams, such as jxl_from_tree art. Used in jxl_from_tree tool.
+  bool lz77_careful_first_pass = false;
+  // Modular frames: if enabled, exactly this palette transform (on num_c
+  // channels starting at the first non-meta channel) instead of the palette
+  // heuristics. The palette entries themselves are the palette meta channel
+  // (nb_deltas + nb_colors wide, num_c high), which is coded like any other
+  // channel. Used in jxl_from_tree tool (with custom_fixed_tree and zero
+  // tokens): if `entries` is empty, the tree defines the entries (whatever it
+  // gives for the meta channel with zero residuals); otherwise the meta channel
+  // holds `entries` (row c = component c, column i = entry i) and its residuals
+  // are coded (see ModularOptions::code_meta_channels).
+  struct CustomPalette {
+    bool enabled = false;
+    uint32_t num_c = 3;
+    uint32_t nb_colors = 0;
+    uint32_t nb_deltas = 0;
+    Predictor predictor = Predictor::Zero;
+    std::vector<std::vector<int32_t>> entries;
+  };
+  CustomPalette custom_palette;
+  // Modular data (with custom_fixed_tree and zero tokens, i.e. jxl_from_tree):
+  // if not empty, the residuals of the streams, by stream ID (the tree's
+  // property 1; -1 for every stream not listed): a prefix, then a period that
+  // repeats. Streams not covered keep all-zero residuals.
+  std::map<int, ResidualPattern> custom_residuals;
+  // Modular frames (jxl_from_tree's NibbleCode): prefix codes, the default
+  // hybrid uint config, and every histogram that uses more than two of the
+  // tokens 0..15 (and no others) becomes the flat code of all 16 (4 bits
+  // each), so that those tokens are raw nibbles in the bitstream.
+  bool flat_nibble_code = false;
+  // Modular frames with custom_fixed_tree and zero tokens (jxl_from_tree): if
+  // not null, the smallest and largest value of any modular buffer when
+  // decoding (the samples, and the intermediate values while undoing the
+  // transforms) are merged into [0] and [1], so that the caller can tell
+  // whether 16-bit buffers suffice.
+  int64_t* modular_range_out = nullptr;
+  // The same frames: if not null, the smallest and largest decoded value of
+  // each channel in the final layout (colour channels, if modular, then the
+  // extra channels), merged into the entries (resized as needed).
+  std::vector<std::pair<int64_t, int64_t>>* modular_channel_ranges_out =
+      nullptr;
+  // VarDCT frames: the LF image and the HF metadata (chroma-from-luma maps, AC
+  // strategy, quantization field, EPF sharpness) are what custom_fixed_tree
+  // gives with all residuals zero, and all HF coefficients are zero. Used in
+  // jxl_from_tree tool.
+  bool vardct_from_tree = false;
+  // With vardct_from_tree: optionally a custom block context map, and (if not
+  // empty) one fixed token per HF context (block_ctx_map.NumACContexts() of
+  // them): every HF symbol in a context is that token, so HF costs no bits.
+  // With vardct_from_tree and XYB: the frame header's x_qm_scale and
+  // b_qm_scale (0..7; -1 = the encoder's choice). A decoder multiplies the HF
+  // steps of X and B by 0.8^(scale - 2).
+  int vardct_x_qm_scale = -1;
+  int vardct_b_qm_scale = -1;
+  bool use_custom_block_ctx_map = false;
+  BlockCtxMap custom_block_ctx_map;
+  std::vector<uint32_t> custom_hf_tokens;
+  // With vardct_from_tree: if not empty (3 * kNumOrders entries, for order
+  // class o and channel c (0 X, 1 Y, 2 B) at 3 * o + c), custom coefficient
+  // orders. A non-empty entry lists the positions (row * columns + column, in
+  // the coefficient layout of the order class, which has at least as many
+  // columns as rows) that come right after the LLF coefficients, in that order;
+  // the other positions keep their default order. The orders of the classes
+  // with a non-empty entry are signaled.
+  std::vector<std::vector<uint32_t>> custom_coeff_orders;
+  // With vardct_from_tree: the quantizer's global scale and LF quantization
+  // (quant_dc), 0 for the default ones (1024 and 64), and if not empty, the
+  // inverse LF quantization steps of the channels X, Y and B (by default 4096,
+  // 512 and 256). The LF step of channel c is
+  // (65536 / global scale) / quant_dc / vardct_lf_inv_quant[c], the HF step is
+  // (65536 / global scale) / quant field * the dequantization matrix.
+  uint32_t vardct_global_scale = 0;
+  uint32_t vardct_quant_dc = 0;
+  std::vector<float> vardct_lf_inv_quant;
+  // With vardct_from_tree: the chroma from luma factors of the LF (-128..127,
+  // in units of 1 / color factor, 84, on top of the base correlations 0 for
+  // X and 1 for B): the LF X is X + ytox * Y, the LF B is B + ytob * Y.
+  int32_t vardct_ytox_dc = 0;
+  int32_t vardct_ytob_dc = 0;
+  // With vardct_from_tree: a custom dequantization matrix (quantization table
+  // of lib/jxl/quant_weights.h). The dequantization step of a coefficient is
+  // the inverse of its quantization weight.
+  struct CustomDequantTable {
+    // If not 0, a parametric table (QuantEncoding::DCT) with this many (1..17)
+    // distance bands: band_steps[c][i] is the step of channel c (0 X, 1 Y,
+    // 2 B) at distance band i, from the top-left coefficient (i = 0) to the
+    // opposite corner, with geometric interpolation in between.
+    size_t num_bands = 0;
+    std::array<std::array<float, 17>, 3> band_steps = {};
+    // If not 0, a RAW table (QuantEncoding::RAW): the integers (> 0) that
+    // custom_fixed_tree gives with zero residuals for the stream of this
+    // quantization table; the step of a coefficient is raw_den times its
+    // integer.
+    float raw_den = 0;
+  };
+  // If not empty (kNumQuantTables entries, by QuantTable index), custom
+  // dequantization matrices; the entries with neither num_bands nor raw_den
+  // keep the default table.
+  std::vector<CustomDequantTable> vardct_dequant;
   // If not empty, these custom splines will be used instead of the computed
   // ones. Used in jxl_from_tee tool.
   SplineDataView custom_splines{};
+  // A patch placement for custom_patches: the rectangle (x0, y0, xsize, ysize)
+  // of reference frame `ref` is blended onto this frame at (x, y), with
+  // `blend_mode` (a PatchBlendMode value) for the color channels and
+  // `ec_blend_mode` for every extra channel.
+  struct CustomPatch {
+    size_t ref, x0, y0, xsize, ysize, x, y;
+    uint8_t blend_mode, ec_blend_mode;
+    bool clamp;
+  };
+  // If not empty, these patches will be used instead of computed ones (modular
+  // mode only). Used in jxl_from_tree tool.
+  std::vector<CustomPatch> custom_patches;
   // If not null, overrides progressive mode settings. Used in decode_test.
   const ProgressiveMode* custom_progressive_mode = nullptr;
 
