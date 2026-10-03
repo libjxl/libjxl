@@ -852,14 +852,17 @@ Status EntropyEncodingData::ChooseUintConfigs(
       size_t len = histo_volume[h];
       // A context whose values are all 0 has one symbol at zero bits per token in every config: its cost does not
       // depend on the number of tokens, so one token gives the same choice (and spares a pass over millions of
-      // zero residuals per config).
-      if (max_v == 0 && len > 1) len = 1;
+      // zero residuals per config). The histogram kept for the context must still count all of them (LZ77 length
+      // symbols are added to it below), so the other tokens' count goes straight to that symbol.
+      const bool all_zero = max_v == 0 && len > 1;
+      if (all_zero) len = 1;
       uint32_t* data = transposed.data() + histo_offset[h];
       size_t extra_bits = EstimateTokenCost(data, len, cfg, tmp);
       uint32_t* tmp_tokens = tmp.address<uint32_t>();
       for (size_t i = 0; i < len; ++i) {
         histo.FastAdd(tmp_tokens[i]);
       }
+      if (all_zero) histo.counts[tmp_tokens[0]] += histo_volume[h] - 1;
       histo.Condition();
       JXL_ASSIGN_OR_RETURN(float cost, histo.ANSPopulationCost());
       cost += extra_bits;
