@@ -202,6 +202,14 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   if (group_codes_begin + section_sizes_sum_ < group_codes_begin) {
     return JXL_FAILURE("Invalid group codes");
   }
+
+  if (!frame_header_.chroma_subsampling.Is444() &&
+      !(frame_header_.flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
+      frame_header_.encoding == FrameEncoding::kVarDCT) {
+    return JXL_FAILURE(
+        "Non-444 chroma subsampling is not allowed when adaptive DC "
+        "smoothing is enabled");
+  }
   return true;
 }
 

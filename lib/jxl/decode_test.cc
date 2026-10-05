@@ -5779,3 +5779,27 @@ TEST(DecodeTest, CloseInput) {
   JxlDecoderCloseInput(dec.get());
   EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
 }
+
+TEST(DecodeTest, Non444AdaptiveDCSmoothingProhibited) {
+  // Testcase with non-444 chroma subsampling and adaptive DC smoothing enabled
+  // (#5005). Must be cleanly rejected with JXL_DEC_ERROR rather than reading
+  // uninitialized memory.
+  const std::vector<uint8_t> data = {
+      0xff, 0x0a, 0x20, 0x71, 0x00, 0xff, 0x0a, 0x00, 0x34, 0x58, 0xc6, 0x20,
+      0x10, 0x00, 0xb8, 0x00, 0x2d, 0x20, 0xfa, 0xff, 0x20, 0x20, 0x20, 0x20,
+      0x20, 0x20, 0xff, 0xff, 0xff, 0xff, 0xff, 0x32, 0x35, 0x31, 0x31, 0xb2,
+      0x20, 0x20, 0xff, 0xff, 0x20, 0x20, 0xbf, 0x20, 0x20, 0x20, 0x20, 0x20,
+      0x20, 0xd3, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+      0x20, 0x20};
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec.get(),
+                                      JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec.get(), data.data(), data.size()));
+  JxlDecoderCloseInput(dec.get());
+
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
+}
