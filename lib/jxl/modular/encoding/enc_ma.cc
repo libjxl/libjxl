@@ -79,6 +79,32 @@ float EstimateBits(const int32_t *counts, size_t num_symbols) {
   return GetLane(SumOfLanes(df, bits_lanes));
 }
 
+// Principled model for tree split node representation cost:
+// Accounts for:
+// 1. Base split node syntax & entropy coding context overhead:
+//    Creating a split node emits 1 property context token, 1 splitval token,
+//    and adds 1 extra leaf node (5 tokens) plus 1 new context map / histogram
+//    overhead in the modular stream.
+// 2. Split value representation cost:
+//    In TokenizeTree, tree[cur].splitval is encoded via
+//    tokens->emplace_back(kSplitValContext, PackSigned(tree[cur].splitval)).
+//    The unsigned integer PackSigned(val) is encoded with HybridUint and ANS,
+//    which takes bits proportional to log2(1 + PackSigned(val)).
+// 3. Appropriate scaling to the sample domain:
+//    Scaled by pixel_fraction (with the finite-sample floor preventing noise
+//    overfitting).
+static constexpr float kSplitBaseMult = 0.85f;
+static constexpr float kSplitLogRatio = 0.052f;
+
+static JXL_INLINE float ComputeSplitCost(pixel_type splitval, float threshold,
+                                         float log_cost_ratio) {
+  if (log_cost_ratio == 0.0f) return threshold;
+  uint32_t packed = PackSigned(splitval);
+  float log_val =
+      GetLane(FastLog2f(df, Set(df, 1.0f + static_cast<float>(packed))));
+  return threshold * (1.0f + log_cost_ratio * log_val);
+}
+
 void MakeSplitNode(size_t pos, int property, int splitval, Predictor lpred,
                    int64_t loff, Predictor rpred, int64_t roff, Tree *tree) {
   // Note that the tree splits on *strictly greater*.
@@ -181,6 +207,9 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
   size_t num_predictors = tree_samples.NumPredictors();
   size_t num_properties = tree_samples.NumProperties();
 
+  float log_cost_ratio = kSplitLogRatio;
+  threshold *= kSplitBaseMult;
+
   // TODO(veluca): consider parallelizing the search (processing multiple nodes
   // at a time).
   while (!nodes.empty()) {
@@ -196,11 +225,13 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       size_t prop = 0;
       uint32_t val = 0;
       size_t pos = 0;
-      float lcost = std::numeric_limits<float>::max();
-      float rcost = std::numeric_limits<float>::max();
+      float lcost = std::numeric_limits<float>::max() / 2;
+      float rcost = std::numeric_limits<float>::max() / 2;
+      float split_cost = 0;
       Predictor lpred = Predictor::Zero;
       Predictor rpred = Predictor::Zero;
-      float Cost() const { return lcost + rcost; }
+      float EntropyCost() const { return lcost + rcost; }
+      float Cost() const { return lcost + rcost + split_cost; }
     };
 
     SplitInfo best_split_static_constant;
@@ -263,7 +294,8 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
         JXL_DASSERT(axis < kNumStaticProperties);
         forced_split.val = tree_samples.QuantizeStaticProperty(axis, val);
         forced_split.prop = axis;
-        forced_split.lcost = forced_split.rcost = base_bits / 2 - threshold;
+        forced_split.lcost = forced_split.rcost = -1e9f;
+        forced_split.split_cost = 0;
         forced_split.lpred = forced_split.rpred = (*tree)[pos].predictor;
         best = &forced_split;
         best->pos = begin;
@@ -430,7 +462,11 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
                   ? (zero_entropy_side ? best_split_static_constant
                                        : best_split_static)
                   : (uses_wp ? best_split_nonstatic : best_split_nowp);
-          if (lcost + rcost < best_ref.Cost()) {
+          pixel_type splitval = tree_samples.UnquantizeProperty(prop, i);
+          float split_cost =
+              ComputeSplitCost(splitval, threshold, log_cost_ratio);
+          float total_cost = lcost + rcost + split_cost;
+          if (total_cost < best_ref.Cost()) {
             best_ref.prop = prop;
             best_ref.val = i;
             best_ref.pos = split;
@@ -438,6 +474,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
             best_ref.lpred = costs_l[i - first_used].pred;
             best_ref.rcost = rcost;
             best_ref.rpred = costs_r[i - first_used].pred;
+            best_ref.split_cost = split_cost;
           }
         }
         // Clear extra_bits_increase and cost_increase for last_used.
@@ -448,23 +485,25 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       }
 
       // Try to avoid introducing WP.
-      if (best_split_nowp.Cost() + threshold < base_bits &&
-          best_split_nowp.Cost() <= fast_decode_multiplier * best->Cost()) {
+      if (best_split_nowp.Cost() < base_bits &&
+          best_split_nowp.EntropyCost() <=
+              fast_decode_multiplier * best->EntropyCost()) {
         best = &best_split_nowp;
       }
       // Split along static props if possible and not significantly more
       // expensive.
-      if (best_split_static.Cost() + threshold < base_bits &&
-          best_split_static.Cost() <= fast_decode_multiplier * best->Cost()) {
+      if (best_split_static.Cost() < base_bits &&
+          best_split_static.EntropyCost() <=
+              fast_decode_multiplier * best->EntropyCost()) {
         best = &best_split_static;
       }
       // Split along static props to create constant nodes if possible.
-      if (best_split_static_constant.Cost() + threshold < base_bits) {
+      if (best_split_static_constant.Cost() < base_bits) {
         best = &best_split_static_constant;
       }
     }
 
-    if (best->Cost() + threshold < base_bits) {
+    if (best->Cost() < base_bits) {
       uint32_t p = tree_samples.PropertyFromIndex(best->prop);
       pixel_type dequant =
           tree_samples.UnquantizeProperty(best->prop, best->val);
