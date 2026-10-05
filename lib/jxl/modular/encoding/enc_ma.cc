@@ -125,6 +125,65 @@ void MakeSplitNode(size_t pos, int property, int splitval, Predictor lpred,
   tree->back().multiplier = 1;
 }
 
+static constexpr float kTwoSidedBaseMult = 1.0f;
+static constexpr float kTwoSidedSymPenalty = 10.0f;
+static constexpr int kTwoSidedMaxD = 1;
+static constexpr int kTwoSidedMaxDiff = 1;
+static constexpr size_t kTwoSidedMinSamples = 64;
+static constexpr float kTwoSidedSamplesPerSym = 2.0f;
+static constexpr float kTwoSidedMidDrop = 0.0f;
+static constexpr float kTwoSidedEfficiencyRatio = 1.40f;
+
+void MakeTwoSidedSplitNode(size_t pos, int property, int splitval_high,
+                           int splitval_low, Predictor rpred, Predictor mpred,
+                           Predictor lpred, Tree* tree, size_t* child_high_idx,
+                           size_t* child_mid_idx, size_t* child_low_idx) {
+  size_t idx_high = tree->size();
+  size_t idx_midlow = tree->size() + 1;
+  size_t idx_mid = tree->size() + 2;
+  size_t idx_low = tree->size() + 3;
+
+  (*tree)[pos].lchild = idx_high;
+  (*tree)[pos].rchild = idx_midlow;
+  (*tree)[pos].splitval = splitval_high;
+  (*tree)[pos].property = property;
+
+  // Leaf for high (prop > splitval_high)
+  tree->emplace_back();
+  tree->back().property = -1;
+  tree->back().predictor = rpred;
+  tree->back().predictor_offset = 0;
+  tree->back().multiplier = 1;
+
+  // Internal node for midlow (prop <= splitval_high)
+  tree->emplace_back();
+  tree->back().property = property;
+  tree->back().splitval = splitval_low;
+  tree->back().lchild = idx_mid;
+  tree->back().rchild = idx_low;
+  tree->back().predictor = Predictor::Zero;
+  tree->back().predictor_offset = 0;
+  tree->back().multiplier = 1;
+
+  // Leaf for mid (splitval_low < prop <= splitval_high, i.e. [-d; d])
+  tree->emplace_back();
+  tree->back().property = -1;
+  tree->back().predictor = mpred;
+  tree->back().predictor_offset = 0;
+  tree->back().multiplier = 1;
+
+  // Leaf for low (prop <= splitval_low)
+  tree->emplace_back();
+  tree->back().property = -1;
+  tree->back().predictor = lpred;
+  tree->back().predictor_offset = 0;
+  tree->back().multiplier = 1;
+
+  *child_high_idx = idx_high;
+  *child_mid_idx = idx_mid;
+  *child_low_idx = idx_low;
+}
+
 enum class IntersectionType { kNone, kPartial, kInside };
 IntersectionType BoxIntersects(StaticPropRange needle, StaticPropRange haystack,
                                uint32_t &partial_axis, uint32_t &partial_val) {
@@ -219,9 +278,18 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
           std::max(global_max_symbols, static_cast<size_t>(tok + 1));
     }
   }
-  const float alphabet_correction =
+  const float one_sided_alphabet_correction =
       kOneSidedSymPenalty *
       (global_max_symbols > 1 ? global_max_symbols - 1 : 0);
+
+  const float ts_base_mult = kTwoSidedBaseMult;
+  const float ts_sym_penalty = kTwoSidedSymPenalty;
+  const int ts_max_d = kTwoSidedMaxD;
+  const int ts_max_diff = kTwoSidedMaxDiff;
+  const size_t ts_min_samples = kTwoSidedMinSamples;
+  const float ts_min_samples_per_sym = kTwoSidedSamplesPerSym;
+  const float ts_mid_drop = kTwoSidedMidDrop;
+  const float ts_efficiency_ratio = kTwoSidedEfficiencyRatio;
 
   // TODO(veluca): consider parallelizing the search (processing multiple nodes
   // at a time).
@@ -235,22 +303,31 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     if (begin == end) continue;
 
     struct SplitInfo {
+      bool is_two_sided = false;
       size_t prop = 0;
       uint32_t val = 0;
+      uint32_t val_low = 0;
+      uint32_t val_high = 0;
       size_t pos = 0;
+      size_t pos_low = 0;
+      size_t pos_mid = 0;
       float lcost = std::numeric_limits<float>::max() / 2;
       float rcost = std::numeric_limits<float>::max() / 2;
+      float mcost = 0;
       float split_cost = 0;
       Predictor lpred = Predictor::Zero;
       Predictor rpred = Predictor::Zero;
-      float EntropyCost() const { return lcost + rcost; }
-      float Cost() const { return lcost + rcost + split_cost; }
+      Predictor mpred = Predictor::Zero;
+      float EntropyCost() const { return lcost + rcost + mcost; }
+      float Cost() const { return lcost + rcost + mcost + split_cost; }
     };
 
     SplitInfo best_split_static_constant;
     SplitInfo best_split_static;
     SplitInfo best_split_nonstatic;
     SplitInfo best_split_nowp;
+    SplitInfo best_split_2s_nonstatic;
+    SplitInfo best_split_2s_nowp;
 
     JXL_DASSERT(begin <= end);
     JXL_DASSERT(end <= tree_samples.NumDistinctSamples());
@@ -280,11 +357,15 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     }
 
     float base_bits;
+    size_t num_pixels_parent = 0;
     {
       size_t pred = tree_samples.PredictorIndex((*tree)[pos].predictor);
       base_bits =
           EstimateBits(counts.data() + pred * max_symbols, max_symbols) +
           tot_extra_bits[pred];
+      for (size_t sym = 0; sym < max_symbols; sym++) {
+        num_pixels_parent += counts[pred * max_symbols + sym];
+      }
     }
 
     SplitInfo *best = &best_split_nonstatic;
@@ -390,6 +471,100 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
         }
         costs_l.resize(last_used - first_used);
         costs_r.resize(last_used - first_used);
+
+        bool is_symmetric = false;
+        if (prop >= tree_samples.NumStaticProps()) {
+          size_t p_id = tree_samples.PropertyFromIndex(prop);
+          if ((p_id >= 10 && p_id <= 14) ||
+              (p_id >= kNumNonrefProperties &&
+               (p_id - kNumNonrefProperties) % 4 == 3)) {
+            is_symmetric = true;
+          }
+        }
+
+        struct TwoSidedCandidate {
+          size_t j_low;
+          size_t j_high;
+          size_t eff_low;
+          size_t eff_high;
+          size_t count_mid;
+          size_t pixels_mid = 0;
+          CostInfo best_mid_cost;
+        };
+        std::vector<TwoSidedCandidate> two_sided_candidates;
+        std::vector<bool> is_candidate_boundary(prop_size, false);
+        std::vector<size_t> cum_counts(last_used - first_used + 1, 0);
+        std::vector<size_t> pos_at(prop_size, begin);
+        std::vector<size_t> effective_bucket(prop_size, first_used);
+        if (last_used > first_used) {
+          size_t running = begin;
+          size_t curr_used = first_used;
+          for (size_t i = first_used; i < last_used; i++) {
+            if (prop_value_used_count[i]) curr_used = i;
+            effective_bucket[i] = curr_used;
+            running += prop_value_used_count[i];
+            pos_at[i] = running;
+            cum_counts[i - first_used + 1] =
+                cum_counts[i - first_used] + prop_value_used_count[i];
+          }
+        }
+        if (is_symmetric && last_used > first_used) {
+          const size_t total_samples = end - begin;
+          for (size_t j_high = first_used; j_high < last_used; j_high++) {
+            int d = tree_samples.UnquantizeProperty(prop, j_high);
+            if (d < 0) continue;
+            if (d > ts_max_d) break;
+            int target_low = -d - 1;
+
+            size_t best_j_low = 0;
+            int best_diff = std::numeric_limits<int>::max();
+            bool found = false;
+            for (size_t j = first_used; j < j_high; j++) {
+              int t = tree_samples.UnquantizeProperty(prop, j);
+              if (t >= 0) break;
+              int diff = std::abs(t - target_low);
+              if (diff < best_diff || (diff == best_diff && t <= target_low)) {
+                best_diff = diff;
+                best_j_low = j;
+                found = true;
+              }
+            }
+            if (!found) continue;
+            if (best_diff > ts_max_diff) continue;
+
+            size_t eff_low = effective_bucket[best_j_low];
+            size_t eff_high = effective_bucket[j_high];
+            if (eff_low >= eff_high) continue;
+
+            size_t count_low = cum_counts[eff_low - first_used + 1];
+            size_t count_upto_high = cum_counts[eff_high - first_used + 1];
+            size_t count_mid = count_upto_high - count_low;
+            size_t count_high = total_samples - count_upto_high;
+
+            size_t min_req = std::max<size_t>(
+                ts_min_samples, static_cast<size_t>(ts_min_samples_per_sym *
+                                                    global_max_symbols));
+            if (count_low >= min_req && count_mid >= min_req &&
+                count_high >= min_req) {
+              TwoSidedCandidate cand;
+              cand.j_low = best_j_low;
+              cand.j_high = j_high;
+              cand.eff_low = eff_low;
+              cand.eff_high = eff_high;
+              cand.count_mid = count_mid;
+              two_sided_candidates.push_back(cand);
+              is_candidate_boundary[eff_low] = true;
+              is_candidate_boundary[eff_high] = true;
+            }
+          }
+        }
+        std::vector<int32_t> saved_counts_below;
+        std::vector<size_t> saved_eb_below;
+        if (!two_sided_candidates.empty()) {
+          saved_counts_below.resize(prop_size * max_symbols);
+          saved_eb_below.resize(prop_size);
+        }
+
         // For all predictors, compute the right and left costs of each split.
         for (size_t pred = 0; pred < num_predictors; pred++) {
           // Compute cost and histogram increments for each property value.
@@ -420,6 +595,11 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
               counts_above[sym] -= count_increase[i * max_symbols + sym];
               counts_below[sym] += count_increase[i * max_symbols + sym];
               count_increase[i * max_symbols + sym] = 0;
+            }
+            if (!two_sided_candidates.empty() && is_candidate_boundary[i]) {
+              memcpy(saved_counts_below.data() + i * max_symbols,
+                     counts_below.data(), max_symbols * sizeof(int32_t));
+              saved_eb_below[i] = extra_bits_below;
             }
             float rcost = EstimateBits(counts_above.data(), max_symbols) +
                           tot_extra_bits[pred] - extra_bits_below;
@@ -455,6 +635,46 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
                   tree_samples.PredictorFromIndex(pred);
             }
           }
+          if (!two_sided_candidates.empty()) {
+            std::vector<int32_t> counts_mid(max_symbols);
+            for (auto& cand : two_sided_candidates) {
+              const int32_t* high_counts =
+                  saved_counts_below.data() + cand.eff_high * max_symbols;
+              const int32_t* low_counts =
+                  saved_counts_below.data() + cand.eff_low * max_symbols;
+              for (size_t sym = 0; sym < max_symbols; sym++) {
+                counts_mid[sym] = high_counts[sym] - low_counts[sym];
+              }
+              if (pred == 0) {
+                cand.pixels_mid = 0;
+                for (size_t sym = 0; sym < max_symbols; sym++) {
+                  cand.pixels_mid += counts_mid[sym];
+                }
+              }
+              size_t eb_mid =
+                  saved_eb_below[cand.eff_high] - saved_eb_below[cand.eff_low];
+              float mid_cost =
+                  EstimateBits(counts_mid.data(), max_symbols) + eb_mid;
+              float penalty = 0;
+              if (tree_samples.PredictorFromIndex(pred) !=
+                      (*tree)[pos].predictor &&
+                  (*tree)[pos].predictor != Predictor::Weighted) {
+                penalty = change_pred_penalty;
+              }
+              if (tree_samples.PredictorFromIndex(pred) ==
+                  Predictor::Weighted) {
+                penalty += 1e-8;
+              }
+              if (tree_samples.PredictorFromIndex(pred) == Predictor::Zero) {
+                penalty -= 1e-8;
+              }
+              if (mid_cost + penalty < cand.best_mid_cost.Cost()) {
+                cand.best_mid_cost.cost = mid_cost;
+                cand.best_mid_cost.extra_cost = penalty;
+                cand.best_mid_cost.pred = tree_samples.PredictorFromIndex(pred);
+              }
+            }
+          }
         }
         // Iterate through the possible splits and find the one with minimum sum
         // of costs of the two sides.
@@ -478,9 +698,11 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
           pixel_type splitval = tree_samples.UnquantizeProperty(prop, i);
           float split_cost =
               ComputeSplitCost(splitval, threshold, log_cost_ratio) +
-              alphabet_correction;
+              one_sided_alphabet_correction;
           float total_cost = lcost + rcost + split_cost;
           if (total_cost < best_ref.Cost()) {
+            best_ref.is_two_sided = false;
+            best_ref.mcost = 0;
             best_ref.prop = prop;
             best_ref.val = i;
             best_ref.pos = split;
@@ -489,6 +711,58 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
             best_ref.rcost = rcost;
             best_ref.rpred = costs_r[i - first_used].pred;
             best_ref.split_cost = split_cost;
+          }
+        }
+        if (!two_sided_candidates.empty()) {
+          for (const auto& cand : two_sided_candidates) {
+            float lcost = costs_l[cand.eff_low - first_used].cost;
+            float rcost = costs_r[cand.eff_high - first_used].cost;
+            float mcost = cand.best_mid_cost.cost;
+            if (cand.pixels_mid > 0 && num_pixels_parent > 0) {
+              float parent_density = base_bits / num_pixels_parent;
+              float mid_density = mcost / cand.pixels_mid;
+              if (mid_density > parent_density - ts_mid_drop) {
+                continue;
+              }
+            }
+            pixel_type d_high =
+                tree_samples.UnquantizeProperty(prop, cand.j_high);
+            pixel_type d_low =
+                tree_samples.UnquantizeProperty(prop, cand.j_low);
+            float node_cost =
+                ts_base_mult *
+                (ComputeSplitCost(d_high, threshold, log_cost_ratio) +
+                 ComputeSplitCost(d_low, threshold, log_cost_ratio));
+            float alphabet_correction =
+                ts_sym_penalty *
+                (global_max_symbols > 1 ? global_max_symbols - 1 : 0);
+            float extra_node_cost = node_cost + alphabet_correction;
+            float total_cost = lcost + mcost + rcost + extra_node_cost;
+            bool uses_wp = tree_samples.PropertyFromIndex(prop) == kWPProp ||
+                           costs_l[cand.eff_low - first_used].pred ==
+                               Predictor::Weighted ||
+                           costs_r[cand.eff_high - first_used].pred ==
+                               Predictor::Weighted ||
+                           cand.best_mid_cost.pred == Predictor::Weighted;
+            SplitInfo& best_2s_ref =
+                uses_wp ? best_split_2s_nonstatic : best_split_2s_nowp;
+            if (total_cost < best_2s_ref.Cost()) {
+              best_2s_ref.is_two_sided = true;
+              best_2s_ref.prop = prop;
+              best_2s_ref.val = cand.j_high;
+              best_2s_ref.val_low = cand.j_low;
+              best_2s_ref.val_high = cand.j_high;
+              best_2s_ref.pos = pos_at[cand.eff_high];
+              best_2s_ref.pos_low = pos_at[cand.eff_low];
+              best_2s_ref.pos_mid = pos_at[cand.eff_high];
+              best_2s_ref.lcost = lcost;
+              best_2s_ref.rcost = rcost;
+              best_2s_ref.mcost = mcost;
+              best_2s_ref.split_cost = extra_node_cost;
+              best_2s_ref.lpred = costs_l[cand.eff_low - first_used].pred;
+              best_2s_ref.rpred = costs_r[cand.eff_high - first_used].pred;
+              best_2s_ref.mpred = cand.best_mid_cost.pred;
+            }
           }
         }
         // Clear extra_bits_increase and cost_increase for last_used.
@@ -515,39 +789,85 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       if (best_split_static_constant.Cost() < base_bits) {
         best = &best_split_static_constant;
       }
+
+      SplitInfo* best_2s = &best_split_2s_nonstatic;
+      if (best_split_2s_nowp.Cost() < base_bits &&
+          best_split_2s_nowp.EntropyCost() <=
+              fast_decode_multiplier * best_2s->EntropyCost()) {
+        best_2s = &best_split_2s_nowp;
+      }
+      if (best_2s->Cost() < base_bits) {
+        if (best->Cost() >= base_bits) {
+          best = best_2s;
+        } else {
+          float gain_1s = base_bits - best->Cost();
+          float gain_2s = base_bits - best_2s->Cost();
+          if (gain_2s >= ts_efficiency_ratio * gain_1s) {
+            best = best_2s;
+          }
+        }
+      }
     }
 
     if (best->Cost() < base_bits) {
       uint32_t p = tree_samples.PropertyFromIndex(best->prop);
-      pixel_type dequant =
-          tree_samples.UnquantizeProperty(best->prop, best->val);
-      // Split node and try to split children.
-      MakeSplitNode(pos, p, dequant, best->lpred, 0, best->rpred, 0, tree);
-      // "Sort" according to winning property
-      if (best->prop < tree_samples.NumStaticProps()) {
-        SplitTreeSamples<true>(tree_samples, begin, best->pos, end, best->prop,
-                               best->val);
-      } else {
-        SplitTreeSamples<false>(tree_samples, begin, best->pos, end,
+      if (best->is_two_sided) {
+        pixel_type dequant_high =
+            tree_samples.UnquantizeProperty(best->prop, best->val_high);
+        pixel_type dequant_low =
+            tree_samples.UnquantizeProperty(best->prop, best->val_low);
+
+        size_t child_high = 0;
+        size_t child_mid = 0;
+        size_t child_low = 0;
+        MakeTwoSidedSplitNode(pos, p, dequant_high, dequant_low, best->rpred,
+                              best->mpred, best->lpred, tree, &child_high,
+                              &child_mid, &child_low);
+
+        SplitTreeSamples<false>(tree_samples, begin, best->pos_mid, end,
                                 best->prop - tree_samples.NumStaticProps(),
-                                best->val);
+                                best->val_high);
+        SplitTreeSamples<false>(
+            tree_samples, begin, best->pos_low, best->pos_mid,
+            best->prop - tree_samples.NumStaticProps(), best->val_low);
+
+        nodes.push_back(
+            NodeInfo{child_high, best->pos_mid, end, static_prop_range});
+        nodes.push_back(NodeInfo{child_mid, best->pos_low, best->pos_mid,
+                                 static_prop_range});
+        nodes.push_back(
+            NodeInfo{child_low, begin, best->pos_low, static_prop_range});
+      } else {
+        pixel_type dequant =
+            tree_samples.UnquantizeProperty(best->prop, best->val);
+        // Split node and try to split children.
+        MakeSplitNode(pos, p, dequant, best->lpred, 0, best->rpred, 0, tree);
+        // "Sort" according to winning property
+        if (best->prop < tree_samples.NumStaticProps()) {
+          SplitTreeSamples<true>(tree_samples, begin, best->pos, end,
+                                 best->prop, best->val);
+        } else {
+          SplitTreeSamples<false>(tree_samples, begin, best->pos, end,
+                                  best->prop - tree_samples.NumStaticProps(),
+                                  best->val);
+        }
+        auto new_sp_range = static_prop_range;
+        if (p < kNumStaticProperties) {
+          JXL_DASSERT(static_cast<uint32_t>(dequant + 1) <= new_sp_range[p][1]);
+          new_sp_range[p][1] = dequant + 1;
+          JXL_DASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
+        }
+        nodes.push_back(
+            NodeInfo{(*tree)[pos].rchild, begin, best->pos, new_sp_range});
+        new_sp_range = static_prop_range;
+        if (p < kNumStaticProperties) {
+          JXL_DASSERT(new_sp_range[p][0] <= static_cast<uint32_t>(dequant + 1));
+          new_sp_range[p][0] = dequant + 1;
+          JXL_DASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
+        }
+        nodes.push_back(
+            NodeInfo{(*tree)[pos].lchild, best->pos, end, new_sp_range});
       }
-      auto new_sp_range = static_prop_range;
-      if (p < kNumStaticProperties) {
-        JXL_DASSERT(static_cast<uint32_t>(dequant + 1) <= new_sp_range[p][1]);
-        new_sp_range[p][1] = dequant + 1;
-        JXL_DASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
-      }
-      nodes.push_back(
-          NodeInfo{(*tree)[pos].rchild, begin, best->pos, new_sp_range});
-      new_sp_range = static_prop_range;
-      if (p < kNumStaticProperties) {
-        JXL_DASSERT(new_sp_range[p][0] <= static_cast<uint32_t>(dequant + 1));
-        new_sp_range[p][0] = dequant + 1;
-        JXL_DASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
-      }
-      nodes.push_back(
-          NodeInfo{(*tree)[pos].lchild, best->pos, end, new_sp_range});
     }
   }
 }
