@@ -409,19 +409,21 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
     } else if (visitor->Conditional(frame_type == FrameType::kReferenceOnly)) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->Bool(true, &save_before_color_transform));
-      size_t xsize = custom_size_or_origin ? frame_size.xsize
-                                           : nonserialized_metadata->xsize();
-      size_t ysize = custom_size_or_origin ? frame_size.ysize
-                                           : nonserialized_metadata->ysize();
-      if (!save_before_color_transform &&
-          (xsize < nonserialized_metadata->xsize() ||
-           ysize < nonserialized_metadata->ysize() || frame_origin.x0 != 0 ||
-           frame_origin.y0 != 0)) {
-        return JXL_FAILURE(
-            "non-patch reference frame with invalid crop: %" PRIuS "x%" PRIuS
-            "%+d%+d",
-            xsize, ysize, static_cast<int>(frame_origin.x0),
-            static_cast<int>(frame_origin.y0));
+      if (visitor->Conditional(nonserialized_metadata != nullptr)) {
+        size_t xsize = custom_size_or_origin ? frame_size.xsize
+                                             : nonserialized_metadata->xsize();
+        size_t ysize = custom_size_or_origin ? frame_size.ysize
+                                             : nonserialized_metadata->ysize();
+        if (!save_before_color_transform &&
+            (xsize < nonserialized_metadata->xsize() ||
+             ysize < nonserialized_metadata->ysize() || frame_origin.x0 != 0 ||
+             frame_origin.y0 != 0)) {
+          return JXL_FAILURE(
+              "non-patch reference frame with invalid crop: %" PRIuS "x%" PRIuS
+              "%+d%+d",
+              xsize, ysize, static_cast<int>(frame_origin.x0),
+              static_cast<int>(frame_origin.y0));
+        }
       }
     }
   } else {
