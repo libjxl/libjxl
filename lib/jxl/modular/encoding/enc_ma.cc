@@ -93,8 +93,9 @@ float EstimateBits(const int32_t *counts, size_t num_symbols) {
 // 3. Appropriate scaling to the sample domain:
 //    Scaled by pixel_fraction (with the finite-sample floor preventing noise
 //    overfitting).
-static constexpr float kSplitBaseMult = 0.85f;
+static constexpr float kSplitBaseMult = 0.72f;
 static constexpr float kSplitLogRatio = 0.052f;
+static constexpr float kOneSidedSymPenalty = 0.10f;
 
 static JXL_INLINE float ComputeSplitCost(pixel_type splitval, float threshold,
                                          float log_cost_ratio) {
@@ -209,6 +210,18 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
 
   float log_cost_ratio = kSplitLogRatio;
   threshold *= kSplitBaseMult;
+
+  size_t global_max_symbols = 0;
+  for (size_t pred = 0; pred < num_predictors; pred++) {
+    for (size_t i = 0; i < tree_samples.NumDistinctSamples(); i++) {
+      uint32_t tok = tree_samples.Token(pred, i);
+      global_max_symbols =
+          std::max(global_max_symbols, static_cast<size_t>(tok + 1));
+    }
+  }
+  const float alphabet_correction =
+      kOneSidedSymPenalty *
+      (global_max_symbols > 1 ? global_max_symbols - 1 : 0);
 
   // TODO(veluca): consider parallelizing the search (processing multiple nodes
   // at a time).
@@ -464,7 +477,8 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
                   : (uses_wp ? best_split_nonstatic : best_split_nowp);
           pixel_type splitval = tree_samples.UnquantizeProperty(prop, i);
           float split_cost =
-              ComputeSplitCost(splitval, threshold, log_cost_ratio);
+              ComputeSplitCost(splitval, threshold, log_cost_ratio) +
+              alphabet_correction;
           float total_cost = lcost + rcost + split_cost;
           if (total_cost < best_ref.Cost()) {
             best_ref.prop = prop;
