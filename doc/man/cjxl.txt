@@ -26,6 +26,7 @@ results in most cases:
 cjxl input.png output.jxl
 cjxl input.jpg output.jxl
 cjxl input.gif output.jxl
+cjxl input.tiff output.jxl
 ----
 
 Options
@@ -94,6 +95,9 @@ $ cjxl -q 100 input.png lossless.jxl
 
 # Compress a JPEG file losslessly.
 $ cjxl input.jpeg lossless-jpeg.jxl
+
+# Compress a TIFF file losslessly, preserving TIFF metadata in the JXL container.
+$ cjxl -d 0 input.tiff output.jxl
 ----
 
 See also

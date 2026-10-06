@@ -28,3 +28,6 @@
 [submodule "third_party/libjpeg-turbo"]
 	path = third_party/libjpeg-turbo
 	url = https://github.com/libjpeg-turbo/libjpeg-turbo.git
+[submodule "third_party/libtiff"]
+	path = third_party/libtiff
+	url = https://gitlab.com/libtiff/libtiff.git

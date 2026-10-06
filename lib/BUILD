@@ -5,6 +5,8 @@
 
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 # Load sources/headers/tests lists.
 load(
@@ -48,6 +50,7 @@ load(
     "libjxl_deps_png",
     "libjxl_deps_runfiles",
     "libjxl_deps_skcms",
+    "libjxl_deps_tiff",
     # "libjxl_deps_testdata",
     # "libjxl_deps_webp",
     "libjxl_root_package",
@@ -202,12 +205,19 @@ cc_library(
         "JPEGXL_ENABLE_EXR=1",
         "JPEGXL_ENABLE_GIF=1",
         "JPEGXL_ENABLE_JPEG=1",
+        "JPEGXL_ENABLE_TIFF=1",
     ],
-    deps = [
-        ":jpegxl_private",
-        ":jpegxl_threads",
-        ":jxl_version",
-    ] + libjxl_deps_exr + libjxl_deps_gif + libjxl_deps_jpeg + libjxl_deps_png,
+    deps = (
+        [
+            ":jpegxl_private",
+            ":jpegxl_threads",
+            ":jxl_version",
+        ] + libjxl_deps_exr +
+        libjxl_deps_gif +
+        libjxl_deps_jpeg +
+        libjxl_deps_png +
+        libjxl_deps_tiff
+    ),
 )
 
 TESTLIB_FILES = libjxl_testlib_files
