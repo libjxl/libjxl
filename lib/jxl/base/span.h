@@ -54,9 +54,19 @@ class Span {
 
   constexpr T* end() const noexcept { return data() + size(); }
 
-  constexpr T& operator[](size_t i) const noexcept {
-    // MSVC 2015 accepts this as constexpr, but not ptr_[i]
+  T& operator[](size_t i) const noexcept {
+    JXL_SECURITY_CHECK(i < len_);
     return *(data() + i);
+  }
+
+  Span<T> subspan(size_t offset, size_t count) const noexcept {
+    JXL_SECURITY_CHECK(offset <= len_ && count <= len_ - offset);
+    return Span<T>(ptr_ + offset, count);
+  }
+
+  Span<T> subspan(size_t offset) const noexcept {
+    JXL_SECURITY_CHECK(offset <= len_);
+    return Span<T>(ptr_ + offset, len_ - offset);
   }
 
   Status remove_prefix(size_t n) noexcept {
