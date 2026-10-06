@@ -71,11 +71,12 @@ jobs:
             base-devel
             git
             procps
+          # mingw32 has no pacboy GTest package, so use the bundled googletest submodule.
           pacboy: >-
             brotli:p
             cmake:p
             giflib:p
-            gtest:p
+            ${{ matrix.msystem != 'mingw32' && 'gtest:p' || '' }}
             ${{ matrix.msystem != 'mingw32' && 'libavif:p' || '' }}
             libjpeg-turbo:p
             libpng:p
@@ -90,7 +91,7 @@ jobs:
             -DJPEGXL_ENABLE_JNI=OFF \
             -DJPEGXL_ENABLE_MANPAGES=OFF \
             -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-            -DJPEGXL_FORCE_SYSTEM_GTEST=ON \
+            -DJPEGXL_FORCE_SYSTEM_GTEST=${{ matrix.msystem != 'mingw32' && 'ON' || 'OFF' }} \
             -B build \
             -G Ninja
 
