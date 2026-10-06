@@ -199,8 +199,8 @@ void VerifyRoundtripCompression(
   size_t orig_xsize = xsize;
   size_t orig_ysize = ysize;
   if (already_downsampled) {
-    orig_xsize = jxl::DivCeil(xsize, resampling);
-    orig_ysize = jxl::DivCeil(ysize, resampling);
+    orig_xsize = jxl::DivCeil<size_t>(xsize, resampling);
+    orig_ysize = jxl::DivCeil<size_t>(ysize, resampling);
   }
 
   JxlPixelFormat extra_channel_pixel_format = input_pixel_format;
