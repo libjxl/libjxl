@@ -238,7 +238,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   // computed in 64 bits, because the span of two in-range coordinates can
   // reach 2^31, which does not fit in `int`.
   constexpr int kEXRCoordBound = 1 << 30;
-  auto OutOfRange = [](int v) {
+  auto OutOfRange = [=](int v) {
     return v < -kEXRCoordBound || v > kEXRCoordBound;
   };
   if (OutOfRange(display_window.min.x) || OutOfRange(display_window.max.x) ||
