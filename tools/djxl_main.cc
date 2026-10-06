@@ -97,7 +97,7 @@ struct DecompressArgs {
 
     cmdline->AddOptionValue('\0', "display_nits", "N",
                             "If set to a non-zero value, tone maps the image "
-                            "the given peak display luminance.",
+                            "to the given peak display luminance.",
                             &display_nits, &ParseDouble, 1);
 
     cmdline->AddOptionValue(
