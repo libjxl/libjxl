@@ -85,9 +85,15 @@ static int QuantizeColorToImplicitPaletteIndex(
   if (high_quality) {
     int multiplier = 1;
     for (int value : color) {
-      int quantized = ((kLargeCube - 1) * value + half) / quant;
-      JXL_DASSERT((quantized % kLargeCube) == quantized);
-      index += quantized * multiplier;
+      // Compute in int64 and clamp: a sample outside the declared bit depth
+      // (API misuse) would overflow the int arithmetic and break the
+      // [0, kLargeCube) invariant the decoder relies on.
+      int64_t quantized = (static_cast<int64_t>(kLargeCube - 1) * value +
+                           half) /
+                          quant;
+      quantized = std::min<int64_t>(std::max<int64_t>(quantized, 0),
+                                    kLargeCube - 1);
+      index += static_cast<int>(quantized) * multiplier;
       multiplier *= kLargeCube;
     }
     return index + palette_size + kLargeCubeOffset;
@@ -96,8 +102,11 @@ static int QuantizeColorToImplicitPaletteIndex(
     for (int value : color) {
       value -= 1 << (std::max(0, bit_depth - 3));
       value = std::max(0, value);
-      int quantized = ((kLargeCube - 1) * value + half) / quant;
-      JXL_DASSERT((quantized % kLargeCube) == quantized);
+      int64_t quantized = (static_cast<int64_t>(kLargeCube - 1) * value +
+                           half) /
+                          quant;
+      quantized =
+          std::min<int64_t>(std::max<int64_t>(quantized, 0), kLargeCube - 1);
       if (quantized > kSmallCube - 1) {
         quantized = kSmallCube - 1;
       }
