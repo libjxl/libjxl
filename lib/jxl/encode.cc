@@ -2636,10 +2636,10 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
   if (//!frame_settings->values.cparams.disable_perceptual_optimizations &&
      !frame_settings->enc->metadata.m.xyb_encoded &&
      // Change this to values.lossless.
-     !frame_settings->values.cparams.modular_mode) {
+     !frame_settings->values.cparams.modular_mode &&
+     !frame_data.IsJPEG()) {
     return JXL_API_ERROR(
-        // Change to JXL_ENC_ERR_API_USAGE.
-        frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+        frame_settings->enc, JXL_ENC_ERR_API_USAGE,
         // Change to "perceptual lossy encoding".
         "Set uses_original_profile=false for VarDCT lossy encoding");
   }
