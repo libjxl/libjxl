@@ -29,6 +29,7 @@
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
+#include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
@@ -223,10 +224,8 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   if (!allow_truncated_group ||
       reader->TotalBitsConsumed() < reader->TotalBytes() * kBitsPerByte) {
     if (has_tree) {
-      size_t tree_size_limit =
-          std::min(static_cast<size_t>(1 << 22),
-                   1024 + frame_dim.xsize * frame_dim.ysize *
-                              (nb_chans + nb_extra) / 16);
+      size_t tree_size_limit = MaxGlobalTreeSize(
+          frame_dim.xsize, frame_dim.ysize, nb_chans + nb_extra);
       JXL_RETURN_IF_ERROR(
           DecodeTree(memory_manager, reader, &tree, tree_size_limit));
       JXL_RETURN_IF_ERROR(DecodeHistograms(
