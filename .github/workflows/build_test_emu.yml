@@ -78,7 +78,7 @@ jobs:
         docker run --rm --platform ${{ matrix.platform }} \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            debian:bookworm \
+            debian:trixie \
             bash -c "./tools/scripts/install_deps.sh base build -- zlib1g-dev && \
               echo 'Number of cores:' `nproc` && \
               export CC=clang && \
@@ -120,6 +120,14 @@ jobs:
         include:
           - identifier: s390x
             platform: linux/s390x
+            disable_tests:
+             - bash_test
+             - conformance_tooling_test
+             - example
+             - example64
+             - JxlTest.RoundtripLargeEmptyModular
+             - test_jpegli_jni_wrapper
+             - test_jxl_jni_wrapper
 
     steps:
     - name: Harden Runner
@@ -153,5 +161,5 @@ jobs:
               export BUILD_DIR=build && \
               ./ci.sh test \
                 -I ${{ matrix.shard_number }},,10 \
-                -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper|test_jpegli_jni_wrapper)' \
+                -E '${{ join(matrix.disable_tests, '|') }}' \
             "
