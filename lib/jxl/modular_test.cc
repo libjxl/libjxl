@@ -51,6 +51,7 @@
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/transform/enc_palette.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/squeeze_params.h"
 #include "lib/jxl/modular/transform/transform.h"
@@ -177,6 +178,42 @@ TEST(ModularTest, RoundtripLosslessCustomWpPermuteRCT) {
   EXPECT_EQ(0.0f, test::ComputeDistance2(t.ppf(), ppf_out));
 }
 
+
+TEST(ModularTest, Float32SingleChannelPaletteRegression) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(Image image,
+                         Image::Create(memory_manager, 512, 512,
+                                       /*bitdepth=*/32, /*nb_chans=*/1));
+
+  auto float_bits = [](float value) -> pixel_type {
+    uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return static_cast<pixel_type>(bits);
+  };
+  const pixel_type values[4] = {float_bits(-1.0f), float_bits(-1e-6f),
+                                float_bits(0.25f), float_bits(0.5f)};
+  uint32_t state = 0x12345678u;
+  for (size_t y = 0; y < image.h; ++y) {
+    pixel_type* row = image.channel[0].Row(y);
+    for (size_t x = 0; x < image.w; ++x) {
+      state = state * 1664525u + 1013904223u;
+      row[x] = values[(state >> 30) & 3];
+    }
+  }
+
+  uint32_t nbColors = 1024;
+  uint32_t nbDeltas = 0;
+  Predictor predictor = Predictor::Variable;
+  weighted::Header wpHeader;
+  JXL_EXPECT_OK(FwdPalette(image, /*begin_c=*/0, /*end_c=*/0, nbColors,
+                           nbDeltas, /*ordered=*/true, /*lossy=*/false,
+                           predictor, wpHeader));
+
+  EXPECT_EQ(1u, image.nb_meta_channels);
+  EXPECT_EQ(2u, image.channel.size());
+  EXPECT_EQ(Predictor::Zero, predictor);
+  EXPECT_GT(nbColors, 0u);
+}
 TEST(ModularTest, RoundtripLossyDeltaPalette) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::vector<uint8_t> orig =
