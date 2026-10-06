@@ -26,7 +26,7 @@ jobs:
   build_test:
     name: Windows MSYS2 / ${{ matrix.msystem }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os || 'windows-latest' }}
     continue-on-error: ${{ matrix.faulty || false }}
     strategy:
       fail-fast: false
@@ -45,6 +45,8 @@ jobs:
          # clang32 is already missing required "gtest" and "libavif"
          # - msystem: clang32
          #   disable_benchmark: true
+         - msystem: clangarm64
+           os: windows-11-arm
 
     defaults:
       run:
