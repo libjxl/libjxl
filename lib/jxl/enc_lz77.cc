@@ -637,12 +637,142 @@ std::vector<std::vector<Token>> ApplyLZ77_LZ77(
   return {};
 }
 
+// Greedy LZ77 with lazy matching, a hash chain of up to 256 candidates and a
+// per-match cost check (the greedy method before #4928). Used as the first pass
+// of ApplyLZ77_Optimal for small inputs. Unlike ApplyLZ77_LZ77, it only takes
+// matches that are cheaper than the literals they replace. On small token
+// streams, taking every match can make LZ77 look useless, and then optimal
+// matching is skipped altogether.
+constexpr uint32_t kLazyGreedyChainLength = 256;
+// Inputs with fewer tokens than this use ApplyLZ77_LazyGreedy as the first pass
+// of ApplyLZ77_Optimal (and all inputs with lz77_careful_first_pass).
+constexpr size_t kLazyGreedyMaxTokens = size_t{1} << 16;
+
+std::vector<std::vector<Token>> ApplyLZ77_LazyGreedy(
+    const HistogramParams& params, size_t num_contexts,
+    const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77) {
+  std::vector<std::vector<Token>> tokens_lz77(tokens.size());
+  SymbolCostEstimator sce(num_contexts, params.force_huffman, tokens, lz77);
+  float bit_decrease = 0;
+  size_t total_symbols = 0;
+  HybridUintConfig uint_config;
+  std::vector<float> sym_cost;
+  for (size_t stream = 0; stream < tokens.size(); stream++) {
+    size_t distance_multiplier =
+        params.image_widths.size() > stream ? params.image_widths[stream] : 0;
+    const auto& in = tokens[stream];
+    auto& out = tokens_lz77[stream];
+    total_symbols += in.size();
+    // Cumulative sum of bit costs.
+    sym_cost.resize(in.size() + 1);
+    for (size_t i = 0; i < in.size(); i++) {
+      uint32_t tok, nbits, unused_bits;
+      uint_config.Encode(in[i].value, &tok, &nbits, &unused_bits);
+      sym_cost[i + 1] = sce.Bits(in[i].context, tok) + nbits + sym_cost[i];
+    }
+
+    out.reserve(in.size());
+    size_t max_distance = in.size();
+    size_t min_length = lz77.min_length;
+    JXL_DASSERT(min_length >= 3);
+    size_t max_length = in.size();
+
+    // Use next power of two as window size.
+    size_t window_size = 1;
+    while (window_size < max_distance && window_size < kWindowSize) {
+      window_size <<= 1;
+    }
+
+    HashChain<kLazyGreedyChainLength> chain(in.data(), in.size(), window_size,
+                                            min_length, max_length,
+                                            distance_multiplier);
+    size_t len;
+    size_t dist_symbol;
+
+    const size_t max_lazy_match_len = 256;  // 0 to disable lazy matching
+
+    // Whether the next symbol was already updated (to test lazy matching)
+    bool already_updated = false;
+    for (size_t i = 0; i < in.size(); i++) {
+      out.push_back(in[i]);
+      if (!already_updated) chain.Update(i);
+      already_updated = false;
+      chain.FindMatch(i, max_distance, &dist_symbol, &len);
+      if (len >= min_length) {
+        if (len < max_lazy_match_len && i + 1 < in.size()) {
+          // Try length at next symbol lazy matching
+          chain.Update(i + 1);
+          already_updated = true;
+          size_t len2, dist_symbol2;
+          chain.FindMatch(i + 1, max_distance, &dist_symbol2, &len2);
+          if (len2 > len) {
+            // Use the lazy match. Add literal, and use the next length starting
+            // from the next byte.
+            ++i;
+            already_updated = false;
+            len = len2;
+            dist_symbol = dist_symbol2;
+            out.push_back(in[i]);
+          }
+        }
+
+        float cost = sym_cost[i + len] - sym_cost[i];
+        size_t lz77_len = len - lz77.min_length;
+        float lz77_cost = LenCost(lz77_len) + DistCost(dist_symbol) +
+                          sce.AddSymbolCost(out.back().context);
+
+        if (lz77_cost <= cost) {
+          out.back().value = len - min_length;
+          out.back().is_lz77_length = true;
+          out.emplace_back(
+              static_cast<uint32_t>(lz77.nonserialized_distance_context),
+              static_cast<uint32_t>(dist_symbol));
+          bit_decrease += cost - lz77_cost;
+        } else {
+          // LZ77 match ignored, and symbol already pushed. Push all other
+          // symbols and skip.
+          for (size_t j = 1; j < len; j++) {
+            out.push_back(in[i + j]);
+          }
+        }
+
+        if (already_updated) {
+          chain.Update(i + 2, len - 2);
+          already_updated = false;
+        } else {
+          chain.Update(i + 1, len - 1);
+        }
+        i += len - 1;
+      } else {
+        // Literal, already pushed
+      }
+    }
+  }
+
+  if (bit_decrease > total_symbols * 0.2 + 16) {
+    return tokens_lz77;
+  }
+  return {};
+}
+
+// Matches longer than this: the optimal parse skips the positions inside
+// them (but the last ones).
+constexpr size_t kLongMatch = 4096;
+
 template <uint32_t kMaxChainLength>
 std::vector<std::vector<Token>> ApplyLZ77_Optimal(
     const HistogramParams& params, size_t num_contexts,
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77) {
+  // First pass: decides whether optimal matching runs, and gives the symbol
+  // cost estimate. Small inputs (ICC profiles, MA trees, small images) use the
+  // slower lazy greedy method: the fast one can reject LZ77 for them although
+  // it pays off. For large inputs the fast method is good enough.
+  size_t total_tokens = 0;
+  for (const auto& stream : tokens) total_tokens += stream.size();
   std::vector<std::vector<Token>> tokens_for_cost_estimate =
-      ApplyLZ77_LZ77(params, num_contexts, tokens, lz77);
+      params.lz77_careful_first_pass || total_tokens < kLazyGreedyMaxTokens
+          ? ApplyLZ77_LazyGreedy(params, num_contexts, tokens, lz77)
+          : ApplyLZ77_LZ77(params, num_contexts, tokens, lz77);
   // If greedy-LZ77 does not give better compression than no-lz77, no reason to
   // run the optimal matching.
   if (tokens_for_cost_estimate.empty()) return {};
@@ -748,6 +878,13 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
         rle_length = 0;
       }
       if (rle_length >= 8 && dist_symbols.size() > 9) {
+        skip_lz77 = dist_symbols.size() - 10;
+        rle_length = 0;
+      } else if (dist_symbols.size() > kLongMatch) {
+        // Inside a long match (a repeated block, e.g. many identical splines)
+        // the matches that start there are mostly its own tails, and finding
+        // them costs as much as the match is long: skip to its last symbols,
+        // as for runs.
         skip_lz77 = dist_symbols.size() - 10;
         rle_length = 0;
       }

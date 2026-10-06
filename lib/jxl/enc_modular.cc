@@ -334,10 +334,50 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
                     const CompressParams& cparams_,
                     float channel_colors_percent,
                     jxl::ThreadPool* pool = nullptr) {
+  if (cparams_.custom_palette.enabled) {
+    const CompressParams::CustomPalette& cp = cparams_.custom_palette;
+    if (cp.num_c == 0 || gi.nb_meta_channels + cp.num_c > gi.channel.size()) {
+      return JXL_FAILURE("Custom palette: invalid number of channels");
+    }
+    Transform palette(TransformId::kPalette);
+    palette.begin_c = gi.nb_meta_channels;
+    palette.num_c = cp.num_c;
+    palette.nb_colors = cp.nb_colors;
+    palette.nb_deltas = cp.nb_deltas;
+    palette.predictor = cp.predictor;
+    // Only the channel layout changes: the pixels (indices) and the palette
+    // entries are what the encoder codes for them.
+    JXL_RETURN_IF_ERROR(palette.MetaApply(gi));
+    gi.transform.push_back(palette);
+    if (!cp.entries.empty()) {
+      // The meta channel (channel 0 after MetaApply) holds the entries.
+      Channel& meta = gi.channel[0];
+      if (cp.entries.size() != meta.h) {
+        return JXL_FAILURE("Custom palette: wrong number of components");
+      }
+      for (size_t c = 0; c < meta.h; c++) {
+        if (cp.entries[c].size() != meta.w) {
+          return JXL_FAILURE("Custom palette: wrong number of entries");
+        }
+        pixel_type* row = meta.Row(c);
+        for (size_t i = 0; i < meta.w; i++) row[i] = cp.entries[c][i];
+      }
+    }
+    return true;
+  }
   float cost_before = 0.f;
   size_t did_palette = 0;
   float nb_pixels = gi.channel[0].w * gi.channel[0].h;
   int nb_chans = gi.channel.size() - gi.nb_meta_channels;
+  // jxl_from_tree's hidden channels are not part of a delta palette: they
+  // were moved in front already (see ComputeEncodingData), the palette is on
+  // the channels after them.
+  size_t first_c = gi.nb_meta_channels;
+  if (cparams_.lossy_palette && cparams_.move_to_front_from_channel > 0 &&
+      nb_chans > cparams_.move_to_front_from_channel) {
+    first_c += nb_chans - cparams_.move_to_front_from_channel;
+    nb_chans = cparams_.move_to_front_from_channel;
+  }
   // arbitrary estimate: 4.8 bpp for 8-bit RGB
   float arbitrary_bpp_estimate = 0.2f * gi.bitdepth * nb_chans;
 
@@ -351,7 +391,7 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
     // all-channel palette (e.g. RGBA)
     if (nb_chans > 1) {
       Transform maybe_palette(TransformId::kPalette);
-      maybe_palette.begin_c = gi.nb_meta_channels;
+      maybe_palette.begin_c = first_c;
       maybe_palette.num_c = nb_chans;
       // Heuristic choice of max colors for a palette:
       // max_colors = nb_pixels * estimated_bpp_without_palette * 0.0005 +
@@ -677,6 +717,9 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
   // TODO(veluca): figure out how to use different predictor sets per channel.
   stream_options_.resize(num_streams, cparams_.options);
 
+  if (!cparams_.custom_residuals.empty()) {
+    cparams_.options.residual_patterns = &cparams_.custom_residuals;
+  }
   stream_options_[0] = cparams_.options;
   if (cparams_.speed_tier == SpeedTier::kFalcon) {
     stream_options_[0].tree_kind = ModularOptions::TreeKind::kWPFixedDC;
@@ -708,6 +751,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   if (do_color && metadata.bit_depth.bits_per_sample <= 16 &&
+      cparams_.custom_patches.empty() &&
       cparams_.speed_tier < SpeedTier::kCheetah &&
       cparams_.decoding_speed_tier < 2 && !groupwise) {
     JXL_RETURN_IF_ERROR(FindBestPatchDictionary(
@@ -715,12 +759,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
         cparams_.color_transform == ColorTransform::kXYB));
     JXL_RETURN_IF_ERROR(PatchDictionaryEncoder::SubtractFrom(
         enc_state->shared.image_features.patches, color));
-  }
-
-  if (cparams_.custom_splines.HasAny()) {
-    PassesSharedState& shared = enc_state->shared;
-    ImageFeatures& image_features = shared.image_features;
-    image_features.splines.SetData(cparams_.custom_splines);
   }
 
   // Convert ImageBundle to modular Image object
@@ -886,6 +924,51 @@ Status ModularFrameEncoder::ComputeEncodingData(
     cparams_.lossy_palette = false;
   }
 
+  // The channel layout before the global transforms (for
+  // ComputeDecodedRange, which replays them to get their parameters).
+  pre_transform_layout_.clear();
+  for (const Channel& ch : gi.channel) {
+    pre_transform_layout_.push_back({ch.w, ch.h, ch.hshift, ch.vshift});
+  }
+  pre_transform_meta_ = gi.nb_meta_channels;
+
+  // jxl_from_tree's hidden channels (the last ones) go in front of the
+  // others (after any meta channels), so the tree sees them first.
+  const size_t channels_before_palette = gi.channel.size();
+  const auto move_hidden_to_front = [&]() {
+    if (cparams_.move_to_front_from_channel <= 0 ||
+        channels_before_palette <=
+            static_cast<size_t>(cparams_.move_to_front_from_channel)) {
+      return;
+    }
+    const size_t nch =
+        channels_before_palette - cparams_.move_to_front_from_channel;
+    const size_t start = gi.nb_meta_channels;
+    const size_t dist = gi.channel.size() - nch - start;
+    for (size_t tgt = start; tgt < start + nch; tgt++) {
+      size_t pos = dist;
+      while (pos > 0) {
+        Transform move(TransformId::kRCT);
+        if (pos == 1) {
+          move.begin_c = tgt;
+          move.rct_type = 28;  // RGB -> GRB
+          pos -= 1;
+        } else {
+          move.begin_c = tgt + pos - 2;
+          move.rct_type = 14;  // RGB -> BRG
+          pos -= 2;
+        }
+        do_transform(gi, move, weighted::Header(), pool);
+      }
+    }
+  };
+  // Before a delta palette (which then covers the channels after them), else
+  // after the colour transforms.
+  bool hidden_moved = false;
+  if (cparams_.lossy_palette) {
+    move_hidden_to_front();
+    hidden_moved = true;
+  }
   // Global palette transforms
   float channel_colors_percent = 0;
   if (!cparams_.lossy_palette &&
@@ -895,8 +978,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
     // Global palette causes bad progressive loading due to interpolation
     // but lossy palette is still required for JXL art.
-  if (!groupwise && (cparams_.lossy_palette ||
-      !(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
+  if (!groupwise &&
+      (cparams_.lossy_palette || cparams_.custom_palette.enabled ||
+       !(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
     JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams_,
                                      channel_colors_percent, pool));
   }
@@ -921,25 +1005,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
   }
 
-  if (cparams_.move_to_front_from_channel > 0) {
-    for (size_t tgt = 0;
-         tgt + cparams_.move_to_front_from_channel < gi.channel.size(); tgt++) {
-      size_t pos = cparams_.move_to_front_from_channel;
-      while (pos > 0) {
-        Transform move(TransformId::kRCT);
-        if (pos == 1) {
-          move.begin_c = tgt;
-          move.rct_type = 28;  // RGB -> GRB
-          pos -= 1;
-        } else {
-          move.begin_c = tgt + pos - 2;
-          move.rct_type = 14;  // RGB -> BRG
-          pos -= 2;
-        }
-        do_transform(gi, move, weighted::Header(), pool);
-      }
-    }
-  }
+  if (!hidden_moved) move_hidden_to_front();
 
   // don't do squeeze if we don't have some spare bits
   if (!groupwise && cparams_.responsive && !gi.channel.empty() &&
@@ -1281,6 +1347,195 @@ Status ModularFrameEncoder::ComputeTokens(ThreadPool* pool) {
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_streams, ThreadPool::NoInit,
                                 process_stream, "ComputeTokens"));
+  if ((cparams_.modular_range_out != nullptr ||
+       cparams_.modular_channel_ranges_out != nullptr) &&
+      !cparams_.custom_fixed_tree.empty()) {
+    int64_t lo = std::numeric_limits<int64_t>::max();
+    int64_t hi = std::numeric_limits<int64_t>::min();
+    JXL_RETURN_IF_ERROR(ComputeDecodedRange(&lo, &hi));
+    if (cparams_.modular_range_out != nullptr) {
+      cparams_.modular_range_out[0] =
+          std::min(cparams_.modular_range_out[0], lo);
+      cparams_.modular_range_out[1] =
+          std::max(cparams_.modular_range_out[1], hi);
+    }
+  }
+  return true;
+}
+
+namespace {
+void UpdateRange(const Image& image, int64_t* lo, int64_t* hi) {
+  for (const Channel& ch : image.channel) {
+    for (size_t y = 0; y < ch.h; y++) {
+      const pixel_type* row = ch.Row(y);
+      for (size_t x = 0; x < ch.w; x++) {
+        *lo = std::min<int64_t>(*lo, row[x]);
+        *hi = std::max<int64_t>(*hi, row[x]);
+      }
+    }
+  }
+}
+
+// Undoes the transforms of `image` one by one (a Squeeze step by step: its
+// partly unsqueezed channels are buffers too), noting the range after each.
+Status UndoTransformsWithRange(Image& image, const weighted::Header& wp_header,
+                               int64_t* lo, int64_t* hi) {
+  while (!image.transform.empty()) {
+    Transform t = image.transform.back();
+    image.transform.pop_back();
+    if (t.id == TransformId::kSqueeze) {
+      const std::vector<SqueezeParams>& steps = t.squeezes;
+      if (steps.empty()) {
+        // (No steps: undo it at once.)
+        JXL_RETURN_IF_ERROR(t.Inverse(image, wp_header));
+        UpdateRange(image, lo, hi);
+        continue;
+      }
+      for (size_t i = steps.size(); i-- > 0;) {
+        Transform step(TransformId::kSqueeze);
+        step.squeezes = {steps[i]};
+        JXL_RETURN_IF_ERROR(step.Inverse(image, wp_header));
+        UpdateRange(image, lo, hi);
+      }
+      continue;
+    }
+    JXL_RETURN_IF_ERROR(t.Inverse(image, wp_header));
+    UpdateRange(image, lo, hi);
+  }
+  return true;
+}
+
+// A copy of the channel layout and transforms of `from`, with its samples.
+StatusOr<Image> CopyLayout(const Image& from) {
+  Image out(from.memory_manager());
+  out.w = from.w;
+  out.h = from.h;
+  out.bitdepth = from.bitdepth;
+  out.nb_meta_channels = from.nb_meta_channels;
+  out.transform = from.transform;
+  for (const Channel& fc : from.channel) {
+    JXL_ASSIGN_OR_RETURN(Channel ch,
+                         Channel::Create(from.memory_manager(), fc.w, fc.h,
+                                         fc.hshift, fc.vshift));
+    if (fc.plane.xsize() >= fc.w && fc.plane.ysize() >= fc.h) {
+      for (size_t y = 0; y < fc.h; y++) {
+        memcpy(ch.Row(y), fc.Row(y), fc.w * sizeof(pixel_type));
+      }
+    } else {
+      ZeroFillImage(&ch.plane);
+    }
+    out.channel.emplace_back(std::move(ch));
+  }
+  return out;
+}
+}  // namespace
+
+Status ModularFrameEncoder::ComputeDecodedRange(int64_t* lo, int64_t* hi) {
+  const auto pattern_for = [&](size_t stream) -> const ResidualPattern* {
+    const auto* patterns = stream_options_[0].residual_patterns;
+    if (patterns == nullptr) return nullptr;
+    auto it = patterns->find(static_cast<int>(stream));
+    if (it == patterns->end()) it = patterns->find(-1);
+    return it == patterns->end() ? nullptr : &it->second;
+  };
+  const bool single_stream = frame_dim_.num_groups == 1;
+  const Image& image0 = stream_images_[0];
+  JXL_ASSIGN_OR_RETURN(Image full, CopyLayout(image0));
+  // The channels that the global stream codes: the meta channels and the
+  // ones that fit in a group (all of them with a single group).
+  size_t coded0 = 0;
+  while (coded0 < full.channel.size() &&
+         (single_stream || coded0 < full.nb_meta_channels ||
+          (full.channel[coded0].w <= frame_dim_.group_dim &&
+           full.channel[coded0].h <= frame_dim_.group_dim))) {
+    coded0++;
+  }
+  // Coded palette entries (code_meta_channels) are samples, not predictions.
+  const size_t first0 =
+      stream_options_[0].code_meta_channels ? full.nb_meta_channels : 0;
+  JXL_RETURN_IF_ERROR(EvaluateTreeWithResiduals(tree_, 0, pattern_for(0),
+                                                first0, coded0, &full, lo, hi,
+                                                stream_headers_[0].wp_header));
+  std::vector<bool> covered(stream_images_.size(), false);
+  covered[0] = true;
+  if (!single_stream) {
+    for (const GroupParams& params : stream_params_) {
+      const size_t stream = params.id.ID(frame_dim_);
+      if (stream == 0 || stream_images_[stream].channel.empty()) continue;
+      covered[stream] = true;
+      JXL_ASSIGN_OR_RETURN(Image g, CopyLayout(stream_images_[stream]));
+      JXL_RETURN_IF_ERROR(EvaluateTreeWithResiduals(
+          tree_, stream, pattern_for(stream), 0, g.channel.size(), &g, lo, hi,
+          stream_headers_[stream].wp_header));
+      JXL_RETURN_IF_ERROR(UndoTransformsWithRange(
+          g, stream_headers_[stream].wp_header, lo, hi));
+      for (size_t j = 0; j < g.channel.size() && j < gi_channel_[stream].size();
+           j++) {
+        Channel& fc = full.channel[gi_channel_[stream][j]];
+        const Rect& rect = params.rect;
+        Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
+               rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w,
+               fc.h);
+        for (size_t y = 0; y < r.ysize() && y < g.channel[j].h; y++) {
+          memcpy(r.Row(&fc.plane, y), g.channel[j].Row(y),
+                 std::min(r.xsize(), g.channel[j].w) * sizeof(pixel_type));
+        }
+      }
+    }
+  }
+  // Streams that are not part of the modular image (e.g. the LF and HF
+  // metadata of VarDCT frames): their own range.
+  for (size_t stream = 1; stream < stream_images_.size(); stream++) {
+    if (covered[stream] || stream_images_[stream].channel.empty()) continue;
+    JXL_ASSIGN_OR_RETURN(Image g, CopyLayout(stream_images_[stream]));
+    JXL_RETURN_IF_ERROR(EvaluateTreeWithResiduals(
+        tree_, stream, pattern_for(stream), 0, g.channel.size(), &g, lo, hi,
+        stream_headers_[stream].wp_header));
+    JXL_RETURN_IF_ERROR(
+        UndoTransformsWithRange(g, stream_headers_[stream].wp_header, lo, hi));
+  }
+  // The global transforms with their parameters as a decoder derives them
+  // (the default steps of a Squeeze are not kept), by replaying them on the
+  // layout they were applied to.
+  if (!pre_transform_layout_.empty()) {
+    Image layout(full.memory_manager());
+    layout.w = full.w;
+    layout.h = full.h;
+    layout.bitdepth = full.bitdepth;
+    layout.nb_meta_channels = pre_transform_meta_;
+    for (const ChannelLayout& cl : pre_transform_layout_) {
+      JXL_ASSIGN_OR_RETURN(Channel ch,
+                           Channel::Create(full.memory_manager(), cl.w, cl.h,
+                                           cl.hshift, cl.vshift));
+      layout.channel.emplace_back(std::move(ch));
+    }
+    std::vector<Transform> replayed;
+    for (Transform t : full.transform) {
+      JXL_RETURN_IF_ERROR(t.MetaApply(layout));
+      replayed.push_back(t);
+    }
+    full.transform = replayed;
+  }
+  JXL_RETURN_IF_ERROR(
+      UndoTransformsWithRange(full, stream_headers_[0].wp_header, lo, hi));
+  if (auto* ranges = cparams_.modular_channel_ranges_out) {
+    if (ranges->size() < full.channel.size()) {
+      ranges->resize(full.channel.size(),
+                     {std::numeric_limits<int64_t>::max(),
+                      std::numeric_limits<int64_t>::min()});
+    }
+    for (size_t c = 0; c < full.channel.size(); c++) {
+      const Channel& ch = full.channel[c];
+      auto& r = (*ranges)[c];
+      for (size_t y = 0; y < ch.h; y++) {
+        const pixel_type* row = ch.Row(y);
+        for (size_t x = 0; x < ch.w; x++) {
+          r.first = std::min<int64_t>(r.first, row[x]);
+          r.second = std::max<int64_t>(r.second, row[x]);
+        }
+      }
+    }
+  }
   return true;
 }
 
@@ -1318,6 +1573,13 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
   params.streaming_mode = streaming_mode;
   params.add_missing_symbols = streaming_mode;
   params.image_widths = image_widths_;
+  // Residual patterns come as tokens with LZ77 applied.
+  params.tokens_have_lz77 = cparams_.options.residual_patterns != nullptr;
+  if (cparams_.flat_nibble_code) {
+    params.force_huffman = true;
+    params.uint_method = HistogramParams::HybridUintMethod::kNone;
+    params.flat_nibble_code = true;
+  }
   // Write histograms.
   JXL_ASSIGN_OR_RETURN(
       size_t cost, BuildAndEncodeHistograms(
@@ -1426,8 +1688,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // Local palette transforms
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
+    // (A custom palette is global: the group images already hold its
+    // indices.)
     if (cparams_.ModularPartIsLossless() && !cparams.responsive &&
-        !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
+        !cparams.lossy_palette && !cparams.custom_palette.enabled &&
+        cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
         channel_color_percent = cparams.channel_colors_percent;
@@ -1530,7 +1795,10 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   } else if (cparams.speed_tier <= SpeedTier::kKitten) {
     nb_wp_modes = 2;
   }
-  if (nb_wp_modes > 1 &&
+  // With a fixed tree (jxl_from_tree), the image is not what gets coded (it
+  // can hold placeholder channels), so a search on it only picks a mode at
+  // random: keep the default.
+  if (nb_wp_modes > 1 && cparams_.custom_fixed_tree.empty() &&
       PredictorHasWeighted(stream_options_[stream_id].predictor)) {
     float best_cost = std::numeric_limits<float>::max();
     stream_options_[stream_id].wp_mode = 0;
@@ -1800,6 +2068,11 @@ Status ModularFrameEncoder::AddACMetadata(const Rect& r, size_t group_index,
       num++;
     }
   }
+  if (cparams_.vardct_from_tree) {
+    // The AC strategies came from the tree, evaluated with one entry per block
+    // (see ComputeVarDCTDataFromTree): keep that count.
+    num = r.xsize() * r.ysize();
+  }
   image.channel[2].w = num;
   ac_metadata_size[group_index] = num;
   return true;
@@ -1848,6 +2121,9 @@ Status ModularFrameEncoder::AddQuantTable(size_t size_x, size_t size_y,
   JxlMemoryManager* memory_manager = image.memory_manager();
   JXL_ASSIGN_OR_RETURN(image,
                        Image::Create(memory_manager, size_x, size_y, 8, 3));
+  // Decoders read quantization tables without a channel size limit, so the
+  // table must not be cut off at the group size (tables are up to 256x256).
+  stream_options_[stream_id].max_chan_size = ModularOptions().max_chan_size;
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < size_y; y++) {
       int32_t* JXL_RESTRICT row = image.channel[c].Row(y);

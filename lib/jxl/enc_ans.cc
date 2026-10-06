@@ -850,12 +850,21 @@ Status EntropyEncodingData::ChooseUintConfigs(
       Histogram histo;
       histo.EnsureCapacity(capacity);
       size_t len = histo_volume[h];
+      // A context whose values are all 0 has one symbol at zero bits per token
+      // in every config: its cost does not depend on the number of tokens, so
+      // one token gives the same choice (and spares a pass over millions of
+      // zero residuals per config). The histogram kept for the context must
+      // still count all of them (LZ77 length symbols are added to it below), so
+      // the other tokens' count goes straight to that symbol.
+      const bool all_zero = max_v == 0 && len > 1;
+      if (all_zero) len = 1;
       uint32_t* data = transposed.data() + histo_offset[h];
       size_t extra_bits = EstimateTokenCost(data, len, cfg, tmp);
       uint32_t* tmp_tokens = tmp.address<uint32_t>();
       for (size_t i = 0; i < len; ++i) {
         histo.FastAdd(tmp_tokens[i]);
       }
+      if (all_zero) histo.counts[tmp_tokens[0]] += histo_volume[h] - 1;
       histo.Condition();
       JXL_ASSIGN_OR_RETURN(float cost, histo.ANSPopulationCost());
       cost += extra_bits;
@@ -964,6 +973,23 @@ StatusOr<size_t> EntropyEncodingData::BuildAndStoreEntropyCodes(
     }
   }
 
+  if (params.flat_nibble_code && use_prefix_code) {
+    for (size_t c = prev_histograms; c < clustered_histograms.size(); ++c) {
+      const Histogram& h = clustered_histograms[c];
+      size_t used = 0;
+      bool small = true;
+      for (size_t s = 0; s < h.counts.size(); ++s) {
+        if (h.counts[s] == 0) continue;
+        used++;
+        if (s >= 16) small = false;
+      }
+      if (small && used > 2) {
+        Histogram flat;
+        for (size_t s = 0; s < 16; ++s) flat.Add(s);
+        clustered_histograms[c] = flat;
+      }
+    }
+  }
   JXL_RETURN_IF_ERROR(
       ChooseUintConfigs(memory_manager, params, tokens, clustered_histograms));
 
@@ -1079,6 +1105,71 @@ Status EncodeHistograms(const EntropyEncodingData& codes, BitWriter* writer,
       /*finished_histogram=*/true);
 }
 
+StatusOr<size_t> EncodeFixedTokenHistograms(JxlMemoryManager* memory_manager,
+                                            const std::vector<uint32_t>& tokens,
+                                            EntropyEncodingData* codes,
+                                            BitWriter* writer, LayerType layer,
+                                            AuxOut* aux_out) {
+  // One cluster per distinct token, in order of first use.
+  std::vector<uint32_t> cluster_tokens;
+  std::vector<uint8_t> context_map(tokens.size());
+  for (size_t c = 0; c < tokens.size(); c++) {
+    // The alphabet size (token + 1) can be up to 2^15, but jxl-rs refuses
+    // 2^15 itself.
+    if (tokens[c] >= (1u << PREFIX_MAX_BITS) - 1) {
+      return JXL_FAILURE("Fixed token %u is not below %u", tokens[c],
+                         (1u << PREFIX_MAX_BITS) - 1);
+    }
+    size_t i = 0;
+    while (i < cluster_tokens.size() && cluster_tokens[i] != tokens[c]) i++;
+    if (i == cluster_tokens.size()) {
+      if (i == kClustersLimit) return JXL_FAILURE("Too many fixed tokens");
+      cluster_tokens.push_back(tokens[c]);
+    }
+    context_map[c] = static_cast<uint8_t>(i);
+  }
+  codes->lz77 = LZ77Params();
+  codes->lz77.enabled = false;
+  codes->context_map = context_map;
+  codes->use_prefix_code = true;
+  codes->log_alpha_size = PREFIX_MAX_BITS;
+  // With split_exponent = log_alpha_size (the cheapest configuration to
+  // signal), every value below 2^15 is the token itself (no raw bits).
+  codes->uint_config.assign(cluster_tokens.size(),
+                            HybridUintConfig(PREFIX_MAX_BITS, 0, 0));
+  codes->encoding_info.clear();
+  size_t cost = 0;
+  const auto& body = [&]() -> Status {
+    size_t b0 = writer->BitsWritten();
+    JXL_RETURN_IF_ERROR(Bundle::Write(codes->lz77, writer, layer, aux_out));
+    if (tokens.size() > 1) {
+      JXL_RETURN_IF_ERROR(EncodeContextMap(context_map, cluster_tokens.size(),
+                                           writer, layer, aux_out));
+    }
+    writer->Write(1, 1);  // prefix codes
+    EncodeUintConfigs(codes->uint_config, writer, codes->log_alpha_size);
+    for (uint32_t token : cluster_tokens) StoreVarLenUint16(token, writer);
+    for (uint32_t token : cluster_tokens) {
+      Histogram histogram;
+      histogram.Add(token);
+      codes->encoding_info.emplace_back();
+      codes->encoding_info.back().resize(token + 1);
+      JXL_ASSIGN_OR_RETURN(
+          size_t unused_cost,
+          codes->BuildAndStoreANSEncodingData(
+              memory_manager, HistogramParams::ANSHistogramStrategy::kPrecise,
+              histogram, writer));
+      (void)unused_cost;
+    }
+    cost = writer->BitsWritten() - b0;
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(writer->WithMaxBits(
+      1024 + tokens.size() * 16 + cluster_tokens.size() * 64, layer, aux_out,
+      body, /*finished_histogram=*/true));
+  return cost;
+}
+
 StatusOr<size_t> BuildAndEncodeHistograms(
     JxlMemoryManager* memory_manager, const HistogramParams& params,
     size_t num_contexts, std::vector<std::vector<Token>>& tokens,
@@ -1088,9 +1179,13 @@ StatusOr<size_t> BuildAndEncodeHistograms(
   // if (params.initialize_global_state) codes->lz77.enabled = false;
   codes->lz77.nonserialized_distance_context = num_contexts;
   codes->lz77.min_symbol = params.force_huffman ? 512 : 224;
-  std::vector<std::vector<Token>> tokens_lz77 =
-      ApplyLZ77(params, num_contexts, tokens, codes->lz77);
-  if (!tokens_lz77.empty()) codes->lz77.enabled = true;
+  std::vector<std::vector<Token>> tokens_lz77;
+  if (params.tokens_have_lz77) {
+    codes->lz77.enabled = true;
+  } else {
+    tokens_lz77 = ApplyLZ77(params, num_contexts, tokens, codes->lz77);
+    if (!tokens_lz77.empty()) codes->lz77.enabled = true;
+  }
   if (ans_fuzzer_friendly_) {
     codes->lz77.length_uint_config = HybridUintConfig(10, 0, 0);
     codes->lz77.min_symbol = 2048;
@@ -1119,8 +1214,10 @@ StatusOr<size_t> BuildAndEncodeHistograms(
         cost += size_writer.size;
       }
       num_contexts += 1;
-      JXL_DASSERT(!tokens_lz77.empty());
-      tokens = std::move(tokens_lz77);
+      if (!params.tokens_have_lz77) {
+        JXL_DASSERT(!tokens_lz77.empty());
+        tokens = std::move(tokens_lz77);
+      }
     }
     size_t total_tokens = 0;
     // Build histograms.
@@ -1370,6 +1467,7 @@ HistogramParams HistogramParams::ForModular(
   } else {
     params.lz77_method = HistogramParams::LZ77Method::kLZ77b3w3f;
   }
+  params.lz77_careful_first_pass = cparams.lz77_careful_first_pass;
   if (cparams.decoding_speed_tier >= 2) {
     params.max_histograms = 12;
   }

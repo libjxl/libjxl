@@ -9,6 +9,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <vector>
 
 #include "lib/jxl/enc_ans_params.h"
@@ -56,6 +57,16 @@ struct ModularMultiplierInfo {
   uint32_t multiplier;
 };
 
+// A sequence of residuals: `prefix`, then `period` repeated forever.
+struct ResidualPattern {
+  std::vector<int32_t> prefix;
+  std::vector<int32_t> period;
+  // The pattern starts at the first sample of the stream, meta channels
+  // (palette entries) included, instead of after them (jxl_from_tree's
+  // MetaResiduals).
+  bool include_meta = false;
+};
+
 struct ModularOptions {
   /// Used in both encode and decode:
 
@@ -86,6 +97,10 @@ struct ModularOptions {
   Predictor predictor = kUndefinedPredictor;
 
   int wp_mode = 0;
+  // A custom weighted predictor header (jxl_from_tree's WPParams): p1C, p2C,
+  // p3Ca..p3Ce (0..31) and w0..w3 (0..15). Used instead of wp_mode's if set.
+  bool has_wp_params = false;
+  std::array<uint32_t, 11> wp_params = {};
 
   float fast_decode_multiplier = 1.01f;
 
@@ -115,6 +130,21 @@ struct ModularOptions {
 
   // Ignore the image and just pretend all tokens are zeroes
   bool zero_tokens = false;
+  // With zero_tokens: the meta channels (e.g. palette entries) are still coded
+  // from the image (real residuals); only the other channels are all zeroes.
+  bool code_meta_channels = false;
+  // With zero_tokens: if not null, the residuals of the streams are these
+  // patterns (by stream ID, -1 for the streams not listed; all zero for the
+  // others), coded without materializing them: the prefix and one period as
+  // symbols (in the contexts the tree gives), the rest as one LZ77 copy.
+  // Every stream is then coded this way, and the tokens come with LZ77
+  // already applied (HistogramParams::tokens_have_lz77).
+  const std::map<int, ResidualPattern>* residual_patterns = nullptr;
+  // With residual_patterns: LZ77 also inside the prefix and the first period
+  // (where it pays off, by an estimate).
+  bool residual_inner_lz77 = false;
+  // Literal costs per context in the inner LZ77 match estimate.
+  bool residual_lz77_context_costs = false;
 
   ModularOptions() {
     // GCC has complaints about inline vector initialization; do it manually.

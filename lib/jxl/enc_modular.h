@@ -52,6 +52,9 @@ class ModularFrameEncoder {
       bool do_color);
   Status ComputeTree(ThreadPool* pool);
   Status ComputeTokens(ThreadPool* pool);
+  // The range of the modular buffers when decoding (see
+  // CompressParams::modular_range_out).
+  Status ComputeDecodedRange(int64_t* min_value, int64_t* max_value);
   // Encodes global info (tree + histograms) in the `writer`.
   Status EncodeGlobalInfo(bool streaming_mode, BitWriter* writer,
                           AuxOut* aux_out);
@@ -119,6 +122,12 @@ class ModularFrameEncoder {
   CompressParams cparams_;
   std::vector<size_t> tree_splits_;
   std::vector<std::vector<uint32_t>> gi_channel_;
+  struct ChannelLayout {
+    size_t w, h;
+    int hshift, vshift;
+  };
+  std::vector<ChannelLayout> pre_transform_layout_;
+  size_t pre_transform_meta_ = 0;
   std::vector<size_t> image_widths_;
 
   struct GroupParams {
