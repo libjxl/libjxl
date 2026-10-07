@@ -2634,10 +2634,14 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
   }
   // TODO(Jonnyawsom3): Uncomment when non-perceptual VarDCT is fixed.
   if (!(//frame_settings->values.cparams.disable_perceptual_optimizations ||
-     frame_settings->enc->metadata.m.xyb_encoded ||
-     // Change this to values.lossless.
-     frame_settings->values.cparams.modular_mode ||
-     frame_data.IsJPEG())) {
+      frame_settings->enc->metadata.m.xyb_encoded ||
+      enc->metadata.m.color_encoding.GetColorSpace() ==
+      jxl::ColorSpace::kGray ||
+      enc->metadata.m.color_encoding.GetColorSpace() ==
+      jxl::ColorSpace::kCMYK ||
+      // Change this to values.lossless.
+      frame_settings->values.cparams.modular_mode ||
+      frame_data.IsJPEG())) {
     return JXL_API_ERROR(
         frame_settings->enc, JXL_ENC_ERR_API_USAGE,
         // Change to "perceptual lossy encoding".
