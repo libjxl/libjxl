@@ -105,6 +105,35 @@ float HistogramDistance(const Histogram& a, const Histogram& b) {
 
 constexpr const float kInfinity = std::numeric_limits<float>::infinity();
 
+// With prefix codes, a histogram with a single symbol costs nothing per
+// symbol, and one with more costs at least one bit per symbol. The Shannon
+// entropy misses that: a mostly-zero 2-symbol histogram looks nearly free to
+// merge into large all-zero ones, which then cost a bit per zero. So such a
+// merge costs at least a bit per symbol of the single-symbol side(s).
+size_t NumSymbols(const Histogram& a, const Histogram* b) {
+  size_t n = 0;
+  const size_t size =
+      std::max(a.counts.size(), b ? b->counts.size() : size_t{0});
+  for (size_t i = 0; i < size; i++) {
+    const int32_t count = (i < a.counts.size() ? a.counts[i] : 0) +
+                          (b && i < b->counts.size() ? b->counts[i] : 0);
+    n += count > 0;
+  }
+  return n;
+}
+float ClusterDistance(const Histogram& a, const Histogram& b,
+                      bool prefix_codes) {
+  const float distance = HistogramDistance(a, b);
+  if (!prefix_codes || a.total_count == 0 || b.total_count == 0 ||
+      NumSymbols(a, &b) <= 1) {
+    return distance;
+  }
+  float single = 0;
+  if (NumSymbols(a, nullptr) <= 1) single += a.total_count;
+  if (NumSymbols(b, nullptr) <= 1) single += b.total_count;
+  return std::max(distance, single);
+}
+
 float HistogramKLDivergence(const Histogram& actual, const Histogram& coding) {
   if (actual.total_count == 0) return 0;
   if (coding.total_count == 0) return kInfinity;
@@ -134,7 +163,8 @@ float HistogramKLDivergence(const Histogram& actual, const Histogram& coding) {
 
 // First step of a k-means clustering with a fancy distance metric.
 Status FastClusterHistograms(const std::vector<Histogram>& in,
-                             size_t max_histograms, std::vector<Histogram>* out,
+                             size_t max_histograms, bool prefix_codes,
+                             std::vector<Histogram>* out,
                              std::vector<uint32_t>* histogram_symbols) {
   const size_t prev_histograms = out->size();
   out->reserve(max_histograms);
@@ -179,7 +209,8 @@ Status FastClusterHistograms(const std::vector<Histogram>& in,
     largest_idx = 0;
     for (size_t i = 0; i < in.size(); i++) {
       if (dists[i] == 0.0f) continue;
-      dists[i] = std::min(HistogramDistance(in[i], out->back()), dists[i]);
+      dists[i] =
+          std::min(ClusterDistance(in[i], out->back(), prefix_codes), dists[i]);
       if (dists[i] > dists[largest_idx]) largest_idx = i;
     }
     if (dists[largest_idx] < kMinDistanceForDistinct) break;
@@ -190,8 +221,9 @@ Status FastClusterHistograms(const std::vector<Histogram>& in,
     size_t best = 0;
     float best_dist = std::numeric_limits<float>::max();
     for (size_t j = 0; j < out->size(); j++) {
-      float dist = j < prev_histograms ? HistogramKLDivergence(in[i], (*out)[j])
-                                       : HistogramDistance(in[i], (*out)[j]);
+      float dist = j < prev_histograms
+                       ? HistogramKLDivergence(in[i], (*out)[j])
+                       : ClusterDistance(in[i], (*out)[j], prefix_codes);
       if (dist < best_dist) {
         best = j;
         best_dist = dist;
@@ -269,7 +301,8 @@ Status ClusterHistograms(const HistogramParams& params,
   }
 
   JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(FastClusterHistograms)(
-      in, prev_histograms + max_histograms, out, histogram_symbols));
+      in, prev_histograms + max_histograms, params.force_huffman, out,
+      histogram_symbols));
 
   if (prev_histograms == 0 &&
       params.clustering == HistogramParams::ClusteringType::kBest) {
