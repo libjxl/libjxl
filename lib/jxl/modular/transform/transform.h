@@ -77,6 +77,11 @@ static inline pixel_type PixelAdd(pixel_type a, pixel_type b) {
                                  static_cast<uint32_t>(b));
 }
 
+static inline pixel_type PixelSub(pixel_type a, pixel_type b) {
+  return static_cast<pixel_type>(static_cast<uint32_t>(a) -
+                                 static_cast<uint32_t>(b));
+}
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_MODULAR_TRANSFORM_TRANSFORM_H_

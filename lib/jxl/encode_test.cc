@@ -2482,3 +2482,103 @@ TEST(EncodeTest, StripAlphaSetting) {
     EXPECT_EQ(1u, encode_float(0.999995f, 2));
   }
 }
+
+TEST(EncodeTest, Float32LossyPatchesResidualOverflow) {
+  size_t width = 256;
+  size_t height = 256;
+  std::vector<float> src(width * height, 0.5f);
+
+  // Repeated 8x8 glyphs with both negative (-0.25) and positive (+0.25)
+  // deltas relative to 0.5 background. Their bitcast int32 representations
+  // have opposite signs (+1.05e9 vs -1.10e9), causing predictor residuals to
+  // wrap modulo 2^32 across patch boundaries and interior transitions.
+  for (size_t i = 0; i < 16; i++) {
+    size_t x0 = 16 + (i % 4) * 40;
+    size_t y0 = 16 + (i / 4) * 40;
+    for (size_t y = 0; y < 8; y++) {
+      for (size_t x = 0; x < 8; x++) {
+        src[(y0 + y) * width + (x0 + x)] = (x < 4) ? 0.25f : 0.75f;
+      }
+    }
+  }
+
+  JxlEncoderPtr encoder = JxlEncoderMake(nullptr);
+  JxlBasicInfo basicInfo;
+  JxlEncoderInitBasicInfo(&basicInfo);
+  basicInfo.xsize = width;
+  basicInfo.ysize = height;
+  basicInfo.bits_per_sample = 32u;
+  basicInfo.exponent_bits_per_sample = 8u;
+  basicInfo.uses_original_profile = JXL_TRUE;
+  basicInfo.num_color_channels = 1u;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(encoder.get(), &basicInfo));
+
+  JxlColorEncoding colorEncoding;
+  JxlColorEncodingSetToLinearSRGB(&colorEncoding, /*is_gray=*/true);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(encoder.get(), &colorEncoding));
+
+  JxlEncoderFrameSettings* settings =
+      JxlEncoderFrameSettingsCreate(encoder.get(), nullptr);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetFrameLossless(settings, JXL_FALSE));
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetFrameDistance(settings, 1.0f));
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderFrameSettingsSetOption(
+                settings, JXL_ENC_FRAME_SETTING_PATCHES, 1));
+
+  const JxlPixelFormat pixelFormat{1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(settings, &pixelFormat, src.data(),
+                                    src.size() * sizeof(float)));
+  JxlEncoderCloseInput(encoder.get());
+
+  std::vector<uint8_t> compressed(65536);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size();
+  JxlEncoderStatus status = JXL_ENC_NEED_MORE_OUTPUT;
+  while (status == JXL_ENC_NEED_MORE_OUTPUT) {
+    status = JxlEncoderProcessOutput(encoder.get(), &next_out, &avail_out);
+    if (status == JXL_ENC_NEED_MORE_OUTPUT) {
+      size_t offset = next_out - compressed.data();
+      compressed.resize(compressed.size() * 2);
+      next_out = compressed.data() + offset;
+      avail_out = compressed.size() - offset;
+    }
+  }
+  EXPECT_EQ(JXL_ENC_SUCCESS, status);
+  compressed.resize(next_out - compressed.data());
+
+  // Verify that the compressed stream decodes cleanly.
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  ASSERT_NE(nullptr, dec.get());
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size()));
+  JxlDecoderCloseInput(dec.get());
+
+  std::vector<float> decoded(width * height);
+  for (;;) {
+    JxlDecoderStatus dec_status = JxlDecoderProcessInput(dec.get());
+    if (dec_status == JXL_DEC_BASIC_INFO) {
+      JxlBasicInfo info;
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec.get(), &info));
+      EXPECT_EQ(width, info.xsize);
+      EXPECT_EQ(height, info.ysize);
+    } else if (dec_status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetImageOutBuffer(dec.get(), &pixelFormat,
+                                            decoded.data(),
+                                            decoded.size() * sizeof(float)));
+    } else if (dec_status == JXL_DEC_FULL_IMAGE) {
+      // Successfully decoded full image frame
+    } else if (dec_status == JXL_DEC_SUCCESS) {
+      break;
+    } else {
+      FAIL() << "Unexpected decoder status: " << dec_status;
+    }
+  }
+}
