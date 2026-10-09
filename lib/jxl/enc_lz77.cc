@@ -29,7 +29,8 @@ class SymbolCostEstimator {
  public:
   SymbolCostEstimator(size_t num_contexts, bool force_huffman,
                       const std::vector<std::vector<Token>>& tokens,
-                      const LZ77Params& lz77) {
+                      const LZ77Params& lz77)
+      : num_contexts_(num_contexts) {
     std::vector<Histogram> builder(num_contexts);
     // Build histograms for estimating lz77 savings.
     HybridUintConfig uint_config;
@@ -48,7 +49,7 @@ class SymbolCostEstimator {
       max_alphabet_size_ =
           std::max(max_alphabet_size_, builder[i].counts.size());
     }
-    bits_.resize(num_contexts * max_alphabet_size_);
+    bits_.assign(num_contexts * max_alphabet_size_, ANS_LOG_TAB_SIZE);
     // TODO(veluca): SIMD?
     add_symbol_cost_.resize(num_contexts);
     for (size_t i = 0; i < num_contexts; i++) {
@@ -73,6 +74,9 @@ class SymbolCostEstimator {
     }
   }
   float Bits(size_t ctx, size_t sym) const {
+    if (ctx >= num_contexts_ || sym >= max_alphabet_size_) {
+      return ANS_LOG_TAB_SIZE;
+    }
     return bits_[ctx * max_alphabet_size_ + sym];
   }
   float LenCost(size_t ctx, size_t len, const LZ77Params& lz77) const {
@@ -84,11 +88,15 @@ class SymbolCostEstimator {
   float DistCost(size_t len, const LZ77Params& lz77) const {
     uint32_t nbits, bits, tok;
     HybridUintConfig().Encode(len, &tok, &nbits, &bits);
+    if (lz77.nonserialized_distance_context >= num_contexts_) {
+      return nbits + ANS_LOG_TAB_SIZE;
+    }
     return nbits + Bits(lz77.nonserialized_distance_context, tok);
   }
   float AddSymbolCost(size_t idx) const { return add_symbol_cost_[idx]; }
 
  private:
+  size_t num_contexts_;
   size_t max_alphabet_size_;
   std::vector<float> bits_;
   std::vector<float> add_symbol_cost_;
@@ -304,7 +312,7 @@ struct HashChain {
   template <typename CB>
   void FindMatches(size_t pos, int max_dist, const CB& found_match) const {
     uint32_t wpos = pos & window_mask_;
-    uint32_t hashval = GetHash(pos, data_) & hash_mask_;
+    uint32_t hashval = val[wpos];
     uint32_t hashpos = chain[wpos];
 
     int prev_dist = 0;
@@ -365,27 +373,7 @@ struct HashChain {
       }
     }
 
-    if (distance_multiplier_ > 0) {
-      for (size_t i = 0; i < num_special_distances_; i++) {
-        int dist = SpecialDistance(i, distance_multiplier_);
-        if (dist > 0 && static_cast<size_t>(dist) <= pos &&
-            static_cast<size_t>(dist) <= window_size_ && dist <= max_dist) {
-          int j = pos - dist;
-          if (data_[pos] == data_[j] &&
-              pos + 1 < size_ && data_[pos + 1] == data_[j + 1] &&
-              pos + 2 < size_ && data_[pos + 2] == data_[j + 2]) {
-            int p = pos + 3;
-            while (p < end && data_[p] == data_[j + (p - pos)]) {
-              p++;
-            }
-            size_t len = p - pos;
-            if (len >= min_length_) {
-              found_match(len, i);
-            }
-          }
-        }
-      }
-    }
+    // Special distances with matching hashes are already visited via the hash chain.
   }
 
   void FindMatch(size_t pos, int max_dist, size_t* result_dist_symbol,
@@ -504,7 +492,7 @@ std::vector<std::vector<Token>> ApplyLZ77_Chain(
     }
 
     out.reserve(in.size());
-    size_t max_distance = in.size();
+    size_t max_distance = std::min(in.size(), kWindowSize);
     size_t min_length = lz77.min_length;
     JXL_DASSERT(min_length >= 3);
     size_t max_length = in.size();
@@ -592,7 +580,7 @@ template<int kBucketSize = 7, int kHashSize = 3, bool kRuntimeCostComparison = f
 std::vector<std::vector<Token>> ApplyLZ77_LZ77(
     const HistogramParams& params, size_t num_contexts,
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77) {
-  constexpr uint32_t kChainLen = (kBucketSize <= 1) ? 16 : 256;
+  constexpr uint32_t kChainLen = (kBucketSize <= 1) ? 1 : 256;
   constexpr bool kLazy = (kBucketSize > 1);
   return ApplyLZ77_Chain<kChainLen, kLazy, kRuntimeCostComparison>(params, num_contexts, tokens, lz77);
 }
@@ -627,7 +615,7 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
     }
 
     out.reserve(in.size());
-    size_t max_distance = in.size();
+    size_t max_distance = std::min(in.size(), kWindowSize);
     size_t min_length = lz77.min_length;
     JXL_DASSERT(min_length >= 3);
     size_t max_length = in.size();
@@ -702,7 +690,7 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
       // We are in a RLE sequence: skip all the symbols except the first 8 and
       // the last 8. This avoid quadratic costs for sequences with long runs of
       // the same symbol.
-      if ((dist_symbols.back() == 0 && distance_multiplier == 0) ||
+      if (dist_symbols.back() == 0 ||
           (dist_symbols.back() == 1 && distance_multiplier != 0)) {
         rle_length++;
       } else {
