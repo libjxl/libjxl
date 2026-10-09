@@ -1,0 +1,42 @@
+// Copyright (c) the JPEG XL Project Authors. All rights reserved.
+//
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+#include <jxl/compressed_icc.h>
+#include <jxl/memory_manager.h>
+#include <jxl/types.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/enc_aux_out.h"
+#include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/enc_icc_codec.h"
+#include "lib/jxl/memory_manager_internal.h"
+
+JXL_BOOL JxlICCProfileEncode(const JxlMemoryManager* memory_manager,
+                             const uint8_t* icc, size_t icc_size,
+                             uint8_t** compressed_icc,
+                             size_t* compressed_icc_size) {
+  JxlMemoryManager local_memory_manager;
+  if (!jxl::MemoryManagerInit(&local_memory_manager, memory_manager)) {
+    return JXL_FALSE;
+  }
+  jxl::BitWriter writer(&local_memory_manager);
+  JXL_RETURN_IF_ERROR(jxl::WriteICC(jxl::Span<const uint8_t>(icc, icc_size),
+                                    &writer, jxl::LayerType::Header, nullptr));
+  writer.ZeroPadToByte();
+  jxl::Bytes bytes = writer.GetSpan();
+  *compressed_icc_size = bytes.size();
+  *compressed_icc = static_cast<uint8_t*>(
+      jxl::MemoryManagerAlloc(&local_memory_manager, *compressed_icc_size));
+  if (*compressed_icc == nullptr) {
+    return JXL_FALSE;
+  }
+  memcpy(*compressed_icc, bytes.data(), bytes.size());
+  return JXL_TRUE;
+}
