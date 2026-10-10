@@ -1381,7 +1381,8 @@ HistogramParams HistogramParams::ForModular(
     // No predictor requires LZ77 to compress residuals.
     // Effort 3 and lower have forced predictors, so kNone is set.
     if (cparams.options.predictor == Predictor::Zero && cparams.modular_mode) {
-        params.lz77_method = cparams.speed_tier >= SpeedTier::kFalcon
+      params.is_predictor_zero = true;
+      params.lz77_method = cparams.speed_tier >= SpeedTier::kFalcon
             ? HistogramParams::LZ77Method::kNone
             : cparams.speed_tier >= SpeedTier::kHare
             ? HistogramParams::LZ77Method::kLZ77b1w3t

@@ -590,10 +590,18 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
     const HistogramParams& params, size_t num_contexts,
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77) {
   std::vector<std::vector<Token>> tokens_for_cost_estimate =
-      ApplyLZ77_Chain<256, true>(params, num_contexts, tokens, lz77);
+      params.is_predictor_zero
+          ? ApplyLZ77_Chain<256, true, false>(params, num_contexts, tokens, lz77)
+          : ApplyLZ77_Chain<256, true, true>(params, num_contexts, tokens, lz77);
   // If greedy-LZ77 does not give better compression than no-lz77, no reason to
   // run the optimal matching.
-  if (tokens_for_cost_estimate.empty()) return {};
+  if (tokens_for_cost_estimate.empty()) {
+    if (params.is_predictor_zero) {
+      tokens_for_cost_estimate =
+          ApplyLZ77_Chain<256, true, true>(params, num_contexts, tokens, lz77);
+    }
+    if (tokens_for_cost_estimate.empty()) return {};
+  }
   SymbolCostEstimator sce(num_contexts + 1, params.force_huffman,
                           tokens_for_cost_estimate, lz77);
   std::vector<std::vector<Token>> tokens_lz77(tokens.size());
