@@ -602,14 +602,10 @@ std::vector<std::vector<Token>> ApplyLZ77_Optimal(
   if (params.is_predictor_zero) {
     tokens_for_cost_estimate =
         ApplyLZ77_Chain<256, true, false>(params, num_contexts, tokens, lz77);
-    if (tokens_for_cost_estimate.empty()) {
-      tokens_for_cost_estimate =
-          ApplyLZ77_Chain<256, true, true>(params, num_contexts, tokens, lz77);
-    }
   } else {
     SymbolCostEstimator raw_sce(num_contexts, params.force_huffman, tokens, lz77);
     float raw_entropy = raw_sce.EntropyPerSymbol();
-    if (raw_entropy > 3.4f) {
+    if (raw_entropy > 1.0f) {
       // In noisy photographic residuals, do a fast pre-pass check at effort 5
       // (chain length 1) to see if LZ77 with runtime cost comparison is profitable.
       auto pre_test_tokens =
