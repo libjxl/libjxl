@@ -52,6 +52,8 @@ class SymbolCostEstimator {
     bits_.assign(num_contexts * max_alphabet_size_, ANS_LOG_TAB_SIZE);
     // TODO(veluca): SIMD?
     add_symbol_cost_.resize(num_contexts);
+    total_symbols_ = 0;
+    total_entropy_ = 0;
     for (size_t i = 0; i < num_contexts; i++) {
       float inv_total = 1.0f / (builder[i].total_count + 1e-8f);
       float total_cost = 0;
@@ -67,11 +69,16 @@ class SymbolCostEstimator {
         bits_[i * max_alphabet_size_ + j] = cost;
         total_cost += cost * builder[i].counts[j];
       }
+      total_entropy_ += total_cost;
+      total_symbols_ += builder[i].total_count;
       // Penalty for adding a lz77 symbol to this contest (only used for static
       // cost model). Higher penalty for contexts that have a very low
       // per-symbol entropy.
       add_symbol_cost_[i] = std::max(0.0f, 6.0f - total_cost * inv_total);
     }
+  }
+  float EntropyPerSymbol() const {
+    return total_symbols_ > 0 ? (total_entropy_ / total_symbols_) : 0.0f;
   }
   float Bits(size_t ctx, size_t sym) const {
     if (ctx >= num_contexts_ || sym >= max_alphabet_size_) {
@@ -98,6 +105,8 @@ class SymbolCostEstimator {
  private:
   size_t num_contexts_;
   size_t max_alphabet_size_;
+  size_t total_symbols_ = 0;
+  float total_entropy_ = 0.0f;
   std::vector<float> bits_;
   std::vector<float> add_symbol_cost_;
 };
@@ -589,19 +598,30 @@ template <uint32_t kMaxChainLength>
 std::vector<std::vector<Token>> ApplyLZ77_Optimal(
     const HistogramParams& params, size_t num_contexts,
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77) {
-  std::vector<std::vector<Token>> tokens_for_cost_estimate =
-      params.is_predictor_zero
-          ? ApplyLZ77_Chain<256, true, false>(params, num_contexts, tokens, lz77)
-          : ApplyLZ77_Chain<256, true, true>(params, num_contexts, tokens, lz77);
-  // If greedy-LZ77 does not give better compression than no-lz77, no reason to
-  // run the optimal matching.
-  if (tokens_for_cost_estimate.empty()) {
-    if (params.is_predictor_zero) {
+  std::vector<std::vector<Token>> tokens_for_cost_estimate;
+  if (params.is_predictor_zero) {
+    tokens_for_cost_estimate =
+        ApplyLZ77_Chain<256, true, false>(params, num_contexts, tokens, lz77);
+    if (tokens_for_cost_estimate.empty()) {
       tokens_for_cost_estimate =
           ApplyLZ77_Chain<256, true, true>(params, num_contexts, tokens, lz77);
     }
-    if (tokens_for_cost_estimate.empty()) return {};
+  } else {
+    SymbolCostEstimator raw_sce(num_contexts, params.force_huffman, tokens, lz77);
+    float raw_entropy = raw_sce.EntropyPerSymbol();
+    if (raw_entropy > 3.4f) {
+      // In noisy photographic residuals, do a fast pre-pass check at effort 5
+      // (chain length 1) to see if LZ77 with runtime cost comparison is profitable.
+      auto pre_test_tokens =
+          ApplyLZ77_Chain<1, false, true>(params, num_contexts, tokens, lz77);
+      if (pre_test_tokens.empty()) {
+        return {};
+      }
+    }
+    tokens_for_cost_estimate =
+        ApplyLZ77_Chain<256, true, true>(params, num_contexts, tokens, lz77);
   }
+  if (tokens_for_cost_estimate.empty()) return {};
   SymbolCostEstimator sce(num_contexts + 1, params.force_huffman,
                           tokens_for_cost_estimate, lz77);
   std::vector<std::vector<Token>> tokens_lz77(tokens.size());
