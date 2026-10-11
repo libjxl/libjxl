@@ -110,6 +110,7 @@ struct HistogramParams {
   bool force_huffman = false;
   bool initialize_global_state = true;
   bool streaming_mode = false;
+  bool is_predictor_zero = false;
   bool add_missing_symbols = false;
   bool add_fixed_histograms = false;
 };
