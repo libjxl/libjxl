@@ -2482,3 +2482,135 @@ TEST(EncodeTest, StripAlphaSetting) {
     EXPECT_EQ(1u, encode_float(0.999995f, 2));
   }
 }
+
+namespace {
+// Opaque RGBA chunked input that records requests outside of the frame.
+class BoundsCheckingRGBASource {
+ public:
+  BoundsCheckingRGBASource(size_t xsize, size_t ysize)
+      : xsize_(xsize), ysize_(ysize), pixels_(xsize * ysize * 4, 255) {}
+
+  JxlChunkedFrameInputSource GetInputSource() {
+    return JxlChunkedFrameInputSource{
+        this,
+        METHOD_TO_C_CALLBACK(&BoundsCheckingRGBASource::GetPixelFormat),
+        METHOD_TO_C_CALLBACK(&BoundsCheckingRGBASource::GetColorDataAt),
+        METHOD_TO_C_CALLBACK(&BoundsCheckingRGBASource::GetExtraPixelFormat),
+        METHOD_TO_C_CALLBACK(&BoundsCheckingRGBASource::GetExtraDataAt),
+        METHOD_TO_C_CALLBACK(&BoundsCheckingRGBASource::Release)};
+  }
+
+  bool requested_out_of_bounds() const { return requested_out_of_bounds_; }
+
+ private:
+  void GetPixelFormat(JxlPixelFormat* format) {
+    *format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  }
+  const void* GetColorDataAt(size_t xpos, size_t ypos, size_t xsize,
+                             size_t ysize, size_t* row_offset) {
+    if (xpos + xsize > xsize_ || ypos + ysize > ysize_) {
+      requested_out_of_bounds_ = true;
+      return nullptr;
+    }
+    *row_offset = xsize_ * 4;
+    return pixels_.data() + (ypos * xsize_ + xpos) * 4;
+  }
+  void GetExtraPixelFormat(size_t ec_index, JxlPixelFormat* format) {
+    *format = {1, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  }
+  const void* GetExtraDataAt(size_t ec_index, size_t xpos, size_t ypos,
+                             size_t xsize, size_t ysize, size_t* row_offset) {
+    // Alpha is interleaved with the color channels.
+    return nullptr;
+  }
+  void Release(const void* buffer) {}
+
+  size_t xsize_;
+  size_t ysize_;
+  std::vector<uint8_t> pixels_;
+  bool requested_out_of_bounds_ = false;
+};
+}  // namespace
+
+// The opaque-alpha check behind JXL_ENC_FRAME_SETTING_STRIP_ALPHA must only
+// look at the pixels of the frame, which can be smaller than the image.
+TEST(EncodeTest, StripAlphaChecksOnlyFramePixels) {
+  constexpr size_t kImageSize = 64;
+  auto encode = [&](bool crop, bool already_downsampled,
+                    uint32_t* num_extra_channels) {
+    size_t frame_size = crop                  ? 16
+                        : already_downsampled ? kImageSize / 2
+                                              : kImageSize;
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    JxlEncoderFrameSettings* fs =
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+    JxlBasicInfo basic_info;
+    JxlEncoderInitBasicInfo(&basic_info);
+    basic_info.xsize = kImageSize;
+    basic_info.ysize = kImageSize;
+    basic_info.num_extra_channels = 1;
+    basic_info.alpha_bits = 8;
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+    JxlColorEncoding color_encoding;
+    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+    JxlExtraChannelInfo extra_channel_info;
+    JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &extra_channel_info);
+    extra_channel_info.bits_per_sample = 8;
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetExtraChannelInfo(enc.get(), 0, &extra_channel_info));
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetFrameDistance(fs, 1.0f));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderFrameSettingsSetOption(
+                  fs, JXL_ENC_FRAME_SETTING_STRIP_ALPHA, /*if opaque*/ 2));
+    if (already_downsampled) {
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFrameSettingsSetOption(
+                                     fs, JXL_ENC_FRAME_SETTING_RESAMPLING, 2));
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderFrameSettingsSetOption(
+                    fs, JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED, 1));
+    }
+    if (crop) {
+      JxlFrameHeader frame_header;
+      JxlEncoderInitFrameHeader(&frame_header);
+      frame_header.layer_info.have_crop = JXL_TRUE;
+      frame_header.layer_info.crop_x0 = 8;
+      frame_header.layer_info.crop_y0 = 8;
+      frame_header.layer_info.xsize = frame_size;
+      frame_header.layer_info.ysize = frame_size;
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetFrameHeader(fs, &frame_header));
+    }
+    JxlStreamingAdapter streaming_adapter(enc.get(),
+                                          /*return_large_buffers=*/true,
+                                          /*can_seek=*/true);
+    BoundsCheckingRGBASource source(frame_size, frame_size);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddChunkedFrame(fs, /*is_last_frame=*/JXL_TRUE,
+                                        source.GetInputSource()));
+    EXPECT_FALSE(source.requested_out_of_bounds());
+    JxlEncoderCloseInput(enc.get());
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFlushInput(enc.get()));
+    std::vector<uint8_t> compressed = std::move(streaming_adapter).output();
+
+    JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO));
+    JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+    JxlDecoderCloseInput(dec.get());
+    ASSERT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec.get()));
+    JxlBasicInfo decoded_info;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderGetBasicInfo(dec.get(), &decoded_info));
+    *num_extra_channels = decoded_info.num_extra_channels;
+  };
+
+  uint32_t num_extra_channels;
+  // An opaque layer that does not cover the image leaves the rest of the
+  // image transparent, so alpha is kept.
+  encode(/*crop=*/true, /*already_downsampled=*/false, &num_extra_channels);
+  EXPECT_EQ(1u, num_extra_channels);
+  // An opaque, already downsampled frame covers the whole image.
+  encode(/*crop=*/false, /*already_downsampled=*/true, &num_extra_channels);
+  EXPECT_EQ(0u, num_extra_channels);
+}

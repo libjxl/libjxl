@@ -881,13 +881,16 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
       const bool is_multiframe_or_animation =
           metadata.m.have_animation || !frames_closed ||
           num_queued_frames != 1 || metadata.m.num_extra_channels != 1;
+      // A cropped frame leaves the rest of the image transparent.
+      const bool is_cropped =
+          first_frame && first_frame->option_values.header.layer_info.have_crop;
 
       bool should_strip = (strip_alpha == kStripAlphaForce &&
                            metadata.m.num_extra_channels == 1);
 
       // Check if alpha can be stripped because it is fully opaque.
-      if (!should_strip && !is_multiframe_or_animation && first_frame &&
-          alpha_ec_idx < first_frame->ec_initialized.size() &&
+      if (!should_strip && !is_multiframe_or_animation && !is_cropped &&
+          first_frame && alpha_ec_idx < first_frame->ec_initialized.size() &&
           first_frame->ec_initialized[alpha_ec_idx] &&
           (strip_alpha == kStripAlphaIfOpaque ||
            (strip_alpha == kStripAlphaAuto && !is_lossless))) {
@@ -932,8 +935,9 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
 
             constexpr size_t kChunkDimY = 256;
             constexpr size_t kChunkDimX = 2048;
-            const size_t xsize = metadata.xsize();
-            const size_t ysize = metadata.ysize();
+            // The frame can be smaller than the image (already downsampled).
+            const size_t xsize = first_frame->frame_data.xsize;
+            const size_t ysize = first_frame->frame_data.ysize;
             bool all_opaque = true;
 
             for (size_t y = 0; y < ysize && all_opaque; y += kChunkDimY) {
