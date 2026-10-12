@@ -56,6 +56,19 @@ class JxlToJpegDecoder {
     return result;
   }
 
+  // Forgets all per-decode state, including the caller-owned output buffer.
+  // Used when the decoder is rewound or reset, after which the buffer the
+  // caller passed to SetOutputBuffer() may no longer be valid.
+  void Reset() {
+    buffer_.clear();
+    jpeg_data_.reset();
+    inside_box_ = false;
+    box_until_eof_ = false;
+    box_size_ = 0;
+    next_out_ = nullptr;
+    avail_size_ = 0;
+  }
+
   void StartBox(bool box_until_eof, size_t contents_size) {
     // A new box implies that we clear the buffer.
     buffer_.clear();
@@ -177,6 +190,8 @@ class JxlToJpegDecoder {
     return JXL_DEC_ERROR;
   }
   size_t ReleaseOutputBuffer() { return 0; }
+
+  void Reset() {}
 
   void StartBox(bool /* box_until_eof */, size_t /* contents_size */) {}
 

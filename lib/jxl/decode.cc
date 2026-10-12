@@ -779,6 +779,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->recon_exif_size = 0;
   dec->recon_xmp_size = 0;
   dec->recon_output_jpeg = JpegReconStage::kNone;
+  dec->jpeg_decoder.Reset();
 #endif
 
   dec->events_wanted = dec->orig_events_wanted;
