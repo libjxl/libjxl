@@ -296,6 +296,7 @@ class JxlEncoderChunkedFrameAdapter {
                                     size_t x_size, size_t y_size,
                                     size_t* row_offset) {
     JXL_DASSERT(1 + ec_index < channels_.size());
+    if (ec_index >= channels_.size() - 1) return nullptr;
     return channels_[1 + ec_index].GetDataAt(xpos, ypos, x_size, y_size,
                                              row_offset);
   }
@@ -369,9 +370,14 @@ class JxlEncoderChunkedFrameAdapter {
     const void* GetDataAt(size_t xpos, size_t ypos, size_t x_size,
                           size_t y_size, size_t* row_offset) const {
       const uint8_t* buffer = copy_.empty() ? buffer_ : copy_.data();
-      JXL_DASSERT(ypos + y_size <= ysize_);
-      JXL_DASSERT(xpos + x_size <= xsize_);
+      // Requests outside of the channel are bugs in the caller; still return
+      // no data for them in release builds instead of reading out of bounds.
+      // Written to not overflow for any position and size.
+      const bool inside = xpos <= xsize_ && x_size <= xsize_ - xpos &&
+                          ypos <= ysize_ && y_size <= ysize_ - ypos;
+      JXL_DASSERT(inside);
       JXL_DASSERT(buffer);
+      if (!inside || !buffer) return nullptr;
       *row_offset = stride_;
       return buffer + ypos * stride_ + xpos * bytes_per_pixel_;
     }
