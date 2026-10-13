@@ -20,6 +20,7 @@
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "lib/extras/codec.h"
@@ -1300,6 +1301,58 @@ TEST(JxlTest, RoundtripDisablePerceptual) {
               expected_size, 4000);
   // TODO(veluca): figure out why we can't get below this value.
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 11.0);
+}
+
+TEST(JxlTest, RoundtripDisablePerceptualPartialBlocks) {
+  ThreadPool* pool = nullptr;
+  const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
+  TestImage t;
+  ASSERT_TRUE(t.DecodeFromBytes(orig));
+  t.ClearMetadata();
+  // Neither dimension is a multiple of the block size, so the last row and
+  // column of blocks extend past the 1x1 masking field.
+  ASSERT_TRUE(t.SetDimensions(253, 251));
+
+  JXLCompressParams cparams;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS, 1);
+  cparams.distance = 1.0;
+  extras::JXLDecompressParams dparams;
+
+  PackedPixelFile ppf_out;
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 5932, 200);
+  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.9);
+}
+
+// The AC strategy search reads the image and the masking fields around every
+// transform that it tries. Encode sizes that leave partial blocks at the right
+// and bottom edges with each speed tier that runs the search, so that its
+// bounds checks (active in debug builds) see the edges.
+TEST(JxlTest, RoundtripAcStrategySearchPartialBlocks) {
+  const std::pair<size_t, size_t> kSizes[] = {{13, 70}, {70, 13}, {75, 75}};
+  for (bool disable_perceptual : {false, true}) {
+    for (int effort : {5, 7, 9}) {
+      for (const auto& size : kSizes) {
+        SCOPED_TRACE(testing::Message()
+                     << "disable_perceptual=" << disable_perceptual
+                     << " effort=" << effort << " size=" << size.first << "x"
+                     << size.second);
+        TestImage t;
+        ASSERT_TRUE(t.SetDimensions(size.first, size.second));
+        JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
+        frame.RandomFill();
+        JXLCompressParams cparams;
+        cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, effort);
+        cparams.AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS,
+                          disable_perceptual ? 1 : 0);
+        cparams.distance = 1.0;
+        PackedPixelFile ppf_out;
+        EXPECT_GT(Roundtrip(t.ppf(), cparams, {}, nullptr, &ppf_out), 0u);
+        EXPECT_EQ(size.first, ppf_out.info.xsize);
+        EXPECT_EQ(size.second, ppf_out.info.ysize);
+      }
+    }
+  }
 }
 
 TEST(JxlTest, RoundtripNoise) {
