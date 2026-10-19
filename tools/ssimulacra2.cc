@@ -411,7 +411,13 @@ double Msssim::Score() const {
   char ch[] = "XYB";
   const bool verbose = false;
   for (size_t c = 0; c < 3; ++c) {
-    for (size_t scale = 0; scale < scales.size(); ++scale) {
+    for (size_t scale = 0; scale < kNumScales; ++scale) {
+      // An image too small for this scale has no error at it: its weights
+      // are skipped, so that every later feature keeps its own weight.
+      if (scale >= scales.size()) {
+        i += 6;
+        continue;
+      }
       for (size_t n = 0; n < 2; n++) {
 #ifdef SSIMULACRA2_OUTPUT_RAW_SCORES_FOR_WEIGHT_TUNING
         printf("%.12f,%.12f,%.12f,", scales[scale].avg_ssim[c * 2 + n],
