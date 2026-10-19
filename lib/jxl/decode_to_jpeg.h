@@ -34,6 +34,8 @@ namespace jxl {
 
 class JxlToJpegDecoder {
  public:
+  JxlToJpegDecoder() { Reset(); }
+
   // Returns whether an output buffer is set.
   bool IsOutputSet() const { return next_out_ != nullptr; }
 
@@ -56,9 +58,10 @@ class JxlToJpegDecoder {
     return result;
   }
 
-  // Forgets all per-decode state, including the caller-owned output buffer.
-  // Used when the decoder is rewound or reset, after which the buffer the
-  // caller passed to SetOutputBuffer() may no longer be valid.
+  // Sets all per-decode state to its initial value, forgetting the
+  // caller-owned output buffer. Used by the constructor and when the decoder is
+  // rewound or reset, after which the buffer the caller passed to
+  // SetOutputBuffer() may no longer be valid.
   void Reset() {
     buffer_.clear();
     jpeg_data_.reset();
@@ -164,18 +167,18 @@ class JxlToJpegDecoder {
 
   // True if the decoder is currently reading bytes inside a JPEG reconstruction
   // box.
-  bool inside_box_ = false;
+  bool inside_box_;
 
   // True if the JPEG reconstruction box had undefined size (all remaining
   // bytes).
-  bool box_until_eof_ = false;
+  bool box_until_eof_;
   // Size of most recently parsed JPEG reconstruction box contents.
-  size_t box_size_ = 0;
+  size_t box_size_;
 
   // Next bytes to write JPEG reconstruction to.
-  uint8_t* next_out_ = nullptr;
+  uint8_t* next_out_;
   // Available bytes to write JPEG reconstruction to.
-  size_t avail_size_ = 0;
+  size_t avail_size_;
 };
 
 #else
