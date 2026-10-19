@@ -78,7 +78,7 @@ jobs:
         docker run --rm --platform ${{ matrix.platform }} \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            debian:bookworm \
+            debian:trixie \
             bash -c "./tools/scripts/install_deps.sh base build -- zlib1g-dev && \
               echo 'Number of cores:' `nproc` && \
               export CC=clang && \
@@ -148,7 +148,7 @@ jobs:
         docker run --rm --platform ${{ matrix.platform }} \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            debian:bookworm \
+            debian:trixie \
             bash -c "./tools/scripts/install_deps.sh base runtime && \
               export BUILD_DIR=build && \
               ./ci.sh test \
