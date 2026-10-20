@@ -15,6 +15,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -34,14 +36,13 @@ namespace {
 
 class Parser {
  public:
-  explicit Parser(const Span<const uint8_t> bytes)
-      : pos_(bytes.data()), end_(pos_ + bytes.size()) {}
+  explicit Parser(const Span<const uint8_t> bytes) : bytes_(bytes), pos_(0) {}
 
   // Sets "pos" to the first non-header byte/pixel on success.
   Status ParseHeader(HeaderPNM* header, const uint8_t** pos) {
     // codec.cc ensures we have at least two bytes => no range check here.
-    if (pos_[0] != 'P') return false;
-    const uint8_t type = pos_[1];
+    if (bytes_[0] != 'P') return false;
+    const uint8_t type = bytes_[1];
     pos_ += 2;
 
     switch (type) {
@@ -83,12 +84,12 @@ class Parser {
 
   // Exposed for testing
   Status ParseUnsigned(size_t* number) {
-    if (pos_ == end_) return JXL_FAILURE("PNM: reached end before number");
-    if (!IsDigit(*pos_)) return JXL_FAILURE("PNM: expected unsigned number");
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PNM: reached end before number");
+    if (!IsDigit(bytes_[pos_])) return JXL_FAILURE("PNM: expected unsigned number");
 
     *number = 0;
-    while (pos_ < end_ && *pos_ >= '0' && *pos_ <= '9') {
-      const size_t digit = *pos_ - '0';
+    while (pos_ < bytes_.size() && bytes_[pos_] >= '0' && bytes_[pos_] <= '9') {
+      const size_t digit = bytes_[pos_] - '0';
       if (!SafeMul(*number, static_cast<size_t>(10), *number) ||
           !SafeAdd(*number, digit, *number)) {
         return JXL_FAILURE("PNM: unsigned number too large");
@@ -100,33 +101,33 @@ class Parser {
   }
 
   Status ParseSigned(double* number) {
-    if (pos_ == end_) return JXL_FAILURE("PNM: reached end before signed");
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PNM: reached end before signed");
 
-    if (*pos_ != '-' && *pos_ != '+' && !IsDigit(*pos_)) {
+    if (bytes_[pos_] != '-' && bytes_[pos_] != '+' && !IsDigit(bytes_[pos_])) {
       return JXL_FAILURE("PNM: expected signed number");
     }
 
     // Skip sign
-    const bool is_neg = *pos_ == '-';
-    if (is_neg || *pos_ == '+') {
+    const bool is_neg = bytes_[pos_] == '-';
+    if (is_neg || bytes_[pos_] == '+') {
       ++pos_;
-      if (pos_ == end_) return JXL_FAILURE("PNM: reached end before digits");
+      if (pos_ == bytes_.size()) return JXL_FAILURE("PNM: reached end before digits");
     }
 
     // Leading digits
     *number = 0.0;
-    while (pos_ < end_ && *pos_ >= '0' && *pos_ <= '9') {
+    while (pos_ < bytes_.size() && bytes_[pos_] >= '0' && bytes_[pos_] <= '9') {
       *number *= 10;
-      *number += *pos_ - '0';
+      *number += bytes_[pos_] - '0';
       ++pos_;
     }
 
     // Decimal places?
-    if (pos_ < end_ && *pos_ == '.') {
+    if (pos_ < bytes_.size() && bytes_[pos_] == '.') {
       ++pos_;
       double place = 0.1;
-      while (pos_ < end_ && *pos_ >= '0' && *pos_ <= '9') {
-        *number += (*pos_ - '0') * place;
+      while (pos_ < bytes_.size() && bytes_[pos_] >= '0' && bytes_[pos_] <= '9') {
+        *number += (bytes_[pos_] - '0') * place;
         place *= 0.1;
         ++pos_;
       }
@@ -144,53 +145,58 @@ class Parser {
   }
 
   Status SkipBlank() {
-    if (pos_ == end_) return JXL_FAILURE("PNM: reached end before blank");
-    const uint8_t c = *pos_;
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PNM: reached end before blank");
+    const uint8_t c = bytes_[pos_];
     if (c != ' ' && c != '\n') return JXL_FAILURE("PNM: expected blank");
     ++pos_;
     return true;
   }
 
   Status SkipSingleWhitespace() {
-    if (pos_ == end_) return JXL_FAILURE("PNM: reached end before whitespace");
-    if (!IsWhitespace(*pos_)) return JXL_FAILURE("PNM: expected whitespace");
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PNM: reached end before whitespace");
+    if (!IsWhitespace(bytes_[pos_])) return JXL_FAILURE("PNM: expected whitespace");
     ++pos_;
     return true;
   }
 
   Status SkipWhitespace() {
-    if (pos_ == end_) return JXL_FAILURE("PNM: reached end before whitespace");
-    if (!IsWhitespace(*pos_) && *pos_ != '#') {
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PNM: reached end before whitespace");
+    if (!IsWhitespace(bytes_[pos_]) && bytes_[pos_] != '#') {
       return JXL_FAILURE("PNM: expected whitespace/comment");
     }
 
-    while (pos_ < end_ && IsWhitespace(*pos_)) {
+    while (pos_ < bytes_.size() && IsWhitespace(bytes_[pos_])) {
       ++pos_;
     }
 
     // Comment(s)
-    while (pos_ != end_ && *pos_ == '#') {
-      while (pos_ != end_ && !IsLineBreak(*pos_)) {
+    while (pos_ != bytes_.size() && bytes_[pos_] == '#') {
+      while (pos_ != bytes_.size() && !IsLineBreak(bytes_[pos_])) {
         ++pos_;
       }
       // Newline(s)
-      while (pos_ != end_ && IsLineBreak(*pos_)) pos_++;
+      while (pos_ != bytes_.size() && IsLineBreak(bytes_[pos_])) pos_++;
     }
 
-    while (pos_ < end_ && IsWhitespace(*pos_)) {
+    while (pos_ < bytes_.size() && IsWhitespace(bytes_[pos_])) {
       ++pos_;
     }
     return true;
   }
 
   Status MatchString(const char* keyword, bool skipws = true) {
-    const uint8_t* ppos = pos_;
-    const uint8_t* kw = reinterpret_cast<const uint8_t*>(keyword);
-    while (*kw) {
-      if (ppos >= end_) return JXL_FAILURE("PAM: unexpected end of input");
-      if (*kw != *ppos) return false;
-      ppos++;
-      kw++;
+    size_t ppos = pos_;
+    // `keyword` is a trusted NUL-terminated compile-time literal; view it as a
+    // string_view and compare through bounds-checked indexing on both sides
+    // (string_view::operator[] and Span::operator[]) rather than raw pointer
+    // walks.
+    const std::string_view kw(keyword);
+    for (size_t k = 0; k < kw.size(); ++k) {
+      if (ppos >= bytes_.size()) {
+        return JXL_FAILURE("PAM: unexpected end of input");
+      }
+      if (static_cast<uint8_t>(kw[k]) != bytes_[ppos]) return false;
+      ++ppos;
     }
     pos_ = ppos;
     if (skipws) {
@@ -257,11 +263,17 @@ class Parser {
         }
       } else {
         constexpr size_t kMaxHeaderLength = 20;
-        char unknown_header[kMaxHeaderLength + 1];
-        size_t len = std::min<size_t>(kMaxHeaderLength, end_ - pos_);
-        strncpy(unknown_header, reinterpret_cast<const char*>(pos_), len);
-        unknown_header[len] = 0;
-        return JXL_FAILURE("PAM: unknown header keyword: %s", unknown_header);
+        const size_t len =
+            std::min<size_t>(kMaxHeaderLength, bytes_.size() - pos_);
+        // Build the diagnostic string via bounds-checked span indexing into a
+        // std::string instead of strncpy into a fixed stack buffer.
+        std::string unknown_header;
+        unknown_header.reserve(len);
+        for (size_t k = 0; k < len; ++k) {
+          unknown_header.push_back(static_cast<char>(bytes_[pos_ + k]));
+        }
+        return JXL_FAILURE("PAM: unknown header keyword: %s",
+                           unknown_header.c_str());
       }
     }
     size_t num_channels = header->is_gray ? 1 : 3;
@@ -280,7 +292,7 @@ class Parser {
 
     header->floating_point = false;
     header->big_endian = true;
-    *pos = pos_;
+    *pos = &bytes_[pos_];
     return true;
   }
 
@@ -305,7 +317,7 @@ class Parser {
 
     JXL_RETURN_IF_ERROR(SkipSingleWhitespace());
 
-    *pos = pos_;
+    *pos = &bytes_[pos_];
     return true;
   }
 
@@ -332,12 +344,12 @@ class Parser {
 
     JXL_RETURN_IF_ERROR(SkipSingleWhitespace());
 
-    *pos = pos_;
+    *pos = &bytes_[pos_];
     return true;
   }
 
-  const uint8_t* pos_;
-  const uint8_t* const end_;
+  Span<const uint8_t> bytes_;
+  size_t pos_;
 };
 
 }  // namespace
