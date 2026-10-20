@@ -162,6 +162,8 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
     return JXL_FALSE;
   }
 
+  const jxl::Bytes bytes(input_buffer, input_buffer_size);
+
   uint64_t cursor = 0;
   uint64_t next_cursor = 0;
 
@@ -176,27 +178,29 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
 
   // Read the version byte
   SAFE_CURSOR_UPDATE(1);
-  map_bundle->jhgm_version = input_buffer[cursor];
+  map_bundle->jhgm_version = bytes[cursor];
 
   // Read gain_map_metadata_size
   SAFE_CURSOR_UPDATE(2);
-  uint16_t gain_map_metadata_size = LoadBE16(input_buffer + cursor);
+  // AUDITED: SAFE_CURSOR_UPDATE(2) above just confirmed cursor+2 <=
+  // input_buffer_size, so bytes[cursor] and bytes[cursor+1] are in bounds.
+  uint16_t gain_map_metadata_size =
+      (static_cast<uint16_t>(bytes[cursor]) << 8) | bytes[cursor + 1];
 
   SAFE_CURSOR_UPDATE(gain_map_metadata_size);
   map_bundle->gain_map_metadata_size = gain_map_metadata_size;
-  map_bundle->gain_map_metadata = input_buffer + cursor;
+  map_bundle->gain_map_metadata = &bytes[cursor];
 
   // Read compressed_color_encoding_size
   SAFE_CURSOR_UPDATE(1);
-  uint8_t compressed_color_encoding_size;
-  memcpy(&compressed_color_encoding_size, input_buffer + cursor, 1);
+  uint8_t compressed_color_encoding_size = bytes[cursor];
 
   map_bundle->has_color_encoding = (compressed_color_encoding_size > 0);
   if (map_bundle->has_color_encoding) {
     SAFE_CURSOR_UPDATE(compressed_color_encoding_size);
     // Decode color encoding
     jxl::Span<const uint8_t> color_encoding_span(
-        input_buffer + cursor, compressed_color_encoding_size);
+        &bytes[cursor], compressed_color_encoding_size);
     jxl::BitReader color_encoding_reader(color_encoding_span);
     jxl::ColorEncoding internal_color_encoding;
     if (!jxl::Bundle::Read(&color_encoding_reader, &internal_color_encoding)) {
@@ -208,11 +212,16 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
 
   // Read compressed_icc_size
   SAFE_CURSOR_UPDATE(4);
-  uint32_t compressed_icc_size = LoadBE32(input_buffer + cursor);
+  // AUDITED: SAFE_CURSOR_UPDATE(4) above just confirmed cursor+4 <=
+  // input_buffer_size, so bytes[cursor..cursor+3] are in bounds.
+  uint32_t compressed_icc_size =
+      (static_cast<uint32_t>(bytes[cursor]) << 24) |
+      (static_cast<uint32_t>(bytes[cursor + 1]) << 16) |
+      (static_cast<uint32_t>(bytes[cursor + 2]) << 8) | bytes[cursor + 3];
 
   SAFE_CURSOR_UPDATE(compressed_icc_size);
   map_bundle->alt_icc_size = compressed_icc_size;
-  map_bundle->alt_icc = input_buffer + cursor;
+  map_bundle->alt_icc = &bytes[cursor];
 
   // Calculate remaining bytes for gain map
   cursor = next_cursor;
@@ -225,7 +234,11 @@ JXL_BOOL JxlGainMapReadBundle(JxlGainMapBundle* map_bundle,
   }
   map_bundle->gain_map_size = static_cast<uint32_t>(remaining);
   SAFE_CURSOR_UPDATE(map_bundle->gain_map_size);
-  map_bundle->gain_map = input_buffer + cursor;
+  // AUDITED: cursor <= input_buffer_size is guaranteed by SAFE_CURSOR_UPDATE
+  // above; bytes[cursor] is in bounds even when cursor == input_buffer_size
+  // (one-past-end), matching jxl::Span::operator[]'s *(data()+i) contract
+  // used identically at the three other output-pointer assignments above.
+  map_bundle->gain_map = &bytes[cursor];
 
 #undef SAFE_CURSOR_UPDATE
 
