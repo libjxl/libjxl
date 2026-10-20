@@ -238,38 +238,54 @@ Status DecodeCicpChunk(const Bytes payload, JxlColorEncoding* color_encoding) {
   return true;
 }
 
+// Reads a big-endian uint32 from `payload` at byte `offset`. The caller must
+// have validated that offset + 4 <= payload.size(); the read is via span
+// indexing, so no raw pointer is formed from the payload span.
+uint32_t ReadBE32(Bytes payload, size_t offset) {
+  return (static_cast<uint32_t>(payload[offset]) << 24) |
+         (static_cast<uint32_t>(payload[offset + 1]) << 16) |
+         (static_cast<uint32_t>(payload[offset + 2]) << 8) |
+         static_cast<uint32_t>(payload[offset + 3]);
+}
+
+// Reads a big-endian uint16 from `payload` at byte `offset`. The caller must
+// have validated that offset + 2 <= payload.size(); the read is via span
+// indexing, so no raw pointer is formed from the payload span.
+uint16_t ReadBE16(Bytes payload, size_t offset) {
+  return static_cast<uint16_t>((static_cast<uint16_t>(payload[offset]) << 8) |
+                               static_cast<uint16_t>(payload[offset + 1]));
+}
+
 /** Extract information from 'gAMA' chunk. */
 Status DecodeGamaChunk(Bytes payload, JxlColorEncoding* color_encoding) {
   if (payload.size() != 4) return JXL_FAILURE("Wrong gAMA size");
   color_encoding->transfer_function = JXL_TRANSFER_FUNCTION_GAMMA;
-  color_encoding->gamma = F64FromU32(LoadBE32(payload.data()));
+  color_encoding->gamma = F64FromU32(ReadBE32(payload, 0));
   return true;
 }
 
 /** Extract information from 'cHRM' chunk. */
 Status DecodeChrmChunk(Bytes payload, JxlColorEncoding* color_encoding) {
   if (payload.size() != 32) return JXL_FAILURE("Wrong cHRM size");
-  const uint8_t* data = payload.data();
   color_encoding->white_point = JXL_WHITE_POINT_CUSTOM;
-  color_encoding->white_point_xy[0] = F64FromU32(LoadBE32(data + 0));
-  color_encoding->white_point_xy[1] = F64FromU32(LoadBE32(data + 4));
+  color_encoding->white_point_xy[0] = F64FromU32(ReadBE32(payload, 0));
+  color_encoding->white_point_xy[1] = F64FromU32(ReadBE32(payload, 4));
 
   color_encoding->primaries = JXL_PRIMARIES_CUSTOM;
-  color_encoding->primaries_red_xy[0] = F64FromU32(LoadBE32(data + 8));
-  color_encoding->primaries_red_xy[1] = F64FromU32(LoadBE32(data + 12));
-  color_encoding->primaries_green_xy[0] = F64FromU32(LoadBE32(data + 16));
-  color_encoding->primaries_green_xy[1] = F64FromU32(LoadBE32(data + 20));
-  color_encoding->primaries_blue_xy[0] = F64FromU32(LoadBE32(data + 24));
-  color_encoding->primaries_blue_xy[1] = F64FromU32(LoadBE32(data + 28));
+  color_encoding->primaries_red_xy[0] = F64FromU32(ReadBE32(payload, 8));
+  color_encoding->primaries_red_xy[1] = F64FromU32(ReadBE32(payload, 12));
+  color_encoding->primaries_green_xy[0] = F64FromU32(ReadBE32(payload, 16));
+  color_encoding->primaries_green_xy[1] = F64FromU32(ReadBE32(payload, 20));
+  color_encoding->primaries_blue_xy[0] = F64FromU32(ReadBE32(payload, 24));
+  color_encoding->primaries_blue_xy[1] = F64FromU32(ReadBE32(payload, 28));
   return true;
 }
 
 /** Extracts information from 'cLLi' chunk. */
 Status DecodeClliChunk(Bytes payload, float* max_content_light_level) {
   if (payload.size() != 8) return JXL_FAILURE("Wrong cLLi size");
-  const uint8_t* data = payload.data();
   const uint32_t maxcll_png =
-      Clamp1(png_get_uint_32(data), uint32_t{0}, uint32_t{10000 * 10000});
+      Clamp1(ReadBE32(payload, 0), uint32_t{0}, uint32_t{10000 * 10000});
   // Ignore MaxFALL value.
   *max_content_light_level = static_cast<float>(maxcll_png) / 10000.f;
   return true;
@@ -951,10 +967,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
         // TODO(eustas): check order?
         // sequence_number = png_get_uint_32(payload.data());
-        RectT<uint64_t> raw_viewport(png_get_uint_32(payload.data() + 12),
-                                     png_get_uint_32(payload.data() + 16),
-                                     png_get_uint_32(payload.data() + 4),
-                                     png_get_uint_32(payload.data() + 8));
+        RectT<uint64_t> raw_viewport(ReadBE32(payload, 12), ReadBE32(payload, 16),
+                                     ReadBE32(payload, 4), ReadBE32(payload, 8));
         uint8_t dispose_op = payload[24];
         if (dispose_op > kLastDisposeOp) {
           return JXL_FAILURE("Invalid DisposeOp");
@@ -964,8 +978,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           return JXL_FAILURE("Invalid BlendOp");
         }
         FrameControl next_frame = {
-            /*delay_num=*/png_get_uint_16(payload.data() + 20),
-            /*delay_den=*/png_get_uint_16(payload.data() + 22), raw_viewport,
+            /*delay_num=*/ReadBE16(payload, 20),
+            /*delay_den=*/ReadBE16(payload, 22), raw_viewport,
             static_cast<DisposeOp>(dispose_op), static_cast<BlendOp>(blend_op)};
 
         if (!raw_viewport.IsInside(image_rect)) {
