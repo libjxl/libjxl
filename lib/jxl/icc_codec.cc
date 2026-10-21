@@ -12,6 +12,7 @@
 #include <cstdint>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
@@ -37,17 +38,20 @@ Status Shuffle(JxlMemoryManager* memory_manager, uint8_t* data, size_t size,
   PaddedBytes result(memory_manager);
   JXL_ASSIGN_OR_RETURN(result,
                        PaddedBytes::WithInitialSpace(memory_manager, size));
+  // Bounds-checked view over the caller-owned buffer; indices below stay
+  // within [0, size) by construction, this only replaces the raw pointer walk.
+  const Span<uint8_t> buf(data, size);
   // i = output index, j input index
   size_t s = 0;
   size_t j = 0;
   for (size_t i = 0; i < size; i++) {
-    result[i] = data[j];
+    result[i] = buf[j];
     j += height;
     if (j >= size) j = ++s;
   }
 
   for (size_t i = 0; i < size; i++) {
-    data[i] = result[i];
+    buf[i] = result[i];
   }
   return true;
 }
@@ -61,13 +65,14 @@ constexpr size_t kPreambleSize = 20;
 // 10th byte encodes a value that does not fit in a uint64_t.
 Status DecodeVarInt(const uint8_t* input, size_t inputSize, size_t* pos,
                     uint64_t* out) {
+  const Bytes in(input, inputSize);
   uint64_t ret = 0;
   // 9 bytes cover bits 0..62; the 10th byte may only contribute bit 63.
   for (size_t i = 0; i < 9; ++i) {
     if (*pos >= inputSize) {
       return JXL_FAILURE("DecodeVarInt: truncated input");
     }
-    const uint8_t byte = input[(*pos)++];
+    const uint8_t byte = in[(*pos)++];
     ret |= static_cast<uint64_t>(byte & 0x7F) << (7 * i);
     if ((byte & 0x80) == 0) {
       *out = ret;
@@ -77,7 +82,7 @@ Status DecodeVarInt(const uint8_t* input, size_t inputSize, size_t* pos,
   if (*pos >= inputSize) {
     return JXL_FAILURE("DecodeVarInt: truncated input (10th byte)");
   }
-  const uint8_t byte = input[(*pos)++];
+  const uint8_t byte = in[(*pos)++];
   if ((byte & 0x80) != 0) {
     return JXL_FAILURE("DecodeVarInt: varint exceeds 10 bytes");
   }
@@ -119,6 +124,10 @@ Status CheckPreamble(const PaddedBytes& data, size_t enc_size) {
 Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
   if (!result->empty()) return JXL_FAILURE("result must be empty initially");
   JxlMemoryManager* memory_manager = result->memory_manager();
+  // Bounds-checked view over the caller-owned encoded buffer; every index
+  // below is already guarded (see the CheckOutOfBounds / pos < size tests),
+  // this replaces the raw pointer arithmetic without changing any bound.
+  const Bytes in(enc, size);
   size_t pos = 0;
   uint64_t osize;
   JXL_RETURN_IF_ERROR(DecodeVarInt(enc, size, &pos, &osize));  // Output size
@@ -144,7 +153,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
     if (i == kICCHeaderSize) break;  // Done
     ICCPredictHeader(result->data(), result->size(), header.data(), i);
     if (pos >= size) return JXL_FAILURE("Out of bounds");
-    JXL_RETURN_IF_ERROR(result->push_back(enc[pos++] + header[i]));
+    JXL_RETURN_IF_ERROR(result->push_back(in[pos++] + header[i]));
   }
   if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
 
@@ -162,7 +171,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       if (result->size() > osize) return JXL_FAILURE("Invalid result size");
       if (cpos > commands_end) return JXL_FAILURE("Out of bounds");
       if (cpos == commands_end) break;  // Valid end
-      uint8_t command = enc[cpos++];
+      uint8_t command = in[cpos++];
       uint8_t tagcode = command & 63;
       Tag tag;
       if (tagcode == 0) {
@@ -179,7 +188,8 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
         if (tagcode - kCommandTagStringFirst >= kNumTagStrings) {
           return JXL_FAILURE("Unknown tagcode");
         }
-        tag = *kTagStrings[tagcode - kCommandTagStringFirst];
+        tag = *Span<const Tag* const>(
+            kTagStrings)[tagcode - kCommandTagStringFirst];
       }
       JXL_RETURN_IF_ERROR(AppendKeyword(tag, result));
 
@@ -233,13 +243,13 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
     if (result->size() > osize) return JXL_FAILURE("Invalid result size");
     if (cpos > commands_end) return JXL_FAILURE("Out of bounds");
     if (cpos == commands_end) break;  // Valid end
-    uint8_t command = enc[cpos++];
+    uint8_t command = in[cpos++];
     if (command == kCommandInsert) {
       uint64_t num;
       JXL_RETURN_IF_ERROR(DecodeVarInt(enc, commands_end, &cpos, &num));
       JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, num, size));
       for (size_t i = 0; i < num; i++) {
-        JXL_RETURN_IF_ERROR(result->push_back(enc[pos++]));
+        JXL_RETURN_IF_ERROR(result->push_back(in[pos++]));
       }
     } else if (command == kCommandShuffle2 || command == kCommandShuffle4) {
       uint64_t num;
@@ -249,7 +259,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       JXL_ASSIGN_OR_RETURN(shuffled,
                            PaddedBytes::WithInitialSpace(memory_manager, num));
       for (size_t i = 0; i < num; i++) {
-        shuffled[i] = enc[pos + i];
+        shuffled[i] = in[pos + i];
       }
       if (command == kCommandShuffle2) {
         JXL_RETURN_IF_ERROR(Shuffle(memory_manager, shuffled.data(), num, 2));
@@ -262,7 +272,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       }
     } else if (command == kCommandPredict) {
       JXL_RETURN_IF_ERROR(CheckOutOfBounds(cpos, 2, commands_end));
-      uint8_t flags = enc[cpos++];
+      uint8_t flags = in[cpos++];
 
       size_t width = (flags & 3) + 1;
       if (width == 3) return JXL_FAILURE("Invalid width");
@@ -287,7 +297,8 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       }
 
       uint64_t num;
-      JXL_RETURN_IF_ERROR(DecodeVarInt(enc, commands_end, &cpos, &num));  // in bytes
+      JXL_RETURN_IF_ERROR(
+          DecodeVarInt(enc, commands_end, &cpos, &num));  // in bytes
       JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, num, size));
 
       PaddedBytes shuffled(memory_manager);
@@ -295,7 +306,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
                            PaddedBytes::WithInitialSpace(memory_manager, num));
 
       for (size_t i = 0; i < num; i++) {
-        shuffled[i] = enc[pos + i];
+        shuffled[i] = in[pos + i];
       }
       if (width > 1) {
         JXL_RETURN_IF_ERROR(
@@ -316,12 +327,14 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       }
       JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, 12, size));
       for (size_t i = 0; i < 12; i++) {
-        JXL_RETURN_IF_ERROR(result->push_back(enc[pos++]));
+        JXL_RETURN_IF_ERROR(result->push_back(in[pos++]));
       }
     } else if (command >= kCommandTypeStartFirst &&
                command < kCommandTypeStartFirst + kNumTypeStrings) {
-      JXL_RETURN_IF_ERROR(AppendKeyword(
-          *kTypeStrings[command - kCommandTypeStartFirst], result));
+      JXL_RETURN_IF_ERROR(
+          AppendKeyword(*Span<const Tag* const>(
+                            kTypeStrings)[command - kCommandTypeStartFirst],
+                        result));
       for (size_t i = 0; i < 4; i++) {
         JXL_RETURN_IF_ERROR(result->push_back(0));
       }
