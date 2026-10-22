@@ -112,6 +112,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   JXL_ENSURE(app_marker_type.size() == info.num_app_markers);
   JXL_ENSURE(com_data.size() == info.num_com_markers);
   JXL_ENSURE(scan_info.size() == info.num_scans);
+  // Bound total APP/COM marker payload allocation: each marker's 16-bit length
+  // is attacker-controlled and trusted before any payload is read, so a small
+  // bitstream can otherwise claim ~1 GiB (16384 markers x 64 KiB).
+  size_t total_marker_bytes = 0;
   for (size_t i = 0; i < app_data.size(); i++) {
     auto& app = app_data[i];
     // Encodes up to 8 different values.
@@ -127,7 +131,14 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     }
     uint32_t len = app.size() - 1;
     JXL_RETURN_IF_ERROR(visitor->Bits(16, 0, &len));
-    if (visitor->IsReading()) app.resize(len + 1);
+    if (visitor->IsReading()) {
+      total_marker_bytes += static_cast<size_t>(len) + 1;
+      if (total_marker_bytes > (size_t{1} << 26)) {
+        return JXL_FAILURE("Too much APP marker data: %" PRIuS " bytes\n",
+                           total_marker_bytes);
+      }
+      app.resize(len + 1);
+    }
     if (app.size() < 3) {
       return JXL_FAILURE("Invalid marker size: %" PRIuS "\n", app.size());
     }
@@ -135,7 +146,14 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   for (auto& com : com_data) {
     uint32_t len = com.size() - 1;
     JXL_RETURN_IF_ERROR(visitor->Bits(16, 0, &len));
-    if (visitor->IsReading()) com.resize(len + 1);
+    if (visitor->IsReading()) {
+      total_marker_bytes += static_cast<size_t>(len) + 1;
+      if (total_marker_bytes > (size_t{1} << 26)) {
+        return JXL_FAILURE("Too much COM marker data: %" PRIuS " bytes\n",
+                           total_marker_bytes);
+      }
+      com.resize(len + 1);
+    }
     if (com.size() < 3) {
       return JXL_FAILURE("Invalid marker size: %" PRIuS "\n", com.size());
     }
