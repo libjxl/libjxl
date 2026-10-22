@@ -505,6 +505,7 @@ libjxl_tests = [
     "jxl/alpha_test.cc",
     "jxl/ans_common_test.cc",
     "jxl/ans_test.cc",
+    "jxl/base/span_test.cc",
     "jxl/bit_reader_test.cc",
     "jxl/bits_test.cc",
     "jxl/blending_test.cc",
