@@ -366,12 +366,14 @@ jobs:
       run: |
         set -x
         sudo cmake --build build -- install
+        if [[ "${RUNNER_OS}" == "Linux" ]]; then sudo ldconfig; fi
         # GCC does not know how to refer to shared libraries properly
         export CC=clang
         export CXX=clang++
         cmake -Bbuild-example -Hexamples -G Ninja
         cmake --build build-example
         # Test that the built binaries run.
+        build-example/gain_map_api_roundtrip
         echo -e -n "PF\n1 1\n-1.0\n\0\0\x80\x3f\0\0\x80\x3f\0\0\x80\x3f" > test.pfm
         build-example/encode_oneshot test.pfm test.jxl
         build-example/decode_oneshot test.jxl dec.pfm dec.icc
