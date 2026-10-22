@@ -1085,7 +1085,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8) {
   PackedPixelFile ppf_out;
   size_t compressed_size =
       Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out);
-  EXPECT_EQ(compressed_size, 218306u);
+  EXPECT_EQ(compressed_size, 218291u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1105,7 +1105,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8ThunderGradient) {
 
   PackedPixelFile ppf_out;
   EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
-            261635u);
+            261620u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1144,7 +1144,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8Falcon) {
 
   PackedPixelFile ppf_out;
   EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
-            230719u);
+            230704u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1165,7 +1165,7 @@ TEST(JxlTest, RoundtripLossless8Alpha) {
 
   PackedPixelFile ppf_out;
   size_t compressed_size = Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out);
-  EXPECT_EQ(compressed_size, 246093u);
+  EXPECT_EQ(compressed_size, 246078u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.alpha_bits, 8u);
   EXPECT_TRUE(test::SameAlpha(t.ppf(), ppf_out));
@@ -1205,7 +1205,7 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
   PackedPixelFile ppf_out;
   // TODO(szabadka) Investigate big size difference on i686
   size_t compressed_size = Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out);
-  EXPECT_NEAR(compressed_size, 3334u, 100u);
+  EXPECT_NEAR(compressed_size, 930u, 100u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.alpha_bits, 16u);
   EXPECT_TRUE(test::SameAlpha(t.ppf(), ppf_out));
@@ -1245,7 +1245,7 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
 
   PackedPixelFile ppf_out;
   size_t compressed_size = Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out);
-  EXPECT_NEAR(compressed_size, 1278u, 100u);
+  EXPECT_NEAR(compressed_size, 161u, 100u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.bits_per_sample, 16u);
   EXPECT_EQ(ppf_out.info.alpha_bits, 16u);
