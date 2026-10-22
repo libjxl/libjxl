@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -49,6 +50,7 @@
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
+#include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
@@ -484,6 +486,25 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
       Roundtrip(io.get(), cparams, dparams, io2.get(), _, &compressed_size));
   EXPECT_LE(compressed_size, 23000u);
   JXL_EXPECT_OK(SamePixels(*io->Main().color(), *io2->Main().color(), _));
+}
+
+TEST(ModularTest, PreQuantizePropertiesSaturatesAtInt32Min) {
+  // std::abs(INT32_MIN) is UB; the quantized |sample| must saturate to
+  // INT32_MAX instead of overflowing (OSS-Fuzz signed-integer-overflow).
+  TreeSamples tree_samples;
+  ASSERT_TRUE(tree_samples.SetProperties(
+      {4, kNumNonrefProperties + 2}, ModularOptions::TreeMode::kDefault));
+  std::vector<pixel_type> pixel_samples = {
+      std::numeric_limits<pixel_type>::min(), 7};
+  std::vector<pixel_type> diff_samples = {
+      std::numeric_limits<pixel_type>::min(), -3};
+  tree_samples.PreQuantizeProperties({}, {}, {}, {}, pixel_samples,
+                                     diff_samples,
+                                     /*max_property_values=*/32);
+  EXPECT_EQ(std::numeric_limits<pixel_type>::max(), pixel_samples[0]);
+  EXPECT_EQ(std::numeric_limits<pixel_type>::max(), diff_samples[0]);
+  EXPECT_EQ(7, pixel_samples[1]);
+  EXPECT_EQ(3, diff_samples[1]);
 }
 
 void WriteHeaders(BitWriter* writer, size_t xsize, size_t ysize) {
