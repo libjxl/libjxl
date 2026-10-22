@@ -799,9 +799,13 @@ Status ProcessScan(const uint8_t* data, const size_t len,
 
   for (auto& c : jpg->components) {
     if (c.coeffs.empty()) {
-      const uint64_t num_blocks =
-          static_cast<uint64_t>(c.width_in_blocks) * c.height_in_blocks;
-      c.coeffs.resize(num_blocks * kDCTBlockSize);
+      size_t num_blocks;
+      size_t num_coeffs;
+      if (!SafeMul(c.width_in_blocks, c.height_in_blocks, num_blocks) ||
+          !SafeMul(num_blocks, kDCTBlockSize, num_coeffs)) {
+        return JXL_FAILURE("JPEG image has too many DCT coefficients");
+      }
+      c.coeffs.resize(num_coeffs);
     }
   }
 
