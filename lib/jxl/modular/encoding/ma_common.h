@@ -23,6 +23,20 @@ enum MATreeContext : size_t {
 
 static constexpr size_t kMaxTreeSize = 1 << 22;
 
+inline constexpr size_t MaxGlobalTreeSize(size_t xsize, size_t ysize,
+                                          size_t num_channels) {
+  constexpr size_t kBaseTreeSize = 1024;
+  constexpr size_t kScaledSizeLimit = (kMaxTreeSize - kBaseTreeSize) * 16;
+  if (xsize != 0 && ysize > kScaledSizeLimit / xsize) {
+    return kMaxTreeSize;
+  }
+  const size_t num_pixels = xsize * ysize;
+  if (num_channels != 0 && num_pixels > kScaledSizeLimit / num_channels) {
+    return kMaxTreeSize;
+  }
+  return kBaseTreeSize + num_pixels * num_channels / 16;
+}
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_MODULAR_ENCODING_MA_COMMON_H_
