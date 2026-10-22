@@ -215,4 +215,16 @@
 #define JXL_CRASH() (void)__builtin_trap()
 #endif
 
+// Release-surviving bounds check for memory safety invariants. Unlike
+// JXL_DASSERT (debug-only) or JXL_ENSURE (returns error in release), this
+// traps unconditionally — appropriate where continuing with an out-of-bounds
+// access would be worse than aborting.
+// Disable with -DJXL_HARDENED=0 for benchmarking.
+#if !defined(JXL_HARDENED) || JXL_HARDENED
+#define JXL_SECURITY_CHECK(condition) \
+  (JXL_UNLIKELY(!(condition)) ? JXL_CRASH() : (void)0)
+#else
+#define JXL_SECURITY_CHECK(condition) ((void)0)
+#endif
+
 #endif  // LIB_JXL_BASE_COMPILER_SPECIFIC_H_
