@@ -186,7 +186,6 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
 
   size_t w = input.channel[begin_c].w;
   size_t h = input.channel[begin_c].h;
-  if (input.bitdepth >= 32) return false;
   if (!lossy && nb_colors < 2) return false;
 
   if (!lossy && nb == 1) {
@@ -339,13 +338,18 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
     }
   }
 
+  // Must match the decoder, which clamps to 24 bits (see palette.cc).  Passing
+  // input.bitdepth unclamped disagrees with the decoder and overflows
+  // pixel_type inside GetPaletteValue() once the bit depth reaches 32.
+  const int bit_depth = std::min(input.bitdepth, 24);
+
   std::map<std::vector<pixel_type>, bool> implicit_color;
   std::vector<std::vector<pixel_type>> implicit_colors;
   implicit_colors.reserve(palette_internal::kImplicitPaletteSize);
   for (size_t k = 0; k < palette_internal::kImplicitPaletteSize; k++) {
     for (size_t i = 0; i < nb; i++) {
-      color[i] = palette_internal::GetPaletteValue(nullptr, k, i, 0, 0,
-                                                   input.bitdepth);
+      color[i] =
+          palette_internal::GetPaletteValue(nullptr, k, i, 0, 0, bit_depth);
     }
     implicit_color[color] = true;
     implicit_colors.push_back(color);
@@ -407,7 +411,6 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
   pixel_type *JXL_RESTRICT p_palette = pch.Row(0);
   ptrdiff_t onerow = pch.plane.PixelsPerRow();
   ptrdiff_t onerow_image = input.channel[begin_c].plane.PixelsPerRow();
-  const int bit_depth = std::min(input.bitdepth, 24);
 
   if (lossy) {
     for (uint32_t i = 0; i < nb_deltas; i++) {
@@ -494,8 +497,8 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
             color_with_error[c] =
                 p_in[c][x] + (palette_iteration_data.final_run ? 1 : 0) *
                                  diffusion_multiplier * error_row[0][c][x + 2];
-            color[c] = Clamp1(lround(color_with_error[c]), 0l,
-                              (1l << input.bitdepth) - 1);
+            color[c] = Clamp1(lround(color_with_error[c]), int64_t{0},
+                              (int64_t{1} << input.bitdepth) - 1);
           }
 
           for (size_t c = 0; c < nb; ++c) {
