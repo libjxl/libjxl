@@ -451,6 +451,10 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
 
 }  // namespace
 
+void QuantizeChannelForTest(Channel& ch, const int q) {
+  QuantizeChannel(ch, q);
+}
+
 StatusOr<std::unique_ptr<ModularFrameEncoder>> ModularFrameEncoder::Create(
     JxlMemoryManager* memory_manager, const FrameHeader& frame_header,
     const CompressParams& cparams_orig, bool streaming_mode) {
