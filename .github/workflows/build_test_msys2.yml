@@ -34,15 +34,16 @@ jobs:
         include:
          - msystem: mingw64
          - msystem: clang64
-         - msystem: mingw32
-           disable_tests:
-             - ButteraugliTest.Lossless
-             - ButteraugliTest.Distmap
-             - JxlTest.RoundtripLargeEmptyModular
-           disable_benchmark: true
          # "Legacy" toolchains are being "phased-out":
          # https://www.msys2.org/news/#2023-12-13-starting-to-drop-some-32-bit-packages
          # clang32 is already missing required "gtest" and "libavif"
+         # mingw32 is also missing gtest
+         # - msystem: mingw32
+         #   disable_tests:
+         #     - ButteraugliTest.Lossless
+         #     - ButteraugliTest.Distmap
+         #     - JxlTest.RoundtripLargeEmptyModular
+         #   disable_benchmark: true
          # - msystem: clang32
          #   disable_benchmark: true
 
