@@ -35,10 +35,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  ubuntu_static_x86_64:
-    name: linux x86_64 static
+  ubuntu_static:
+    name: linux ${{ matrix.arch }} static
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
-    runs-on: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            os: ubuntu-latest
+          - arch: aarch64
+            os: ubuntu-24.04-arm
+    env:
+      RELEASE_ARCH: ${{ matrix.arch }}
     steps:
     - name: Harden Runner
       uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -72,6 +82,9 @@ jobs:
         echo "CC=clang" >> $GITHUB_ENV
         echo "CXX=clang++" >> $GITHUB_ENV
 
+    - name: Verify native architecture
+      run: test "$(uname -m)" = "${RELEASE_ARCH}"
+
     - name: Checkout the source
       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
@@ -95,14 +108,14 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build
-        tarlz -9cvf ${ROOT}/jxl-linux-x86_64-static.tar.lz \
+        tarlz -9cvf "${ROOT}/jxl-linux-${RELEASE_ARCH}-static.tar.lz" \
           LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
-        name: jxl-linux-x86_64-static
-        path: jxl-linux-x86_64-static.tar.lz
+        name: jxl-linux-${{ matrix.arch }}-static
+        path: jxl-linux-${{ matrix.arch }}-static.tar.lz
         archive: false
 
 
@@ -386,7 +399,7 @@ jobs:
 
   publish_release_assets:
     name: Publish release assets
-    needs: [ubuntu_static_x86_64, release_ubuntu_pkg, windows_build]
+    needs: [ubuntu_static, release_ubuntu_pkg, windows_build]
     if: github.event_name == 'release'
     runs-on: [ubuntu-latest]
     permissions:
@@ -418,7 +431,7 @@ jobs:
   # Keep in sync with `publish_release_assets` workflow.
   dry_publish_release_assets:
     name: Publish release assets (dry run)
-    needs: [ubuntu_static_x86_64, release_ubuntu_pkg, windows_build]
+    needs: [ubuntu_static, release_ubuntu_pkg, windows_build]
     if: github.event_name != 'release'
     runs-on: [ubuntu-latest]
 
