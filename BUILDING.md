@@ -68,6 +68,22 @@ cmake --build . -- -j$(nproc)
 
 The encoder/decoder tools will be available in the `build/tools` directory.
 
+### ARM64 GCC 16.1 build workaround
+
+Building libjxl 0.12 on ARM64 (aarch64) with GCC 16.1 and Highway 1.4 can
+trigger an internal compiler error in `N_SVE2_128::DCFromLowestFrequencies`.
+If you encounter this error, add `-DJPEGXL_ENABLE_HWY_SVE2_128=false` to
+the CMake configuration command above:
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+  -DJPEGXL_ENABLE_HWY_SVE2_128=false ..
+```
+
+This disables the Highway SVE2_128 target while leaving other enabled targets
+available. See [issue #4907](https://github.com/libjxl/libjxl/issues/4907) for
+the reported compiler failure and confirmation of this workaround.
+
 ## <a name="installing"></a> Installing
 
 ```bash
