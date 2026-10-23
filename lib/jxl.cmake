@@ -293,13 +293,6 @@ else()
   endif()
 endif()
 
-set(JPEGXL_LIBRARY_MAIN jxl)
-
-# Fix pkg-config file on MSVC when building static libraries.
-if (MSVC AND NOT BUILD_SHARED_LIBS)
-  set(JPEGXL_LIBRARY_MAIN jxl-static)
-endif()
-
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
                "libjxl.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl.pc"
