@@ -143,8 +143,8 @@ jobs:
           - name: release_lto
             os: ubuntu-latest
             mode: release
-            cc: clang-17
-            cxx: clang++-17
+            cc: clang-21
+            cxx: clang++-21
             apt_pkgs: lld
             cmake_args: >-
               -DJPEGXL_ENABLE_LTO=ON

@@ -23,8 +23,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  SDE_ID: "813591"
-  SDE_VERSION: "9.33.0-2024-01-07"
+  SDE_ID: "924984"
+  SDE_VERSION: "10.13.1-2026-07-28"
 
 jobs:
   compile:
