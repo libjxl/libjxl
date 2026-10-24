@@ -910,7 +910,9 @@ JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec) {
   dec->frame_stage = FrameStage::kHeader;
   dec->AdvanceCodestream(dec->remaining_frame_size);
   if (dec->is_last_of_still) {
+    // The output buffers only apply to the frame that was skipped.
     dec->image_out_buffer_set = false;
+    dec->extra_channel_output.clear();
   }
   return JXL_DEC_SUCCESS;
 }
