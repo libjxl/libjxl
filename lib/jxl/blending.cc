@@ -52,6 +52,12 @@ Status PerformBlending(
       break;
     }
   }
+  if (JXL_UNLIKELY(xsize == 0)) {
+    // An empty segment is reachable (e.g. a patch whose right edge lands
+    // exactly on the segment start).  Blending nothing also avoids creating
+    // zero-width (unallocated) ImageF planes and null memcpy destinations.
+    return true;
+  }
   JXL_ASSIGN_OR_RETURN(ImageF tmp,
                        ImageF::Create(memory_manager, xsize, 3 + num_ec));
   // Blend extra channels first so that we use the pre-blending alpha.
