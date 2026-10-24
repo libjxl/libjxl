@@ -52,6 +52,68 @@ namespace jxl {
 static constexpr size_t kPatchFrameReferenceId = 3;
 
 // static
+// Sets the patch dictionary from CompressParams::custom_patches. The decoder
+// draws patches grouped by reference position (source rectangle), so a
+// placement shares an earlier placement's reference position only if that does
+// not change the drawing order: no placement listed in between may overlap it
+// and belong to a later reference position. Otherwise it gets its own.
+Status SetCustomPatches(const std::vector<CompressParams::CustomPatch>& patches,
+                        size_t num_extra_channels, PatchDictionary* pdic) {
+  std::vector<PatchReferencePosition> ref_positions;
+  std::vector<std::vector<size_t>> uses;
+  std::vector<size_t> ref_of(patches.size());
+  const auto overlap = [](const CompressParams::CustomPatch& a,
+                          const CompressParams::CustomPatch& b) {
+    return a.x < b.x + b.xsize && b.x < a.x + a.xsize && a.y < b.y + b.ysize &&
+           b.y < a.y + a.ysize;
+  };
+  for (size_t i = 0; i < patches.size(); i++) {
+    const CompressParams::CustomPatch& p = patches[i];
+    if (p.xsize == 0 || p.ysize == 0 || p.ref >= kMaxNumReferenceFrames ||
+        p.blend_mode >= kNumPatchBlendModes ||
+        p.ec_blend_mode >= kNumPatchBlendModes) {
+      return JXL_FAILURE("Invalid custom patch");
+    }
+    size_t r = 0;
+    for (; r < ref_positions.size(); r++) {
+      const PatchReferencePosition& rp = ref_positions[r];
+      if (rp.ref != p.ref || rp.x0 != p.x0 || rp.y0 != p.y0 ||
+          rp.xsize != p.xsize || rp.ysize != p.ysize) {
+        continue;
+      }
+      bool keeps_order = true;
+      for (size_t j = 0; j < i && keeps_order; j++) {
+        keeps_order = ref_of[j] <= r || !overlap(patches[j], p);
+      }
+      if (keeps_order) break;
+    }
+    if (r == ref_positions.size()) {
+      ref_positions.push_back({p.ref, p.x0, p.y0, p.xsize, p.ysize});
+      uses.emplace_back();
+    }
+    uses[r].push_back(i);
+    ref_of[i] = r;
+  }
+  std::vector<PatchPosition> positions;
+  std::vector<PatchBlending> blendings;
+  for (size_t r = 0; r < uses.size(); r++) {
+    for (size_t i : uses[r]) {
+      const CompressParams::CustomPatch& p = patches[i];
+      positions.push_back({p.x, p.y, r});
+      blendings.push_back(
+          {static_cast<PatchBlendMode>(p.blend_mode), 0, p.clamp});
+      for (size_t ec = 0; ec < num_extra_channels; ec++) {
+        blendings.push_back(
+            {static_cast<PatchBlendMode>(p.ec_blend_mode), 0, p.clamp});
+      }
+    }
+  }
+  PatchDictionaryEncoder::SetPositions(
+      pdic, std::move(positions), std::move(ref_positions),
+      std::move(blendings), num_extra_channels + 1);
+  return true;
+}
+
 Status PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
                                       BitWriter* writer, LayerType layer,
                                       AuxOut* aux_out) {

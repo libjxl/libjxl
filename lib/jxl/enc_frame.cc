@@ -76,6 +76,7 @@
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/loop_filter.h"
+#include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/noise.h"
 #include "lib/jxl/padded_bytes.h"
@@ -1141,6 +1142,275 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
   return true;
 }
 
+// Sets the dequantization matrices of cparams.vardct_dequant (see
+// CompressParams::CustomDequantTable), for vardct_from_tree.
+Status SetDequantMatricesFromTree(const FrameDimensions& frame_dim,
+                                  const CompressParams& cparams,
+                                  ModularFrameEncoder* enc_modular,
+                                  PassesSharedState* shared) {
+  JxlMemoryManager* memory_manager = enc_modular->memory_manager();
+  if (cparams.vardct_dequant.size() != kNumQuantTables) {
+    return JXL_FAILURE("Need kNumQuantTables custom dequantization tables");
+  }
+  std::vector<QuantEncoding> encodings(kNumQuantTables,
+                                       QuantEncoding::Library<0>());
+  for (size_t idx = 0; idx < kNumQuantTables; idx++) {
+    const CompressParams::CustomDequantTable& custom =
+        cparams.vardct_dequant[idx];
+    if (custom.raw_den != 0) {
+      const size_t xsize = DequantMatrices::required_size_x[idx] * kBlockDim;
+      const size_t ysize = DequantMatrices::required_size_y[idx] * kBlockDim;
+      JXL_ASSIGN_OR_RETURN(Image image,
+                           Image::Create(memory_manager, xsize, ysize,
+                                         /*bitdepth=*/8, /*nb_chans=*/3));
+      JXL_ASSIGN_OR_RETURN(ModularStreamId stream,
+                           ModularStreamId::QuantTable(idx));
+      weighted::Header wp_header;
+      SetWPHeader(cparams.options, &wp_header);
+      JXL_RETURN_IF_ERROR(EvaluateTreeWithZeroResiduals(
+          cparams.custom_fixed_tree, stream.ID(frame_dim), &image, wp_header));
+      std::vector<int> qtable(3 * xsize * ysize);
+      for (size_t c = 0; c < 3; c++) {
+        for (size_t y = 0; y < ysize; y++) {
+          const int32_t* row = image.channel[c].Row(y);
+          for (size_t x = 0; x < xsize; x++) {
+            // The decoder checks this; the step (raw_den * value) must also be
+            // in the range of ComputeQuantTable.
+            double step = static_cast<double>(custom.raw_den) * row[x];
+            if (row[x] <= 0 || step > 1e8) {
+              return JXL_FAILURE(
+                  "Dequantization table %" PRIuS
+                  " has value %d at channel %" PRIuS " (x, y) = (%" PRIuS
+                  ", %" PRIuS
+                  "): values must be positive and at most 1e8 / den",
+                  idx, row[x], c, x, y);
+            }
+            qtable[(c * ysize + y) * xsize + x] = row[x];
+          }
+        }
+      }
+      encodings[idx] = QuantEncoding::RAW(std::move(qtable));
+      encodings[idx].qraw.qtable_den = custom.raw_den;
+    } else if (custom.num_bands != 0) {
+      if (custom.num_bands > DctQuantWeightParams::kMaxDistanceBands) {
+        return JXL_FAILURE("Too many distance bands");
+      }
+      // Quantization weights (inverse steps): the first band is signaled as
+      // is, the others as the ratio to the previous band, as a multiplier m
+      // (ratio 1 + m for m > 0, 1 / (1 - m) otherwise).
+      DctQuantWeightParams params;
+      params.num_distance_bands = custom.num_bands;
+      for (size_t c = 0; c < 3; c++) {
+        for (size_t i = 0; i < custom.num_bands; i++) {
+          float step = custom.band_steps[c][i];
+          if (!(step > 0)) return JXL_FAILURE("Invalid dequantization step");
+          float weight = 1.0f / step;
+          if (i == 0) {
+            params.distance_bands[c][i] = weight;
+          } else {
+            float ratio = step / custom.band_steps[c][i - 1];
+            // ratio of the weights is 1 / ratio.
+            params.distance_bands[c][i] =
+                ratio <= 1 ? 1.0f / ratio - 1.0f : 1.0f - ratio;
+          }
+        }
+      }
+      encodings[idx] = QuantEncoding::DCT(params);
+    }
+  }
+  JXL_RETURN_IF_ERROR(
+      DequantMatricesSetCustom(&shared->matrices, encodings, enc_modular));
+  return true;
+}
+
+// VarDCT data defined by cparams.custom_fixed_tree (see
+// CompressParams::vardct_from_tree). The LF and HF metadata streams are
+// encoded with that tree and zero residuals, so a decoder gets whatever the
+// tree predicts; the encoder evaluates the tree for the HF metadata only, since
+// the AC strategy determines the block layout.
+Status ComputeVarDCTDataFromTree(const FrameHeader& frame_header,
+                                 ThreadPool* pool,
+                                 ModularFrameEncoder* enc_modular,
+                                 PassesEncoderState* enc_state) {
+  PassesSharedState& shared = enc_state->shared;
+  JxlMemoryManager* memory_manager = enc_state->memory_manager();
+  const FrameDimensions& frame_dim = shared.frame_dim;
+  const Tree& tree = enc_state->cparams.custom_fixed_tree;
+  if (tree.empty()) return JXL_FAILURE("vardct_from_tree needs a tree");
+  if (!frame_header.chroma_subsampling.Is444()) {
+    return JXL_FAILURE("vardct_from_tree needs 4:4:4");
+  }
+
+  JXL_ASSIGN_OR_RETURN(
+      shared.cmap, ColorCorrelationMap::Create(
+                       memory_manager, frame_dim.xsize, frame_dim.ysize,
+                       frame_header.color_transform == ColorTransform::kXYB));
+  const CompressParams& cparams = enc_state->cparams;
+  if (cparams.vardct_ytox_dc < -128 || cparams.vardct_ytox_dc > 127 ||
+      cparams.vardct_ytob_dc < -128 || cparams.vardct_ytob_dc > 127) {
+    return JXL_FAILURE("LF chroma from luma factors must be -128..127");
+  }
+  shared.cmap.mutable_base().SetYToXDC(cparams.vardct_ytox_dc);
+  shared.cmap.mutable_base().SetYToBDC(cparams.vardct_ytob_dc);
+  if (!cparams.vardct_lf_inv_quant.empty()) {
+    if (cparams.vardct_lf_inv_quant.size() != 3) {
+      return JXL_FAILURE("Need 3 inverse LF quantization steps");
+    }
+    for (float inv_quant : cparams.vardct_lf_inv_quant) {
+      // Signaled as 128 / inv_quant in a float16.
+      if (!(inv_quant >= 1.0f / 256 && inv_quant <= (1 << 24))) {
+        return JXL_FAILURE("Invalid inverse LF quantization step %f",
+                           inv_quant);
+      }
+    }
+    JXL_RETURN_IF_ERROR(DequantMatricesSetCustomDC(
+        memory_manager, &shared.matrices, cparams.vardct_lf_inv_quant.data()));
+  }
+  if (!cparams.vardct_dequant.empty()) {
+    JXL_RETURN_IF_ERROR(
+        SetDequantMatricesFromTree(frame_dim, cparams, enc_modular, &shared));
+  }
+  if (cparams.vardct_global_scale == 0 && cparams.vardct_quant_dc == 0) {
+    shared.quantizer = Quantizer(shared.matrices);
+  } else {
+    const Quantizer default_quantizer(shared.matrices);
+    const QuantizerParams defaults = default_quantizer.GetParams();
+    uint32_t global_scale = cparams.vardct_global_scale != 0
+                                ? cparams.vardct_global_scale
+                                : defaults.global_scale;
+    uint32_t quant_dc = cparams.vardct_quant_dc != 0 ? cparams.vardct_quant_dc
+                                                     : defaults.quant_dc;
+    // The ranges of QuantizerParams.
+    if (global_scale > 73728 || quant_dc > 65536) {
+      return JXL_FAILURE(
+          "Global scale %u (max 73728) or quant_dc %u (max "
+          "65536) out of range",
+          global_scale, quant_dc);
+    }
+    shared.quantizer = Quantizer(shared.matrices, quant_dc, global_scale);
+  }
+  shared.quantizer.RecomputeFromGlobalScale();
+  shared.ac_strategy.FillInvalid();
+  if (enc_state->cparams.use_custom_block_ctx_map) {
+    shared.block_ctx_map = enc_state->cparams.custom_block_ctx_map;
+  }
+  if (!enc_state->cparams.custom_hf_tokens.empty() &&
+      enc_state->cparams.custom_hf_tokens.size() !=
+          shared.block_ctx_map.NumACContexts()) {
+    return JXL_FAILURE("Need one fixed HF token per HF context");
+  }
+
+  enc_state->coeffs.clear();
+  while (enc_state->coeffs.size() < enc_state->passes.size()) {
+    JXL_ASSIGN_OR_RETURN(
+        std::unique_ptr<ACImageT<int32_t>> coeffs,
+        ACImageT<int32_t>::Make(memory_manager, kGroupDim * kGroupDim,
+                                frame_dim.num_groups));
+    coeffs->ZeroFill();
+    enc_state->coeffs.emplace_back(std::move(coeffs));
+  }
+
+  // HF metadata, laid out as the decoder does (DecodeAcMetadata), with one AC
+  // strategy entry per block (the unused ones cost nothing).
+  for (size_t group_index = 0; group_index < frame_dim.num_dc_groups;
+       group_index++) {
+    const Rect r = frame_dim.DCGroupRect(group_index);
+    JXL_ASSIGN_OR_RETURN(Image image,
+                         Image::Create(memory_manager, r.xsize(), r.ysize(),
+                                       /*bitdepth=*/8, 4));
+    Rect cr(r.x0() >> 3, r.y0() >> 3, (r.xsize() + 7) >> 3,
+            (r.ysize() + 7) >> 3);
+    JXL_ASSIGN_OR_RETURN(
+        image.channel[0],
+        Channel::Create(memory_manager, cr.xsize(), cr.ysize(), 3, 3));
+    JXL_ASSIGN_OR_RETURN(
+        image.channel[1],
+        Channel::Create(memory_manager, cr.xsize(), cr.ysize(), 3, 3));
+    JXL_ASSIGN_OR_RETURN(
+        image.channel[2],
+        Channel::Create(memory_manager, r.xsize() * r.ysize(), 2, 0, 0));
+    weighted::Header wp_header;
+    SetWPHeader(cparams.options, &wp_header);
+    JXL_RETURN_IF_ERROR(EvaluateTreeWithZeroResiduals(
+        tree, ModularStreamId::ACMetadata(group_index).ID(frame_dim), &image,
+        wp_header));
+    JXL_RETURN_IF_ERROR(ConvertPlaneAndClamp(Rect(image.channel[0].plane),
+                                             image.channel[0].plane, cr,
+                                             &shared.cmap.ytox_map));
+    JXL_RETURN_IF_ERROR(ConvertPlaneAndClamp(Rect(image.channel[1].plane),
+                                             image.channel[1].plane, cr,
+                                             &shared.cmap.ytob_map));
+    size_t num = 0;
+    const size_t count = r.xsize() * r.ysize();
+    const int32_t* acs_in = image.channel[2].plane.Row(0);
+    const int32_t* qf_in = image.channel[2].plane.Row(1);
+    size_t xlim = std::min(shared.ac_strategy.xsize(), r.x0() + r.xsize());
+    size_t ylim = std::min(shared.ac_strategy.ysize(), r.y0() + r.ysize());
+    for (size_t iy = 0; iy < r.ysize(); iy++) {
+      size_t y = r.y0() + iy;
+      int32_t* row_qf = r.Row(&shared.raw_quant_field, iy);
+      uint8_t* row_epf = r.Row(&shared.epf_sharpness, iy);
+      const int32_t* row_sharpness = image.channel[3].plane.Row(iy);
+      for (size_t ix = 0; ix < r.xsize(); ix++) {
+        size_t x = r.x0() + ix;
+        int sharpness = row_sharpness[ix];
+        if (sharpness < 0 || sharpness >= LoopFilter::kEpfSharpEntries) {
+          return JXL_FAILURE("EPF sharpness %d at block (%" PRIuS ", %" PRIuS
+                             ") is not in 0..7",
+                             sharpness, x, y);
+        }
+        row_epf[ix] = sharpness;
+        if (shared.ac_strategy.IsValid(x, y)) continue;
+        JXL_ENSURE(num < count);
+        int32_t raw = acs_in[num];
+        if (!AcStrategy::IsRawStrategyValid(raw)) {
+          return JXL_FAILURE(
+              "AC strategy %d (entry %" PRIuS ") is not in 0..26", raw, num);
+        }
+        AcStrategy acs = AcStrategy::FromRawStrategy(raw);
+        size_t next_x_ac_block =
+            (x / kGroupDimInBlocks + 1) * kGroupDimInBlocks;
+        size_t next_y_ac_block =
+            (y / kGroupDimInBlocks + 1) * kGroupDimInBlocks;
+        if (x + acs.covered_blocks_x() > std::min(next_x_ac_block, xlim) ||
+            y + acs.covered_blocks_y() > std::min(next_y_ac_block, ylim)) {
+          return JXL_FAILURE("AC strategy %d at block (%" PRIuS ", %" PRIuS
+                             ") crosses a group or image edge",
+                             raw, x, y);
+        }
+        if (!shared.ac_strategy.SetNoBoundsCheck(x, y, AcStrategyType(raw))) {
+          return JXL_FAILURE("AC strategy %d at block (%" PRIuS ", %" PRIuS
+                             ") overlaps an earlier block",
+                             raw, x, y);
+        }
+        row_qf[ix] = 1 + std::max<int32_t>(
+                             0, std::min(Quantizer::kQuantMax - 1, qf_in[num]));
+        num++;
+      }
+    }
+  }
+
+  // The LF image comes from the tree; the encoder's copy stays zero.
+  JXL_ASSIGN_OR_RETURN(Image3F dc,
+                       Image3F::Create(memory_manager, frame_dim.xsize_blocks,
+                                       frame_dim.ysize_blocks));
+  ZeroFillImage(&dc);
+  auto compute_dc_coeffs = [&](const uint32_t group_index,
+                               size_t /* thread */) -> Status {
+    const Rect r = shared.frame_dim.DCGroupRect(group_index);
+    JXL_RETURN_IF_ERROR(enc_modular->AddVarDCTDC(
+        frame_header, dc, r, group_index, /*nl_dc=*/false, enc_state,
+        /*jpeg_transcode=*/false));
+    JXL_RETURN_IF_ERROR(enc_modular->AddACMetadata(
+        r, group_index, /*jpeg_transcode=*/false, enc_state));
+    return true;
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_dc_groups,
+                                ThreadPool::NoInit, compute_dc_coeffs,
+                                "Compute DC coeffs"));
+  return true;
+}
+
 Status ComputeVarDCTEncodingData(const FrameHeader& frame_header,
                                  const Image3F* linear,
                                  Image3F* JXL_RESTRICT opsin, const Rect& rect,
@@ -1188,6 +1458,64 @@ Status ComputeAllCoeffOrders(PassesEncoderState& enc_state,
         &enc_state.shared.coeff_orders[i * enc_state.shared.coeff_order_size]));
   }
   enc_state.used_acs |= used_orders_info.first;
+  return true;
+}
+
+// Sets and signals the orders of cparams.custom_coeff_orders.
+Status SetCustomCoeffOrders(PassesEncoderState& enc_state) {
+  const auto& custom = enc_state.cparams.custom_coeff_orders;
+  if (custom.empty()) return true;
+  if (custom.size() != 3 * kNumOrders) {
+    return JXL_FAILURE("Need 3 * kNumOrders custom coefficient orders");
+  }
+  PassesSharedState& shared = enc_state.shared;
+  std::vector<coeff_order_t> natural_order;
+  uint16_t computed = 0;
+  for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
+    uint8_t ord = kStrategyOrder[o];
+    if (computed & (1 << ord)) continue;
+    computed |= 1 << ord;
+    if (custom[3 * ord].empty() && custom[3 * ord + 1].empty() &&
+        custom[3 * ord + 2].empty()) {
+      continue;
+    }
+    AcStrategy acs = AcStrategy::FromRawStrategy(o);
+    const size_t llf = acs.covered_blocks_x() * acs.covered_blocks_y();
+    const size_t size = kDCTBlockSize * llf;
+    size_t rows = acs.covered_blocks_y();
+    size_t columns = acs.covered_blocks_x();
+    CoefficientLayout(&rows, &columns);
+    natural_order.resize(size);
+    acs.ComputeNaturalCoeffOrder(natural_order.data());
+    for (size_t c = 0; c < 3; c++) {
+      std::vector<coeff_order_t> order(natural_order);
+      std::vector<bool> taken(size);
+      size_t k = llf;
+      for (uint32_t pos : custom[3 * ord + c]) {
+        if (pos >= size || taken[pos]) {
+          return JXL_FAILURE("Invalid or repeated position %u in order %u", pos,
+                             ord);
+        }
+        if (pos / (columns * kBlockDim) < rows &&
+            pos % (columns * kBlockDim) < columns) {
+          return JXL_FAILURE("Position %u in order %u is an LLF coefficient",
+                             pos, ord);
+        }
+        taken[pos] = true;
+        order[k++] = pos;
+      }
+      for (size_t i = llf; i < size; i++) {
+        if (!taken[natural_order[i]]) order[k++] = natural_order[i];
+      }
+      JXL_ENSURE(k == size);
+      for (size_t i = 0; i < enc_state.used_orders.size(); i++) {
+        memcpy(&shared.coeff_orders[i * shared.coeff_order_size +
+                                    CoeffOrderOffset(ord, c)],
+               order.data(), size * sizeof(coeff_order_t));
+        enc_state.used_orders[i] |= 1u << ord;
+      }
+    }
+  }
   return true;
 }
 
@@ -1321,6 +1649,16 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
     }
     hist_params.streaming_mode = enc_state->streaming_mode;
     hist_params.initialize_global_state = enc_state->initialize_global_state;
+    if (!enc_state->cparams.custom_hf_tokens.empty()) {
+      JXL_ENSURE(num_histogram_groups == 1);
+      JXL_ASSIGN_OR_RETURN(
+          size_t cost,
+          EncodeFixedTokenHistograms(
+              memory_manager, enc_state->cparams.custom_hf_tokens,
+              &enc_state->passes[i].codes, writer, LayerType::Ac, aux_out));
+      (void)cost;
+      continue;
+    }
     JXL_ASSIGN_OR_RETURN(
         size_t cost,
         BuildAndEncodeHistograms(
@@ -1371,9 +1709,18 @@ Status EncodeGroups(const FrameHeader& frame_header,
           aux_out));
     }
     if (frame_header.flags & FrameHeader::kSplines) {
+      HistogramParams spline_params;
+      if (enc_state->cparams.custom_splines.HasAny() &&
+          enc_state->cparams.speed_tier <= SpeedTier::kTortoise) {
+        // Given splines (jxl_from_tree): the control points of periodic
+        // curves repeat their double deltas, which LZ77 can take.
+        spline_params.lz77_method = HistogramParams::LZ77Method::kOptc256;
+        spline_params.lz77_careful_first_pass =
+            enc_state->cparams.lz77_careful_first_pass;
+      }
       JXL_RETURN_IF_ERROR(EncodeSplines(shared.image_features.splines,
                                         get_output(0), LayerType::Splines,
-                                        HistogramParams(), aux_out));
+                                        spline_params, aux_out));
     }
     if (frame_header.flags & FrameHeader::kNoise) {
       JXL_RETURN_IF_ERROR(EncodeNoise(shared.image_features.noise_params,
@@ -1529,6 +1876,16 @@ Status ComputeEncodingData(
   }
 
   shared.image_features.patches.SetShared(&shared.reference_frames);
+  // Custom splines and patches (used by jxl_from_tree), for VarDCT and modular
+  // frames alike: the encoder does not search for its own.
+  if (cparams.custom_splines.HasAny()) {
+    shared.image_features.splines.SetData(cparams.custom_splines);
+  }
+  if (!cparams.custom_patches.empty()) {
+    JXL_RETURN_IF_ERROR(SetCustomPatches(cparams.custom_patches,
+                                         metadata->m.num_extra_channels,
+                                         &shared.image_features.patches));
+  }
   const FrameDimensions& frame_dim = shared.frame_dim;
   JXL_ASSIGN_OR_RETURN(
       shared.ac_strategy,
@@ -1644,6 +2001,14 @@ Status ComputeEncodingData(
   if (enc_state.initialize_global_state && !jpeg_data) {
     ComputeChromacityAdjustments(cparams, color, group_rect,
                                  &mutable_frame_header);
+    if (cparams.vardct_from_tree) {
+      if (cparams.vardct_x_qm_scale >= 0) {
+        mutable_frame_header.x_qm_scale = cparams.vardct_x_qm_scale;
+      }
+      if (cparams.vardct_b_qm_scale >= 0) {
+        mutable_frame_header.b_qm_scale = cparams.vardct_b_qm_scale;
+      }
+    }
   }
 
   bool has_jpeg_data = (jpeg_data != nullptr);
@@ -1672,18 +2037,27 @@ Status ComputeEncodingData(
     if (jpeg_data) {
       JXL_RETURN_IF_ERROR(ComputeJPEGTranscodingData(
           *jpeg_data, frame_header, pool, &enc_modular, &enc_state));
+    } else if (cparams.vardct_from_tree) {
+      JXL_RETURN_IF_ERROR(ComputeVarDCTDataFromTree(frame_header, pool,
+                                                    &enc_modular, &enc_state));
     } else {
       JXL_RETURN_IF_ERROR(ComputeVarDCTEncodingData(
           frame_header, linear, &color, group_rect, cms, pool, &enc_modular,
           &enc_state, aux_out));
     }
     JXL_RETURN_IF_ERROR(ComputeAllCoeffOrders(enc_state, frame_dim));
+    if (cparams.vardct_from_tree) {
+      JXL_RETURN_IF_ERROR(SetCustomCoeffOrders(enc_state));
+    }
     if (!enc_state.streaming_mode) {
       shared.num_histograms = 1;
       enc_state.histogram_idx.resize(frame_dim.num_groups);
     }
-    JXL_RETURN_IF_ERROR(
-        TokenizeAllCoefficients(frame_header, pool, &enc_state));
+    // With fixed HF tokens there is nothing to write per group.
+    if (cparams.custom_hf_tokens.empty()) {
+      JXL_RETURN_IF_ERROR(
+          TokenizeAllCoefficients(frame_header, pool, &enc_state));
+    }
   }
 
   if (cparams.modular_mode || !extra_channels.empty()) {

@@ -130,6 +130,7 @@ struct ColorCorrelationMap {
                                               bool XYB = true);
 
   const ColorCorrelation& base() const { return base_; }
+  ColorCorrelation& mutable_base() { return base_; }
   Status DecodeDC(BitReader* br) { return base_.DecodeDC(br); }
 
   ImageSB ytox_map;
