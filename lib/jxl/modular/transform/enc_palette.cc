@@ -65,9 +65,9 @@ float ColorDistance(const std::vector<float> &JXL_RESTRICT a,
       }
     }
     distance += difference * difference * weight * weight;
-    const int sum_weight = c == 0 ? 3 : c == 1 ? 5 : 1;
+    const float sum_weight = c == 0 ? 3.0f : c == 1 ? 5.0f : 1.0f;
     sum_a += a[c] * sum_weight;
-    sum_b += b[c] * sum_weight;
+    sum_b += static_cast<float>(b[c]) * sum_weight;
   }
   distance *= 4;
   float sum_difference = sum_a - sum_b;
@@ -110,8 +110,8 @@ static int QuantizeColorToImplicitPaletteIndex(
 
 }  // namespace palette_internal
 
-int RoundInt(int value, int div) {  // symmetric rounding around 0
-  if (value < 0) return -RoundInt(-value, div);
+int64_t RoundInt(int64_t value, int64_t div) {  // symmetric rounding around 0
+  if (value < 0) return -((-value + div / 2) / div);
   return (value + div / 2) / div;
 }
 
@@ -130,10 +130,12 @@ struct PaletteIterationData {
     pixel_type bucket_size = 3 << std::max(0, bitdepth - 8);
     // Store frequency weighted by delta distance from quantized value.
     for (size_t i = 0; i < deltas[0].size(); ++i) {
-      pixel_type_3d delta = {
-          {RoundInt(deltas[0][i], bucket_size),
-           RoundInt(deltas[1][i], bucket_size),
-           RoundInt(deltas[2][i], bucket_size)}};  // a basic form of clustering
+      pixel_type_3d delta = {{static_cast<pixel_type>(
+                                  RoundInt(deltas[0][i], bucket_size)),
+                              static_cast<pixel_type>(
+                                  RoundInt(deltas[1][i], bucket_size)),
+                              static_cast<pixel_type>(RoundInt(
+                                  deltas[2][i], bucket_size))}};  // clustering
       if (delta[0] == 0 && delta[1] == 0 && delta[2] == 0) continue;
       delta_frequency_map[delta] += sqrt(sqrt(delta_distances[i]));
     }
@@ -168,7 +170,11 @@ struct PaletteIterationData {
       // Number obtained by optimizing on jyrki31 corpus:
       if (delta_frequency.second < 17) break;
       for (int c = 0; c < 3; ++c) {
-        frequent_deltas[c].push_back(delta_frequency.first[c] * bucket_size);
+        const int64_t scaled_delta =
+            static_cast<int64_t>(delta_frequency.first[c]) * bucket_size;
+        frequent_deltas[c].push_back(static_cast<pixel_type>(Clamp1<int64_t>(
+            scaled_delta, std::numeric_limits<pixel_type>::min(),
+            std::numeric_limits<pixel_type>::max())));
       }
     }
   }
@@ -186,7 +192,9 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
 
   size_t w = input.channel[begin_c].w;
   size_t h = input.channel[begin_c].h;
+  if (w == 0 || h == 0) return false;
   if (input.bitdepth >= 32) return false;
+  if (lossy && input.bitdepth > 24) return false;
   if (!lossy && nb_colors < 2) return false;
 
   if (!lossy && nb == 1) {
@@ -494,8 +502,14 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
             color_with_error[c] =
                 p_in[c][x] + (palette_iteration_data.final_run ? 1 : 0) *
                                  diffusion_multiplier * error_row[0][c][x + 2];
-            color[c] = Clamp1(lround(color_with_error[c]), 0l,
-                              (1l << input.bitdepth) - 1);
+            const int64_t max_color = (int64_t{1} << input.bitdepth) - 1;
+            const double clamped_color =
+                std::isfinite(color_with_error[c])
+                    ? Clamp1(static_cast<double>(color_with_error[c]), 0.0,
+                             static_cast<double>(max_color))
+                    : 0.0;
+            color[c] = static_cast<pixel_type>(
+                Clamp1<int64_t>(std::llround(clamped_color), 0, max_color));
           }
 
           for (size_t c = 0; c < nb; ++c) {
@@ -510,7 +524,13 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
                   /*palette_size=*/nb_colors,
                   /*onerow=*/onerow, /*bit_depth=*/bit_depth);
               if (index < static_cast<int>(nb_deltas)) {
-                quantized_val[c] += predictions[c];
+                const int64_t sum =
+                    static_cast<int64_t>(quantized_val[c]) + predictions[c];
+                if (sum < std::numeric_limits<pixel_type>::min() ||
+                    sum > std::numeric_limits<pixel_type>::max()) {
+                  return;
+                }
+                quantized_val[c] = static_cast<pixel_type>(sum);
               }
             }
             const float color_distance =
@@ -539,7 +559,18 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
               best_is_delta = index < static_cast<int>(nb_deltas);
               best_val.swap(quantized_val);
               for (size_t c = 0; c < nb; ++c) {
-                ideal_residual[c] = color_with_error[c] - predictions[c];
+                const double diff = static_cast<double>(color_with_error[c]) -
+                                    static_cast<double>(predictions[c]);
+                if (!std::isfinite(diff)) {
+                  ideal_residual[c] = 0;
+                } else {
+                  ideal_residual[c] = static_cast<pixel_type>(Clamp1<double>(
+                      diff,
+                      static_cast<double>(
+                          std::numeric_limits<pixel_type>::min()),
+                      static_cast<double>(
+                          std::numeric_limits<pixel_type>::max())));
+                }
               }
             }
           };

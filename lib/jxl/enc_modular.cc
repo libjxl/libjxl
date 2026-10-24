@@ -412,7 +412,9 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
     for (size_t i = did_palette; i < nb_channels + did_palette; i++) {
       int32_t min;
       int32_t max;
-      compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
+      const Channel& ch = gi.channel[gi.nb_meta_channels + i];
+      if (ch.w == 0 || ch.h == 0) continue;
+      compute_minmax(ch, &min, &max);
       int64_t colors = static_cast<int64_t>(max) - min + 1;
       JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
       Transform maybe_palette_1(TransformId::kPalette);
@@ -422,9 +424,13 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
       // actually occur, it is probably worth it to do a compaction
       // (but only if the channel palette is less than 6% the size of the
       // image itself)
-      maybe_palette_1.nb_colors =
-          std::min(static_cast<int>(nb_pixels / 16),
-                   static_cast<int>(channel_colors_percent / 100. * colors));
+      const double max_channel_colors =
+          (channel_colors_percent / 100.0) * static_cast<double>(colors);
+      const int64_t capped_colors = static_cast<int64_t>(std::min<double>(
+          static_cast<double>(nb_pixels / 16),
+          std::max<double>(0.0, max_channel_colors)));
+      maybe_palette_1.nb_colors = static_cast<uint32_t>(
+          std::min<int64_t>(capped_colors, std::numeric_limits<int32_t>::max()));
       JXL_ASSIGN_OR_RETURN(
           bool did_ch_palette,
           maybe_do_transform(gi, maybe_palette_1, cparams_, weighted::Header(),
@@ -1546,36 +1552,60 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
 }
 
 constexpr float q_deadzone = 0.62f;
+int32_t RoundDCToInt32(float scaled_value, bool* has_outliers) {
+  if (!std::isfinite(scaled_value) ||
+      scaled_value >= 2147483648.0f ||
+      scaled_value < -2147483648.0f) {
+    *has_outliers = true;
+    return 0;
+  }
+  const int64_t rounded = std::llround(scaled_value);
+  if (rounded > std::numeric_limits<int32_t>::max() ||
+      rounded < std::numeric_limits<int32_t>::min()) {
+    *has_outliers = true;
+    return 0;
+  }
+  return static_cast<int32_t>(rounded);
+}
+
+int32_t QuantizeResidualAndAddGuess(float svalue, pixel_type_w guess,
+                                    bool* has_outliers) {
+  if (!std::isfinite(svalue)) {
+    *has_outliers = true;
+    return 0;
+  }
+  svalue -= static_cast<float>(guess);
+  if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
+  int32_t residual = RoundDCToInt32(svalue, has_outliers);
+  if (*has_outliers) return 0;
+  if (residual > 2 || residual < -2) {
+    residual = RoundDCToInt32(svalue * 0.5f, has_outliers) * 2;
+  }
+  const int64_t total = static_cast<int64_t>(residual) + guess;
+  if (total > std::numeric_limits<int32_t>::max() ||
+      total < std::numeric_limits<int32_t>::min()) {
+    *has_outliers = true;
+    return 0;
+  }
+  return static_cast<int32_t>(total);
+}
+
 int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
                size_t w, weighted::State* wp_state, float value,
                float inv_factor, bool* has_outliers) {
   float svalue = value * inv_factor;
   PredictionResult pred =
       PredictNoTreeWP(w, qrow + x, onerow, x, y, Predictor::Weighted, wp_state);
-  svalue -= pred.guess;
-  if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
-  int residual = 0;
-  if (std::isnan(svalue) ||
-      svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
-      svalue < static_cast<float>(std::numeric_limits<int>::min())) {
-    *has_outliers = true;
-  } else {
-    residual = std::round(svalue);
-  }
-  if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5f) * 2;
-  return residual + pred.guess;
+  return QuantizeResidualAndAddGuess(svalue, pred.guess, has_outliers);
 }
 
 int QuantizeGradient(const int32_t* qrow, size_t onerow, size_t c, size_t x,
-                     size_t y, size_t w, float value, float inv_factor) {
+                     size_t y, size_t w, float value, float inv_factor,
+                     bool* has_outliers) {
   float svalue = value * inv_factor;
   PredictionResult pred =
       PredictNoTreeNoWP(w, qrow + x, onerow, x, y, Predictor::Gradient);
-  svalue -= pred.guess;
-  if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
-  int residual = std::round(svalue);
-  if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5f) * 2;
-  return residual + pred.guess;
+  return QuantizeResidualAndAddGuess(svalue, pred.guess, has_outliers);
 }
 
 Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
@@ -1630,8 +1660,9 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = QuantizeGradient(quant_row, stride, c, x, y,
-                                            r.xsize(), row[x], inv_factor);
+            quant_row[x] =
+                QuantizeGradient(quant_row, stride, c, x, y, r.xsize(), row[x],
+                                 inv_factor, &has_outliers);
           }
         } else {
           int32_t* quant_row_y =
@@ -1639,7 +1670,8 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
           for (size_t x = 0; x < r.xsize(); x++) {
             quant_row[x] = QuantizeGradient(
                 quant_row, stride, c, x, y, r.xsize(),
-                row[x] - quant_row_y[x] * (y_factor * cfl_factor), inv_factor);
+                row[x] - quant_row_y[x] * (y_factor * cfl_factor), inv_factor,
+                &has_outliers);
           }
         }
       }
@@ -1690,15 +1722,16 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = std::round(row[x] * inv_factor);
+            quant_row[x] = RoundDCToInt32(row[x] * inv_factor, &has_outliers);
           }
         } else {
           int32_t* quant_row_y =
               stream_images_[stream_id].channel[0].plane.Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] =
-                std::round((row[x] - quant_row_y[x] * (y_factor * cfl_factor)) *
-                           inv_factor);
+            quant_row[x] = RoundDCToInt32(
+                (row[x] - quant_row_y[x] * (y_factor * cfl_factor)) *
+                    inv_factor,
+                &has_outliers);
           }
         }
       }
@@ -1720,7 +1753,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         int32_t* quant_row = ch.plane.Row(y);
         const float* row = rect.ConstPlaneRow(dc, c, y);
         for (size_t x = 0; x < xs; x++) {
-          quant_row[x] = std::round(row[x] * inv_factor);
+          quant_row[x] = RoundDCToInt32(row[x] * inv_factor, &has_outliers);
         }
       }
     }
