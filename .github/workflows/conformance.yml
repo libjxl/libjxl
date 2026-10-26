@@ -22,8 +22,8 @@ env:
   CONFORMANCE_REPO_HASH: 4bf053529c7cefd2951be453475bb3dccc7e7be8
   LIBJXL_VERSION: "0.13.0"
   LIBJXL_ABI_VERSION: "0.13"
-  SDE_ID: "813591"
-  SDE_VERSION: "9.33.0-2024-01-07"
+  SDE_ID: "924984"
+  SDE_VERSION: "10.13.1-2026-07-28"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -261,9 +261,9 @@ jobs:
         if [[ $TARGET == AVX3 ]]; then
           EMULATOR="sde/sde64 -spr --"
         elif [[ $TARGET == SVE_256 ]]; then
-          EMULATOR="qemu-aarch64-static -cpu max,sve-default-vector-length=32"
+          EMULATOR="qemu-aarch64 -cpu max,sve-default-vector-length=32"
         elif [[ $TARGET == SVE* ]]; then
-          EMULATOR="qemu-aarch64-static -cpu max,sve-default-vector-length=16"
+          EMULATOR="qemu-aarch64 -cpu max,sve-default-vector-length=16"
         fi
 
         ${EMULATOR} ${HERE}/djxl -V | tee djxl_version.txt
