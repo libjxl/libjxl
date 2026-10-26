@@ -34,15 +34,16 @@ jobs:
         include:
          - msystem: mingw64
          - msystem: clang64
-         - msystem: mingw32
-           disable_tests:
-             - ButteraugliTest.Lossless
-             - ButteraugliTest.Distmap
-             - JxlTest.RoundtripLargeEmptyModular
-           disable_benchmark: true
          # "Legacy" toolchains are being "phased-out":
          # https://www.msys2.org/news/#2023-12-13-starting-to-drop-some-32-bit-packages
          # clang32 is already missing required "gtest" and "libavif"
+         # mingw32 is also missing gtest
+         # - msystem: mingw32
+         #   disable_tests:
+         #     - ButteraugliTest.Lossless
+         #     - ButteraugliTest.Distmap
+         #     - JxlTest.RoundtripLargeEmptyModular
+         #   disable_benchmark: true
          # - msystem: clang32
          #   disable_benchmark: true
 
@@ -51,12 +52,12 @@ jobs:
         shell: msys2 {0}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: audit
 
       - name: Checkout the source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
           fetch-depth: 1
