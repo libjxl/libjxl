@@ -178,6 +178,13 @@ elseif(LIBCXX)
   set(PKGCONFIG_CXX_LIB "-lc++")
 endif()
 
+# MSVCRT bundles math functions so no explicit libm dependency is required.
+if(MSVC)
+  set(PKGCONFIG_MATH_LIB "")
+else()
+  set(PKGCONFIG_MATH_LIB "-lm")
+endif()
+
 # The jxl_cms library definition.
 include(jxl_cms.cmake)
 # The jxl library definition.
