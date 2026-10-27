@@ -57,6 +57,10 @@ class LowMemoryRenderPipeline final : public RenderPipeline {
 
   std::pair<size_t, size_t> BorderToStore(size_t c) const;
 
+  // Number of rows of output of `stage` for channel `c` that must be kept
+  // alive simultaneously, i.e. the size of the ring buffer that stores them.
+  size_t StageBufferYSize(size_t c, size_t stage) const;
+
   bool use_group_ids_;
 
   // Storage for borders between groups. Borders of adjacent groups are stacked

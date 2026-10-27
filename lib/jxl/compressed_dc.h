@@ -24,6 +24,7 @@ namespace jxl {
 // Smooth DC in already-smooth areas, to counteract banding.
 Status AdaptiveDCSmoothing(JxlMemoryManager* memory_manager,
                            const float* dc_factors, Image3F* dc,
+                           const YCbCrChromaSubsampling& chroma_subsampling,
                            ThreadPool* pool);
 
 void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
