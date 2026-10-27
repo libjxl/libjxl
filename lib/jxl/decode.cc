@@ -779,6 +779,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->recon_exif_size = 0;
   dec->recon_xmp_size = 0;
   dec->recon_output_jpeg = JpegReconStage::kNone;
+  dec->jpeg_decoder.Reset();
 #endif
 
   dec->events_wanted = dec->orig_events_wanted;
@@ -909,7 +910,9 @@ JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec) {
   dec->frame_stage = FrameStage::kHeader;
   dec->AdvanceCodestream(dec->remaining_frame_size);
   if (dec->is_last_of_still) {
+    // The output buffers only apply to the frame that was skipped.
     dec->image_out_buffer_set = false;
+    dec->extra_channel_output.clear();
   }
   return JXL_DEC_SUCCESS;
 }
