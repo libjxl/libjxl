@@ -373,8 +373,8 @@ class JxlEncoderChunkedFrameAdapter {
       // Requests outside of the channel are bugs in the caller; still return
       // no data for them in release builds instead of reading out of bounds.
       // Written to not overflow for any position and size.
-      const bool inside = xpos <= xsize_ && x_size <= xsize_ - xpos &&
-                          ypos <= ysize_ && y_size <= ysize_ - ypos;
+      const bool inside = (xpos <= xsize_) && (x_size <= xsize_ - xpos) &&
+                          (ypos <= ysize_) && (y_size <= ysize_ - ypos);
       JXL_DASSERT(inside);
       JXL_DASSERT(buffer);
       if (!inside || !buffer) return nullptr;
