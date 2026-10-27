@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "lib/extras/dec/color_hints.h"
+#include "lib/extras/dec/sample_range.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/common.h"
@@ -182,6 +183,10 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes,
   // Original data is uint, so exponent_bits_per_sample = 0.
   ppf->info.bits_per_sample = header.bits_per_sample;
   ppf->info.exponent_bits_per_sample = 0;
+  // The raster holds samples in [0, 2^bits_per_sample - 1]; the declared bit
+  // depth, not the storage type width, defines the sample range (as in the
+  // PNM decoder).
+  ppf->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   ppf->info.uses_original_profile = JXL_TRUE;
 
   // No alpha in PGX
@@ -216,6 +221,11 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes,
   if (pgx_remaining_size < frame.color.pixels_size) {
     return JXL_FAILURE("PGX file too small");
   }
+  // Reject samples above the declared bit depth before they reach the
+  // encoder; nothing downstream checks the range (see sample_range.h).
+  JXL_RETURN_IF_ERROR(VerifySampleRange(pos, frame.color.pixels_size,
+                                        header.bits_per_sample,
+                                        header.big_endian));
   memcpy(frame.color.pixels(), pos, frame.color.pixels_size);
   return true;
 }

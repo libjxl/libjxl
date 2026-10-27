@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
@@ -88,6 +89,75 @@ TEST(CodecPGXTest, Test16bits) {
       EXPECT_NEAR(expected_value, io->Main().color()->Plane(0).Row(y)[x] * 257,
                   eps);
     }
+  }
+}
+
+// 12-bit PGX: the declared bit depth, not the 2-byte storage type, defines
+// the sample range. A full-scale sample (2^12 - 1) must survive a round trip
+// through the encoder as full scale.
+TEST(CodecPGXTest, Test12bits) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  const std::string pgx =
+      "PG ML + 12 2 1\n\x0f\xff\x0f\xff";
+  PackedPixelFile ppf;
+  ThreadPool* pool = nullptr;
+
+  ASSERT_TRUE(DecodeImagePGX(Bytes(reinterpret_cast<const uint8_t*>(pgx.data()),
+                                   pgx.size()),
+                             ColorHints(), &ppf));
+  EXPECT_EQ(12u, ppf.info.bits_per_sample);
+  auto io = jxl::make_unique<CodecInOut>(memory_manager);
+  ASSERT_TRUE(ConvertPackedPixelFileToCodecInOut(ppf, pool, io.get()));
+  EXPECT_EQ(12u, io->metadata.m.bit_depth.bits_per_sample);
+
+  // Full scale stays full scale; before the input bit depth was declared,
+  // this came back as 1/16th of full scale.
+  const float eps = 1e-5;
+  for (const size_t x : {size_t{0}, size_t{1}}) {
+    EXPECT_NEAR(1.0f, io->Main().color()->Plane(0).Row(0)[x], eps);
+  }
+}
+
+// PGX samples must be in [0, 2^bits_per_sample - 1]; a sample above the
+// declared depth would be encoded into a codestream that promises a smaller
+// depth, which 16-bit-buffered decoders read as a wrapped negative value.
+TEST(CodecPGXTest, RejectSamplesAboveBitDepth) {
+  const auto decode = [](const std::string& header,
+                         const std::vector<uint8_t>& samples) -> bool {
+    std::vector<uint8_t> pgx(header.begin(), header.end());
+    pgx.insert(pgx.end(), samples.begin(), samples.end());
+    PackedPixelFile ppf;
+    return static_cast<bool>(DecodeImagePGX(
+        jxl::Bytes(pgx.data(), pgx.size()), ColorHints(), &ppf));
+  };
+
+  // Boundary samples are valid, in both byte orders.
+  EXPECT_TRUE(decode("PG ML + 12 2 1\n", {0x0F, 0xFF, 0x0F, 0xFF}));
+  EXPECT_TRUE(decode("PG LM + 12 2 1\n", {0xFF, 0x0F, 0xFF, 0x0F}));
+  EXPECT_TRUE(decode("PG ML + 4 2 1\n", {15, 15}));
+  // One value above the depth is rejected.
+  EXPECT_FALSE(decode("PG ML + 12 2 1\n", {0x0F, 0xFF, 0x10, 0x00}));
+  // Above-depth bits in the most significant byte, which for little-endian
+  // 16-bit storage is the second byte of each sample.
+  EXPECT_FALSE(decode("PG LM + 12 2 1\n", {0xFF, 0x0F, 0xFF, 0x10}));
+  EXPECT_FALSE(decode("PG ML + 12 2 1\n", {0xFF, 0xFF, 0xFF, 0xFF}));
+  EXPECT_FALSE(decode("PG LM + 12 2 1\n", {0xFF, 0xFF, 0xFF, 0xFF}));
+  EXPECT_FALSE(decode("PG ML + 4 2 1\n", {15, 16}));
+  // Check every sample position of an image longer than 8 bytes, so both the
+  // 8-byte-chunk OR and the tail handling are covered.
+  const std::vector<uint8_t> max4(19, 15);
+  std::vector<uint8_t> max12;
+  for (size_t i = 0; i < 19; ++i) max12.insert(max12.end(), {0x0F, 0xFF});
+  EXPECT_TRUE(decode("PG ML + 4 19 1\n", max4));
+  EXPECT_TRUE(decode("PG ML + 12 19 1\n", max12));
+  for (size_t i = 0; i < 19; ++i) {
+    std::vector<uint8_t> samples4 = max4;
+    samples4[i] = 16;
+    EXPECT_FALSE(decode("PG ML + 4 19 1\n", samples4)) << i;
+    std::vector<uint8_t> samples12 = max12;
+    samples12[2 * i] = 0x10;
+    samples12[2 * i + 1] = 0x00;
+    EXPECT_FALSE(decode("PG ML + 12 19 1\n", samples12)) << i;
   }
 }
 
