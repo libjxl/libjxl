@@ -178,9 +178,9 @@ class BlendingStage : public RenderPipelineStage {
       }
     }
     return PerformBlending(memory_manager, bg_row_ptrs_.data(),
-                           fg_row_ptrs_.data(), fg_row_ptrs_.data(), 0, xsize,
-                           blending_info_[0], blending_info_.data() + 1,
-                           *extra_channel_info_);
+                           fg_row_ptrs_.data(), fg_row_ptrs_.data(), 0,
+                           /*fg_x0=*/0, xsize, blending_info_[0],
+                           blending_info_.data() + 1, *extra_channel_info_);
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
