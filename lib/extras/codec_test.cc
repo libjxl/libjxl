@@ -575,6 +575,36 @@ TEST(CodecTest, FormatNegotiationGrayscaleNoMatch) {
 }
 #endif
 
+TEST(CodecTest, DetectJPEGByAnyMarkerAfterSOI) {
+  const std::vector<uint8_t> orig =
+      jxl::test::ReadTestData("jxl/flower/flower_cropped.jpg");
+  ASSERT_GE(orig.size(), 2u);
+  ASSERT_EQ(orig[0], 0xFF);
+  ASSERT_EQ(orig[1], 0xD8);
+  // The file with `segment` inserted right after SOI.
+  const auto with_segment = [&orig](const std::vector<uint8_t>& segment) {
+    std::vector<uint8_t> jpeg(orig.begin(), orig.begin() + 2);
+    jpeg.insert(jpeg.end(), segment.begin(), segment.end());
+    jpeg.insert(jpeg.end(), orig.begin() + 2, orig.end());
+    return jpeg;
+  };
+  const std::vector<std::vector<uint8_t>> segments = {
+      {0xFF, 0xFE, 0x00, 0x04, 'h', 'i'},              // COM
+      {0xFF, 0xE5, 0x00, 0x04, 'h', 'i'},              // APP5
+      {0xFF, 0xED, 0x00, 0x04, 'h', 'i'},              // APP13
+      {0xFF, 0xDD, 0x00, 0x04, 0x00, 0x00},            // DRI
+      {0xFF, 0xFF, 0xFF, 0xFE, 0x00, 0x04, 'h', 'i'},  // fill bytes, COM
+  };
+  for (const auto& segment : segments) {
+    const std::vector<uint8_t> jpeg = with_segment(segment);
+    EXPECT_EQ(DetectCodec(Bytes(jpeg)), Codec::kJPG);
+    if (CanDecode(Codec::kJPG)) {
+      PackedPixelFile ppf;
+      EXPECT_TRUE(DecodeBytes(Bytes(jpeg), ColorHints(), &ppf));
+    }
+  }
+}
+
 TEST(CodecTest, EncodeToPNG) {
   ThreadPool* const pool = nullptr;
 
