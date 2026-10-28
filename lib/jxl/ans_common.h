@@ -107,6 +107,8 @@ struct AliasTable {
 
 #if JXL_BYTE_ORDER_LITTLE
     uint64_t entry;
+    static_assert(sizeof(table[i]) == sizeof(entry),
+                  "ANS table entries must match the lookup word size");
     memcpy(&entry, &table[i], sizeof(entry));
     const size_t cutoff = entry & 0xFF;              // = MOVZX
     const size_t right_value = (entry >> 8) & 0xFF;  // = MOVZX
