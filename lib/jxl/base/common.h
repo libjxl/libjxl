@@ -18,11 +18,11 @@
 #include <type_traits>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
+
 #if JXL_COMPILER_MSVC
 #include <intrin.h>
 #endif
-
-#include "lib/jxl/base/compiler_specific.h"
 
 namespace jxl {
 // Some enums and typedefs used by more than one header file.
