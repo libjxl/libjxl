@@ -922,6 +922,13 @@ size_t FindNextMarker(const uint8_t* data, const size_t len, size_t pos) {
 
 Status ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
                 JPEGData* jpg) {
+  if (jpg == nullptr || (data == nullptr && len != 0)) {
+    return JXL_FAILURE("Invalid JPEG input or output pointer");
+  }
+  if (mode != JpegReadMode::kReadHeader && mode != JpegReadMode::kReadTables &&
+      mode != JpegReadMode::kReadAll) {
+    return JXL_FAILURE("Invalid JPEG read mode");
+  }
   size_t pos = 0;
   // Check SOI marker.
   JXL_JPEG_EXPECT_MARKER();
