@@ -525,6 +525,7 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/iaca_test.cc
   jxl/icc_codec_test.cc
   jxl/image_bundle_test.cc
+  jxl/image_metadata_test.cc
   jxl/image_ops_test.cc
   jxl/jxl_test.cc
   jxl/lehmer_code_test.cc
