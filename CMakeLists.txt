@@ -114,6 +114,12 @@ if((SANITIZER STREQUAL "msan") OR EMSCRIPTEN)
 else()
   set(BUNDLE_LIBPNG_DEFAULT NO)
 endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libtiff/CMakeLists.txt")
+  set(BUNDLE_LIBTIFF_DEFAULT YES)
+else()
+  set(BUNDLE_LIBTIFF_DEFAULT NO)
+endif()
+
 
 
 include(TestBigEndian)
@@ -151,6 +157,8 @@ set(JPEGXL_ENABLE_EXAMPLES true CACHE BOOL
     "Build JPEGXL library usage examples.")
 set(JPEGXL_BUNDLE_LIBPNG ${BUNDLE_LIBPNG_DEFAULT} CACHE BOOL
     "Build libpng from source and link it statically.")
+set(JPEGXL_BUNDLE_LIBTIFF ${BUNDLE_LIBTIFF_DEFAULT} CACHE BOOL
+    "Build libtiff from source and link it statically.")
 set(JPEGXL_ENABLE_JNI true CACHE BOOL
     "Build JPEGXL JNI Java wrapper, if Java dependencies are installed.")
 set(JPEGXL_ENABLE_SJPEG true CACHE BOOL
