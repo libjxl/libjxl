@@ -242,11 +242,17 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "HiddenChannel") {
     t = tok();
     size_t num = 0;
-    cparams.move_to_front_from_channel = -1 - std::stoul(t, &num);
-    if (num != t.size() || num > 16) {
+    if (t.empty() || t[0] == '-') {
       fprintf(stderr, "Invalid HiddenChannel (max 16): %s\n", t.c_str());
       return false;
     }
+    size_t hidden_channels = 0;
+    hidden_channels = std::stoul(t, &num);
+    if (num != t.size() || hidden_channels > 16) {
+      fprintf(stderr, "Invalid HiddenChannel (max 16): %s\n", t.c_str());
+      return false;
+    }
+    cparams.move_to_front_from_channel = -1 - hidden_channels;
   } else if (t == "RCT") {
     t = tok();
     size_t num = 0;
