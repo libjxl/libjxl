@@ -893,8 +893,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
     channel_colors_percent = cparams_.channel_colors_pre_transform_percent;
   }
-  if (!groupwise &&
-     (!(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
+    // Global palette causes bad progressive loading due to interpolation
+    // but lossy palette is still required for JXL art.
+  if (!groupwise && (cparams_.lossy_palette ||
+      !(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
     JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams_,
                                      channel_colors_percent, pool));
   }

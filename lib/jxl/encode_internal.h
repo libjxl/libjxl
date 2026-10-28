@@ -131,6 +131,7 @@ struct JxlEncoderFrameSettingsValues {
   JxlBitDepth image_bit_depth;
   bool frame_index_box = false;
   jxl::AuxOut* aux_out = nullptr;
+  int strip_alpha = -1;
 };
 
 using BoxType = std::array<uint8_t, 4>;
