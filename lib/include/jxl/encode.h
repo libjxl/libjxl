@@ -432,6 +432,11 @@ typedef enum {
    * codestream behavior.
    */
   JXL_ENC_FRAME_SETTING_STRIP_ALPHA = 41,
+  
+  /** Enable or disable LF Smoothing for lossless JPEG recompression.
+   * -1 = default, 0 = disable smoothing, 1 = enable smoothing.
+   */
+  JXL_ENC_FRAME_SETTING_JPEG_RECON_LFS = 42,
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.

@@ -202,14 +202,6 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   if (group_codes_begin + section_sizes_sum_ < group_codes_begin) {
     return JXL_FAILURE("Invalid group codes");
   }
-
-  if (!frame_header_.chroma_subsampling.Is444() &&
-      !(frame_header_.flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
-      frame_header_.encoding == FrameEncoding::kVarDCT) {
-    return JXL_FAILURE(
-        "Non-444 chroma subsampling is not allowed when adaptive DC "
-        "smoothing is enabled");
-  }
   return true;
 }
 
@@ -352,7 +344,8 @@ Status FrameDecoder::FinalizeDC() {
       !decoded_->IsJPEG()) {
     JXL_RETURN_IF_ERROR(AdaptiveDCSmoothing(
         memory_manager, dec_state_->shared->quantizer.MulDC(),
-        &dec_state_->shared_storage.dc_storage, pool_));
+        &dec_state_->shared_storage.dc_storage,
+        frame_header_.chroma_subsampling, pool_));
   }
 
   finalized_dc_ = true;
