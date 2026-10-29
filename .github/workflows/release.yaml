@@ -413,6 +413,8 @@ jobs:
     runs-on: [ubuntu-latest]
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     steps:
     - name: Checkout the source
@@ -428,6 +430,11 @@ jobs:
         path: release_assets
         skip-decompress: true
         merge-multiple: true
+
+    - name: Attest release assets
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: release_assets/*
 
     - name: Publish assets
       env:
