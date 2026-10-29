@@ -385,9 +385,15 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   // Interleaved RGB{A} / Gray{A}
   std::vector<char> color_data(color_data_size);
 
-  // When the intersection is empty the copy loop below never runs, so the
-  // frame has to be zeroed explicitly: PackedImage allocates its pixels with
-  // malloc(), not calloc().
+  // PackedImage allocates its pixels with malloc(), not calloc(). Zero the
+  // frame up front, so that any part of the display window that the data
+  // window does not cover (all of it, when the intersection is empty) reads as
+  // zeroes rather than uninitialised memory.
+  memset(frame.color.pixels(), 0, frame.color.ysize * frame.color.stride);
+  for (PackedImage& ec : frame.extra_channels) {
+    memset(ec.pixels(), 0, ec.ysize * ec.stride);
+  }
+
   if (x_span > 0 && y_span > 0) {
     // Setup framebuffer: color/grayscale
     OpenEXR::FrameBuffer fb;
@@ -463,7 +469,6 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
     JXL_DASSERT(x_out + x_span <= image_width);
 
     // Copy read data into the result image.
-    // TODO(eustas): should we deal with unpopulated pixels?
     for (int y = y1; y <= y2; ++y) {  // Scanline index
       const int y_data = y - y1;
       const int y_out = y - display_window.min.y;
@@ -488,12 +493,6 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
             ec_pixels + x_out * ec_x_stride + y_out * ec.stride;
         memcpy(ec_image_ptr, ec_data_ptr, x_span * ec_x_stride);
       }
-    }
-  } else {
-    // The frame lies entirely outside the data window.
-    memset(frame.color.pixels(), 0, frame.color.ysize * frame.color.stride);
-    for (PackedImage& ec : frame.extra_channels) {
-      memset(ec.pixels(), 0, ec.ysize * ec.stride);
     }
   }
 
