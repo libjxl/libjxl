@@ -42,6 +42,9 @@ class BasePNMEncoder : public Encoder {
     encoded_image->bitstreams.clear();
     encoded_image->bitstreams.reserve(ppf.frames.size());
     for (const auto& frame : ppf.frames) {
+      if (frame.extra_channels.size() != ppf.extra_channels_info.size()) {
+        return JXL_FAILURE("Extra channel count mismatch");
+      }
       JXL_RETURN_IF_ERROR(VerifyPackedImage(frame.color, ppf.info));
       encoded_image->bitstreams.emplace_back();
       JXL_RETURN_IF_ERROR(

@@ -334,6 +334,10 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
       bitstreams->emplace_back();
       bytes = &bitstreams->back();
     }
+    if (encode_extra_channels &&
+        frame.extra_channels.size() <= extra_channel_index) {
+      return JXL_FAILURE("Missing extra channel in frame");
+    }
     const PackedImage& color = encode_extra_channels
                                    ? frame.extra_channels[extra_channel_index]
                                    : frame.color;
