@@ -45,7 +45,7 @@ void BM_EncExternalImage_ConvertImageRGBA(benchmark::State& state) {
           Bytes(interleaved.data(), interleaved.size()), xsize, ysize,
           /*c_current=*/ColorEncoding::SRGB(),
           /*bits_per_sample=*/8, format,
-          /*pool=*/nullptr, &ib));
+          /*pool=*/nullptr, &ib, /*set_alpha=*/true));
     }
   }
 

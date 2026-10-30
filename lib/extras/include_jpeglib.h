@@ -1,0 +1,20 @@
+// Copyright (c) the JPEG XL Project Authors. All rights reserved.
+//
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+#ifndef LIB_EXTRAS_INCLUDE_JPEGLIB_H_
+#define LIB_EXTRAS_INCLUDE_JPEGLIB_H_
+
+// Using this header ensures that includes go in the right order,
+// not alphabetically sorted.
+
+// NOLINTBEGIN
+/* clang-format off */
+#include <stdio.h>  // IWYU pragma: keep
+#include <jpeglib.h>  // IWYU pragma: export
+#include <setjmp.h>  // IWYU pragma: export
+/* clang-format on */
+// NOLINTEND
+
+#endif  // LIB_EXTRAS_INCLUDE_JPEGLIB_H_

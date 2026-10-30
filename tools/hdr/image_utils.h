@@ -81,8 +81,6 @@ static inline jxl::Status Encode(const jxl::CodecInOut& io,
       format.data_type = JXL_TYPE_UINT8;
       encoder = jxl::extras::GetJPEGEncoder();
       if (encoder) {
-        os << io.jpeg_quality;
-        encoder->SetOption("q", os.str());
         break;
       } else {
         return JXL_FAILURE("JPEG XL was built without JPEG support");

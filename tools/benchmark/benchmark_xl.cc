@@ -45,7 +45,6 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 #include "tools/benchmark/benchmark_file_io.h"

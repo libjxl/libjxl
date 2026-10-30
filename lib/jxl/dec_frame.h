@@ -191,10 +191,10 @@ class FrameDecoder {
   // @param undo_orientation: if true, indicates the frame decoder should apply
   // the exif orientation to bring the image to the intended display
   // orientation.
-  void SetImageOutput(const PixelCallback& pixel_callback, void* image_buffer,
-                      size_t image_buffer_size, size_t xsize, size_t ysize,
-                      JxlPixelFormat format, size_t bits_per_sample,
-                      bool unpremul_alpha, bool undo_orientation) const {
+  Status SetImageOutput(const PixelCallback& pixel_callback, void* image_buffer,
+                        size_t image_buffer_size, size_t xsize, size_t ysize,
+                        JxlPixelFormat format, size_t bits_per_sample,
+                        bool unpremul_alpha, bool undo_orientation) const {
     dec_state_->width = xsize;
     dec_state_->height = ysize;
     dec_state_->main_output.format = format;
@@ -202,7 +202,8 @@ class FrameDecoder {
     dec_state_->main_output.callback = pixel_callback;
     dec_state_->main_output.buffer = image_buffer;
     dec_state_->main_output.buffer_size = image_buffer_size;
-    dec_state_->main_output.stride = GetStride(xsize, format);
+    JXL_ASSIGN_OR_RETURN(dec_state_->main_output.stride,
+                         GetStride(xsize, format));
     const jxl::ExtraChannelInfo* alpha =
         decoded_->metadata()->Find(jxl::ExtraChannel::kAlpha);
     if (alpha && alpha->alpha_associated && unpremul_alpha) {
@@ -229,17 +230,19 @@ class FrameDecoder {
       dec_state_->fast_xyb_srgb8_conversion = true;
     }
 #endif
+    return true;
   }
 
-  void AddExtraChannelOutput(void* buffer, size_t buffer_size, size_t xsize,
-                             JxlPixelFormat format, size_t bits_per_sample) {
+  Status AddExtraChannelOutput(void* buffer, size_t buffer_size, size_t xsize,
+                               JxlPixelFormat format, size_t bits_per_sample) {
     ImageOutput out;
     out.format = format;
     out.bits_per_sample = bits_per_sample;
     out.buffer = buffer;
     out.buffer_size = buffer_size;
-    out.stride = GetStride(xsize, format);
+    JXL_ASSIGN_OR_RETURN(out.stride, GetStride(xsize, format));
     dec_state_->extra_output.push_back(out);
+    return true;
   }
 
  private:
@@ -291,13 +294,20 @@ class FrameDecoder {
                                           : 2u);
   }
 
-  static size_t GetStride(const size_t xsize, JxlPixelFormat format) {
-    size_t stride =
-        (xsize * BytesPerChannel(format.data_type) * format.num_channels);
-    if (format.align > 1) {
-      stride = (jxl::DivCeil(stride, format.align) * format.align);
+  static StatusOr<size_t> GetStride(const size_t xsize, JxlPixelFormat format) {
+    size_t x_stride;
+    if (!SafeMul(BytesPerChannel(format.data_type), format.num_channels,
+                 x_stride)) {
+      return JXL_FAILURE("Image too large");
     }
-    return stride;
+    size_t y_stride;
+    if (!SafeMul(x_stride, xsize, y_stride)) {
+      return JXL_FAILURE("Image too large");
+    }
+    if (!SafeRoundUpTo(y_stride, format.align, y_stride)) {
+      return JXL_FAILURE("Image too large");
+    }
+    return y_stride;
   }
 
   bool HasDcGroupToDecode() const {

@@ -6,7 +6,6 @@
 #include "lib/jxl/enc_toc.h"
 
 #include <cstddef>
-#include <memory>
 #include <vector>
 
 #include "lib/jxl/base/common.h"
@@ -20,28 +19,29 @@
 #include "lib/jxl/toc.h"
 
 namespace jxl {
-Status WriteGroupOffsets(
-    const std::vector<std::unique_ptr<BitWriter>>& group_codes,
-    const std::vector<coeff_order_t>& permutation,
-    BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
-  return writer->WithMaxBits(
-      MaxBits(group_codes.size()), LayerType::Toc, aux_out, [&]() -> Status {
-        if (!permutation.empty() && !group_codes.empty()) {
-          // Don't write a permutation at all for an empty group_codes.
-          writer->Write(1, 1);  // permutation
-          JXL_ENSURE(permutation.size() == group_codes.size());
-          JXL_RETURN_IF_ERROR(EncodePermutation(permutation.data(), /*skip=*/0,
-                                                permutation.size(), writer,
-                                                LayerType::Header, aux_out));
 
+Status WriteTocPermutation(const std::vector<coeff_order_t>& permutation,
+                           BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
+  return writer->WithMaxBits(
+      MaxBits(0), LayerType::Toc, aux_out, [&]() -> Status {
+        if (!permutation.empty()) {
+          writer->Write(1, 1);  // permutation present
+          JXL_RETURN_IF_ERROR(EncodePermutation(
+              permutation.data(), /*skip=*/0, permutation.size(), writer,
+              LayerType::Header, aux_out));
         } else {
           writer->Write(1, 0);  // no permutation
         }
         writer->ZeroPadToByte();  // before TOC entries
+        return true;
+      });
+}
 
-        for (const auto& bw : group_codes) {
-          JXL_ENSURE(bw->BitsWritten() % kBitsPerByte == 0);
-          const size_t group_size = bw->BitsWritten() / kBitsPerByte;
+Status WriteTocSizes(const std::vector<size_t>& group_sizes,
+                     BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
+  return writer->WithMaxBits(
+      MaxBits(group_sizes.size()), LayerType::Toc, aux_out, [&]() -> Status {
+        for (size_t group_size : group_sizes) {
           JXL_RETURN_IF_ERROR(U32Coder::Write(kTocDist, group_size, writer));
         }
         writer->ZeroPadToByte();  // before first group

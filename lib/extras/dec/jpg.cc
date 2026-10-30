@@ -40,8 +40,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
 #include <utility>
 #include <vector>
 
+#include "lib/extras/include_jpeglib.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/include_jpeglib.h"
 #include "lib/jxl/base/sanitizers.h"
 
 namespace jxl {

@@ -57,6 +57,10 @@ class LowMemoryRenderPipeline final : public RenderPipeline {
 
   std::pair<size_t, size_t> BorderToStore(size_t c) const;
 
+  // Number of rows of output of `stage` for channel `c` that must be kept
+  // alive simultaneously, i.e. the size of the ring buffer that stores them.
+  size_t StageBufferYSize(size_t c, size_t stage) const;
+
   bool use_group_ids_;
 
   // Storage for borders between groups. Borders of adjacent groups are stacked
@@ -110,13 +114,13 @@ class LowMemoryRenderPipeline final : public RenderPipeline {
   std::vector<int> xpadding_for_output_;
 
   // First stage that doesn't have any kInOut channel.
-  size_t first_trailing_stage_;
+  size_t first_trailing_stage_ = 0;
 
   // Origin and size of the frame after switching to image dimensions.
-  FrameOrigin frame_origin_;
-  size_t full_image_xsize_;
-  size_t full_image_ysize_;
-  size_t first_image_dim_stage_;
+  FrameOrigin frame_origin_ = {0, 0};
+  size_t full_image_xsize_ = 0;
+  size_t full_image_ysize_ = 0;
+  size_t first_image_dim_stage_ = 0;
 };
 
 }  // namespace jxl

@@ -19,7 +19,6 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
@@ -155,8 +154,9 @@ TEST(SplinesTest, Serialization) {
     starting_points.push_back(spline.control_points.front());
   }
 
-  Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
-                  std::move(starting_points));
+  Splines splines{memory_manager};
+  splines.SetData({Span<const QuantizedSpline>(quantized_splines),
+                   Span<const Spline::Point>(starting_points)});
   std::vector<Spline> quantized_spline_data;
   ASSERT_TRUE(DequantizeSplines(splines, quantized_spline_data));
   EXPECT_EQ(quantized_spline_data.size(), spline_data.size());
@@ -183,9 +183,8 @@ TEST(SplinesTest, Serialization) {
   printf("Wrote %" PRIuS " bits of splines.\n", bits_written);
 
   BitReader reader(writer.GetSpan());
-  Splines decoded_splines;
-  ASSERT_TRUE(
-      decoded_splines.Decode(memory_manager, &reader, /*num_pixels=*/1000));
+  Splines decoded_splines{memory_manager};
+  ASSERT_TRUE(decoded_splines.Decode(&reader, /*num_pixels=*/1000));
   ASSERT_TRUE(reader.JumpToByteBoundary());
   EXPECT_EQ(reader.TotalBitsConsumed(), bits_written);
   ASSERT_TRUE(reader.Close());
@@ -240,17 +239,17 @@ TEST(SplinesTest, TooManySplinesTest) {
     starting_points.push_back(spline.control_points.front());
   }
 
-  Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
-                  std::move(starting_points));
+  Splines splines{memory_manager};
+  splines.SetData({Span<const QuantizedSpline>(quantized_splines),
+                   Span<const Spline::Point>(starting_points)});
   BitWriter writer{memory_manager};
   ASSERT_TRUE(EncodeSplines(splines, &writer, LayerType::Splines,
                             HistogramParams(SpeedTier::kFalcon, 1), nullptr));
   writer.ZeroPadToByte();
   // Re-read splines.
   BitReader reader(writer.GetSpan());
-  Splines decoded_splines;
-  EXPECT_FALSE(
-      decoded_splines.Decode(memory_manager, &reader, /*num_pixels=*/1000));
+  Splines decoded_splines{memory_manager};
+  EXPECT_FALSE(decoded_splines.Decode(&reader, /*num_pixels=*/1000));
   EXPECT_TRUE(reader.Close());
 }
 
@@ -278,8 +277,9 @@ TEST(SplinesTest, DuplicatePoints) {
     quantized_splines.emplace_back(std::move(qspline));
     starting_points.push_back(spline.control_points.front());
   }
-  Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
-                  std::move(starting_points));
+  Splines splines{memory_manager};
+  splines.SetData({Span<const QuantizedSpline>(quantized_splines),
+                   Span<const Spline::Point>(starting_points)});
 
   JXL_TEST_ASSIGN_OR_DIE(Image3F image,
                          Image3F::Create(memory_manager, 320, 320));

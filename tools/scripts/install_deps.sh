@@ -28,15 +28,16 @@ done
 ##########
 # Bundles
 ##########
+# "base" is considered preinstalled (namely on GH Runners)
+BUNDLE_BASE=(clang cmake git pkg-config unzip xvfb)
 BUNDLE_BENCHMARK=(libbenchmark-dev libbenchmark-tools)
 BUNDLE_BUILD=(ccache ninja-build)
-BUNDLE_CONFORMANCE=(python3-numpy qemu-user-static)
+BUNDLE_CONFORMANCE=(python3-numpy qemu-user qemu-user-binfmt)
 BUNDLE_DOCS=(doxygen graphviz)
 BUNDLE_EXTRAS=(libgif-dev libjpeg-dev libpng-dev libwebp-dev libilmbase-dev libopenexr-dev)
-BUNDLE_EXTRAS_RUNTIME=(libgif7 libjpeg-turbo8 libpng16-16t64 libwebp7 libopenexr-3-1-30)
-BUNDLE_PLUGINS=(libgdk-pixbuf2.0-dev libgtk2.0-dev)
+BUNDLE_EXTRAS_RUNTIME=(libgif7 libjpeg-turbo8 libpng16-16t64 libwebp7 libimath-3-1-29t64 libopenexr-3-1-30)
+BUNDLE_PLUGINS=(libgdk-pixbuf-xlib-2.0-dev libgtk2.0-dev)
 BUNDLE_RUNTIME=(libbrotli1)
-# BUNDLE_PREINSTALLED=(clang cmake git pkg-config unzip xvfb)
 
 # Handle bundles
 EXTRAS=false
@@ -45,16 +46,24 @@ for arg in "${BUNDLES[@]}"; do
     PKGS+=( ${arg} )
   elif [[ "${arg}" == "--" ]]; then
     EXTRAS=true
+  elif [[ "${arg}" == "base" ]]; then
+    for dep in "${BUNDLE_BASE[@]}"; do PKGS+=( ${dep} ); done
   elif [[ "${arg}" == "benchmark" ]]; then
     for dep in "${BUNDLE_BENCHMARK[@]}"; do PKGS+=( ${dep}${ARCH_SUFFIX} ); done
   elif [[ "${arg}" == "build" ]]; then
     for dep in "${BUNDLE_BUILD[@]}"; do PKGS+=( ${dep} ); done
     PKGS+=( libbrotli-dev${ARCH_SUFFIX} )
     if $SETUP_CROSS ; then
+      if [[ "${ARCH}" == "armhf" || "${ARCH}" == "s390x" ]] ; then
+        # still using ubuntu 24.04
+        STDCXX_VERSION=13
+      else
+        STDCXX_VERSION=15
+      fi
       PKGS+=(
         gcc-${BUILD_TARGET} binutils-${BUILD_TARGET}
-        libc6-dev-${ARCH}-cross libstdc++-13-dev-${ARCH}-cross
-        libstdc++-13-dev:${ARCH}
+        libc6-dev-${ARCH}-cross libstdc++-${STDCXX_VERSION}-dev-${ARCH}-cross
+        libstdc++-${STDCXX_VERSION}-dev:${ARCH}
       )
     fi
   elif [[ "${arg}" == "conformance" ]]; then

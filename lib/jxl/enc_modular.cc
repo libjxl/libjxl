@@ -52,7 +52,6 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
@@ -251,6 +250,7 @@ float EstimateWPCost(const Image& img, size_t i) {
     const ptrdiff_t onerow = ch.plane.PixelsPerRow();
     weighted::State wp_state(wp_header, ch.w, ch.h);
     Properties properties(1);
+    bool unhealthy = false;
     for (size_t y = 0; y < ch.h; y++) {
       const pixel_type* JXL_RESTRICT r = ch.Row(y);
       for (size_t x = 0; x < ch.w; x++) {
@@ -268,7 +268,8 @@ float EstimateWPCost(const Image& img, size_t i) {
         for (int c : cutoffs) {
           ctx += (c >= properties[0]) ? 1 : 0;
         }
-        pixel_type res = r[x] - guess;
+        pixel_type res;
+        unhealthy |= SubOverflow(r[x], guess, res);
         uint32_t token;
         uint32_t nbits;
         uint32_t bits;
@@ -277,6 +278,10 @@ float EstimateWPCost(const Image& img, size_t i) {
         extra_bits += nbits;
         wp_state.UpdateErrors(r[x], x, y, ch.w);
       }
+    }
+    if (unhealthy) {
+      // Force this predictor option to be rejected by the cost selector.
+      return std::numeric_limits<float>::max();
     }
     for (auto& h : histo) {
       histo_cost += h.ShannonEntropy();
@@ -552,37 +557,42 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
         cparams_.options.max_properties,
         static_cast<int>(
             frame_header.nonserialized_metadata->m.num_extra_channels) +
-            (frame_header.encoding == FrameEncoding::kModular ? 2 : -1));
+            (frame_header.nonserialized_metadata->m.color_encoding.IsGray() ? 0 : 2));
     switch (cparams_.speed_tier) {
       case SpeedTier::kHare:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 4);
-        cparams_.options.max_property_values = 24;
+        cparams_.options.max_property_values = 48;
+        cparams_.options.nb_repeats *= 0.5f;
         break;
       case SpeedTier::kWombat:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 5);
-        cparams_.options.max_property_values = 32;
+        cparams_.options.max_property_values = 64;
+        cparams_.options.nb_repeats *= 0.7f;
         break;
       case SpeedTier::kSquirrel:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 7);
-        cparams_.options.max_property_values = 48;
+        cparams_.options.max_property_values = 96;
         break;
       case SpeedTier::kKitten:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 10);
-        cparams_.options.max_property_values = 96;
+        cparams_.options.max_property_values = 128;
+        cparams_.options.nb_repeats *= 1.1f;
         break;
       case SpeedTier::kGlacier:
       case SpeedTier::kTortoise:
         cparams_.options.splitting_heuristics_properties = prop_order;
         cparams_.options.max_property_values = 256;
+        cparams_.options.nb_repeats *= 1.3f;
         break;
       default:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 3);
-        cparams_.options.max_property_values = 16;
+        cparams_.options.max_property_values = 32;
+        cparams_.options.nb_repeats *= 0.3f;
         break;
     }
     if (cparams_.speed_tier > SpeedTier::kTortoise) {
@@ -599,6 +609,7 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
       }
     }
   }
+  cparams_.options.nb_repeats = std::min(1.0f, cparams_.options.nb_repeats);
 
   if ((cparams_.options.predictor == Predictor::Average0 ||
        cparams_.options.predictor == Predictor::Average1 ||
@@ -709,7 +720,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (cparams_.custom_splines.HasAny()) {
     PassesSharedState& shared = enc_state->shared;
     ImageFeatures& image_features = shared.image_features;
-    image_features.splines = cparams_.custom_splines;
+    image_features.splines.SetData(cparams_.custom_splines);
   }
 
   // Convert ImageBundle to modular Image object
@@ -882,7 +893,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
     channel_colors_percent = cparams_.channel_colors_pre_transform_percent;
   }
-  if (!groupwise) {
+    // Global palette causes bad progressive loading due to interpolation
+    // but lossy palette is still required for JXL art.
+  if (!groupwise && (cparams_.lossy_palette ||
+      !(cparams_.responsive && cparams_.ModularPartIsLossless()))) {
     JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams_,
                                      channel_colors_percent, pool));
   }
@@ -1412,14 +1426,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // Local palette transforms
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
-    if (cparams.butteraugli_distance == 0.f && !cparams.lossy_palette &&
-        cparams.speed_tier < SpeedTier::kCheetah) {
+    if (cparams_.ModularPartIsLossless() && !cparams.responsive &&
+        !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
       int max_bitdepth = 0, maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
-      if (!(cparams.responsive &&
-            (cparams.decoding_speed_tier >= 1 || cparams.IsLossless()))) {
         channel_color_percent = cparams.channel_colors_percent;
-      }
       JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams,
                                        channel_color_percent));
     }
@@ -1519,7 +1530,10 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   } else if (cparams.speed_tier <= SpeedTier::kKitten) {
     nb_wp_modes = 2;
   }
-  if (nb_wp_modes > 1 &&
+  // With a fixed tree (jxl_from_tree), the image is not what gets coded (it
+  // can hold placeholder channels), so a search on it only picks a mode at
+  // random: keep the default.
+  if (nb_wp_modes > 1 && cparams_.custom_fixed_tree.empty() &&
       PredictorHasWeighted(stream_options_[stream_id].predictor)) {
     float best_cost = std::numeric_limits<float>::max();
     stream_options_[stream_id].wp_mode = 0;
@@ -1537,13 +1551,20 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
 constexpr float q_deadzone = 0.62f;
 int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
                size_t w, weighted::State* wp_state, float value,
-               float inv_factor) {
+               float inv_factor, bool* has_outliers) {
   float svalue = value * inv_factor;
   PredictionResult pred =
       PredictNoTreeWP(w, qrow + x, onerow, x, y, Predictor::Weighted, wp_state);
   svalue -= pred.guess;
   if (svalue > -q_deadzone && svalue < q_deadzone) svalue = 0;
-  int residual = std::round(svalue);
+  int residual = 0;
+  if (std::isnan(svalue) ||
+      svalue > static_cast<float>(std::numeric_limits<int>::max()) ||
+      svalue < static_cast<float>(std::numeric_limits<int>::min())) {
+    *has_outliers = true;
+  } else {
+    residual = std::round(svalue);
+  }
   if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5f) * 2;
   return residual + pred.guess;
 }
@@ -1568,6 +1589,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
   JxlMemoryManager* memory_manager = dc.memory_manager();
   extra_dc_precision[group_index] = nl_dc ? 1 : 0;
   float mul = 1 << extra_dc_precision[group_index];
+  bool has_outliers = false;
 
   size_t stream_id = ModularStreamId::VarDCTDC(group_index).ID(frame_dim_);
   stream_options_[stream_id].max_chan_size = 0xFFFFFF;
@@ -1642,17 +1664,19 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = QuantizeWP(quant_row, stride, c, x, y, r.xsize(),
-                                      &wp_state, row[x], inv_factor);
+            quant_row[x] =
+                QuantizeWP(quant_row, stride, c, x, y, r.xsize(), &wp_state,
+                           row[x], inv_factor, &has_outliers);
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());
           }
         } else {
           int32_t* quant_row_y =
               stream_images_[stream_id].channel[0].plane.Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = QuantizeWP(
-                quant_row, stride, c, x, y, r.xsize(), &wp_state,
-                row[x] - quant_row_y[x] * (y_factor * cfl_factor), inv_factor);
+            quant_row[x] =
+                QuantizeWP(quant_row, stride, c, x, y, r.xsize(), &wp_state,
+                           row[x] - quant_row_y[x] * (y_factor * cfl_factor),
+                           inv_factor, &has_outliers);
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());
           }
         }
@@ -1703,6 +1727,10 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
         }
       }
     }
+  }
+
+  if (has_outliers) {
+    return JXL_FAILURE("Unsupported range of DC values");
   }
 
   DequantDC(r, &enc_state->shared.dc_storage, &enc_state->shared.quant_dc,

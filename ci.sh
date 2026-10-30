@@ -439,7 +439,9 @@ cmake_build_and_test() {
   fi
   # gtest_discover_tests() runs the test binaries to discover the list of tests
   # at build time, which fails under qemu.
-  ASAN_OPTIONS=detect_leaks=0 cmake --build "${BUILD_DIR}" -- $TARGETS
+  export ASAN_OPTIONS=detect_leaks=0
+  cmake --build "${BUILD_DIR}" -- $TARGETS
+  ctest -N -Q --test-dir "${BUILD_DIR}"
   # Pack test binaries if requested.
   if [[ "${PACK_TEST:-}" == "1" ]]; then
     (cd "${BUILD_DIR}"
@@ -1255,6 +1257,13 @@ cmd_lint() {
     typos -c "${MYDIR}/tools/scripts/typos.toml" ${sources}
   else
     echo -e "${TEXT_BOLD_PURPLE}SKIPPED:${TEXT_RESET} typos not installed; try: cargo install typos-cli"
+  fi
+
+  # It is ok, if zizmor is not installed.
+  if which zizmor >/dev/null; then
+    zizmor "${MYDIR}/.github/workflows/"
+  else
+    echo -e "${TEXT_BOLD_PURPLE}SKIPPED:${TEXT_RESET} zizmor (not installed)"
   fi
 
   local installed=()

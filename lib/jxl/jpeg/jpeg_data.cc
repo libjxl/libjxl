@@ -97,6 +97,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     }
   }
 
+  if (info.num_scans == 0) {
+    return JXL_FAILURE("JPEG: no scans\n");
+  }
+
   // Size of the APP and COM markers.
   if (visitor->IsReading()) {
     app_data.resize(info.num_app_markers);
@@ -335,14 +339,19 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     last_block_idx = -1;
     for (auto& extra_zero_run : scan.extra_zero_runs) {
       uint32_t& block_idx = extra_zero_run.block_idx;
+      uint32_t& extra_zero_runs = extra_zero_run.num_extra_zero_runs;
       JXL_RETURN_IF_ERROR(visitor->U32(Val(1), BitsOffset(2, 2),
                                        BitsOffset(4, 5), BitsOffset(8, 20), 1,
-                                       &extra_zero_run.num_extra_zero_runs));
+                                       &extra_zero_runs));
       block_idx -= last_block_idx + 1;
       JXL_RETURN_IF_ERROR(visitor->U32(Val(0), BitsOffset(3, 1),
                                        BitsOffset(5, 9), BitsOffset(28, 41), 0,
                                        &block_idx));
       block_idx += last_block_idx + 1;
+      if (extra_zero_runs > 4) {
+        return JXL_FAILURE("Invalid number of extra zero runs: %u",
+                           extra_zero_runs);
+      }
       if (block_idx > (3u << 26)) {
         return JXL_FAILURE("Invalid block ID: %u", block_idx);
       }
@@ -470,6 +479,10 @@ Status SetJPEGDataFromICC(const std::vector<uint8_t>& icc,
   for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
     if (jpeg_data->app_marker_type[i] != jpeg::AppMarkerType::kICC) {
       continue;
+    }
+    if (jpeg_data->app_data[i].size() < 17) {
+      return JXL_FAILURE("ICC APP marker too small: %" PRIuS,
+                         jpeg_data->app_data[i].size());
     }
     size_t len = jpeg_data->app_data[i].size() - 17;
     if (icc_pos + len > icc.size()) {

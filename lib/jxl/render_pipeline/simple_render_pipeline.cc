@@ -205,7 +205,8 @@ Status SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
           }
         }
         JXL_RETURN_IF_ERROR(stage->ProcessRow(input_rows, output_rows,
-                                              /*xextra=*/0, xsize,
+                                              /*xextra_left=*/0,
+                                              /*xextra_right=*/0, xsize,
                                               /*xpos=*/0, y, thread_id));
       }
     }

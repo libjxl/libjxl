@@ -37,16 +37,17 @@ class FileWrapper {
       : file_(pathname == "-" ? (mode[0] == 'r' ? stdin : stdout)
                               : fopen(pathname.c_str(), mode)),
         close_on_delete_(pathname != "-") {
+    if (file_ == nullptr) return;
 #ifdef _WIN32
     struct __stat64 s = {};
-    int err = _stat64(pathname.c_str(), &s);
+    int err = _fstat64(_fileno(file_), &s);
     const bool is_file = (s.st_mode & S_IFREG) != 0;
     if (pathname == "-") {
       err |= _setmode(_fileno(file_), _O_BINARY);
     }
 #else
     struct stat s = {};
-    int err = stat(pathname.c_str(), &s);
+    int err = fstat(fileno(file_), &s);
     const bool is_file = S_ISREG(s.st_mode);
 #endif
     if (err == 0 && is_file) {

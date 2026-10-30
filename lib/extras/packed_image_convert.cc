@@ -76,9 +76,11 @@ Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
   JXL_ENSURE(io.metadata.m.color_encoding.IsGray() ==
              (frame.color.format.num_channels <= 2));
 
+  bool has_interleaved_alpha = (info.alpha_bits != 0);
   JXL_RETURN_IF_ERROR(ConvertFromExternal(
       span, frame.color.xsize, frame.color.ysize, io.metadata.m.color_encoding,
-      frame_bits_per_sample, frame.color.format, pool, bundle));
+      frame_bits_per_sample, frame.color.format, pool, bundle,
+      has_interleaved_alpha));
 
   bundle->extra_channels().resize(io.metadata.m.extra_channel_info.size());
   for (size_t i = 0; i < frame.extra_channels.size(); i++) {

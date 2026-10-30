@@ -11,6 +11,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/codec_in_out.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/span.h"

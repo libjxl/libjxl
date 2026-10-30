@@ -219,6 +219,19 @@ class BitReader {
     return static_cast<size_t>(end_minus_8_ + 8 - first_byte_);
   }
 
+  // Forces the BitReader into an out-of-bounds state. Used by higher-level
+  // decoders to short-circuit further reads when they detect a corrupt stream
+  // (e.g. an LZ77 length-code overflow): after this call, subsequent reads
+  // still return zeros, but AllReadsWithinBounds() and Close() will report
+  // failure so the corruption surfaces at the next checkpoint rather than
+  // silently producing phantom-zero symbols.
+  void MarkUnhealthy() {
+    next_byte_ = end_minus_8_ + 8;
+    // Add enough overread to make TotalBitsConsumed() exceed TotalBytes() *
+    // kBitsPerByte regardless of how many bits remain in buf_.
+    overread_bytes_ += 8;
+  }
+
   // Returns whether all the bits read so far have been within the input bounds.
   // When reading past the EOF, the Read*() and Consume() functions return zeros
   // but flag a failure when calling Close() without checking this function.

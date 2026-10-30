@@ -26,14 +26,15 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
       with:
         egress-policy: audit
 
     - name: Checkout source
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0  # Disable shallow clone
+        persist-credentials: false
 
     - name: Set up SSH
       run: |
@@ -48,4 +49,4 @@ jobs:
         GIT_SSH_COMMAND: ssh -v -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no
       run: |
         git remote add gitlab git@gitlab.com:wg1/jpeg-xl.git
-        git push gitlab $BRANCH_NAME:$BRANCH_NAME
+        git push gitlab "$BRANCH_NAME:$BRANCH_NAME"

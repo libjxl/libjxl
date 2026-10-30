@@ -41,6 +41,8 @@ static constexpr uint8_t kDefaultColorFactor = 84;
 // since the CfL denominator is 84, this leaves 12 bits of mantissa to be used.
 // For extra caution, we use 11.
 static constexpr uint8_t kCFLFixedPointPrecision = 11;
+static constexpr int32_t kCFLFixedPointRatioMax =
+    (int32_t{256} << kCFLFixedPointPrecision) - 1;
 
 static constexpr U32Enc kColorFactorDist(Val(kDefaultColorFactor), Val(256),
                                          BitsOffset(8, 2), BitsOffset(16, 258));

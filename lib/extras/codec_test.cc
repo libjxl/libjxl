@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -394,6 +395,9 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
 TEST(CodecTest, TestPNM) {
   size_t u = 77777;  // Initialized to wrong value.
   double d = 77.77;
+  const std::string max_unsigned =
+      std::to_string(std::numeric_limits<size_t>::max());
+
 // Failing to parse invalid strings results in a crash if `JXL_CRASH_ON_ERROR`
 // is defined and hence the tests fail. Therefore we only run these tests if
 // `JXL_CRASH_ON_ERROR` is not defined.
@@ -402,6 +406,8 @@ TEST(CodecTest, TestPNM) {
   ASSERT_FALSE(PnmParseUnsigned(MakeSpan("+"), &u));
   ASSERT_FALSE(PnmParseUnsigned(MakeSpan("-"), &u));
   ASSERT_FALSE(PnmParseUnsigned(MakeSpan("A"), &u));
+  const std::string overflowing_unsigned = max_unsigned + "0";
+  ASSERT_FALSE(PnmParseUnsigned(MakeSpan(overflowing_unsigned.c_str()), &u));
 
   ASSERT_FALSE(PnmParseSigned(MakeSpan(""), &d));
   ASSERT_FALSE(PnmParseSigned(MakeSpan("+"), &d));
@@ -414,6 +420,9 @@ TEST(CodecTest, TestPNM) {
   ASSERT_TRUE(PnmParseUnsigned(MakeSpan("32"), &u));
   ASSERT_TRUE(u == 32);
 
+  ASSERT_TRUE(PnmParseUnsigned(MakeSpan(max_unsigned.c_str()), &u));
+  ASSERT_TRUE(u == std::numeric_limits<size_t>::max());
+
   ASSERT_TRUE(PnmParseSigned(MakeSpan("1"), &d));
   ASSERT_TRUE(d == 1.0);
   ASSERT_TRUE(PnmParseSigned(MakeSpan("+2"), &d));
@@ -424,6 +433,49 @@ TEST(CodecTest, TestPNM) {
   ASSERT_TRUE(std::abs(d - 3.141592) < 1E-15);
   ASSERT_TRUE(PnmParseSigned(MakeSpan("-3.141592"), &d));
   ASSERT_TRUE(std::abs(d - -3.141592) < 1E-15);
+}
+
+TEST(CodecTest, PNMSampleAboveMaxVal) {
+  const auto decode = [](const std::string& header,
+                         const std::vector<uint8_t>& samples) -> bool {
+    std::vector<uint8_t> pnm(header.begin(), header.end());
+    pnm.insert(pnm.end(), samples.begin(), samples.end());
+    PackedPixelFile ppf;
+    return static_cast<bool>(DecodeBytes(Bytes(pnm), ColorHints(), &ppf));
+  };
+  const std::string kPam12 =
+      "P7\nWIDTH 1\nHEIGHT 1\nDEPTH 4\nMAXVAL 4095\n"
+      "TUPLTYPE RGB_ALPHA\nENDHDR\n";
+
+  // Samples up to MaxVal are valid.
+  EXPECT_TRUE(decode("P5\n2 1\n15\n", {0, 15}));
+  EXPECT_TRUE(decode("P5\n2 1\n255\n", {0, 255}));
+  EXPECT_TRUE(decode("P6\n1 1\n4095\n", {0x0F, 0xFF, 0, 0, 0x0F, 0xFF}));
+  EXPECT_TRUE(decode("P5\n1 1\n65535\n", {0xFF, 0xFF}));
+  EXPECT_TRUE(decode(kPam12, {0, 0, 0, 0, 0, 0, 0x0F, 0xFF}));
+
+#if (!JXL_CRASH_ON_ERROR)
+  // Samples above MaxVal are rejected.
+  EXPECT_FALSE(decode("P5\n2 1\n15\n", {0, 16}));
+  EXPECT_FALSE(decode("P6\n1 1\n4095\n", {0x0F, 0xFF, 0x10, 0x00, 0, 0}));
+  EXPECT_FALSE(decode("P6\n1 1\n4095\n", {0, 0, 0, 0, 0xFF, 0xFF}));
+  EXPECT_FALSE(decode(kPam12, {0, 0, 0, 0, 0, 0, 0x10, 0x00}));
+  // Check every sample position of images larger than 8 bytes.
+  const std::vector<uint8_t> max4(19, 15);
+  std::vector<uint8_t> max12;
+  for (size_t i = 0; i < 19; ++i) max12.insert(max12.end(), {0x0F, 0xFF});
+  EXPECT_TRUE(decode("P5\n19 1\n15\n", max4));
+  EXPECT_TRUE(decode("P5\n19 1\n4095\n", max12));
+  for (size_t i = 0; i < 19; ++i) {
+    std::vector<uint8_t> samples4 = max4;
+    samples4[i] = 16;
+    EXPECT_FALSE(decode("P5\n19 1\n15\n", samples4)) << i;
+    std::vector<uint8_t> samples12 = max12;
+    samples12[2 * i] = 0x10;
+    samples12[2 * i + 1] = 0x00;
+    EXPECT_FALSE(decode("P5\n19 1\n4095\n", samples12)) << i;
+  }
+#endif
 }
 
 TEST(CodecTest, FormatNegotiation) {
@@ -460,6 +512,68 @@ TEST(CodecTest, FormatNegotiation) {
   // 16 is the smallest accepted format that can accommodate the 12-bit data.
   EXPECT_EQ(format.data_type, JXL_TYPE_UINT16);
 }
+
+TEST(CodecTest, FormatNegotiationGrayscalePromotion) {
+  const std::vector<JxlPixelFormat> accepted_formats = {
+      {/*num_channels=*/3,
+       /*data_type=*/JXL_TYPE_UINT8,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+      {/*num_channels=*/3,
+       /*data_type=*/JXL_TYPE_UINT16,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+  };
+
+  JxlBasicInfo info;
+  JxlEncoderInitBasicInfo(&info);
+  info.bits_per_sample = 8;
+  info.num_color_channels = 1;
+
+  JxlPixelFormat format;
+  ASSERT_TRUE(SelectFormat(accepted_formats, info, &format));
+  EXPECT_EQ(format.num_channels, 3u);
+  EXPECT_EQ(format.data_type, JXL_TYPE_UINT8);
+}
+
+TEST(CodecTest, FormatNegotiationGrayAlphaPromotion) {
+  const std::vector<JxlPixelFormat> accepted_formats = {
+      {/*num_channels=*/3,
+       /*data_type=*/JXL_TYPE_UINT8,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+  };
+
+  JxlBasicInfo info;
+  JxlEncoderInitBasicInfo(&info);
+  info.bits_per_sample = 8;
+  info.num_color_channels = 1;
+  info.alpha_bits = 8;
+
+  JxlPixelFormat format;
+  ASSERT_TRUE(SelectFormat(accepted_formats, info, &format));
+  EXPECT_EQ(format.num_channels, 3u);
+  EXPECT_EQ(format.data_type, JXL_TYPE_UINT8);
+}
+
+#if (!JXL_CRASH_ON_ERROR)
+TEST(CodecTest, FormatNegotiationGrayscaleNoMatch) {
+  const std::vector<JxlPixelFormat> accepted_formats = {
+      {/*num_channels=*/5,
+       /*data_type=*/JXL_TYPE_UINT8,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+  };
+
+  JxlBasicInfo info;
+  JxlEncoderInitBasicInfo(&info);
+  info.bits_per_sample = 8;
+  info.num_color_channels = 1;
+
+  JxlPixelFormat format;
+  EXPECT_FALSE(SelectFormat(accepted_formats, info, &format));
+}
+#endif
 
 TEST(CodecTest, EncodeToPNG) {
   ThreadPool* const pool = nullptr;

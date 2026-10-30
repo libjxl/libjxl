@@ -7,6 +7,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
@@ -20,6 +22,7 @@
 #include "lib/jxl/enc_ans_simd.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
@@ -220,7 +223,7 @@ void TestCheckpointing(bool ans, bool lz77) {
 
   EntropyEncodingData codes;
   HistogramParams params;
-  params.lz77_method = lz77 ? HistogramParams::LZ77Method::kLZ77
+  params.lz77_method = lz77 ? HistogramParams::LZ77Method::kLZ77b3w3f
                             : HistogramParams::LZ77Method::kNone;
   params.force_huffman = !ans;
 

@@ -25,12 +25,15 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
     - name: Check AUTHORS file
       # This is an optional check
       continue-on-error: True
@@ -42,16 +45,19 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
     - name: Install tools
       run: |
         eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-        brew install buildifier typos-cli
+        brew install buildifier typos-cli zizmor
     - name: lint
       run: |
         eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
@@ -62,12 +68,15 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
     - name: bash_test
       run: |
         ./bash_test.sh

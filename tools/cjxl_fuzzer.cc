@@ -21,7 +21,6 @@
 #include <hwy/targets.h>
 #include <vector>
 
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/fuzztest.h"
 #include "lib/jxl/test_image.h"
 #include "tools/tracking_memory_manager.h"
@@ -31,10 +30,10 @@ namespace {
 using ::jpegxl::tools::kGiB;
 using ::jpegxl::tools::TrackingMemoryManager;
 
-void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
+void CheckImpl(bool ok, const char* condition, const char* file, int line) {
   if (!ok) {
-    fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
-    JXL_CRASH();
+    fprintf(stderr, "Check(%s) failed at %s:%d\n", condition, file, line);
+    __builtin_trap();
   }
 }
 #define Check(OK) CheckImpl((OK), #OK, __FILE__, __LINE__)

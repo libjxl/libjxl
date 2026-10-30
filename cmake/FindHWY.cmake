@@ -19,6 +19,11 @@ find_library(HWY_LIBRARY
   HINTS ${PC_HWY_LIBDIR} ${PC_HWY_LIBRARY_DIRS}
 )
 
+find_library(HWY_DEBUG_LIBRARY
+  NAMES ${HWY_DEBUG_NAMES} hwyd
+  HINTS ${PC_HWY_LIBDIR} ${PC_HWY_LIBRARY_DIRS}
+)
+
 # If version not found using pkg-config, try extracting it from header files
 if (HWY_INCLUDE_DIR AND NOT HWY_VERSION)
   set(HWY_VERSION "")
@@ -62,7 +67,12 @@ if (HWY_LIBRARY AND NOT TARGET hwy)
     set_property(TARGET hwy PROPERTY INTERFACE_COMPILE_OPTIONS ${PC_HWY_CFLAGS_OTHER})
   else()
     target_include_directories(hwy INTERFACE ${HWY_INCLUDE_DIR})
-    target_link_libraries(hwy INTERFACE ${HWY_LIBRARY})
+    if (HWY_DEBUG_LIBRARY)
+        target_link_libraries(hwy INTERFACE debug ${HWY_DEBUG_LIBRARY})
+        target_link_libraries(hwy INTERFACE optimized ${HWY_LIBRARY})
+    else()
+        target_link_libraries(hwy INTERFACE ${HWY_LIBRARY})
+    endif()
     target_link_options(hwy INTERFACE ${PC_HWY_LDFLAGS_OTHER})
     target_compile_options(hwy INTERFACE ${PC_HWY_CFLAGS_OTHER})
   endif()

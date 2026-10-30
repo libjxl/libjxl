@@ -70,7 +70,7 @@ TEST(JxlTest, RoundtripSinglePixel) {
   JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
   frame.ZeroFill();
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 54, 10);
+  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 31, 10);
 }
 
 TEST(JxlTest, RoundtripSinglePixelWithAlpha) {
@@ -80,7 +80,7 @@ TEST(JxlTest, RoundtripSinglePixelWithAlpha) {
   JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
   frame.ZeroFill();
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 57, 10);
+  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 34, 10);
 }
 
 // Changing serialized signature causes Decode to fail.
@@ -145,7 +145,7 @@ TEST(JxlTest, RoundtripSmallD1) {
 
   {
     PackedPixelFile ppf_out;
-    EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 747, 20);
+    EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 724, 20);
     EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.3);
     EXPECT_EQ(ppf_out.info.intensity_target, t.ppf().info.intensity_target);
   }
@@ -1025,7 +1025,7 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   EXPECT_EQ(t.ppf().frames[0].color.format.data_type, JXL_TYPE_UINT8);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 107, 10);
+  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 78, 10);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.007);
 }
 
@@ -1085,7 +1085,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8) {
   PackedPixelFile ppf_out;
   size_t compressed_size =
       Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out);
-  EXPECT_EQ(compressed_size, 218429u);
+  EXPECT_EQ(compressed_size, 218306u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1105,7 +1105,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8ThunderGradient) {
 
   PackedPixelFile ppf_out;
   EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
-            261613u);
+            261635u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1144,7 +1144,7 @@ JXL_SLOW_TEST(JxlTest, RoundtripLossless8Falcon) {
 
   PackedPixelFile ppf_out;
   EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool.get(), &ppf_out),
-            230697u);
+            230719u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1165,7 +1165,7 @@ TEST(JxlTest, RoundtripLossless8Alpha) {
 
   PackedPixelFile ppf_out;
   size_t compressed_size = Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out);
-  EXPECT_EQ(compressed_size, 246225u);
+  EXPECT_EQ(compressed_size, 246093u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.alpha_bits, 8u);
   EXPECT_TRUE(test::SameAlpha(t.ppf(), ppf_out));
@@ -1205,7 +1205,7 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
   PackedPixelFile ppf_out;
   // TODO(szabadka) Investigate big size difference on i686
   size_t compressed_size = Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out);
-  EXPECT_NEAR(compressed_size, 3477u, 100u);
+  EXPECT_NEAR(compressed_size, 3334u, 100u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.info.alpha_bits, 16u);
   EXPECT_TRUE(test::SameAlpha(t.ppf(), ppf_out));
@@ -1341,7 +1341,7 @@ TEST(JxlTest, RoundtripLossless8Gray) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 92588u);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 92495u);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
   EXPECT_EQ(ppf_out.color_encoding.color_space, JXL_COLOR_SPACE_GRAY);
   EXPECT_EQ(ppf_out.info.bits_per_sample, 8u);
@@ -1583,7 +1583,7 @@ JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression444wh12) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_444_1x2.jpg");
   // JPEG size is 703,874 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 569206u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, pool.get()), 569154u, 20);
 }
 
 JXL_TRANSCODE_JPEG_TEST(JxlTest, RoundtripJpegRecompression422) {

@@ -59,6 +59,8 @@ target_compile_definitions(jxl_threads
 generate_export_header(jxl_threads
   BASE_NAME JXL_THREADS
   EXPORT_FILE_NAME include/jxl/jxl_threads_export.h)
+target_compile_definitions(jxl_threads PUBLIC
+  "$<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:JXL_THREADS_STATIC_DEFINE>")
 # Place all public headers in a single directory.
 foreach(path ${JPEGXL_INTERNAL_THREADS_PUBLIC_HEADERS})
   configure_file(

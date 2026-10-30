@@ -116,13 +116,6 @@ else()
 endif()
 
 
-if(EXISTS "${PROJECT_SOURCE_DIR}/third_party/libjpeg-turbo/jconfig.h.in")
-  set(ENABLE_JPEGLI_DEFAULT YES)
-else()
-  set(ENABLE_JPEGLI_DEFAULT NO)
-  message(STATUS "libjpeg-turbo submodule is absent; not enabling jpegli")
-endif()
-
 include(TestBigEndian)
 test_big_endian(ARCH_IS_BIG_ENDIAN)
 if(ARCH_IS_BIG_ENDIAN)
@@ -148,16 +141,6 @@ set(JPEGXL_ENABLE_DEVTOOLS false CACHE BOOL
     "Build JPEGXL developer tools.")
 set(JPEGXL_ENABLE_TOOLS true CACHE BOOL
     "Build JPEGXL user tools: cjxl and djxl.")
-set(JPEGXL_ENABLE_JPEGLI ${ENABLE_JPEGLI_DEFAULT} CACHE BOOL
-    "Build jpegli library.")
-set(JPEGXL_ENABLE_JPEGLI_LIBJPEG true CACHE BOOL
-    "Build libjpeg.so shared library based on jpegli.")
-set(JPEGXL_INSTALL_JPEGLI_LIBJPEG false CACHE BOOL
-    "Install jpegli version of libjpeg.so system-wide.")
-set(JPEGLI_LIBJPEG_LIBRARY_VERSION "62.3.0" CACHE STRING
-    "Library version of the libjpeg.so shared library that we build.")
-set(JPEGLI_LIBJPEG_LIBRARY_SOVERSION "62" CACHE STRING
-    "Library so-version of the libjpeg.so shared library that we build.")
 set(JPEGXL_ENABLE_DOXYGEN true CACHE BOOL
     "Generate C API documentation using Doxygen.")
 set(JPEGXL_ENABLE_MANPAGES true CACHE BOOL

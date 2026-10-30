@@ -159,11 +159,10 @@ typedef enum {
   /** The decoder is able to decode a preview image and requests setting a
    * preview output buffer using @ref JxlDecoderSetPreviewOutBuffer. This occurs
    * if ::JXL_DEC_PREVIEW_IMAGE is requested and it is possible to decode a
-   * preview image from the codestream and the preview out buffer was not yet
-   * set. There is maximum one preview image in a codestream.
-   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
-   * end of the frame header (including ToC) of the preview frame as
-   * unprocessed.
+   * preview image from the codestream. There is maximum one preview image in
+   * a codestream. In this case, @ref JxlDecoderReleaseInput will return all
+   * bytes from the end of the frame header (including ToC) of the preview frame
+   * as unprocessed.
    */
   JXL_DEC_NEED_PREVIEW_OUT_BUFFER = 3,
 
@@ -919,11 +918,14 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
     const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size);
 
 /**
- * Sets the buffer to write the low-resolution preview image
- * to. The size of the buffer must be at least as large as given by @ref
+ * Sets the buffer to write the low-resolution preview image to. This must be
+ * set when the ::JXL_DEC_NEED_PREVIEW_OUT_BUFFER event occurs. The size of
+ * the buffer must be at least as large as given by @ref
  * JxlDecoderPreviewOutBufferSize. The buffer follows the format described
  * by @ref JxlPixelFormat. The preview image dimensions are given by the
- * @ref JxlPreviewHeader. The buffer is owned by the caller.
+ * @ref JxlPreviewHeader. The buffer is owned by the caller. Attempt to set
+ * preview buffer before ::JXL_DEC_NEED_PREVIEW_OUT_BUFFER or after
+ * ::JXL_DEC_PREVIEW_IMAGE will fail.
  *
  * @param dec decoder object
  * @param format format of pixels. Object owned by user and its contents are
@@ -1001,11 +1003,12 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
 
 /**
  * Sets the buffer to write the full resolution image to. This can be set when
- * the ::JXL_DEC_FRAME event occurs, must be set when the @ref
- * JXL_DEC_NEED_IMAGE_OUT_BUFFER event occurs, and applies only for the
+ * the ::JXL_DEC_FRAME event occurs, must be set when the
+ * ::JXL_DEC_NEED_IMAGE_OUT_BUFFER event occurs, and applies only for the
  * current frame. The size of the buffer must be at least as large as given
  * by @ref JxlDecoderImageOutBufferSize. The buffer follows the format described
- * by @ref JxlPixelFormat. The buffer is owned by the caller.
+ * by @ref JxlPixelFormat. The buffer is owned by the caller. Attempt to set
+ * image buffer while preview buffer is expected will fail.
  *
  * @param dec decoder object
  * @param format format of the pixels. Object owned by user and its contents

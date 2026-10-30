@@ -31,9 +31,9 @@ using ::jxl::CodecInOut;
 using ::jxl::SizeConstraints;
 using ::jxl::Status;
 
-void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
+void CheckImpl(bool ok, const char* condition, const char* file, int line) {
   if (!ok) {
-    fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
+    fprintf(stderr, "Check(%s) failed at %s:%d\n", condition, file, line);
     JXL_CRASH();
   }
 }

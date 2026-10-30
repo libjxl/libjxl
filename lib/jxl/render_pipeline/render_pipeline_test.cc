@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -43,6 +44,12 @@
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
+#include "lib/jxl/loop_filter.h"
+#include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
+#include "lib/jxl/render_pipeline/stage_gaborish.h"
+#include "lib/jxl/render_pipeline/stage_upsampling.h"
+#include "lib/jxl/render_pipeline/stage_write.h"
+#include "lib/jxl/render_pipeline/stage_ycbcr.h"
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/test_memory_manager.h"
@@ -191,6 +198,148 @@ TEST(RenderPipelineTest, CallAllGroupsFast) {
   EXPECT_EQ(pipeline->PassesWithAllInput(), 1u);
 }
 
+// Exercises the scheduling of the low-memory pipeline: for every combination
+// of per-channel chroma upsampling, Gaborish and upsampling, the output must
+// match the simple (whole-image) implementation. The low-memory pipeline keeps
+// the output of each stage in a small ring buffer, and when a producer runs
+// further ahead of its consumers than that buffer can hold, consumers silently
+// read rows that were already overwritten (OSS-Fuzz 501356662 and 511400706,
+// 6x5 with 2x and 17x229 with 8x upsampling, both with chroma subsampling and
+// Gaborish).
+struct SchedulingTestSettings {
+  // Bit 2*c: vertical chroma upsampling of channel c; bit 2*c+1: horizontal.
+  uint8_t chroma_upsampling;
+  bool gaborish;
+  size_t upsampling;  // 1, 2, 4 or 8
+  size_t xsize, ysize;
+};
+
+std::ostream& operator<<(std::ostream& os, const SchedulingTestSettings& s) {
+  os << "Chroma" << static_cast<int>(s.chroma_upsampling) << "_Gab"
+     << (s.gaborish ? 1 : 0) << "_Up" << s.upsampling << "_" << s.xsize << "x"
+     << s.ysize;
+  return os;
+}
+
+std::vector<SchedulingTestSettings> GenerateSchedulingTests() {
+  std::vector<SchedulingTestSettings> all_tests;
+  for (size_t size_idx = 0; size_idx < 2; size_idx++) {
+    size_t xsize = size_idx == 0 ? 6 : 17;
+    size_t ysize = size_idx == 0 ? 5 : 229;
+    for (size_t upsampling : {1, 2, 4, 8}) {
+      for (bool gaborish : {false, true}) {
+        for (uint8_t chroma_upsampling = 0; chroma_upsampling < 64;
+             chroma_upsampling++) {
+          all_tests.push_back(
+              {chroma_upsampling, gaborish, upsampling, xsize, ysize});
+        }
+      }
+    }
+  }
+  return all_tests;
+}
+
+StatusOr<Image3F> RunSchedulingPipeline(JxlMemoryManager* memory_manager,
+                                        const SchedulingTestSettings& config,
+                                        bool use_simple_implementation) {
+  JXL_ASSIGN_OR_RETURN(
+      Image3F output,
+      Image3F::Create(memory_manager, config.xsize, config.ysize));
+  RenderPipeline::Builder builder(memory_manager, /*num_c=*/3);
+  for (size_t c = 0; c < 3; c++) {
+    if (config.chroma_upsampling & (1 << (2 * c))) {
+      JXL_RETURN_IF_ERROR(
+          builder.AddStage(GetChromaUpsamplingStage(c, /*horizontal=*/false)));
+    }
+    if (config.chroma_upsampling & (1 << (2 * c + 1))) {
+      JXL_RETURN_IF_ERROR(
+          builder.AddStage(GetChromaUpsamplingStage(c, /*horizontal=*/true)));
+    }
+  }
+  if (config.gaborish) {
+    LoopFilter loop_filter;
+    loop_filter.gab = true;
+    JXL_RETURN_IF_ERROR(builder.AddStage(GetGaborishStage(loop_filter)));
+  }
+  if (config.upsampling > 1) {
+    CustomTransformData transform_data;
+    size_t shift = CeilLog2Nonzero(config.upsampling);
+    for (size_t c = 0; c < 3; c++) {
+      JXL_RETURN_IF_ERROR(builder.AddStage(
+          GetUpsamplingStage(memory_manager, transform_data, c, shift)));
+    }
+  }
+  JXL_RETURN_IF_ERROR(builder.AddStage(GetYCbCrStage()));
+  JXL_RETURN_IF_ERROR(
+      builder.AddStage(GetWriteToImage3FStage(memory_manager, &output)));
+  if (use_simple_implementation) builder.UseSimpleImplementation();
+
+  FrameDimensions frame_dimensions;
+  frame_dimensions.Set(config.xsize, config.ysize, /*group_size_shift=*/0,
+                       /*max_hshift=*/0, /*max_vshift=*/0,
+                       /*modular_mode=*/false, config.upsampling);
+  JXL_ASSIGN_OR_RETURN(auto pipeline,
+                       std::move(builder).Finalize(frame_dimensions));
+  JXL_RETURN_IF_ERROR(pipeline->PrepareForThreads(1, /*use_group_ids=*/false));
+  for (size_t group = 0; group < frame_dimensions.num_groups; group++) {
+    auto input_buffers = pipeline->GetInputBuffers(group, 0);
+    for (size_t c = 0; c < 3; c++) {
+      const auto& buffer = input_buffers.GetBuffer(c);
+      for (size_t y = 0; y < buffer.second.ysize(); y++) {
+        float* row = buffer.second.Row(buffer.first, y);
+        for (size_t x = 0; x < buffer.second.xsize(); x++) {
+          // Distinct values per channel, row and column, so that a row read
+          // from the wrong place changes the output.
+          row[x] = (0.1f * c + 0.01f * y + 0.001f * x) *
+                   (((x + y) & 1) != 0 ? 1.0f : -1.0f);
+        }
+      }
+    }
+    JXL_RETURN_IF_ERROR(input_buffers.Done());
+  }
+  JXL_ENSURE(pipeline->PassesWithAllInput() == 1);
+  return output;
+}
+
+class RenderPipelineSchedulingTest
+    : public ::testing::TestWithParam<SchedulingTestSettings> {};
+
+std::string SchedulingTestDescription(
+    const testing::TestParamInfo<RenderPipelineSchedulingTest::ParamType>&
+        info) {
+  std::stringstream name;
+  name << info.param;
+  return name.str();
+}
+
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(RenderPipelineSchedulingTests,
+                                   RenderPipelineSchedulingTest,
+                                   testing::ValuesIn(GenerateSchedulingTests()),
+                                   SchedulingTestDescription);
+
+TEST_P(RenderPipelineSchedulingTest, LowMemoryMatchesSimple) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  const SchedulingTestSettings config = GetParam();
+  JXL_TEST_ASSIGN_OR_DIE(
+      Image3F simple,
+      RunSchedulingPipeline(memory_manager, config,
+                            /*use_simple_implementation=*/true));
+  JXL_TEST_ASSIGN_OR_DIE(
+      Image3F low_memory,
+      RunSchedulingPipeline(memory_manager, config,
+                            /*use_simple_implementation=*/false));
+  // Guard against both pipelines producing nothing.
+  double sum = 0.0;
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < simple.ysize(); y++) {
+      const float* row = simple.ConstPlaneRow(c, y);
+      for (size_t x = 0; x < simple.xsize(); x++) sum += std::abs(row[x]);
+    }
+  }
+  EXPECT_GT(sum, 0.0);
+  JXL_TEST_ASSERT_OK(VerifyRelativeError(simple, low_memory, 1e-6, 1e-6, _));
+}
+
 struct RenderPipelineTestInputSettings {
   // Input image.
   std::string input_path;
@@ -203,7 +352,7 @@ struct RenderPipelineTestInputSettings {
 
   bool add_spot_color = false;
 
-  Splines splines;
+  bool has_splines;
 
   JXL_NOINLINE void Reset() {
     input_path.clear();
@@ -213,9 +362,34 @@ struct RenderPipelineTestInputSettings {
     cparams = CompressParams();
     cparams_descr.clear();
     add_spot_color = false;
-    splines.Clear();
+    has_splines = false;
   }
 };
+
+Status CreateTestSplines(std::vector<QuantizedSpline>& quantized_splines,
+                         std::vector<Spline::Point>& starting_points) {
+  quantized_splines.clear();
+  starting_points.clear();
+  const ColorCorrelation color_correlation{};
+  std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
+                                            {10, 40}, {150, 25},  {120, 300}};
+  const Spline spline{control_points,
+                      /*color_dct=*/
+                      {Dct32{0.03125f, 0.00625f, 0.003125f},
+                       Dct32{1.f, 0.321875f}, Dct32{1.f, 0.24375f}},
+                      /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
+  std::vector<Spline> spline_data = {spline};
+  for (const Spline& ospline : spline_data) {
+    JXL_ASSIGN_OR_RETURN(
+        QuantizedSpline qspline,
+        QuantizedSpline::Create(ospline, /*quantization_adjustment=*/0,
+                                color_correlation.YtoXRatio(0),
+                                color_correlation.YtoBRatio(0)));
+    quantized_splines.emplace_back(std::move(qspline));
+    starting_points.push_back(ospline.control_points.front());
+  }
+  return true;
+}
 
 class RenderPipelineTestParam
     : public ::testing::TestWithParam<RenderPipelineTestInputSettings> {};
@@ -270,7 +444,16 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 
   std::vector<uint8_t> compressed;
 
-  config.cparams.custom_splines = config.splines;
+  std::vector<QuantizedSpline> quantized_splines;
+  std::vector<Spline::Point> starting_points;
+  if (config.has_splines) {
+    ASSERT_TRUE(CreateTestSplines(quantized_splines, starting_points));
+    config.cparams.custom_splines = {
+        Span<const QuantizedSpline>(quantized_splines),
+        Span<const Spline::Point>(starting_points)};
+  } else {
+    config.cparams.custom_splines = {};
+  }
   ASSERT_TRUE(test::EncodeFile(config.cparams, io.get(), &compressed, &pool));
 
   auto io_default = jxl::make_unique<CodecInOut>(memory_manager);
@@ -298,31 +481,6 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
           io_default->frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
     }
   }
-}
-
-StatusOr<Splines> CreateTestSplines() {
-  const ColorCorrelation color_correlation{};
-  std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
-                                            {10, 40}, {150, 25},  {120, 300}};
-  const Spline spline{control_points,
-                      /*color_dct=*/
-                      {Dct32{0.03125f, 0.00625f, 0.003125f},
-                       Dct32{1.f, 0.321875f}, Dct32{1.f, 0.24375f}},
-                      /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
-  std::vector<Spline> spline_data = {spline};
-  std::vector<QuantizedSpline> quantized_splines;
-  std::vector<Spline::Point> starting_points;
-  for (const Spline& ospline : spline_data) {
-    JXL_ASSIGN_OR_RETURN(
-        QuantizedSpline qspline,
-        QuantizedSpline::Create(ospline, /*quantization_adjustment=*/0,
-                                color_correlation.YtoXRatio(0),
-                                color_correlation.YtoBRatio(0)));
-    quantized_splines.emplace_back(std::move(qspline));
-    starting_points.push_back(ospline.control_points.front());
-  }
-  return Splines(/*quantization_adjustment=*/0, std::move(quantized_splines),
-                 std::move(starting_points));
 }
 
 std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
@@ -403,7 +561,7 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     {
       s = stub;
       s.cparams_descr = "Splines";
-      JXL_TEST_ASSIGN_OR_DIE(s.splines, CreateTestSplines());
+      s.has_splines = true;
       all_tests.push_back(s);
     }
 

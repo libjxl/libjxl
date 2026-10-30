@@ -19,11 +19,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/fuzztest.h"
 #include "tools/tracking_memory_manager.h"
 
@@ -31,19 +29,26 @@ namespace {
 
 using ::jpegxl::tools::kGiB;
 using ::jpegxl::tools::TrackingMemoryManager;
-using ::jxl::Status;
-using ::jxl::StatusOr;
 
 constexpr size_t kMemoryCap = kGiB;  // enough for 85.3MPx without overhead
 constexpr size_t kBaseMaxSize = 16 << 20;  // 16MPx
 
-void CheckImpl(bool ok, const char* conndition, const char* file, int line) {
+void CheckImpl(bool ok, const char* condition, const char* file, int line) {
   if (!ok) {
-    fprintf(stderr, "Check(%s) failed at %s:%d\n", conndition, file, line);
-    JXL_CRASH();
+    fprintf(stderr, "Check(%s) failed at %s:%d\n", condition, file, line);
+    __builtin_trap();
   }
 }
 #define Check(OK) CheckImpl((OK), #OK, __FILE__, __LINE__)
+
+float Clamp1(float val, float low, float hi) {
+  return val < low ? low : val > hi ? hi : val;
+}
+
+size_t RoundUpTo(size_t what, size_t align) {
+  size_t reminder = what % align;
+  return (reminder == 0) ? what : (what + align - reminder);
+}
 
 struct FuzzSpec {
   uint32_t xsize;
@@ -159,12 +164,12 @@ struct FuzzSpec {
     if (modular && slow_predictor) max_size /= 2;
     if (sizeof(size_t) == 4) max_size /= 1.5;
     constexpr size_t group_dim = 256;
-    uint64_t in_mem_xsize = jxl::RoundUpTo(spec.xsize, group_dim);
+    uint64_t in_mem_xsize = RoundUpTo(spec.xsize, group_dim);
     if (in_mem_xsize * spec.ysize > max_size) {
       spec.ysize = max_size / in_mem_xsize;
       Check(spec.ysize > 0);
     }
-    uint64_t in_mem_ysize = jxl::RoundUpTo(spec.ysize, group_dim);
+    uint64_t in_mem_ysize = RoundUpTo(spec.ysize, group_dim);
     if (spec.xsize * in_mem_ysize > max_size) {
       spec.xsize = max_size / in_mem_ysize;
       Check(spec.xsize > 0);
@@ -190,9 +195,9 @@ struct FuzzSpec {
   }
 };
 
-StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
-                                      TrackingMemoryManager& memory_manager,
-                                      bool streaming) {
+bool Encode(const FuzzSpec& spec, TrackingMemoryManager& memory_manager,
+            bool streaming, std::vector<uint8_t>& result) {
+  result.clear();
   auto runner = JxlThreadParallelRunnerMake(nullptr, spec.num_threads);
   JxlEncoderPtr enc_ptr = JxlEncoderMake(memory_manager.get());
   JxlEncoder* enc = enc_ptr.get();
@@ -279,7 +284,7 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
   // TODO(eustas): update when API will provide OOM status.
   if (memory_manager.seen_oom) {
     // Actually, that is fine.
-    return JXL_FAILURE("OOM");
+    return false;
   }
   Check(status == JXL_ENC_SUCCESS);
   JxlEncoderCloseInput(enc);
@@ -297,17 +302,17 @@ StatusOr<std::vector<uint8_t>> Encode(const FuzzSpec& spec,
   // TODO(eustas): update when API will provide OOM status.
   if (memory_manager.seen_oom) {
     // Actually, that is fine.
-    return JXL_FAILURE("OOM");
+    return false;
   }
   Check(process_result == JXL_ENC_SUCCESS);
   buf.resize(written);
 
-  return buf;
+  result = std::move(buf);
+  return true;
 }
 
-Status Decode(const std::vector<uint8_t>& data,
-                                    TrackingMemoryManager& memory_manager,
-                                    std::vector<float>& pixels) {
+bool Decode(const std::vector<uint8_t>& data,
+            TrackingMemoryManager& memory_manager, std::vector<float>& pixels) {
   // Multi-threaded parallel runner.
   auto dec = JxlDecoderMake(memory_manager.get());
   Check(JxlDecoderSubscribeEvents(dec.get(),
@@ -342,7 +347,7 @@ Status Decode(const std::vector<uint8_t>& data,
       // TODO(eustas): update when API will provide OOM status.
       if (memory_manager.seen_oom) {
         // Actually, that is fine.
-        return JXL_FAILURE("OOM");
+        return false;
       }
       // Unexpected status
       Check(false);
@@ -362,11 +367,11 @@ void Run(const FuzzSpec& spec) {
   std::vector<uint8_t> enc_default;
   std::vector<uint8_t> enc_streaming;
 
-  const auto encode = [&]() -> Status {
+  const auto encode = [&]() -> bool {
     // It is not clear, which approach eats more memory.
-    JXL_ASSIGN_OR_RETURN(enc_default, Encode(spec, memory_manager, false));
+    if (!Encode(spec, memory_manager, false, enc_default)) return false;
     Check(memory_manager.Reset());
-    JXL_ASSIGN_OR_RETURN(enc_streaming, Encode(spec, memory_manager, true));
+    if (!Encode(spec, memory_manager, true, enc_streaming)) return false;
     Check(memory_manager.Reset());
     return true;
   };
@@ -385,14 +390,14 @@ void Run(const FuzzSpec& spec) {
 
   Check(spec.int_options[0].flag == JXL_ENC_FRAME_SETTING_EFFORT);
   int effort = spec.int_options[0].value;
-  std::array<float, 10> kThreshold = {0.00f, 0.05f, 0.05f, 0.05f, 0.05f,
+  std::array<float, 10> kThreshold = {0.00f,   0.05f,   0.05f,   0.05f, 0.05f,
                                       0.0625f, 0.0625f, 0.0625f, 0.10f, 0.10f};
   float threshold = kThreshold[effort];
- 
+
   int outlier_count = 0;
   for (size_t i = 0; i < dec_default.size(); ++i) {
-    float d1 = ::jxl::Clamp1(dec_default[i], 0.0f, 1.0f);
-    float d2 = ::jxl::Clamp1(dec_streaming[i], 0.0f, 1.0f);
+    float d1 = Clamp1(dec_default[i], 0.0f, 1.0f);
+    float d2 = Clamp1(dec_streaming[i], 0.0f, 1.0f);
     float abs_diff = std::abs(d1 - d2);
     if (abs_diff > threshold) outlier_count++;
   }

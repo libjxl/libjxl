@@ -42,8 +42,16 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
                                                size_t avail_in, size_t box_pos,
                                                uint8_t** next_out,
                                                size_t* avail_out) {
-  next_in += pos_ - box_pos;
-  avail_in -= pos_ - box_pos;
+  // The caller provides `box_pos` as the current position (in bytes) within
+  // the box contents corresponding to `next_in`. Our internal `pos_` tracks
+  // how many bytes of box contents have been consumed/processed so far.
+  // If `box_pos` ever exceeds `pos_`, adjusting by `pos_ - box_pos` would
+  // underflow and cause out-of-bounds reads.
+  if (box_pos > pos_) return JXL_DEC_ERROR;
+  const size_t offset = pos_ - box_pos;
+  if (offset > avail_in) return JXL_DEC_ERROR;
+  next_in += offset;
+  avail_in -= offset;
 
   if (brob_decode_) {
     if (!header_done_) {
@@ -62,11 +70,13 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
       brotli_dec = BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
     }
 
+    size_t avail_in_brotli = avail_in;
+    if (!box_until_eof_) avail_in_brotli = std::min<size_t>(avail_in_brotli, remaining_);
     const uint8_t* next_in_before = next_in;
     uint8_t* next_out_before = *next_out;
-    msan::MemoryIsInitialized(next_in, avail_in);
+    msan::MemoryIsInitialized(next_in, avail_in_brotli);
     BrotliDecoderResult res = BrotliDecoderDecompressStream(
-        brotli_dec, &avail_in, &next_in, avail_out, next_out, nullptr);
+        brotli_dec, &avail_in_brotli, &next_in, avail_out, next_out, nullptr);
     size_t consumed = next_in - next_in_before;
     size_t produced = *next_out - next_out_before;
     if (res == BROTLI_DECODER_RESULT_ERROR) {
@@ -74,7 +84,12 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
     }
     msan::UnpoisonMemory(next_out_before, produced);
     pos_ += consumed;
-    if (!box_until_eof_) remaining_ -= consumed;
+    if (!box_until_eof_) {
+      remaining_ -= consumed;
+      if (res == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && remaining_ == 0) {
+        return JXL_DEC_ERROR;
+      }
+    }
     if (res == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT) {
       return JXL_DEC_NEED_MORE_INPUT;
     }
@@ -82,6 +97,7 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
       return JXL_DEC_BOX_NEED_MORE_OUTPUT;
     }
     if (res == BROTLI_DECODER_RESULT_SUCCESS) {
+      if (!box_until_eof_ && remaining_ != 0) return JXL_DEC_ERROR;
       return JXL_DEC_BOX_COMPLETE;
     }
     // unknown Brotli result
@@ -105,5 +121,4 @@ JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
     return JXL_DEC_BOX_COMPLETE;
   }
 }
-
 }  // namespace jxl

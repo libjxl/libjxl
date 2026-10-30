@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 

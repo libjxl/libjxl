@@ -33,12 +33,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
       with:
         egress-policy: audit
 
     - name: Checkout source
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       id: checkout
       with:
         # The build_fuzzers action checks out the code to the storage/libjxl
@@ -46,6 +46,8 @@ jobs:
         # is a workaround for checking out the submodules.
         path: storage/libjxl
         submodules: true
+        persist-credentials: false
+
     - name: Build Fuzzers
       id: build
       uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@3e6a7fd7bcd631647ab9beed1fe0897498e6af39 # 22.09.2025
@@ -59,7 +61,7 @@ jobs:
         language: c++
         fuzz-seconds: 600
     - name: Upload Crash
-      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: failure() && steps.build.outcome == 'success'
       with:
         name: artifacts

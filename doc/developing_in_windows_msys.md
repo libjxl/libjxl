@@ -14,7 +14,7 @@ Since all of the build environments are built on top of the MSYS environment, **
 
 * **UCRT64:**  The Universal C Runtime (UCRT) is used by recent versions of Microsoft Visual Studio.  It ships by default with Windows 10.  For older versions of Windows, it must be provided with the application or installed by the user.  Package names are prefixed with `mingw-w64-ucrt-x86_64`.
 
-* **CLANG64:** Unfortunately, the `gimp` packages are not available for the CLANG64 environment.  However, `libjxl` will otherwise build in this environment if the appropriate packages are installed.  Packages are prefixed with `mingw-w64-clang-x86_64`.
+* **CLANG64:**  Packages are prefixed with `mingw-w64-clang-x86_64`.
 
 ## Install and Upgrade MSYS2
 
@@ -136,33 +136,3 @@ After the `clang` compiler is installed, 'libjxl' can be built with the `./ci.sh
 ```
 
 On my computer, `doxygen` packages needed to be installed to proceed with building.  Use `pacman -Ss doxygen` to find the packages to install.
-
-## The GIMP Plugin
-
-To build the GIMP plugin, install the relevant `gimp` package.  This will also install dependencies.  Again, perform package management tasks from only the MSYS environment.  Then restart the build environment.
-
-```bash
-pacman -S mingw-w64-i686-gimp
-pacman -S mingw-w64-x86_64-gimp
-pacman -S mingw-w64-ucrt-x86_64-gimp
-```
-
-If `clang` is installed, you can use the `./ci.sh` script to build.  Otherwise, navigate to the build directory to reconfigure and build with `cmake`.
-
-```bash
-cd build
-rm -r CM*
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-   -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF \
-   -DJPEGXL_ENABLE_BENCHMARK=OFF -DJPEGXL_ENABLE_MANPAGES=OFF \
-   -DJPEGXL_ENABLE_PLUGINS=ON -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-   -DJPEGXL_FORCE_SYSTEM_GTEST=ON ..
-```
-
-The plugin is built statically, so there should be no need to install `dll` files.  To try out the plugin:
-
-1. [Download](https://www.gimp.org/downloads/) and install the stable version of GIMP (currently 2.10.24).
-
-2. Create a new folder: `C:\Program Files\GIMP 2\lib\gimp\2.0\plug-ins\file-jxl`
-
-3. Copy `build/plugins/gimp/file-jxl.exe` to the new folder.

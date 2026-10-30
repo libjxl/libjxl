@@ -24,6 +24,7 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_external_image.h"
@@ -106,7 +107,7 @@ std::unique_ptr<jxl::CodecInOut> ConvertTestImage(
   }
   EXPECT_TRUE(ConvertFromExternal(jxl::Bytes(buf), xsize, ysize, color_encoding,
                                   /*bits_per_sample=*/bitdepth, pixel_format,
-                                  /*pool=*/nullptr, &io->Main()));
+                                  /*pool=*/nullptr, &io->Main(), has_alpha));
   return io;
 }
 
@@ -479,13 +480,12 @@ TEST(RoundtripTest, FloatFrameRoundtripTest) {
           uint32_t total_extra_channels = has_alpha + extra_channels.size();
           // There's no support (yet) for lossless extra float
           // channels, so we don't test it.
-          if (total_extra_channels == 0 || !lossless) {
-            JxlPixelFormat pixel_format = JxlPixelFormat{
-                num_channels, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
-            VerifyRoundtripCompression<float>(
-                63, 129, pixel_format, pixel_format, lossless, use_container, 1,
-                false, extra_channels);
-          }
+          if (lossless && (total_extra_channels > 0)) continue;
+          JxlPixelFormat pixel_format = JxlPixelFormat{
+              num_channels, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+          VerifyRoundtripCompression<float>(63, 129, pixel_format, pixel_format,
+                                            lossless, use_container, 1, false,
+                                            extra_channels);
         }
       }
     }
@@ -993,6 +993,75 @@ JXL_TRANSCODE_JPEG_TEST(RoundtripTest, TestJPEGReconstruction) {
   used = reconstructed_buffer.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
   ASSERT_EQ(used, orig.size());
   EXPECT_EQ(0, memcmp(reconstructed_buffer.data(), orig.data(), used));
+}
+
+JXL_TRANSCODE_JPEG_TEST(RoundtripTest, TestJPEGReconstructionNon444LFS) {
+  TEST_LIBJPEG_SUPPORT();
+  const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
+  const std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
+
+  auto encode_and_decode_pixels = [&](int lfs) {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+    EXPECT_NE(nullptr, frame_settings);
+
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderFrameSettingsSetOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_JPEG_RECON_LFS, lfs));
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), JXL_TRUE));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddJPEGFrame(frame_settings, orig.data(), orig.size()));
+    JxlEncoderCloseInput(enc.get());
+
+    std::vector<uint8_t> compressed;
+    EncodeWithEncoder(enc.get(), &compressed);
+
+    // Verify lossless JPEG reconstruction still works.
+    {
+      JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
+                                     dec.get(), JXL_DEC_JPEG_RECONSTRUCTION |
+                                                    JXL_DEC_FULL_IMAGE));
+      JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+      EXPECT_EQ(JXL_DEC_JPEG_RECONSTRUCTION, JxlDecoderProcessInput(dec.get()));
+      std::vector<uint8_t> reconstructed_buffer(orig.size());
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetJPEGBuffer(dec.get(), reconstructed_buffer.data(),
+                                        reconstructed_buffer.size()));
+      EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
+      size_t used =
+          reconstructed_buffer.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
+      EXPECT_EQ(used, orig.size());
+      EXPECT_EQ(0, memcmp(reconstructed_buffer.data(), orig.data(), used));
+    }
+
+    // Also decode to pixels.
+    JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_FULL_IMAGE));
+    JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+    JxlDecoderCloseInput(dec.get());
+    EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
+    JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+    size_t buffer_size = 0;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size));
+    std::vector<uint8_t> pixels(buffer_size);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels.data(),
+                                          pixels.size()));
+    EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec.get()));
+    return pixels;
+  };
+
+  std::vector<uint8_t> pixels_no_lfs = encode_and_decode_pixels(0);
+  std::vector<uint8_t> pixels_lfs = encode_and_decode_pixels(1);
+  EXPECT_EQ(pixels_no_lfs.size(), pixels_lfs.size());
+  EXPECT_NE(pixels_no_lfs, pixels_lfs);
 }
 
 JXL_TRANSCODE_JPEG_TEST(RoundtripTest,

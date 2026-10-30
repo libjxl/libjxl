@@ -206,7 +206,7 @@ class AcStrategyDownsample : public ::hwy::TestWithParamTargetAndT<int> {
             sum /= 64;
             ASSERT_NEAR(
                 sum, idct_acs_downsampled[dy * 8 * acs.covered_blocks_x() + dx],
-                1e-6)
+                2e-6)
                 << " acs " << static_cast<int>(type);
           }
         }

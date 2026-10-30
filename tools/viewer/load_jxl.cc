@@ -24,6 +24,15 @@ namespace tools {
 
 namespace {
 
+struct CmsContextCloser {
+  void operator()(void* p) const {
+    if (p != nullptr) {
+      cmsDeleteContext(static_cast<cmsContext>(p));
+    }
+  }
+};
+using CmsContextUniquePtr = std::unique_ptr<void, CmsContextCloser>;
+
 struct CmsProfileCloser {
   void operator()(const cmsHPROFILE profile) const {
     if (profile != nullptr) {
@@ -115,22 +124,26 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
   EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
 
   auto uint16_pixels = std::make_unique<uint16_t[]>(pixel_count * 4);
-  const thread_local cmsContext context = cmsCreateContext(nullptr, nullptr);
-  EXPECT_TRUE(context != nullptr);
-  const CmsProfileUniquePtr jxl_profile(cmsOpenProfileFromMemTHR(
-      context, icc_profile.data(), icc_profile.size()));
+  static thread_local CmsContextUniquePtr context;
+  if (!context) {
+    context.reset(cmsCreateContext(nullptr, nullptr));
+  }
+  const cmsContext ctx = static_cast<cmsContext>(context.get());
+  EXPECT_TRUE(ctx != nullptr);
+  const CmsProfileUniquePtr jxl_profile(
+      cmsOpenProfileFromMemTHR(ctx, icc_profile.data(), icc_profile.size()));
   EXPECT_TRUE(jxl_profile != nullptr);
   CmsProfileUniquePtr target_profile(cmsOpenProfileFromMemTHR(
-      context, targetIccProfile.data(), targetIccProfile.size()));
+      ctx, targetIccProfile.data(), targetIccProfile.size()));
   if (usedRequestedProfile != nullptr) {
     *usedRequestedProfile = (target_profile != nullptr);
   }
   if (target_profile == nullptr) {
-    target_profile.reset(cmsCreate_sRGBProfileTHR(context));
+    target_profile.reset(cmsCreate_sRGBProfileTHR(ctx));
   }
   EXPECT_TRUE(target_profile != nullptr);
   CmsTransformUniquePtr transform(cmsCreateTransformTHR(
-      context, jxl_profile.get(), TYPE_RGBA_FLT, target_profile.get(),
+      ctx, jxl_profile.get(), TYPE_RGBA_FLT, target_profile.get(),
       TYPE_RGBA_16, INTENT_RELATIVE_COLORIMETRIC, cmsFLAGS_COPY_ALPHA));
   EXPECT_TRUE(transform != nullptr);
   std::vector<size_t> row_indices(info.ysize);

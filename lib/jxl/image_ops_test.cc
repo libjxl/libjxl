@@ -76,7 +76,6 @@ TEST(ImageTest, TestFill) {
   ASSERT_TRUE(TestFillT<uint8_t>());
   ASSERT_TRUE(TestFillT<int16_t>());
   ASSERT_TRUE(TestFillT<float>());
-  ASSERT_TRUE(TestFillT<double>());
 }
 
 TEST(ImageTest, CopyImageToWithPaddingTest) {

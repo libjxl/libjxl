@@ -26,7 +26,7 @@ jobs:
   build_test:
     name: Windows MSYS2 / ${{ matrix.msystem }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os || 'windows-latest' }}
     continue-on-error: ${{ matrix.faulty || false }}
     strategy:
       fail-fast: false
@@ -34,32 +34,27 @@ jobs:
         include:
          - msystem: mingw64
          - msystem: clang64
-         - msystem: mingw32
-           disable_tests:
-             - ButteraugliTest.Lossless
-             - ButteraugliTest.Distmap
-             - JxlTest.RoundtripLargeEmptyModular
-           disable_benchmark: true
          # "Legacy" toolchains are being "phased-out":
          # https://www.msys2.org/news/#2023-12-13-starting-to-drop-some-32-bit-packages
-         # clang32 is already missing required "gtest" and "libavif"
-         # - msystem: clang32
-         #   disable_benchmark: true
+         # clang32/mingw32 are already missing required "gtest"
+         - msystem: clangarm64
+           os: windows-11-arm
 
     defaults:
       run:
         shell: msys2 {0}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: audit
 
       - name: Checkout the source
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
           fetch-depth: 1
+          persist-credentials: false
 
       - uses: msys2/setup-msys2@07aeda7763550b267746a772dcea5e5ac3340b36 # v2
         with:
@@ -75,7 +70,7 @@ jobs:
             cmake:p
             giflib:p
             gtest:p
-            libavif:p
+            ${{ matrix.msystem != 'mingw32' && 'libavif:p' || '' }}
             libjpeg-turbo:p
             libpng:p
             libwebp:p

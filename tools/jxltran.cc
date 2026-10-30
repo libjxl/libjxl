@@ -9,6 +9,12 @@
 #include <jxl/encode_cxx.h>
 #include <jxl/types.h>
 
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 

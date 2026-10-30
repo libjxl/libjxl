@@ -26,6 +26,7 @@
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/cms/jxl_cms_internal.h"
 #include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/color_encoding_internal.h"

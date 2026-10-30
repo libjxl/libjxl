@@ -109,7 +109,7 @@ class RectT {
 
   bool IsSame(const RectT& other) const {
     return x0_ == other.x0_ && xsize_ == other.xsize_ && y0_ == other.y0_ &&
-           ysize_ <= other.ysize_;
+           ysize_ == other.ysize_;
   }
 
   // Returns true if this Rect fully resides in the given image. ImageT could be

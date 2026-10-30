@@ -43,10 +43,22 @@ struct HistogramParams {
   };
 
   enum class LZ77Method {
-    kNone,     // do not try lz77.
-    kRLE,      // only try doing RLE.
-    kLZ77,     // try lz77 with backward references.
-    kOptimal,  // optimal-matching LZ77 parsing.
+    kNone,          // do not try lz77.
+    kRLE,           // only try doing RLE.
+    kLZ77b1w3f,     // lz77 fast without runtime cost comparison
+    kLZ77b3w3f,     // lz77
+    kLZ77b7w3f,     // lz77
+    kLZ77b15w3f,    // lz77
+    kLZ77b31w3f,    // lz77 slow
+    kLZ77b1w3t,     // lz77 fast with runtime cost comparison (almost always worse)
+    kLZ77b3w3t,     // lz77
+    kLZ77b7w3t,     // lz77
+    kLZ77b15w3t,    // lz77
+    kLZ77b31w3t,    // lz77 slow
+    kOptc1,         // optimal-matching LZ77 fast.
+    kOptc3,         // optimal-matching LZ77
+    kOptc8,         // optimal-matching LZ77
+    kOptc256,       // optimal-matching LZ77 parsing big chain length.
   };
 
   enum class ANSHistogramStrategy {

@@ -19,6 +19,11 @@ find_library(LCMS2_LIBRARY
   HINTS ${PC_LCMS2_LIBDIR} ${PC_LCMS2_LIBRARY_DIRS}
 )
 
+find_library(LCMS2_DEBUG_LIBRARY
+  NAMES ${LCMS2_DEBUG_NAMES} lcms2d liblcms2d lcms-2d liblcms-2d
+  HINTS ${PC_LCMS2_LIBDIR} ${PC_LCMS2_LIBRARY_DIRS}
+)
+
 if (LCMS2_INCLUDE_DIR AND NOT LCMS_VERSION)
     file(READ ${LCMS2_INCLUDE_DIR}/lcms2.h LCMS2_VERSION_CONTENT)
     string(REGEX MATCH "#define[ \t]+LCMS_VERSION[ \t]+([0-9]+)[ \t]*\n" LCMS2_VERSION_MATCH ${LCMS2_VERSION_CONTENT})
@@ -45,7 +50,12 @@ if (LCMS2_LIBRARY AND NOT TARGET lcms2)
     set_property(TARGET lcms2 PROPERTY INTERFACE_COMPILE_OPTIONS ${PC_LCMS2_CFLAGS_OTHER})
   else()
     target_include_directories(lcms2 INTERFACE ${LCMS2_INCLUDE_DIR})
-    target_link_libraries(lcms2 INTERFACE ${LCMS2_LIBRARY})
+    if (LCMS2_DEBUG_LIBRARY)
+      target_link_libraries(lcms2 INTERFACE debug ${LCMS2_DEBUG_LIBRARY})
+      target_link_libraries(lcms2 INTERFACE optimized ${LCMS2_LIBRARY})
+    else()
+      target_link_libraries(lcms2 INTERFACE ${LCMS2_LIBRARY})
+    endif()
     target_link_options(lcms2 INTERFACE ${PC_LCMS2_LDFLAGS_OTHER})
     target_compile_options(lcms2 INTERFACE ${PC_LCMS2_CFLAGS_OTHER})
   endif()

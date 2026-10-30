@@ -64,13 +64,7 @@ crossroad w64 [project-name]
 
 ## Install Dependencies
 
-Since the `gimp` development package is required to build the GIMP plugin and also includes most of the packages required by `libjxl`, install it first.
-
-```bash
-crossroad install gimp
-```
-
-`gtest` and `brotli` are also required.
+`gtest` and `brotli` are required.
 
 ```bash
 crossroad install gtest brotli
@@ -104,13 +98,3 @@ Check the output to see if any dependencies were missed and need to be installed
 ```bash
 cmake --build .
 ```
-
-## Try out the GIMP Plugin
-
-The plugin is built statically, so there should be no need to install `dll` files.  To try out the plugin:
-
-1. [Download](https://www.gimp.org/downloads/) and install the stable version of GIMP (currently 2.10.24).
-
-2. Create a new folder: `C:\Program Files\GIMP 2\lib\gimp\2.0\plug-ins\file-jxl`
-
-3. Copy `build/plugins/gimp/file-jxl.exe` to the new folder. 

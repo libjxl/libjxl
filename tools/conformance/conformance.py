@@ -37,8 +37,10 @@ def CompareNPY(ref, ref_icc, dec, dec_icc, frame_idx, rmse_limit, peak_error):
     dec_frame = dec[frame_idx]
     num_channels = ref_frame.shape[2]
 
-    if ref_icc != dec_icc:
+    if ref_icc != dec_icc and peak_error > 0:
         # Transform colors before comparison.
+        # Skip this if we expect fully lossless, since it introduces tiny errors
+        # (even in the case where ref_icc and dec_icc are equivalent so it's a no-op)
         if num_channels < 3:
             return Failure(f"Only RGB images are supported")
         dec_clr = dec_frame[:, :, 0:3]

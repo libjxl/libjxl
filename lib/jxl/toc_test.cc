@@ -71,7 +71,12 @@ void Roundtrip(size_t num_entries, bool permute, Rng* rng) {
 
   BitWriter writer{memory_manager};
   AuxOut aux_out;
-  ASSERT_TRUE(WriteGroupOffsets(group_codes, permutation, &writer, &aux_out));
+  std::vector<size_t> sizes;
+  for (const auto& bw : group_codes) {
+    sizes.push_back(bw->BitsWritten() / kBitsPerByte);
+  }
+  ASSERT_TRUE(WriteTocPermutation(permutation, &writer, &aux_out));
+  ASSERT_TRUE(WriteTocSizes(sizes, &writer, &aux_out));
 
   BitReader reader(writer.GetSpan());
   std::vector<uint64_t> group_offsets;

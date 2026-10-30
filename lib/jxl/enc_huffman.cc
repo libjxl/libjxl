@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"

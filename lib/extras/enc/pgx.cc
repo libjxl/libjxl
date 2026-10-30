@@ -27,8 +27,8 @@ namespace {
 
 constexpr size_t kMaxHeaderSize = 200;
 
-Status EncodeHeader(const JxlBasicInfo& info, char* header,
-                    int* chars_written) {
+Status EncodeHeader(const PackedImage& image, const JxlBasicInfo& info,
+                    char* header, int* chars_written) {
   if (info.alpha_bits > 0) {
     return JXL_FAILURE("PGX: can't store alpha");
   }
@@ -42,9 +42,15 @@ Status EncodeHeader(const JxlBasicInfo& info, char* header,
     return JXL_FAILURE("PGX: bits other than 8 or 16 not yet supported");
   }
 
+  unsigned int xsize = image.xsize;
+  unsigned int ysize = image.ysize;
+  if (xsize != image.xsize || ysize != image.ysize) {
+    return JXL_FAILURE("PGX: image too large");
+  }
+
   // Use ML (Big Endian), LM may not be well supported by all decoders.
   *chars_written = snprintf(header, kMaxHeaderSize, "PG ML + %u %u %u\n",
-                            info.bits_per_sample, info.xsize, info.ysize);
+                            info.bits_per_sample, xsize, ysize);
   JXL_RETURN_IF_ERROR(static_cast<unsigned int>(*chars_written) <
                       kMaxHeaderSize);
   return true;
@@ -54,15 +60,15 @@ Status EncodeImagePGX(const PackedFrame& frame, const JxlBasicInfo& info,
                       std::vector<uint8_t>* bytes) {
   char header[kMaxHeaderSize];
   int header_size = 0;
-  JXL_RETURN_IF_ERROR(EncodeHeader(info, header, &header_size));
-
   const PackedImage& color = frame.color;
+  JXL_RETURN_IF_ERROR(EncodeHeader(color, info, header, &header_size));
+
   const JxlPixelFormat format = color.format;
   const uint8_t* in = reinterpret_cast<const uint8_t*>(color.pixels());
   JXL_RETURN_IF_ERROR(PackedImage::ValidateDataType(format.data_type));
   size_t data_bits_per_sample = PackedImage::BitsPerChannel(format.data_type);
   size_t bytes_per_sample = data_bits_per_sample / kBitsPerByte;
-  size_t num_samples = static_cast<size_t>(info.xsize) * info.ysize;
+  size_t num_samples = static_cast<size_t>(color.xsize) * color.ysize;
 
   if (info.bits_per_sample != data_bits_per_sample) {
     return JXL_FAILURE("Bit depth does not match pixel data type");

@@ -40,14 +40,11 @@ jobs:
             test_in_pr: true
             cmake_args: >-
               -DJPEGXL_TEST_TOOLS=ON
-              -DJPEGLI_LIBJPEG_LIBRARY_VERSION="8.2.2"
-              -DJPEGLI_LIBJPEG_LIBRARY_SOVERSION="8"
             # Track static stack size on build and check it doesn't exceed 3 kB.
             emit_stack_sizes: 1
             max_stack: 2400
             # Conformance tooling test requires numpy.
-            # jpegli tests require imagemagick and libjpeg-turbo-progs
-            apt_pkgs: imagemagick libjpeg-turbo-progs python3-numpy
+            apt_pkgs: python3-numpy
           - name: lowprecision
             mode: release
             run_bench: true
@@ -71,10 +68,11 @@ jobs:
             skip_install: true
           - name: tsan
             skip_install: true
+            disable_tests:
+              # TODO(eustas): failing after #5058 (libgdk-pixbuf-xlib-2.0-dev)
+              - pixbufloader_test_jxl
           - name: coverage
             skip_install: true
-            disable_tests:
-              - test_jpegli_jni_wrapper # TODO: why this does not work?
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
@@ -121,18 +119,18 @@ jobs:
           - name: release:gcc
             os: ubuntu-latest
             mode: release
-            cc: gcc
-            cxx: g++
+            cc: gcc-latest
+            cxx: g++-latest
           - name: release:gcc-old
             os: ubuntu-24.04
             mode: release
-            cc: gcc
-            cxx: g++
+            cc: gcc-latest
+            cxx: g++-latest
           - name: release:gcc-old-old
             os: ubuntu-22.04
             mode: release
-            cc: gcc
-            cxx: g++
+            cc: gcc-latest
+            cxx: g++-latest
           # Builds with old clang in release mode
           - name: release:clang-old
             os: ubuntu-24.04
@@ -148,8 +146,8 @@ jobs:
           - name: release_lto
             os: ubuntu-latest
             mode: release
-            cc: clang-17
-            cxx: clang++-17
+            cc: clang-21
+            cxx: clang++-21
             apt_pkgs: lld
             cmake_args: >-
               -DJPEGXL_ENABLE_LTO=ON
@@ -157,10 +155,12 @@ jobs:
           - name: release_lto:gcc
             os: ubuntu-latest
             mode: release
-            cc: gcc
-            cxx: g++
+            cc: gcc-latest
+            cxx: g++-latest
             cmake_args: >-
               -DJPEGXL_ENABLE_LTO=ON
+            # TODO(eustas): investigate why 512KiB is required under LTO.
+            test_stack_limit: 512
           # OSX builds
           - name: release:osx
             os: macos-latest
@@ -173,10 +173,11 @@ jobs:
             test_stack_limit: 128
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
-          - name: debug:osx-13
-            # The last "free" X86 OSX runnde
-            os: macos-13
+          - name: debug:osx-15
+            # The last available x86_64 OSX runner
+            os: macos-15-intel
             mode: debug
+            skip_test: true # can't finish "linking" tests
             cmake_args: >-
               -DCMAKE_FIND_FRAMEWORK=NEVER
           # Android builds
@@ -226,7 +227,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
       with:
         egress-policy: audit
 
@@ -250,10 +251,11 @@ jobs:
         fi
 
     - name: Checkout the source
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         submodules: true
         fetch-depth: 2
+        persist-credentials: false
 
     - name: Install build deps Ubuntu
       if: startsWith(matrix.os, 'macos-') == false
@@ -267,9 +269,21 @@ jobs:
           fi
         fi
         sudo ./tools/scripts/install_deps.sh build extras plugins ${INSTALL_BENCHMARK} -- ${{ matrix.apt_pkgs }}
+
+    - name: Select latest installed GCC
+      if: matrix.cc == 'gcc-latest'
+      run: |
+        LATEST_GCC_VER=$(compgen -c gcc- | grep -E '^gcc-[0-9]+$' | sort -V | tail -n 1 | cut -d- -f2)
+        echo "CC=gcc-${LATEST_GCC_VER}" >> $GITHUB_ENV
+        echo "CXX=g++-${LATEST_GCC_VER}" >> $GITHUB_ENV
+        echo "Selected GCC version: ${LATEST_GCC_VER}"
+
+    - name: Set CC/CXX
+      if: matrix.cc != 'gcc-latest'
+      run: |
         echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
-  
+
     - name: Setup the Homebrew prefixes
       if: startsWith(matrix.os, 'macos-')
       run: |
@@ -285,19 +299,20 @@ jobs:
 
     - name: Cache LLVM sources
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
 
     - name: Checkout the LLVM source
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         submodules: false
         repository: llvm/llvm-project
         ref: llvmorg-18.1.3 # NB: 15.0.0 does not build ¯\_(ツ)_/¯
         path: llvm_root
+        persist-credentials: false
 
     - name: Git environment
       id: git-env
@@ -306,7 +321,7 @@ jobs:
       shell: bash
 
     - name: ccache
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -396,7 +411,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
         flags: unittests
         files: build/coverage.xml

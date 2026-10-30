@@ -20,19 +20,11 @@
 #include "lib/jxl/image_bundle.h"
 
 namespace jxl {
-Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
-                                      size_t ysize, size_t stride,
-                                      size_t bits_per_sample,
-                                      JxlPixelFormat format, size_t c,
-                                      ThreadPool* pool, ImageF* channel);
-
-Status ConvertFromExternalNoSizeCheck(const uint8_t* data, size_t xsize,
-                                      size_t ysize, size_t stride,
-                                      const ColorEncoding& c_current,
-                                      size_t color_channels,
-                                      size_t bits_per_sample,
-                                      JxlPixelFormat format, ThreadPool* pool,
-                                      ImageBundle* ib);
+Status ConvertFromExternalPlaneNoSizeCheck(const uint8_t* data, size_t xsize,
+                                           size_t ysize, size_t stride,
+                                           size_t bits_per_sample,
+                                           JxlPixelFormat format, size_t c,
+                                           ThreadPool* pool, ImageF* channel);
 
 Status ConvertFromExternal(const uint8_t* data, size_t size, size_t xsize,
                            size_t ysize, size_t bits_per_sample,
@@ -43,13 +35,9 @@ Status ConvertFromExternal(const uint8_t* data, size_t size, size_t xsize,
 // representation. This is the opposite of ConvertToExternal().
 Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
                            size_t ysize, const ColorEncoding& c_current,
-                           size_t color_channels, size_t bits_per_sample,
-                           JxlPixelFormat format, ThreadPool* pool,
-                           ImageBundle* ib);
-Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
-                           size_t ysize, const ColorEncoding& c_current,
                            size_t bits_per_sample, JxlPixelFormat format,
-                           ThreadPool* pool, ImageBundle* ib);
+                           ThreadPool* pool, ImageBundle* ib,
+                           bool set_alpha = false);
 Status BufferToImageF(const JxlPixelFormat& pixel_format, size_t xsize,
                       size_t ysize, const void* buffer, size_t size,
                       ThreadPool* pool, ImageF* channel);
@@ -57,7 +45,7 @@ Status BufferToImageBundle(const JxlPixelFormat& pixel_format, uint32_t xsize,
                            uint32_t ysize, const void* buffer, size_t size,
                            jxl::ThreadPool* pool,
                            const jxl::ColorEncoding& c_current,
-                           jxl::ImageBundle* ib);
+                           jxl::ImageBundle* ib, bool set_alpha = false);
 
 }  // namespace jxl
 

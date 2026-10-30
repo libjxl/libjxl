@@ -81,7 +81,7 @@ bool JxlFastLosslessProcessFrame(
 // 1 and subsequent ones have add_image_header = 0, and all frames but the last
 // one have is_last = 0.
 // (when FJXL_STANDALONE=0, add_image_header has to be 0)
-void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
+bool JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
                                   int add_image_header, int is_last);
 
 // Upper bound on the required output size, including any padding that may be

@@ -63,6 +63,9 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
+#if JPEGXL_ENABLE_BOXES
+#include "lib/jxl/box_content_decoder.h"
+#endif  // JPEGXL_ENABLE_BOXES
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/padded_bytes.h"
@@ -256,7 +259,8 @@ std::vector<uint8_t> CreateTestJXLCodestream(
   io->metadata.m.color_encoding = color_encoding;
   EXPECT_TRUE(ConvertFromExternal(pixels, xsize, ysize, color_encoding,
                                   /*bits_per_sample=*/16, format,
-                                  /* pool */ nullptr, &io->Main()));
+                                  /* pool */ nullptr, &io->Main(),
+                                  include_alpha));
   std::vector<uint8_t> encoded_jpeg_bytes;
   if (params.jpeg_codestream != nullptr) {
     if (jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {
@@ -272,7 +276,7 @@ std::vector<uint8_t> CreateTestJXLCodestream(
       ppf.info.num_color_channels = grayscale ? 1 : 3;
       ppf.info.bits_per_sample = 16;
       auto encoder = extras::GetJPEGEncoder();
-      encoder->SetOption("quality", "70");
+      encoder->SetOption("q", "70");
       extras::EncodedImage encoded;
       EXPECT_TRUE(encoder->Encode(ppf, &encoded, nullptr));
       jpeg_bytes = encoded.bitstreams[0];
@@ -500,9 +504,7 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
                            test::GetDataBits(format.data_type) /
                            jxl::kBitsPerByte;
   size_t stride = bytes_per_pixel * info.xsize;
-  if (format.align > 1) {
-    stride = jxl::DivCeil(stride, format.align) * format.align;
-  }
+  EXPECT_TRUE(SafeRoundUpTo(stride, format.align, stride));
   auto callback = [&](size_t x, size_t y, size_t num_pixels,
                       const void* pixels_row) {
     memcpy(pixels.data() + stride * y + bytes_per_pixel * x, pixels_row,
@@ -1333,7 +1335,7 @@ TEST_P(DecodeTestParam, PixelTest) {
 
     EXPECT_TRUE(ConvertFromExternal(bytes, config.xsize, config.ysize,
                                     color_encoding, 16, format_orig, nullptr,
-                                    &io->Main()));
+                                    &io->Main(), config.include_alpha));
 
     for (uint8_t& pixel : pixels) pixel = 0;
     EXPECT_TRUE(ConvertToExternal(
@@ -2217,6 +2219,48 @@ TEST(DecodeTest, ExtraBytesAfterCompressedStream) {
   }
 }
 
+#if JPEGXL_ENABLE_BOXES
+TEST(DecodeTest, BrobBoxInputIsRestrictedToBoxSize) {
+  const uint8_t box_contents[] = {
+      'o', 'r', 'i', 'g',
+      0x0f, 0x05, 0x80, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
+      0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x03};
+  const uint8_t extra_bytes[] = {0xAA, 0xBB, 0xCC};
+  std::vector<uint8_t> input;
+  input.insert(input.end(), std::begin(box_contents), std::end(box_contents));
+  input.insert(input.end(), std::begin(extra_bytes), std::end(extra_bytes));
+  std::vector<uint8_t> out(32);
+  jxl::JxlBoxContentDecoder decoder;
+  decoder.StartBox(true, false, sizeof(box_contents));
+  uint8_t* next_out = out.data();
+  size_t avail_out = out.size();
+  JxlDecoderStatus status = decoder.Process(
+      input.data(), input.size(), 0, &next_out, &avail_out);
+  EXPECT_EQ(JXL_DEC_BOX_COMPLETE, status);
+  size_t output_size = next_out - out.data();
+  EXPECT_EQ(11u, output_size);
+  EXPECT_EQ(std::string("hello world"), std::string(reinterpret_cast<char*>(out.data()), output_size));
+}
+
+TEST(DecodeTest, BrobBoxTruncatedStreamWithExactBoxSizeReturnsError) {
+  const uint8_t box_contents[] = {
+      'o', 'r', 'i', 'g',
+      0x0f, 0x05, 0x80, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
+      0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x03};
+  std::vector<uint8_t> input;
+  input.insert(input.end(), std::begin(box_contents), std::end(box_contents) - 1);
+
+  std::vector<uint8_t> out(32);
+  jxl::JxlBoxContentDecoder decoder;
+  decoder.StartBox(true, false, input.size());
+  uint8_t* next_out = out.data();
+  size_t avail_out = out.size();
+  JxlDecoderStatus status = decoder.Process(
+      input.data(), input.size(), 0, &next_out, &avail_out);
+  EXPECT_EQ(JXL_DEC_ERROR, status);
+}
+#endif  // JPEGXL_ENABLE_BOXES
+
 TEST(DecodeTest, ExtraBytesAfterCompressedStreamRequireBoxes) {
   size_t xsize = 123;
   size_t ysize = 77;
@@ -3026,6 +3070,88 @@ TEST(DecodeTest, SkipCurrentFrameTest) {
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
   JxlDecoderDestroy(dec);
+}
+
+// An extra channel buffer set for a frame that is then skipped with
+// JxlDecoderSkipCurrentFrame must not be written while decoding a later frame.
+TEST(DecodeTest, SkipCurrentFrameForgetsExtraChannelBuffers) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  size_t xsize = 90;
+  size_t ysize = 120;
+  constexpr size_t num_frames = 2;
+  JxlPixelFormat format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  ASSERT_TRUE(io->SetSize(xsize, ysize));
+  io->metadata.m.SetUintSamples(16);
+  io->metadata.m.SetAlphaBits(16);
+  io->metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+  io->metadata.m.have_animation = true;
+  io->frames.clear();
+  for (size_t i = 0; i < num_frames; ++i) {
+    std::vector<uint8_t> pixels =
+        jxl::test::GetSomeTestImage(xsize, ysize, 4, i);
+    jxl::ImageBundle bundle(memory_manager, &io->metadata.m);
+    EXPECT_TRUE(
+        ConvertFromExternal(jxl::Bytes(pixels.data(), pixels.size()), xsize,
+                            ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+                            /*bits_per_sample=*/16, format,
+                            /*pool=*/nullptr, &bundle, /*set_alpha=*/true));
+    bundle.duration = 1;
+    io->frames.push_back(std::move(bundle));
+  }
+  jxl::CompressParams cparams;
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
+  std::vector<uint8_t> compressed;
+  EXPECT_TRUE(jxl::test::EncodeFile(cparams, io.get(), &compressed));
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
+                                 dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_FRAME |
+                                                JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec.get(), compressed.data(),
+                                                compressed.size()));
+  JxlDecoderCloseInput(dec.get());
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec.get()));
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec.get(), &info));
+  EXPECT_EQ(1u, info.num_extra_channels);
+
+  JxlPixelFormat rgb_format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  size_t buffer_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec.get(), &rgb_format, &buffer_size));
+  size_t extra_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderExtraChannelBufferSize(
+                                 dec.get(), &rgb_format, &extra_size, 0));
+  std::vector<uint8_t> pixels(buffer_size);
+  constexpr uint8_t kUntouched = 0x5A;
+  std::vector<uint8_t> skipped_extra(extra_size, kUntouched);
+
+  // First frame: set color and extra channel output, then skip the frame.
+  EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetImageOutBuffer(dec.get(), &rgb_format, pixels.data(),
+                                        pixels.size()));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetExtraChannelBuffer(
+                                 dec.get(), &rgb_format, skipped_extra.data(),
+                                 skipped_extra.size(), 0));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSkipCurrentFrame(dec.get()));
+
+  // Second frame: only color output is requested.
+  EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetImageOutBuffer(dec.get(), &rgb_format, pixels.data(),
+                                        pixels.size()));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec.get()));
+
+  // The buffer belonged to the skipped frame only.
+  EXPECT_EQ(extra_size,
+            static_cast<size_t>(std::count(skipped_extra.begin(),
+                                           skipped_extra.end(), kUntouched)));
 }
 
 TEST(DecodeTest, SkipFrameTest) {
@@ -4992,6 +5118,100 @@ JXL_TRANSCODE_JPEG_TEST(DecodeTest, JPEGReconstructTestCodestream) {
   VerifyJPEGReconstruction(jxl::Bytes(compressed), jxl::Bytes(jpeg_codestream));
 }
 
+// A JPEG output buffer belongs to one decode: after JxlDecoderReset the caller
+// may free it, and the next decode must neither write to it nor refuse a new
+// buffer.
+JXL_TRANSCODE_JPEG_TEST(DecodeTest,
+                        JPEGReconstructionBufferNotKeptAcrossReset) {
+  TEST_LIBJPEG_SUPPORT();
+  size_t xsize = 123;
+  size_t ysize = 77;
+  size_t channels = 3;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, channels, /*seed=*/0);
+  std::vector<uint8_t> jpeg_codestream;
+  jxl::TestCodestreamParams params;
+  params.cparams.color_transform = jxl::ColorTransform::kNone;
+  params.box_format = kCSBF_Single;
+  params.jpeg_codestream = &jpeg_codestream;
+  std::vector<uint8_t> compressed = jxl::CreateTestJXLCodestream(
+      jxl::Bytes(pixels.data(), pixels.size()), xsize, ysize, channels, params);
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  constexpr uint8_t kUntouched = 0x5A;
+  std::vector<uint8_t> first_buffer(jpeg_codestream.size());
+  for (int pass = 0; pass < 2; ++pass) {
+    std::vector<uint8_t> buffer(jpeg_codestream.size());
+    std::vector<uint8_t>& out = pass == 0 ? first_buffer : buffer;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(
+                  dec.get(), JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_FULL_IMAGE));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec.get(), compressed.data(),
+                                                  compressed.size()));
+    JxlDecoderCloseInput(dec.get());
+    ASSERT_EQ(JXL_DEC_JPEG_RECONSTRUCTION, JxlDecoderProcessInput(dec.get()));
+    ASSERT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetJPEGBuffer(dec.get(), out.data(), out.size()));
+    ASSERT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
+    EXPECT_EQ(jpeg_codestream, out);
+    // The buffer is not released explicitly: resetting ends its use.
+    if (pass == 0) {
+      std::fill(first_buffer.begin(), first_buffer.end(), kUntouched);
+    }
+    JxlDecoderReset(dec.get());
+  }
+  // The second decode wrote only to its own buffer.
+  EXPECT_EQ(first_buffer.size(),
+            static_cast<size_t>(std::count(first_buffer.begin(),
+                                           first_buffer.end(), kUntouched)));
+}
+
+// Rewinding while a JPEG reconstruction box is partially read must not leave
+// its bytes behind for the next pass over the file.
+JXL_TRANSCODE_JPEG_TEST(DecodeTest, JPEGReconstructionRewindInsideBox) {
+  TEST_LIBJPEG_SUPPORT();
+  size_t xsize = 123;
+  size_t ysize = 77;
+  size_t channels = 3;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, channels, /*seed=*/0);
+  std::vector<uint8_t> jpeg_codestream;
+  jxl::TestCodestreamParams params;
+  params.cparams.color_transform = jxl::ColorTransform::kNone;
+  params.box_format = kCSBF_Single;
+  params.jpeg_codestream = &jpeg_codestream;
+  std::vector<uint8_t> compressed = jxl::CreateTestJXLCodestream(
+      jxl::Bytes(pixels.data(), pixels.size()), xsize, ysize, channels, params);
+  const uint8_t kJbrd[4] = {'j', 'b', 'r', 'd'};
+  auto jbrd = std::search(compressed.begin(), compressed.end(), kJbrd,
+                          kJbrd + sizeof(kJbrd));
+  ASSERT_NE(compressed.end(), jbrd);
+  // Stop a few bytes into the contents of the jbrd box.
+  size_t partial_size = (jbrd - compressed.begin()) + sizeof(kJbrd) + 8;
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec.get(), JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec.get(), compressed.data(), partial_size));
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec.get()));
+  JxlDecoderReleaseInput(dec.get());
+
+  JxlDecoderRewind(dec.get());
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec.get(), compressed.data(),
+                                                compressed.size()));
+  JxlDecoderCloseInput(dec.get());
+  ASSERT_EQ(JXL_DEC_JPEG_RECONSTRUCTION, JxlDecoderProcessInput(dec.get()));
+  std::vector<uint8_t> reconstructed(jpeg_codestream.size());
+  ASSERT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetJPEGBuffer(dec.get(), reconstructed.data(),
+                                    reconstructed.size()));
+  ASSERT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(0u, JxlDecoderReleaseJPEGBuffer(dec.get()));
+  EXPECT_EQ(jpeg_codestream, reconstructed);
+}
+
 JXL_TRANSCODE_JPEG_TEST(DecodeTest, JPEGReconstructionTest) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
@@ -5017,8 +5237,7 @@ JXL_TRANSCODE_JPEG_TEST(DecodeTest, JPEGReconstructionTest) {
   std::vector<uint8_t> encoded_jpeg_data;
   ASSERT_TRUE(EncodeJPEGData(memory_manager, jpeg_data_copy, &encoded_jpeg_data,
                              cparams));
-  std::vector<uint8_t> container;
-  jxl::Bytes(jxl::kContainerHeader).AppendTo(container);
+  std::vector<uint8_t> container = jxl::MakeContainerHeader(0);
   jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), encoded_jpeg_data.size(),
                        false, &container);
   jxl::Bytes(encoded_jpeg_data).AppendTo(container);
@@ -5552,6 +5771,51 @@ JXL_BOXES_TEST(DecodeTest, PartialCodestreamBoxTest) {
   }
 }
 
+// Regression test for out-of-order jxlp box handling (PR #4741). A jxlp box
+// whose index duplicates an already-buffered out-of-order index must be
+// rejected. Before the fix, the second box's payload was silently concatenated
+// onto the first buffered one (and its is_last flag dropped) instead of being
+// flagged as an error, so the decoder kept asking for more input. We therefore
+// keep the input open: without the fix this returns JXL_DEC_NEED_MORE_INPUT,
+// with the fix it returns JXL_DEC_ERROR at the duplicate box.
+JXL_BOXES_TEST(DecodeTest, OutOfOrderJxlpDuplicateIndexTest) {
+  auto append_tag = [](const char* tag, std::vector<uint8_t>* out) {
+    out->insert(out->end(), tag, tag + 4);
+  };
+  std::vector<uint8_t> c;
+
+  // JXL signature box (12 bytes).
+  AppendU32BE(12, &c);
+  append_tag("JXL ", &c);
+  c.insert(c.end(), {0x0D, 0x0A, 0x87, 0x0A});
+
+  // ftyp box declaring file format version 1, which enables out-of-order jxlp.
+  AppendU32BE(20, &c);
+  append_tag("ftyp", &c);
+  append_tag("jxl ", &c);  // major brand
+  AppendU32BE(1, &c);      // minor version = 1
+  append_tag("jxl ", &c);  // compatible brand
+
+  // Two jxlp boxes that both carry out-of-order index 1 (the expected first
+  // index is 0). The first is buffered; the second is a duplicate.
+  for (int i = 0; i < 2; ++i) {
+    AppendU32BE(16, &c);  // box size: 8-byte header + 8-byte contents
+    append_tag("jxlp", &c);
+    AppendU32BE(1, &c);  // jxlp index 1, high bit unset (not the last box)
+    c.insert(c.end(), {0xAA, 0xBB, 0xCC, 0xDD});  // payload
+  }
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, c.data(), c.size()));
+  // Intentionally do not close the input: this distinguishes the rejection
+  // (JXL_DEC_ERROR) from the pre-fix "buffer and wait" (JXL_DEC_NEED_MORE_INPUT)
+  // behavior.
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec));
+  JxlDecoderDestroy(dec);
+}
+
 TEST(DecodeTest, SpotColorTest) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
@@ -5689,5 +5953,38 @@ TEST(DecodeTest, CloseInput) {
   EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec.get()));
   EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec.get()));
   JxlDecoderCloseInput(dec.get());
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
+}
+
+TEST(DecodeTest, Non444AdaptiveDCSmoothing) {
+  // Testcase with non-444 chroma subsampling and adaptive DC smoothing enabled
+  // (#5005). Must not read uninitialized memory.
+  const std::vector<uint8_t> data = {
+      0xff, 0x0a, 0x20, 0x71, 0x00, 0xff, 0x0a, 0x00, 0x34, 0x58, 0xc6,
+      0x20, 0x10, 0x00, 0xb8, 0x00, 0x2d, 0x20, 0xfa, 0xff, 0x20, 0x20,
+      0x20, 0x20, 0x20, 0x20, 0xff, 0xff, 0xff, 0xff, 0xff, 0x32, 0x35,
+      0x31, 0x31, 0xb2, 0x20, 0x20, 0xff, 0xff, 0x20, 0x20, 0xbf, 0x20,
+      0x20, 0x20, 0x20, 0x20, 0x20, 0xd3, 0x20, 0x20, 0x20, 0x20, 0x20,
+      0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+  };
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec.get(),
+                                      JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec.get(), data.data(), data.size()));
+  JxlDecoderCloseInput(dec.get());
+
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+  size_t buffer_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size));
+  std::vector<uint8_t> pixels(buffer_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels.data(),
+                                        pixels.size()));
   EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
 }
