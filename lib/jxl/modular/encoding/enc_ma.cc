@@ -885,10 +885,17 @@ void TreeSamples::PreQuantizeProperties(
     }
     return pixel_thresholds;
   };
+  // std::abs(INT32_MIN) is undefined behavior; saturate to INT32_MAX so
+  // crafted extreme sample values cannot trigger signed overflow.
+  auto abs_saturating = [](pixel_type v) -> pixel_type {
+    return v == std::numeric_limits<pixel_type>::min()
+               ? std::numeric_limits<pixel_type>::max()
+               : std::abs(v);
+  };
   auto quantize_abs_pixel_property = [&]() {
     if (abs_pixel_thresholds.empty()) {
       quantize_pixel_property();  // Compute the non-abs thresholds.
-      for (auto &v : pixel_samples) v = std::abs(v);
+      for (auto &v : pixel_samples) v = abs_saturating(v);
       abs_pixel_thresholds =
           QuantizeSamples(pixel_samples, max_property_values);
     }
@@ -905,7 +912,7 @@ void TreeSamples::PreQuantizeProperties(
   auto quantize_abs_diff_property = [&]() {
     if (abs_diff_thresholds.empty()) {
       quantize_diff_property();  // Compute the non-abs thresholds.
-      for (auto &v : diff_samples) v = std::abs(v);
+      for (auto &v : diff_samples) v = abs_saturating(v);
       abs_diff_thresholds = QuantizeSamples(diff_samples, max_property_values);
     }
     return abs_diff_thresholds;
