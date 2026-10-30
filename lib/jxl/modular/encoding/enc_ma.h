@@ -176,7 +176,8 @@ void CollectPixelSamples(const Image &image, const ModularOptions &options,
 Status ComputeBestTree(TreeSamples &tree_samples, float threshold,
                        const std::vector<ModularMultiplierInfo> &mul_info,
                        StaticPropRange static_prop_range,
-                       float fast_decode_multiplier, Tree *tree);
+                       float fast_decode_multiplier, size_t max_tree_size,
+                       Tree *tree);
 
 }  // namespace jxl
 #endif  // LIB_JXL_MODULAR_ENCODING_ENC_MA_H_
