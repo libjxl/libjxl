@@ -56,6 +56,29 @@ if (EMSCRIPTEN)
   endif()
 endif()  # EMSCRIPTEN
 
+# Keep this public C API check independent of the writer, extras, and test-only
+# libraries so it detects decoder-only link regressions.
+add_executable(gain_map_public_api_decode_test
+  gain_map_public_api_decode_test.c
+)
+target_link_libraries(gain_map_public_api_decode_test PRIVATE jxl_dec)
+set_target_properties(gain_map_public_api_decode_test PROPERTIES
+  LINKER_LANGUAGE CXX
+  RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:jxl_dec>"
+)
+if(EMSCRIPTEN)
+  set_target_properties(gain_map_public_api_decode_test PROPERTIES
+    LINK_FLAGS "${JXL_WASM_TEST_LINK_FLAGS}"
+  )
+else()
+  set_target_properties(gain_map_public_api_decode_test PROPERTIES
+    LINK_FLAGS "${JPEGXL_COVERAGE_LINK_FLAGS}"
+  )
+endif()
+add_test(NAME gain_map_public_api_decode_test
+  COMMAND gain_map_public_api_decode_test
+)
+
 # Individual test binaries:
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
