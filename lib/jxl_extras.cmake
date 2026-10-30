@@ -95,6 +95,11 @@ if (JPEGXL_ENABLE_OPENEXR)
       if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         # GCC does not support that
         set(_exr_flags "-fcxx-exceptions")
+      elseif (NOT JPEGXL_ENABLE_LTO)
+        # Without exceptions the InMemoryIStream error path in dec/exr.cc
+        # cannot report OpenEXR failures (it would trap the process), and
+        # corrupt or truncated files would abort the decoder.
+        set(_exr_flags "-fexceptions")
       endif()
       if ("${OpenEXR_VERSION}" VERSION_LESS "2.5.7")
         string(APPEND _exr_flags " -Wno-deprecated-copy")
