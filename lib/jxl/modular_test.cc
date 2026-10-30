@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -52,6 +53,7 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/enc_palette.h"
 #include "lib/jxl/modular/transform/squeeze_params.h"
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/padded_bytes.h"
@@ -175,6 +177,73 @@ TEST(ModularTest, RoundtripLosslessCustomWpPermuteRCT) {
       Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
   EXPECT_LE(compressed_size, 10169u);
   EXPECT_EQ(0.0f, test::ComputeDistance2(t.ppf(), ppf_out));
+}
+
+// Regression test for #3511: 32-bit (float) input used to skip the palette
+// transform entirely, which made lossless HDR/float images much larger.
+//
+// The underlying problem was not the bit depth as such, but that
+// FwdPaletteIteration() built its implicit palette with input.bitdepth while
+// the decoder builds it with std::min(input.bitdepth, 24) (see palette.cc).
+// At 32 bits the encoder-side computation overflows pixel_type inside
+// GetPaletteValue(); commit 27afa5e4 worked around that by refusing to
+// palettize such images at all.
+TEST(ModularTest, Float32MultiChannelPaletteRegression) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(Image image,
+                         Image::Create(memory_manager, 256, 256,
+                                       /*bitdepth=*/32, /*nb_chans=*/3));
+
+  auto float_bits = [](float value) -> pixel_type {
+    uint32_t bits = 0;
+    memcpy(&bits, &value, sizeof(bits));
+    return static_cast<pixel_type>(bits);
+  };
+
+  // A handful of distinct HDR colours, stored as the raw IEEE-754 bit patterns
+  // that modular carries for float samples.
+  constexpr size_t kNumColors = 8;
+  const float kColors[kNumColors][3] = {
+      {1.0f, 0.5f, 0.25f},     {123.5f, 0.001f, 64.0f}, {-2.5f, 3.5f, 1e-6f},
+      {0.0f, 0.0f, 0.0f},      {480.0f, 12.0f, 0.75f},  {1e-8f, 1e8f, 1.0f},
+      {-0.125f, -64.0f, 7.0f}, {33.0f, 33.0f, 33.0f}};
+
+  uint32_t state = 0x9e3779b9u;
+  for (size_t y = 0; y < image.h; ++y) {
+    pixel_type* rows[3] = {image.channel[0].Row(y), image.channel[1].Row(y),
+                           image.channel[2].Row(y)};
+    for (size_t x = 0; x < image.w; ++x) {
+      state = state * 1664525u + 1013904223u;
+      const size_t idx = (state >> 28) % kNumColors;
+      for (size_t c = 0; c < 3; ++c) {
+        rows[c][x] = float_bits(kColors[idx][c]);
+      }
+    }
+  }
+
+  uint32_t nb_colors = 1024;
+  uint32_t nb_deltas = 0;
+  Predictor predictor = Predictor::Variable;
+  weighted::Header wp_header;
+  // Before the fix this returned without transforming anything.
+  JXL_EXPECT_OK(FwdPalette(image, /*begin_c=*/0, /*end_c=*/2, nb_colors,
+                           nb_deltas, /*ordered=*/true, /*lossy=*/false,
+                           predictor, wp_header));
+
+  // The palette is prepended as a meta channel and the three colour channels
+  // collapse into a single index channel.
+  EXPECT_EQ(1u, image.nb_meta_channels);
+  EXPECT_EQ(2u, image.channel.size());
+  EXPECT_EQ(kNumColors, nb_colors);
+
+  // Every index must address a real palette entry.
+  for (size_t y = 0; y < image.h; ++y) {
+    const pixel_type* row = image.channel[1].Row(y);
+    for (size_t x = 0; x < image.w; ++x) {
+      ASSERT_GE(row[x], 0);
+      ASSERT_LT(static_cast<uint32_t>(row[x]), nb_colors);
+    }
+  }
 }
 
 TEST(ModularTest, RoundtripLossyDeltaPalette) {
