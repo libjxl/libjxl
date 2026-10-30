@@ -1012,7 +1012,7 @@ StatusOr<size_t> EntropyEncodingData::BuildAndStoreEntropyCodes(
     } else {
       JXL_RETURN_IF_ERROR(body());
     }
-    if (params.streaming_mode) {
+    if (params.streaming_mode && writer) {
       JXL_RETURN_IF_ERROR(writer->AppendUnaligned(*histo_writer));
     }
   }

@@ -29,7 +29,7 @@ locally. Here is a snippet that reflects how setup / compilation are (currently)
 done in the workflow:
 
 ```
-docker run -it -v`pwd`:/libjxl debian:bookworm bash
+docker run -it -v`pwd`:/libjxl debian:trixie bash
 
 cd /libjxl
 

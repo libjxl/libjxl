@@ -35,10 +35,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  ubuntu_static_x86_64:
-    name: linux x86_64 static
+  ubuntu_static:
+    name: linux ${{ matrix.arch }} static
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
-    runs-on: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            os: ubuntu-latest
+          - arch: aarch64
+            os: ubuntu-26.04-arm
+    env:
+      RELEASE_ARCH: ${{ matrix.arch }}
     steps:
     - name: Harden Runner
       uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
@@ -72,6 +82,9 @@ jobs:
         echo "CC=clang" >> $GITHUB_ENV
         echo "CXX=clang++" >> $GITHUB_ENV
 
+    - name: Verify native architecture
+      run: test "$(uname -m)" = "${RELEASE_ARCH}"
+
     - name: Checkout the source
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -95,14 +108,14 @@ jobs:
       run: |
         ROOT=`pwd`
         cd build
-        tarlz -9cvf ${ROOT}/jxl-linux-x86_64-static.tar.lz \
+        tarlz -9cvf "${ROOT}/jxl-linux-${RELEASE_ARCH}-static.tar.lz" \
           LICENSE* tools/{cjxl,djxl,benchmark_xl,jxlinfo,butteraugli_main,ssimulacra2}
 
     - name: Upload release tarball
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
-        name: jxl-linux-x86_64-static
-        path: jxl-linux-x86_64-static.tar.lz
+        name: jxl-linux-${{ matrix.arch }}-static
+        path: jxl-linux-${{ matrix.arch }}-static.tar.lz
         archive: false
 
 
@@ -226,7 +239,7 @@ jobs:
   windows_build:
     name: vcpkg / ${{ matrix.triplet }} ${{ matrix.build_type || 'Release'}}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
-    runs-on: [windows-latest]
+    runs-on: ${{ matrix.runner || 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -245,6 +258,15 @@ jobs:
             static: 'OFF'
           - triplet: x64-windows
             arch: '-A x64'
+            static: 'OFF'
+          # ARM64 support
+          - triplet: arm64-windows-static
+            arch: '-A ARM64'
+            runner: windows-11-arm
+          # ARM64 support
+          - triplet: arm64-windows
+            arch: '-A ARM64'
+            runner: windows-11-arm
             static: 'OFF'
 
     env:
@@ -386,11 +408,13 @@ jobs:
 
   publish_release_assets:
     name: Publish release assets
-    needs: [ubuntu_static_x86_64, release_ubuntu_pkg, windows_build]
+    needs: [ubuntu_static, release_ubuntu_pkg, windows_build]
     if: github.event_name == 'release'
     runs-on: [ubuntu-latest]
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     steps:
     - name: Checkout the source
@@ -407,6 +431,11 @@ jobs:
         skip-decompress: true
         merge-multiple: true
 
+    - name: Attest release assets
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-path: release_assets/*
+
     - name: Publish assets
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -418,7 +447,7 @@ jobs:
   # Keep in sync with `publish_release_assets` workflow.
   dry_publish_release_assets:
     name: Publish release assets (dry run)
-    needs: [ubuntu_static_x86_64, release_ubuntu_pkg, windows_build]
+    needs: [ubuntu_static, release_ubuntu_pkg, windows_build]
     if: github.event_name != 'release'
     runs-on: [ubuntu-latest]
 
