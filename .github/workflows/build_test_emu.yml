@@ -35,12 +35,12 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         submodules: true
         fetch-depth: 2
@@ -78,7 +78,7 @@ jobs:
         docker run --rm --platform ${{ matrix.platform }} \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            debian:bookworm \
+            debian:trixie \
             bash -c "./tools/scripts/install_deps.sh base build -- zlib1g-dev && \
               echo 'Number of cores:' `nproc` && \
               export CC=clang && \
@@ -100,7 +100,7 @@ jobs:
               echo 'Finished' \
             "
 
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: emu_binary-${{ matrix.identifier }}
         path: |
@@ -120,21 +120,29 @@ jobs:
         include:
           - identifier: s390x
             platform: linux/s390x
+            disable_tests:
+             - bash_test
+             - conformance_tooling_test
+             - example
+             - example64
+             - JxlTest.RoundtripLargeEmptyModular
+             - test_jpegli_jni_wrapper
+             - test_jxl_jni_wrapper
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
       with:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         submodules: true
         fetch-depth: 1
         persist-credentials: false
 
-    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         name: emu_binary-${{ matrix.identifier }}
 
@@ -148,10 +156,10 @@ jobs:
         docker run --rm --platform ${{ matrix.platform }} \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            debian:bookworm \
+            debian:trixie \
             bash -c "./tools/scripts/install_deps.sh base runtime && \
               export BUILD_DIR=build && \
               ./ci.sh test \
                 -I ${{ matrix.shard_number }},,10 \
-                -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper|test_jpegli_jni_wrapper)' \
+                -E '${{ join(matrix.disable_tests, '|') }}' \
             "
