@@ -102,8 +102,14 @@ struct HistogramParams {
   }
 
   ClusteringType clustering = ClusteringType::kBest;
+  // The tokens already contain LZ77 lengths and distances (in the LZ77Params
+  // defaults): no LZ77 search, and LZ77 is signaled.
+  bool tokens_have_lz77 = false;
   HybridUintMethod uint_method = HybridUintMethod::kBest;
   LZ77Method lz77_method = LZ77Method::kRLE;
+  // For the optimal LZ77 methods: always use the slower, more careful greedy
+  // first pass (otherwise only for small inputs).
+  bool lz77_careful_first_pass = false;
   ANSHistogramStrategy ans_histogram_strategy = ANSHistogramStrategy::kPrecise;
   std::vector<size_t> image_widths;
   size_t max_histograms = ~0;
@@ -112,6 +118,8 @@ struct HistogramParams {
   bool streaming_mode = false;
   bool add_missing_symbols = false;
   bool add_fixed_histograms = false;
+  // See CompressParams::flat_nibble_code.
+  bool flat_nibble_code = false;
 };
 
 struct Histogram {

@@ -1042,10 +1042,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   JxlMemoryManager* memory_manager = enc_state->memory_manager();
 
   // Find and subtract splines.
+  // Custom splines are already set (in ComputeEncodingData).
   bool override_splines = cparams.custom_splines.HasAny();
-  if (override_splines) {
-    image_features.splines.SetData(cparams.custom_splines);
-  }
   if (!streaming_mode && cparams.speed_tier <= SpeedTier::kSquirrel) {
     if (!override_splines) {
       image_features.splines = FindSplines(*opsin);
@@ -1056,7 +1054,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   }
 
   // Find and subtract patches/dots.
-  if (!streaming_mode &&
+  if (!streaming_mode && cparams.custom_patches.empty() &&
       ApplyOverride(cparams.patches,
                     cparams.speed_tier <= SpeedTier::kSquirrel)) {
     JXL_RETURN_IF_ERROR(
