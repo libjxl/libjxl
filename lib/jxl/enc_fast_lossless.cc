@@ -86,6 +86,12 @@ _mm512_cvtsi512_si32(__m512i __A) {
 
 #endif  // ARCH
 
+#ifdef __CLANGD__
+#undef FJXL_ENABLE_NEON
+#undef FJXL_ENABLE_AVX2
+#undef FJXL_ENABLE_AVX512
+#endif
+
 #ifndef FJXL_ENABLE_NEON
 #define FJXL_ENABLE_NEON 0
 #endif
@@ -1018,7 +1024,10 @@ void JxlFastLosslessFreeFrameState(JxlFastLosslessFrameState* frame) {
 
 #endif
 
-#ifdef FJXL_SELF_INCLUDE
+#if defined(FJXL_SELF_INCLUDE) || defined(__CLANGD__)
+#ifdef __CLANGD__
+namespace default_implementation {
+#endif
 
 namespace {
 
@@ -4208,9 +4217,13 @@ jxl::Status JxlFastLosslessProcessFrameImpl(
 
 }  // namespace
 
+#ifdef __CLANGD__
+}  // namespace default_implementation
+#endif
 #endif  // FJXL_SELF_INCLUDE
 
 #ifndef FJXL_SELF_INCLUDE
+#ifndef __CLANGD__
 
 #define FJXL_SELF_INCLUDE
 
@@ -4281,6 +4294,7 @@ namespace AVX512 {
 #endif  // FJXL_ENABLE_AVX512
 
 #endif
+#endif  // __CLANGD__
 
 extern "C" {
 
