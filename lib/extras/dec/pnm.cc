@@ -39,7 +39,7 @@ class Parser {
 
   // Sets "pos" to the first non-header byte/pixel on success.
   Status ParseHeader(HeaderPNM* header, const uint8_t** pos) {
-    // codec.cc ensures we have at least two bytes => no range check here.
+    if (static_cast<size_t>(end_ - pos_) < 2) return false;
     if (pos_[0] != 'P') return false;
     const uint8_t type = pos_[1];
     pos_ += 2;
