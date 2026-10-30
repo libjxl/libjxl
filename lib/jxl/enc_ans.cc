@@ -1353,10 +1353,15 @@ HistogramParams HistogramParams::ForModular(
         cparams.speed_tier > SpeedTier::kThunder
             ? HistogramParams::ANSHistogramStrategy::kFast
             : HistogramParams::ANSHistogramStrategy::kApproximate;
-    params.lz77_method =
-        cparams.modular_mode && cparams.speed_tier <= SpeedTier::kHare
-            ? HistogramParams::LZ77Method::kRLE
-            : HistogramParams::LZ77Method::kNone;
+    if (cparams.modular_mode) {
+      if (cparams.speed_tier > SpeedTier::kHare) {
+        params.lz77_method = HistogramParams::LZ77Method::kNone;
+      } else {
+        params.lz77_method = HistogramParams::LZ77Method::kLZ77b1w3t;
+      }
+    } else {
+      params.lz77_method = HistogramParams::LZ77Method::kNone;
+    }
     // Near-lossless DC, as well as modular mode, require choosing hybrid uint
     // more carefully.
     if ((!extra_dc_precision.empty() && extra_dc_precision[0] != 0) ||
@@ -1368,7 +1373,7 @@ HistogramParams HistogramParams::ForModular(
   } else if (cparams.speed_tier <= SpeedTier::kTortoise) {
     params.lz77_method = HistogramParams::LZ77Method::kOptc256;
   } else {
-    params.lz77_method = HistogramParams::LZ77Method::kLZ77b3w3f;
+    params.lz77_method = HistogramParams::LZ77Method::kLZ77b7w3t;
   }
   if (cparams.decoding_speed_tier >= 2) {
     params.max_histograms = 12;
@@ -1376,12 +1381,13 @@ HistogramParams HistogramParams::ForModular(
     // No predictor requires LZ77 to compress residuals.
     // Effort 3 and lower have forced predictors, so kNone is set.
     if (cparams.options.predictor == Predictor::Zero && cparams.modular_mode) {
-        params.lz77_method = cparams.speed_tier >= SpeedTier::kFalcon
+      params.is_predictor_zero = true;
+      params.lz77_method = cparams.speed_tier >= SpeedTier::kFalcon
             ? HistogramParams::LZ77Method::kNone
             : cparams.speed_tier >= SpeedTier::kHare
-            ? HistogramParams::LZ77Method::kRLE
+            ? HistogramParams::LZ77Method::kLZ77b1w3t
             : cparams.speed_tier >= SpeedTier::kKitten
-            ? HistogramParams::LZ77Method::kLZ77b3w3f
+            ? HistogramParams::LZ77Method::kLZ77b7w3f
             : HistogramParams::LZ77Method::kOptc256;
     }
   return params;
