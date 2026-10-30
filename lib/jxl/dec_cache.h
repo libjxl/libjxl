@@ -69,16 +69,16 @@ struct PixelCallback {
 
 struct ImageOutput {
   // Pixel format of the output pixels, used for buffer and callback output.
-  JxlPixelFormat format;
+  JxlPixelFormat format = {};
   // Output bit depth for unsigned data types, used for float to int conversion.
-  size_t bits_per_sample;
+  size_t bits_per_sample = 0;
   // Callback for line-by-line output.
   PixelCallback callback;
   // Pixel buffer for image output.
-  void* buffer;
-  size_t buffer_size;
+  void* buffer = nullptr;
+  size_t buffer_size = 0;
   // Length of a row of image_buffer in bytes (based on oriented width).
-  size_t stride;
+  size_t stride = 0;
 };
 
 // Per-frame decoder state. All the images here should be accessed through a
@@ -100,24 +100,24 @@ struct PassesDecoderState {
   std::vector<std::vector<uint8_t>> context_map;
 
   // Multiplier to be applied to the quant matrices of the x channel.
-  float x_dm_multiplier;
-  float b_dm_multiplier;
+  float x_dm_multiplier = 0;
+  float b_dm_multiplier = 0;
 
   // Sigma values for EPF.
   ImageF sigma;
 
   // Image dimensions before applying undo_orientation.
-  size_t width;
-  size_t height;
+  size_t width = 0;
+  size_t height = 0;
   ImageOutput main_output;
   std::vector<ImageOutput> extra_output;
 
   // Whether to use int16 float-XYB-to-uint8-srgb conversion.
-  bool fast_xyb_srgb8_conversion;
+  bool fast_xyb_srgb8_conversion = false;
 
   // If true, the RGBA output will be unpremultiplied before writing to the
   // output.
-  bool unpremul_alpha;
+  bool unpremul_alpha = false;
 
   // The render pipeline will apply this orientation to bring the image to the
   // intended display orientation.
@@ -140,10 +140,10 @@ struct PassesDecoderState {
   ImageBundle frame_storage_for_referencing;
 
   struct PipelineOptions {
-    bool use_slow_render_pipeline;
-    bool coalescing;
-    bool render_spotcolors;
-    bool render_noise;
+    bool use_slow_render_pipeline = false;
+    bool coalescing = false;
+    bool render_spotcolors = false;
+    bool render_noise = false;
   };
 
   JxlMemoryManager* memory_manager() const { return shared->memory_manager; }

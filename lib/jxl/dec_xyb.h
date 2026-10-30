@@ -26,10 +26,10 @@ namespace jxl {
 
 // Parameters for XYB->sRGB conversion.
 struct OpsinParams {
-  float inverse_opsin_matrix[9 * 4];
-  float opsin_biases[4];
-  float opsin_biases_cbrt[4];
-  float quant_biases[4];
+  float inverse_opsin_matrix[9 * 4] = {};
+  float opsin_biases[4] = {};
+  float opsin_biases_cbrt[4] = {};
+  float quant_biases[4] = {};
   void Init(float intensity_target);
 };
 
@@ -39,11 +39,11 @@ struct OutputEncodingInfo {
   //
   ColorEncoding orig_color_encoding;
   // Used for the HLG OOTF and PQ tone mapping.
-  float orig_intensity_target;
+  float orig_intensity_target = 0;
   // Opsin inverse matrix taken from the metadata.
-  Matrix3x3 orig_inverse_matrix;
-  bool default_transform;
-  bool xyb_encoded;
+  Matrix3x3 orig_inverse_matrix = {};
+  bool default_transform = false;
+  bool xyb_encoded = false;
   //
   // Fields depending on output color encoding
   //
@@ -52,21 +52,21 @@ struct OutputEncodingInfo {
   // This is expected as the output of the conversion from XYB.
   // It is equal to `color_encoding`, but with a linear tone response curve.
   ColorEncoding linear_color_encoding;
-  bool color_encoding_is_original;
+  bool color_encoding_is_original = false;
   // Contains an opsin matrix that converts to the primaries of the output
   // encoding.
   OpsinParams opsin_params;
-  bool all_default_opsin;
+  bool all_default_opsin = false;
   // Used for Gamma and DCI transfer functions.
-  float inverse_gamma;
+  float inverse_gamma = 0;
   // Luminances of color_encoding's primaries, used for the HLG inverse OOTF and
   // for PQ tone mapping.
   // Default to sRGB's.
-  Vector3 luminances;
+  Vector3 luminances = {};
   // Used for the HLG inverse OOTF and PQ tone mapping.
-  float desired_intensity_target;
+  float desired_intensity_target = 0;
   bool cms_set = false;
-  JxlCmsInterface color_management_system;
+  JxlCmsInterface color_management_system = {};
 
   Status SetFromMetadata(const CodecMetadata& metadata);
   Status MaybeSetColorEncoding(const ColorEncoding& c_desired);
