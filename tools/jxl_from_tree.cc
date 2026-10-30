@@ -637,9 +637,19 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Usage: %s tree_in.txt out.jxl [tree_drawing]\n", argv[0]);
     return 1;
   }
-  jxl::Status result = jpegxl::tools::JxlFromTree(argv[1], argv[2],
-                                                  argc < 4 ? nullptr : argv[3]);
-  if (!result) {
+  // The tree parser uses std::stoi/stoul/stof, which throw on malformed or
+  // out-of-range numbers; the per-field num != t.size() checks only run after
+  // a successful conversion.  Route the exceptions to the FAILURE path
+  // instead of aborting the tool.
+  bool ok = false;
+  try {
+    ok = static_cast<bool>(jpegxl::tools::JxlFromTree(argv[1], argv[2],
+                                                     argc < 4 ? nullptr
+                                                              : argv[3]));
+  } catch (const std::exception& e) {
+    fprintf(stderr, "Invalid numeric value in tree file: %s\n", e.what());
+  }
+  if (!ok) {
     fprintf(stderr, "FAILURE\n");
     return EXIT_FAILURE;
   }
