@@ -1577,6 +1577,52 @@ JXL_TRANSCODE_JPEG_TEST(EncodeTest, JPEGFrameTest) {
   }
 }
 
+// The adapter that serves a frame given as a whole-image buffer must not hand
+// out data from outside of that image, whatever rectangle it is asked for.
+TEST(EncodeTest, ChunkedFrameAdapterRectBounds) {
+  if (JXL_IS_DEBUG_BUILD) {
+    GTEST_SKIP() << "Out-of-bounds requests abort in debug builds";
+  }
+  constexpr size_t kXSize = 5;
+  constexpr size_t kYSize = 3;
+  const JxlPixelFormat color_format = {3, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  const JxlPixelFormat alpha_format = {1, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  std::vector<uint8_t> color(kXSize * kYSize * 3);
+  std::vector<uint8_t> alpha(kXSize * kYSize);
+  jxl::JxlEncoderChunkedFrameAdapter adapter(kXSize, kYSize,
+                                             /*num_extra_channels=*/1);
+  ASSERT_TRUE(
+      adapter.SetFromBuffer(0, color.data(), color.size(), color_format));
+  ASSERT_TRUE(
+      adapter.SetFromBuffer(1, alpha.data(), alpha.size(), alpha_format));
+  JxlChunkedFrameInputSource input = adapter.GetInputSource();
+  size_t row_offset;
+  auto color_at = [&](size_t x, size_t y, size_t xs, size_t ys) {
+    return input.get_color_channel_data_at(input.opaque, x, y, xs, ys,
+                                           &row_offset);
+  };
+  auto extra_at = [&](size_t ec, size_t x, size_t y, size_t xs, size_t ys) {
+    return input.get_extra_channel_data_at(input.opaque, ec, x, y, xs, ys,
+                                           &row_offset);
+  };
+
+  EXPECT_EQ(color.data(), color_at(0, 0, kXSize, kYSize));
+  EXPECT_EQ(kXSize * 3, row_offset);
+  EXPECT_EQ(color.data() + (2 * kXSize + 4) * 3, color_at(4, 2, 1, 1));
+  EXPECT_NE(nullptr, extra_at(0, 0, 0, kXSize, kYSize));
+
+  EXPECT_EQ(nullptr, color_at(1, 0, kXSize, 1));
+  EXPECT_EQ(nullptr, color_at(0, 1, 1, kYSize));
+  EXPECT_EQ(nullptr, color_at(kXSize, 0, 1, 1));
+  EXPECT_EQ(nullptr, color_at(0, kYSize, 1, 1));
+  // Rectangles whose end does not fit in size_t.
+  EXPECT_EQ(nullptr, color_at(2, 0, SIZE_MAX, 1));
+  EXPECT_EQ(nullptr, color_at(0, 2, 1, SIZE_MAX));
+  EXPECT_EQ(nullptr, extra_at(0, 0, 1, kXSize, kYSize));
+  // There is only one extra channel.
+  EXPECT_EQ(nullptr, extra_at(1, 0, 0, 1, 1));
+}
+
 namespace {
 class JxlStreamingAdapter {
  public:
