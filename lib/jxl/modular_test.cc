@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -48,6 +49,7 @@
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/enc_modular.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
@@ -484,6 +486,23 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
       Roundtrip(io.get(), cparams, dparams, io2.get(), _, &compressed_size));
   EXPECT_LE(compressed_size, 23000u);
   JXL_EXPECT_OK(SamePixels(*io->Main().color(), *io2->Main().color(), _));
+}
+
+TEST(ModularTest, QuantizeChannelClampsInt32Extremes) {
+  // Crafted INT32_MIN / near-max sample values overflowed the int32_t
+  // quantization arithmetic (OSS-Fuzz signed-integer-overflow); results
+  // must be computed in int64_t and clamped to the pixel_type range.
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(Channel ch,
+                         Channel::Create(memory_manager, 3, 1));
+  pixel_type* row = ch.plane.Row(0);
+  row[0] = std::numeric_limits<pixel_type>::min();
+  row[1] = std::numeric_limits<pixel_type>::max();
+  row[2] = 10;
+  QuantizeChannelForTest(ch, /*q=*/4);
+  EXPECT_EQ(std::numeric_limits<pixel_type>::min(), row[0]);
+  EXPECT_EQ(std::numeric_limits<pixel_type>::max(), row[1]);
+  EXPECT_EQ(12, row[2]);  // (10 + 2) / 4 * 4
 }
 
 void WriteHeaders(BitWriter* writer, size_t xsize, size_t ysize) {
