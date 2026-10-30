@@ -1,20 +1,32 @@
 # Building and Testing
 
-This file describes the building and testing facilities provided by the `ci.sh`
-script. It assumes you already have the build environment set up.
+This file describes the building and testing facilities provided by the `ci.sh` script. `ci.sh` is a convenient wrapper around `cmake` and `ctest` that simplifies building and testing the project with different configurations. It assumes you already have the build environment set up.
 
 ## Basic building
 
-To build the JPEG XL software and run its unit tests, run:
+To build the JPEG XL software and run its unit tests, run:
 
 ```bash
 ./ci.sh release
 ```
 
+Once the build completes successfully, you will find the generated executables (like `cjxl` and `djxl`) in the `build/tools/` directory.
+
+### Cleaning the Build
+
+If you ever need to start fresh (for example, if you change a major dependency or your build gets into a weird state), simply delete the build directory:
+
+```bash
+rm -rf build/
+```
+
 ## Testing
 
-`./ci.sh` build commands including `release`, `opt`, etc. will also run tests.
-You can set the environment variable `SKIP_TEST=1` to skip this.
+By default, `./ci.sh` build commands like `release` and `opt` will automatically run all unit tests after compiling. If you want to skip testing (e.g., for a faster build), you can set the environment variable `SKIP_TEST=1`:
+
+```bash
+SKIP_TEST=1 ./ci.sh release
+```
 
 It is possible to manually run all the tests in parallel in all your CPUs with
 the command:
@@ -44,12 +56,15 @@ more options run `ctest --help`, for example, you can pass `-j1` if you want
 to run only one test at a time instead of our default of multiple tests in
 parallel.
 
-## Other commands
+## Build Configurations
 
-Running `./ci.sh` with no parameters shows a list of available commands. For
-example, you can run `opt` for optimized developer builds with symbols or
-`debug` for debug builds which do not have NDEBUG defined and therefore include
-more runtime debug information.
+The `./ci.sh` script provides three primary build configurations:
+
+* **`release`**: Builds an optimized binary and strips out all debugging symbols. Produces the smallest, fastest executable, and is ideal for end-users.
+* **`opt`**: Equivalent to CMake's `RelWithDebInfo`. Builds an optimized binary but keeps debugging symbols. Ideal for when you want speed (like a release build) but still need to profile performance or debug crashes.
+* **`debug`**: Disables optimizations and includes full debugging information. Best for stepping through code line-by-line during development.
+
+Running `./ci.sh` with no parameters will print out a full list of available commands.
 
 ### Cross-compiling
 

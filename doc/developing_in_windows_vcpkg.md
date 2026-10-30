@@ -25,7 +25,7 @@ vcpkg install zlib:x64-windows
 
 ## Building
 
-From Visual Studio, open the CMakeLists.txt in the JPEG XL root directory.
+From Visual Studio, open the CMakeLists.txt in the JPEG XL root directory.
 Right-click the CMakeLists.txt entry in the Folder View of the Solution
 Explorer. In the context menu, select CMake Settings. Click on the green plus
 to add an x64-Clang configuration and the red minus to remove any non-Clang
