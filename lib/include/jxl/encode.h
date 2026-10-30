@@ -103,6 +103,20 @@ typedef enum {
    */
   JXL_ENC_ERR_BAD_INPUT = 4,
 
+  /** JPEG bitstream reconstruction data contains too much tail data after EOI.
+    */
+  JXL_ENC_ERR_JBRD_TOO_MUCH_TAIL_DATA = 5,
+
+  /** JPEG bitstream reconstruction data has too many reset points to represent
+    *  in JXL reconstruction metadata.
+    */
+  JXL_ENC_ERR_JBRD_TOO_MANY_RESET_POINTS = 6,
+
+  /** JPEG bitstream reconstruction data has too many markers to represent in
+    *  JXL reconstruction metadata.
+    */
+  JXL_ENC_ERR_JBRD_TOO_MANY_MARKERS = 7,
+
   /** The encoder doesn't (yet) support this. Either no version of libjxl
    * supports this, and the API is used incorrectly, or the libjxl version
    * should have been checked before trying to do this.
