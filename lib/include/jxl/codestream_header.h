@@ -160,11 +160,10 @@ typedef struct {
    * can always convert to linear or non-linear sRGB or to XYB). If the original
    * profile is used, the decoder outputs pixel data in the color space matching
    * that profile, but doesn't convert it to any other color space. If the
-   * original profile is not used, the decoder only outputs the data as sRGB
-   * (linear if outputting to floating point, nonlinear with standard sRGB
-   * transfer function if outputting to unsigned integers) but will not convert
-   * it to the original color profile. The decoder also does not convert to
-   * the target display color profile. To convert the pixel data produced by
+   * original profile is not used and @ref JxlDecoderSetOutputColorProfile is
+   * not called, the decoder converts the data to the original profile if it's
+   * encoded as a @ref JxlColorEncoding rather than an ICC color profile, and
+   * falls back to linear sRGB otherwise. To convert the pixel data produced by
    * the decoder to the original color profile, one of the JxlDecoderGetColor*
    * functions needs to be called with
    * ::JXL_COLOR_PROFILE_TARGET_DATA to get the color profile of the decoder
