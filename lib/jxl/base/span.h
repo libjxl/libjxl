@@ -14,6 +14,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
@@ -52,16 +53,41 @@ class Span {
 
   constexpr T* begin() const noexcept { return data(); }
 
-  constexpr T* end() const noexcept { return data() + size(); }
+  // The pointer arithmetic backing the bounds-carrying accessors below is the
+  // single audited place where it is allowed; it is wrapped so that callers can
+  // be compiled with -Wunsafe-buffer-usage while treating Span as safe.
+  constexpr T* end() const noexcept {
+    JXL_UNSAFE_BUFFER_USAGE_BEGIN
+    return data() + size();
+    JXL_UNSAFE_BUFFER_USAGE_END
+  }
 
   constexpr T& operator[](size_t i) const noexcept {
     // MSVC 2015 accepts this as constexpr, but not ptr_[i]
+    JXL_UNSAFE_BUFFER_USAGE_BEGIN
     return *(data() + i);
+    JXL_UNSAFE_BUFFER_USAGE_END
+  }
+
+  // Returns a view of the elements starting at `offset`. The caller must ensure
+  // `offset <= size()` (and, for the 2-arg form, `offset + count <= size()`).
+  Span subspan(size_t offset) const noexcept {
+    JXL_UNSAFE_BUFFER_USAGE_BEGIN
+    return Span(data() + offset, size() - offset);
+    JXL_UNSAFE_BUFFER_USAGE_END
+  }
+
+  Span subspan(size_t offset, size_t count) const noexcept {
+    JXL_UNSAFE_BUFFER_USAGE_BEGIN
+    return Span(data() + offset, count);
+    JXL_UNSAFE_BUFFER_USAGE_END
   }
 
   Status remove_prefix(size_t n) noexcept {
     JXL_ENSURE(size() >= n);
+    JXL_UNSAFE_BUFFER_USAGE_BEGIN
     ptr_ += n;
+    JXL_UNSAFE_BUFFER_USAGE_END
     len_ -= n;
     return true;
   }
