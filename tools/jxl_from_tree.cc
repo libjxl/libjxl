@@ -98,7 +98,8 @@ Status SplinesFromSplineData(const SplineData& spline_data,
 template <typename F>
 bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
                CompressParams& cparams, size_t& W, size_t& H, CodecInOut& io,
-               JXL_BOOL& have_next, int& x0, int& y0) {
+               JXL_BOOL& have_next, int& x0, int& y0,
+               int& buffer_size) {
   std::unordered_map<std::string, int> property_map = {
       {"c", 0},
       {"g", 1},
@@ -177,7 +178,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     size_t pos = tree.size();
     tree.emplace_back(PropertyDecisionNode::Split(p, split, pos + 1));
     JXL_RETURN_IF_ERROR(ParseNode(tok, tree, spline_data, cparams, W, H, io,
-                                  have_next, x0, y0));
+                                  have_next, x0, y0, buffer_size));
     tree[pos].rchild = tree.size();
   } else if (t == "-") {
     // Leaf
@@ -277,6 +278,10 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     if (num != t.size() || bits_per_sample < 1 || bits_per_sample > 32) {
       fprintf(stderr, "Invalid Bitdepth: %s\n", t.c_str());
       return false;
+    }
+    if (buffer_size == 0) {
+    // Match the main encoder and use 32bit buffers for bitdepths over 12.
+    buffer_size = bits_per_sample > 12 ? 2 : 3;
     }
     io.metadata.m.bit_depth.bits_per_sample = bits_per_sample;
   } else if (t == "FloatExpBits") {
@@ -471,13 +476,16 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     JXL_RETURN_IF_ERROR(
         io.metadata.m.color_encoding.SetPrimariesType(jxl::Primaries::kP3));
   } else if (t == "16BitBuffers") {
-    io.metadata.m.modular_16_bit_buffer_sufficient = true;
+    buffer_size = 1;
+  } else if (t == "32BitBuffers") {
+    buffer_size = 2;
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;
   }
   JXL_RETURN_IF_ERROR(
-      ParseNode(tok, tree, spline_data, cparams, W, H, io, have_next, x0, y0));
+      ParseNode(tok, tree, spline_data, cparams, W, H, io, have_next, x0, y0,
+      buffer_size));
   return true;
 }
 }  // namespace
@@ -503,6 +511,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   auto io = jxl::make_unique<CodecInOut>(memory_manager);
   io->metadata.m.modular_16_bit_buffer_sufficient = false;
   int have_next = JXL_FALSE;
+  int buffer_size = 0;
 
   std::istream* f = &std::cin;
   std::ifstream file;
@@ -518,8 +527,14 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     return out;
   };
   if (!ParseNode(tok, tree, spline_data, cparams, width, height, *io, have_next,
-                 x0, y0)) {
+                 x0, y0, buffer_size)) {
     return JXL_FAILURE("Failed to ParseNode");
+  }
+
+  // Auto 16bit for multi-frame art would mean parsing all frames first,
+  // so for now just default to 32bit buffers instead.
+  if (buffer_size == 1 || (buffer_size == 3 && !have_next)) {
+    io->metadata.m.modular_16_bit_buffer_sufficient = true;
   }
 
   if (tree_out) {
@@ -593,7 +608,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     have_next = JXL_FALSE;
     cparams.manual_noise.clear();
     if (!ParseNode(tok, tree, spline_data, cparams, width, height, *io,
-                   have_next, x0, y0)) {
+                   have_next, x0, y0, buffer_size)) {
       return JXL_FAILURE("Failed to ParseNode");
     }
     cparams.custom_fixed_tree = tree;
