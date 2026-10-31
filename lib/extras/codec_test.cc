@@ -614,5 +614,72 @@ TEST(CodecTest, EncodeToPNG) {
 }
 
 }  // namespace
+
+TEST(CodecTest, APNGAndPNMSmallRoundTripControl) {
+  // Valid 2x2 grayscale round-trip positive control for APNG and PNM encoders.
+  auto png_enc = Encoder::FromExtension(".png");
+  auto pgm_enc = Encoder::FromExtension(".pgm");
+  ASSERT_NE(pgm_enc, nullptr);
+  PackedPixelFile ppf;
+  ppf.info.xsize = 2;
+  ppf.info.ysize = 2;
+  ppf.info.num_color_channels = 1;
+  ppf.info.bits_per_sample = 8;
+  const JxlPixelFormat gray{1, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+  JXL_TEST_ASSIGN_OR_DIE(PackedFrame frame, PackedFrame::Create(2, 2, gray));
+  memset(frame.color.pixels(), 0x7f, frame.color.pixels_size);
+  ppf.frames.emplace_back(std::move(frame));
+  EncodedImage encoded_pgm;
+  EXPECT_TRUE(pgm_enc->Encode(ppf, &encoded_pgm, nullptr));
+  EXPECT_FALSE(encoded_pgm.bitstreams.empty());
+  if (png_enc) {
+    EncodedImage encoded_png;
+    EXPECT_TRUE(png_enc->Encode(ppf, &encoded_png, nullptr));
+    EXPECT_FALSE(encoded_png.bitstreams.empty());
+  }
+}
+
+TEST(CodecTest, APNGRejectsMissingFrameExtraChannel) {
+  auto encoder = Encoder::FromExtension(".png");
+  if (!encoder) GTEST_SKIP();
+  PackedPixelFile ppf;
+  ppf.info.xsize = 1;
+  ppf.info.ysize = 1;
+  ppf.info.num_color_channels = 1;
+  ppf.info.bits_per_sample = 8;
+  const JxlPixelFormat gray{1, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+  JXL_TEST_ASSIGN_OR_DIE(PackedFrame frame, PackedFrame::Create(1, 1, gray));
+  JXL_TEST_ASSIGN_OR_DIE(PackedImage ec, PackedImage::Create(1, 1, gray));
+  memset(frame.color.pixels(), 0, frame.color.pixels_size);
+  memset(ec.pixels(), 0, ec.pixels_size);
+  frame.extra_channels.emplace_back(std::move(ec));
+  PackedExtraChannel pec{};
+  pec.ec_info.bits_per_sample = 8;
+  ppf.extra_channels_info.push_back(pec);
+  ppf.extra_channels_info.push_back(pec);
+  ppf.frames.emplace_back(std::move(frame));
+  EncodedImage encoded;
+  EXPECT_FALSE(encoder->Encode(ppf, &encoded, nullptr));
+}
+
+TEST(CodecTest, PNMRejectsMissingFrameExtraChannel) {
+  auto encoder = Encoder::FromExtension(".pgm");
+  ASSERT_NE(encoder, nullptr);
+  PackedPixelFile ppf;
+  ppf.info.xsize = 1;
+  ppf.info.ysize = 1;
+  ppf.info.num_color_channels = 1;
+  ppf.info.bits_per_sample = 8;
+  const JxlPixelFormat gray{1, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+  JXL_TEST_ASSIGN_OR_DIE(PackedFrame frame, PackedFrame::Create(1, 1, gray));
+  memset(frame.color.pixels(), 0, frame.color.pixels_size);
+  PackedExtraChannel pec{};
+  pec.ec_info.bits_per_sample = 8;
+  ppf.extra_channels_info.push_back(pec);
+  ppf.frames.emplace_back(std::move(frame));
+  EncodedImage encoded;
+  EXPECT_FALSE(encoder->Encode(ppf, &encoded, nullptr));
+}
+
 }  // namespace extras
 }  // namespace jxl
