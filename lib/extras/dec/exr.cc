@@ -82,7 +82,17 @@ class InMemoryIStream : public OpenEXR::IStream {
   explicit InMemoryIStream(const Span<const uint8_t> bytes)
       : IStream(/*fileName=*/""), bytes_(bytes) {}
 
-  bool isMemoryMapped() const override { return true; }
+  // Do not advertise memory mapping. When an OpenEXR::IStream reports itself
+  // as memory-mapped, OpenEXR reads a scanline's pixel data straight from the
+  // pointer returned by readMemoryMapped(), using the size derived from the
+  // image header rather than the size of the on-disk chunk. A file whose chunk
+  // declares fewer bytes than a full scanline then makes OpenEXR read past the
+  // end of our input buffer (a heap out-of-bounds read reachable from cjxl on
+  // an untrusted .exr file). The copying read() path below hands OpenEXR a
+  // buffer that it sizes itself, so an over-read stays within OpenEXR's own
+  // allocation and is caught by its chunk-size validation instead. The data is
+  // already in memory, so this costs one extra copy per scanline and no I/O.
+  bool isMemoryMapped() const override { return false; }
   char* readMemoryMapped(const int n) override {
     if (pos_ + n < pos_) {
       JXL_EXR_THROW_LENGTH_ERROR("Overflow");
