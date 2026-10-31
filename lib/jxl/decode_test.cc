@@ -5816,6 +5816,78 @@ JXL_BOXES_TEST(DecodeTest, OutOfOrderJxlpDuplicateIndexTest) {
   JxlDecoderDestroy(dec);
 }
 
+JXL_BOXES_TEST(DecodeTest,
+               RejectsCraftedShortBrobBoxAndAcceptsValidControlHeader) {
+  // Valid control 1: standard container header + unbounded (size == 0) brob box
+  // carrying a 4-byte embedded type must succeed and emit JXL_DEC_BOX.
+  const uint8_t valid_control_unbounded_brob[] = {
+      0x00, 0x00, 0x00, 0x0c, 0x4a, 0x58, 0x4c, 0x20, 0x0d, 0x0a, 0x87, 0x0a,
+      0x00, 0x00, 0x00, 0x14, 0x66, 0x74, 0x79, 0x70, 0x6a, 0x78, 0x6c, 0x20,
+      0x00, 0x00, 0x00, 0x00, 0x6a, 0x78, 0x6c, 0x20, 0x00, 0x00, 0x00, 0x00,
+      0x62, 0x72, 0x6f, 0x62, 0x45, 0x78, 0x69, 0x66,
+  };
+  {
+    JxlDecoder* control_dec = JxlDecoderCreate(nullptr);
+    ASSERT_NE(control_dec, nullptr);
+    ASSERT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(control_dec, JXL_DEC_BOX));
+    ASSERT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetInput(control_dec, valid_control_unbounded_brob,
+                                 sizeof(valid_control_unbounded_brob)));
+    EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(control_dec));
+    EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(control_dec));
+    EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(control_dec));
+    JxlBoxType brob_inner_type = {};
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderGetBoxType(control_dec, brob_inner_type, JXL_TRUE));
+    EXPECT_EQ(0, memcmp(brob_inner_type, "Exif", 4));
+    JxlDecoderDestroy(control_dec);
+  }
+
+  // Crafted negative cases: bounded brob boxes with 0, 1, or 3 content bytes
+  // (< 4-byte embedded type) followed by an adjacent box must return JXL_DEC_ERROR.
+  for (uint8_t crafted_short_size : {uint8_t{8}, uint8_t{9}, uint8_t{11}}) {
+    const uint8_t crafted_short_brob[] = {
+        0x00, 0x00, 0x00, 0x0c, 0x4a, 0x58, 0x4c, 0x20,
+        0x0d, 0x0a, 0x87, 0x0a, 0x00, 0x00, 0x00, 0x14,
+        0x66, 0x74, 0x79, 0x70, 0x6a, 0x78, 0x6c, 0x20,
+        0x00, 0x00, 0x00, 0x00, 0x6a, 0x78, 0x6c, 0x20,
+        0x00, 0x00, 0x00, crafted_short_size,
+        0x62, 0x72, 0x6f, 0x62, 0x45, 0x78, 0x69, 0x66,
+        0x78, 0x6d, 0x6c, 0x20,
+    };
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
+    ASSERT_NE(dec, nullptr);
+    ASSERT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, JXL_DEC_BOX));
+    ASSERT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetInput(dec, crafted_short_brob,
+                                 sizeof(crafted_short_brob)));
+    EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec));
+    JxlDecoderDestroy(dec);
+  }
+
+  // Crafted 64-bit extended header brob box with 3 payload bytes (19 total).
+  const uint8_t crafted_short_ext_brob[] = {
+      0x00, 0x00, 0x00, 0x0c, 0x4a, 0x58, 0x4c, 0x20, 0x0d, 0x0a, 0x87, 0x0a,
+      0x00, 0x00, 0x00, 0x14, 0x66, 0x74, 0x79, 0x70, 0x6a, 0x78, 0x6c, 0x20,
+      0x00, 0x00, 0x00, 0x00, 0x6a, 0x78, 0x6c, 0x20, 0x00, 0x00, 0x00, 0x01,
+      0x62, 0x72, 0x6f, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x13,
+      0x45, 0x78, 0x69, 0x66, 0x78, 0x6d, 0x6c, 0x20,
+  };
+  JxlDecoder* ext_dec = JxlDecoderCreate(nullptr);
+  ASSERT_NE(ext_dec, nullptr);
+  ASSERT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(ext_dec, JXL_DEC_BOX));
+  ASSERT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(ext_dec, crafted_short_ext_brob,
+                               sizeof(crafted_short_ext_brob)));
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(ext_dec));
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(ext_dec));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(ext_dec));
+  JxlDecoderDestroy(ext_dec);
+}
+
 TEST(DecodeTest, SpotColorTest) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
