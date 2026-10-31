@@ -221,12 +221,10 @@ Codec DetectCodec(const Span<const uint8_t>& bytes) {
        {'P', '7'},
        {'P', 'F'},
        {'P', 'f'}}};
-  static const std::array<std::array<uint8_t, 4>, 5> kJpgSignatures = {{
-      {0xFF, 0xD8, 0xFF, 0xDB},
-      {0xFF, 0xD8, 0xFF, 0xE0},
-      {0xFF, 0xD8, 0xFF, 0xE1},
-      {0xFF, 0xD8, 0xFF, 0xE2},
-      {0xFF, 0xD8, 0xFF, 0xEE},
+  // SOI and the next marker, whichever it is: many markers may follow SOI,
+  // and the JPEG decoder checks them.
+  static const std::array<std::array<uint8_t, 3>, 1> kJpgSignatures = {{
+      {0xFF, 0xD8, 0xFF},
   }};
   static const std::array<std::array<uint8_t, 9>, 1> kJxlBoxSignatures = {{
       {0x00, 0x00, 0x00, 0x0C, 'J', 'X', 'L', ' ', 0x0D},
