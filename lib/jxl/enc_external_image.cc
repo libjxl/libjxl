@@ -104,7 +104,8 @@ Status ConvertFromExternal(const uint8_t* data, size_t size, size_t xsize,
   size_t bytes_per_channel = JxlDataTypeBytes(format.data_type);
   size_t bytes_per_pixel;
   if (!SafeMul(static_cast<size_t>(format.num_channels), bytes_per_channel,
-               bytes_per_pixel)) {
+               bytes_per_pixel) ||
+      bytes_per_pixel == 0) {
     return JXL_FAILURE("Invalid format");
   }
   size_t last_row_size;
@@ -121,7 +122,7 @@ Status ConvertFromExternal(const uint8_t* data, size_t size, size_t xsize,
       !SafeAdd(bytes_to_read, last_row_size, bytes_to_read)) {
     return JXL_FAILURE("Image dimensions are too large");
   }
-  if (size > 0 && size < bytes_to_read) {
+  if (data == nullptr || size < bytes_to_read) {
     return JXL_FAILURE("Buffer size is too small, expected: %" PRIuS
                        " got: %" PRIuS " (Image: %" PRIuS "x%" PRIuS
                        "x%u, bytes_per_channel: %" PRIuS ")",
@@ -130,7 +131,9 @@ Status ConvertFromExternal(const uint8_t* data, size_t size, size_t xsize,
   }
   // Too large buffer is likely an application bug, so also fail for that.
   // Do allow padding to stride in last row though.
-  if (size > row_size * ysize) {
+  size_t max_bytes_to_read;
+  if (SafeMul(row_size, ysize, max_bytes_to_read) &&
+      size > max_bytes_to_read) {
     return JXL_FAILURE("Buffer size is too large");
   }
   return ConvertFromExternalPlaneNoSizeCheck(
