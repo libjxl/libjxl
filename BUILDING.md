@@ -90,6 +90,13 @@ the reported compiler failure and confirmation of this workaround.
 sudo cmake --install .
 ```
 
+### <a name="update_cache"></a> Update library cache
+
+If running a executable give you "error while loading shared libraries: libjxl_threads.so.0.12", update the library cache:
+
+```bash
+sudo ldconfig
+```
 
 ## Building JPEG XL for developers
 
