@@ -613,6 +613,55 @@ TEST(CodecTest, EncodeToPNG) {
                   decoded_ppf.info.bits_per_sample);
 }
 
+TEST(CodecTest, ExtensionFromPath) {
+  // The extension is derived from the final path component only: dots in
+  // directory names must not leak into the result, the returned extension
+  // never contains a path separator, and a trailing dot that carries no
+  // extension is reported as none.
+  std::string extension;
+  size_t bits_per_sample = 0;
+
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("a.png/../../b", &bits_per_sample, &extension),
+            Codec::kUnknown);
+  EXPECT_EQ(extension, "");
+
+  // A valid codec extension in the final component is still detected even
+  // with a dotted directory part ahead of it.
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("a.jpg/../../b.jpg", &bits_per_sample, &extension),
+            Codec::kJPG);
+  EXPECT_EQ(extension, ".jpg");
+
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("dir.name/file", &bits_per_sample, &extension),
+            Codec::kUnknown);
+  EXPECT_EQ(extension, "");
+
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("out.png.", &bits_per_sample, &extension),
+            Codec::kUnknown);
+  EXPECT_EQ(extension, "");
+
+  // Backslash separators are stripped as well.
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("C:\\x\\y.png", &bits_per_sample, &extension),
+            Codec::kPNG);
+  EXPECT_EQ(extension, ".png");
+
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("/dev/stdout", &bits_per_sample, &extension),
+            Codec::kUnknown);
+  EXPECT_EQ(extension, "");
+
+  // Bare extension strings (as passed by the benchmark tooling) keep
+  // working, including the .pfm bits_per_sample side effect.
+  extension.clear();
+  ASSERT_EQ(CodecFromPath(".pfm", &bits_per_sample, &extension), Codec::kPNM);
+  EXPECT_EQ(extension, ".pfm");
+  EXPECT_EQ(bits_per_sample, 32u);
+}
+
 }  // namespace
 }  // namespace extras
 }  // namespace jxl
