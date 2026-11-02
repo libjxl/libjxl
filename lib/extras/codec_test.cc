@@ -668,6 +668,36 @@ TEST(CodecTest, DecodeTruncatedPNGLeavesMissingRowsZero) {
   }
 }
 
+// Frame names are arbitrary bytes from the codestream. The NumPy metadata
+// writer must produce valid JSON for them: a raw '"' in a name used to
+// terminate the JSON string early, which both broke parsing and allowed a
+// crafted name to inject additional fields into the frame dictionary.
+TEST(CodecTest, NumPyMetadataEscapesFrameName) {
+  std::unique_ptr<Encoder> npy_encoder = Encoder::FromExtension(".npy");
+  ASSERT_TRUE(npy_encoder);
+
+  const JxlPixelFormat format{/*num_channels=*/1, JXL_TYPE_FLOAT,
+                              JXL_LITTLE_ENDIAN, /*align=*/0};
+  PackedPixelFile ppf;
+  ppf.info.xsize = 2;
+  ppf.info.ysize = 2;
+  ppf.info.num_color_channels = 1;
+  ppf.info.bits_per_sample = 32;
+  ppf.info.exponent_bits_per_sample = 8;
+  JXL_TEST_ASSIGN_OR_DIE(PackedFrame frame, PackedFrame::Create(2, 2, format));
+  memset(frame.color.pixels(), 0, frame.color.pixels_size);
+  frame.name = std::string("q\"b\\n\ne\x01", 8);
+  ppf.frames.emplace_back(std::move(frame));
+
+  EncodedImage encoded;
+  ASSERT_TRUE(npy_encoder->Encode(ppf, &encoded, nullptr));
+  const std::string metadata(encoded.metadata.begin(), encoded.metadata.end());
+  EXPECT_NE(metadata.find("\"name\": \"q\\\"b\\\\n\\ne\\u0001\""),
+            std::string::npos)
+      << metadata;
+  // A quote inside the name must never end the JSON string.
+  EXPECT_EQ(metadata.find("\"q\"b"), std::string::npos) << metadata;
+}
 }  // namespace
 }  // namespace extras
 }  // namespace jxl
