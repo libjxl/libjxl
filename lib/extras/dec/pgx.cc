@@ -35,25 +35,24 @@ struct HeaderPGX {
 
 class Parser {
  public:
-  explicit Parser(const Span<const uint8_t> bytes)
-      : pos_(bytes.data()), end_(pos_ + bytes.size()) {}
+  explicit Parser(const Span<const uint8_t> bytes) : bytes_(bytes), pos_(0) {}
 
-  // Sets "pos" to the first non-header byte/pixel on success.
-  Status ParseHeader(HeaderPGX* header, const uint8_t** pos) {
+  // Sets "pos" to the offset of the first non-header byte/pixel on success.
+  Status ParseHeader(HeaderPGX* header, size_t* pos) {
     // codec.cc ensures we have at least two bytes => no range check here.
-    if (pos_[0] != 'P' || pos_[1] != 'G') return false;
+    if (bytes_[0] != 'P' || bytes_[1] != 'G') return false;
     pos_ += 2;
     return ParseHeaderPGX(header, pos);
   }
 
   // Exposed for testing
   Status ParseUnsigned(size_t* number) {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before number");
-    if (!IsDigit(*pos_)) return JXL_FAILURE("PGX: expected unsigned number");
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PGX: reached end before number");
+    if (!IsDigit(bytes_[pos_])) return JXL_FAILURE("PGX: expected unsigned number");
 
     *number = 0;
-    while (pos_ < end_ && *pos_ >= '0' && *pos_ <= '9') {
-      const size_t digit = static_cast<size_t>(*pos_ - '0');
+    while (pos_ < bytes_.size() && bytes_[pos_] >= '0' && bytes_[pos_] <= '9') {
+      const size_t digit = static_cast<size_t>(bytes_[pos_] - '0');
       if (*number > (std::numeric_limits<size_t>::max() - digit) / 10) {
         return JXL_FAILURE("PGX: number too large");
       }
@@ -72,20 +71,21 @@ class Parser {
   }
 
   Status SkipSpace() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before space");
-    const uint8_t c = *pos_;
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PGX: reached end before space");
+    const uint8_t c = bytes_[pos_];
     if (c != ' ') return JXL_FAILURE("PGX: expected space");
     ++pos_;
     return true;
   }
 
   Status SkipLineBreak() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before line break");
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PGX: reached end before line break");
     // Line break can be either "\n" (0a) or "\r\n" (0d 0a).
-    if (*pos_ == '\n') {
+    if (bytes_[pos_] == '\n') {
       pos_++;
       return true;
-    } else if (*pos_ == '\r' && pos_ + 1 != end_ && *(pos_ + 1) == '\n') {
+    } else if (bytes_[pos_] == '\r' && pos_ + 1 < bytes_.size() &&
+               bytes_[pos_ + 1] == '\n') {
       pos_ += 2;
       return true;
     }
@@ -93,35 +93,35 @@ class Parser {
   }
 
   Status SkipSingleWhitespace() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before whitespace");
-    if (!IsWhitespace(*pos_)) return JXL_FAILURE("PGX: expected whitespace");
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PGX: reached end before whitespace");
+    if (!IsWhitespace(bytes_[pos_])) return JXL_FAILURE("PGX: expected whitespace");
     ++pos_;
     return true;
   }
 
-  Status ParseHeaderPGX(HeaderPGX* header, const uint8_t** pos) {
+  Status ParseHeaderPGX(HeaderPGX* header, size_t* pos) {
     JXL_RETURN_IF_ERROR(SkipSpace());
-    if (pos_ + 2 > end_) return JXL_FAILURE("PGX: header too small");
-    if (*pos_ == 'M' && *(pos_ + 1) == 'L') {
+    if (pos_ + 2 > bytes_.size()) return JXL_FAILURE("PGX: header too small");
+    if (bytes_[pos_] == 'M' && bytes_[pos_ + 1] == 'L') {
       header->big_endian = true;
-    } else if (*pos_ == 'L' && *(pos_ + 1) == 'M') {
+    } else if (bytes_[pos_] == 'L' && bytes_[pos_ + 1] == 'M') {
       header->big_endian = false;
     } else {
       return JXL_FAILURE("PGX: invalid endianness");
     }
     pos_ += 2;
     JXL_RETURN_IF_ERROR(SkipSpace());
-    if (pos_ == end_) return JXL_FAILURE("PGX: header too small");
-    if (*pos_ == '+') {
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PGX: header too small");
+    if (bytes_[pos_] == '+') {
       header->is_signed = false;
-    } else if (*pos_ == '-') {
+    } else if (bytes_[pos_] == '-') {
       header->is_signed = true;
     } else {
       return JXL_FAILURE("PGX: invalid signedness");
     }
     pos_++;
     // Skip optional space
-    if (pos_ < end_ && *pos_ == ' ') pos_++;
+    if (pos_ < bytes_.size() && bytes_[pos_] == ' ') pos_++;
     JXL_RETURN_IF_ERROR(ParseUnsigned(&header->bits_per_sample));
     JXL_RETURN_IF_ERROR(SkipSingleWhitespace());
     JXL_RETURN_IF_ERROR(ParseUnsigned(&header->xsize));
@@ -148,7 +148,7 @@ class Parser {
         !SafeMul(numpixels, bytes_per_pixel, bytes_needed)) {
       return JXL_FAILURE("PGX: image dimensions are too large");
     }
-    if (static_cast<size_t>(end_ - pos_) < bytes_needed) {
+    if (bytes_.size() - pos_ < bytes_needed) {
       return JXL_FAILURE("PGX: data too small");
     }
 
@@ -156,8 +156,8 @@ class Parser {
     return true;
   }
 
-  const uint8_t* pos_;
-  const uint8_t* const end_;
+  Span<const uint8_t> bytes_;
+  size_t pos_;
 };
 
 }  // namespace
@@ -167,7 +167,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes,
                       const SizeConstraints* constraints) {
   Parser parser(bytes);
   HeaderPGX header = {};
-  const uint8_t* pos = nullptr;
+  size_t pos = 0;
   if (!parser.ParseHeader(&header, &pos)) return false;
   JXL_RETURN_IF_ERROR(
       VerifyDimensions(constraints, header.xsize, header.ysize));
@@ -212,11 +212,14 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes,
     ppf->frames.emplace_back(std::move(frame));
   }
   const auto& frame = ppf->frames.back();
-  size_t pgx_remaining_size = bytes.data() + bytes.size() - pos;
+  size_t pgx_remaining_size = bytes.size() - pos;
   if (pgx_remaining_size < frame.color.pixels_size) {
     return JXL_FAILURE("PGX file too small");
   }
-  memcpy(frame.color.pixels(), pos, frame.color.pixels_size);
+  // AUDITED: pos <= bytes.size() and pgx_remaining_size >= pixels_size checked
+  // just above, so [pos, pos+pixels_size) is in bounds.
+  JXL_DASSERT(pos <= bytes.size());
+  memcpy(frame.color.pixels(), &bytes[pos], frame.color.pixels_size);
   return true;
 }
 
