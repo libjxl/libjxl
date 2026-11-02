@@ -70,7 +70,7 @@ TEST(JxlTest, RoundtripSinglePixel) {
   JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
   frame.ZeroFill();
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 54, 10);
+  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 31, 10);
 }
 
 TEST(JxlTest, RoundtripSinglePixelWithAlpha) {
@@ -80,7 +80,7 @@ TEST(JxlTest, RoundtripSinglePixelWithAlpha) {
   JXL_TEST_ASSIGN_OR_DIE(auto frame, t.AddFrame());
   frame.ZeroFill();
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 57, 10);
+  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 34, 10);
 }
 
 // Changing serialized signature causes Decode to fail.
@@ -145,7 +145,7 @@ TEST(JxlTest, RoundtripSmallD1) {
 
   {
     PackedPixelFile ppf_out;
-    EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 747, 20);
+    EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 724, 20);
     EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 1.3);
     EXPECT_EQ(ppf_out.info.intensity_target, t.ppf().info.intensity_target);
   }
@@ -1025,7 +1025,7 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   EXPECT_EQ(t.ppf().frames[0].color.format.data_type, JXL_TYPE_UINT8);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 107, 10);
+  EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 78, 10);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.007);
 }
 
