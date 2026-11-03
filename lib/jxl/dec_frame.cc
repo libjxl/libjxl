@@ -224,8 +224,12 @@ Status FrameDecoder::InitFrameOutput() {
       return JXL_FAILURE("Cannot decode to JPEG an XYB image");
     }
     auto jpeg_c_map = JpegOrder(ColorTransform::kYCbCr, num_components == 1);
-    decoded_->jpeg_data->width = frame_dim_.xsize;
-    decoded_->jpeg_data->height = frame_dim_.ysize;
+    if (frame_dim_.xsize > static_cast<size_t>(jpeg::kMaxDimPixels) ||
+        frame_dim_.ysize > static_cast<size_t>(jpeg::kMaxDimPixels)) {
+      return JXL_FAILURE("Frame dimensions too large for JPEG reconstruction");
+    }
+    decoded_->jpeg_data->width = static_cast<int>(frame_dim_.xsize);
+    decoded_->jpeg_data->height = static_cast<int>(frame_dim_.ysize);
     for (size_t c = 0; c < num_components; c++) {
       auto& component = jpeg_data->components[jpeg_c_map[c]];
       component.width_in_blocks =
@@ -236,9 +240,17 @@ Status FrameDecoder::InitFrameOutput() {
           1 << frame_header_.chroma_subsampling.RawHShift(c);
       component.v_samp_factor =
           1 << frame_header_.chroma_subsampling.RawVShift(c);
-      size_t num_blocks = static_cast<size_t>(component.width_in_blocks) *
-                          component.height_in_blocks;
-      component.coeffs.resize(num_blocks * jxl::kDCTBlockSize);
+      size_t num_blocks;
+      if (!SafeMul(static_cast<size_t>(component.width_in_blocks),
+                   static_cast<size_t>(component.height_in_blocks),
+                   num_blocks)) {
+        return JXL_FAILURE("JPEG component block count overflow");
+      }
+      size_t num_coeffs;
+      if (!SafeMul(num_blocks, jxl::kDCTBlockSize, num_coeffs)) {
+        return JXL_FAILURE("JPEG component coefficient count overflow");
+      }
+      component.coeffs.resize(num_coeffs);
     }
   }
 
