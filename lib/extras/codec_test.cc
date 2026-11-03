@@ -662,6 +662,61 @@ TEST(CodecTest, ExtensionFromPath) {
   EXPECT_EQ(bits_per_sample, 32u);
 }
 
+TEST(CodecTest, DecodeTruncatedPNGLeavesMissingRowsZero) {
+  std::unique_ptr<Encoder> png_encoder = Encoder::FromExtension(".png");
+  if (!png_encoder || !CanDecode(Codec::kPNG)) {
+    fprintf(stderr, "Skipping test because of missing codec support.\n");
+    return;
+  }
+
+  constexpr size_t kXSize = 64;
+  constexpr size_t kYSize = 64;
+  TestImageParams params = {Codec::kPNG,
+                            kXSize,
+                            kYSize,
+                            /*bits_per_sample=*/8,
+                            /*is_gray=*/false,
+                            /*add_alpha=*/false,
+                            /*big_endian=*/true,
+                            /*add_extra_channels=*/false};
+  PackedPixelFile ppf_in;
+  CreateTestImage(params, &ppf_in);
+  EncodedImage encoded;
+  ASSERT_TRUE(png_encoder->Encode(ppf_in, &encoded, nullptr));
+  ASSERT_EQ(encoded.bitstreams.size(), 1u);
+  std::vector<uint8_t> png = encoded.bitstreams[0];
+
+  // Declare twice the height in IHDR (the chunk CRC is not checked), so the
+  // pixel data ends after half of the rows.
+  ASSERT_EQ(memcmp(&png[12], "IHDR", 4), 0);
+  ASSERT_EQ(LoadBE32(&png[20]), kYSize);
+  StoreBE32(2 * kYSize, &png[20]);
+
+  // Fill freed heap blocks of the size of the pixel buffer, so that a buffer
+  // that is not cleared holds stale bytes instead of fresh zero pages.
+  for (size_t i = 0; i < 4; ++i) {
+    std::vector<uint8_t> dirty(kXSize * 2 * kYSize * 3, 0xA5);
+    EXPECT_EQ(dirty.back(), 0xA5);
+  }
+
+  PackedPixelFile ppf_out;
+  ASSERT_TRUE(DecodeBytes(Bytes(png), ColorHints(), &ppf_out));
+  ASSERT_EQ(ppf_out.frames.size(), 1u);
+  const PackedImage& in = ppf_in.frames[0].color;
+  const PackedImage& out = ppf_out.frames[0].color;
+  ASSERT_EQ(out.xsize, kXSize);
+  ASSERT_EQ(out.ysize, 2 * kYSize);
+  ASSERT_EQ(out.pixels_size, 2 * in.pixels_size);
+
+  // The rows in the file are decoded, the rows missing from it are zero.
+  const auto* in_pixels = static_cast<const uint8_t*>(in.pixels());
+  const auto* out_pixels = static_cast<const uint8_t*>(out.pixels());
+  EXPECT_EQ(memcmp(in_pixels, out_pixels, in.pixels_size), 0);
+  for (size_t i = in.pixels_size; i < out.pixels_size; ++i) {
+    ASSERT_EQ(out_pixels[i], 0) << "byte " << i;
+  }
+}
+
 }  // namespace
 }  // namespace extras
 }  // namespace jxl
