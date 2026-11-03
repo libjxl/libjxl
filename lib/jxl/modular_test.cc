@@ -338,6 +338,57 @@ TEST(ModularTest, RoundtripExtraProperties) {
   }
 }
 
+// Regression test for issue #4600: MA tree learning must respect the tree
+// size limit that the matching decoder path enforces. Before the fix, the
+// aggressive heuristics below learned 17099 nodes for this image while
+// ModularGenericDecompress accepts at most 1024 + 64 * 64 * 3 = 13312 nodes
+// for the stream, so the encoder wrote a stream that its own decoder
+// rejected with "Tree is too large".
+TEST(ModularTest, LearnedTreeFitsStreamDecoderLimit) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  constexpr size_t kSize = 64;
+  constexpr size_t kNumChannels = 3;
+  constexpr size_t kLocalTreeSizeLimit = 1024 + kSize * kSize * kNumChannels;
+  JXL_TEST_ASSIGN_OR_DIE(Image image,
+                         Image::Create(memory_manager, kSize, kSize,
+                                       /*bitdepth=*/8, kNumChannels));
+  Rng rng(0);
+  for (Channel& channel : image.channel) {
+    for (size_t y = 0; y < kSize; ++y) {
+      pixel_type* row = channel.plane.Row(y);
+      for (size_t x = 0; x < kSize; ++x) {
+        row[x] = rng.UniformU(0, 256);
+      }
+    }
+  }
+  ModularOptions options;
+  options.predictor = Predictor::Zero;
+  options.nb_repeats = 1.0f;
+  options.splitting_heuristics_node_threshold = 0.0f;
+  options.max_property_values = 256;
+  BitWriter writer{memory_manager};
+  ASSERT_TRUE(ModularGenericCompress(image, options, writer));
+  writer.ZeroPadToByte();
+  JXL_TEST_ASSIGN_OR_DIE(Image decoded,
+                         Image::Create(memory_manager, kSize, kSize,
+                                       /*bitdepth=*/8, kNumChannels));
+  for (size_t i = 0; i < image.channel.size(); i++) {
+    const Channel& ch = image.channel[i];
+    JXL_TEST_ASSIGN_OR_DIE(
+        decoded.channel[i],
+        Channel::Create(memory_manager, ch.w, ch.h, ch.hshift, ch.vshift));
+  }
+  Status status = true;
+  {
+    BitReader reader(writer.GetSpan());
+    BitReaderScopedCloser closer(reader, status);
+    EXPECT_TRUE(ModularGenericDecompress(&reader, decoded, /*header=*/nullptr,
+                                         /*group_id=*/0, &options))
+        << "encoder wrote a stream with an MA tree larger than the decoder's "
+        << "limit (" << kLocalTreeSizeLimit << " nodes)";
+  }
+}
+
 struct RoundtripLosslessConfig {
   int bitdepth;
   int responsive;
