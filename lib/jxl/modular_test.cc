@@ -38,6 +38,7 @@
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_fields.h"
+#include "lib/jxl/enc_modular_simd.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_toc.h"
 #include "lib/jxl/fields.h"
@@ -52,6 +53,10 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/enc_rct.h"
+#include "lib/jxl/modular/transform/enc_squeeze.h"
+#include "lib/jxl/modular/transform/rct.h"
+#include "lib/jxl/modular/transform/squeeze.h"
 #include "lib/jxl/modular/transform/squeeze_params.h"
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/padded_bytes.h"
@@ -636,6 +641,134 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
   for (size_t x = 0; x < xsize; ++x) {
     EXPECT_NEAR(-0.5f, pixels[x], 1e-10);
     EXPECT_NEAR(0.5f, pixels[xsize + x], 1e-10);
+  }
+}
+
+TEST(ModularTest, FwdRctExtremeSamplesRoundtrip) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(Image image,
+                         Image::Create(memory_manager, /*iw=*/4, /*ih=*/2,
+                                       /*bitdepth=*/32, /*nb_chans=*/3));
+  // Per-pixel channel values chosen so that each scalar FwdRctRow expression
+  // (R-B, B+(o1>>1), G-tmp, tmp+(o2>>1), Second-First, First+Third,
+  // Third-First) overflows at least once when evaluated in pixel_type.
+  static const pixel_type kValues[2][4][3] = {
+      {{0, INT32_MIN, INT32_MAX},
+       {INT32_MAX, INT32_MIN, 0},
+       {INT32_MIN, INT32_MAX, INT32_MAX},
+       {INT32_MIN, INT32_MAX, INT32_MIN}},
+      {{INT32_MAX, INT32_MAX, 0},
+       {INT32_MIN, 0, INT32_MAX},
+       {0, INT32_MAX, INT32_MIN},
+       {INT32_MAX, 0, 0}},
+  };
+  for (size_t y = 0; y < 2; y++) {
+    for (size_t x = 0; x < 4; x++) {
+      for (size_t c = 0; c < 3; c++) {
+        image.channel[c].Row(y)[x] = kValues[y][x][c];
+      }
+    }
+  }
+  JXL_TEST_ASSIGN_OR_DIE(Image orig, Image::Clone(image));
+  // All transform types (1..6) crossed with all permutations (0..5);
+  // rct_type 0 is a no-op.
+  for (size_t rct_type = 1; rct_type < 42; rct_type++) {
+    SCOPED_TRACE(testing::Message() << "rct_type=" << rct_type);
+    ASSERT_TRUE(FwdRct(image, /*begin_c=*/0, rct_type, nullptr));
+    ASSERT_TRUE(InvRCT(image, /*begin_c=*/0, rct_type, nullptr));
+    for (size_t c = 0; c < 3; c++) {
+      for (size_t y = 0; y < 2; y++) {
+        for (size_t x = 0; x < 4; x++) {
+          EXPECT_EQ(orig.channel[c].Row(y)[x], image.channel[c].Row(y)[x])
+              << "c = " << c << ", x = " << x << ", y = " << y;
+        }
+      }
+    }
+  }
+}
+
+TEST(ModularTest, EstimateCostExtremeSamples) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(Image image,
+                         Image::Create(memory_manager, /*iw=*/2, /*ih=*/2,
+                                       /*bitdepth=*/32, /*nb_chans=*/1));
+  // At (x=1, y=0) and (x=0, y=1) the gradient predictor is INT32_MIN while
+  // the sample is INT32_MAX, so the residual subtraction overflows in int.
+  image.channel[0].Row(0)[0] = INT32_MIN;
+  image.channel[0].Row(0)[1] = INT32_MAX;
+  image.channel[0].Row(1)[0] = INT32_MAX;
+  image.channel[0].Row(1)[1] = 0;
+  JXL_TEST_ASSIGN_OR_DIE(float cost, EstimateCost(image));
+  EXPECT_TRUE(std::isfinite(cost));
+}
+
+TEST(ModularTest, FwdSqueezeRejectsUnrepresentableValues) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  SqueezeParams params;
+  params.horizontal = true;
+  params.in_place = true;
+  params.begin_c = 0;
+  params.num_c = 1;
+  std::vector<SqueezeParams> squeezes{params};
+
+  // The pairwise difference A - B does not fit in pixel_type.
+  {
+    SCOPED_TRACE("difference");
+    JXL_TEST_ASSIGN_OR_DIE(Image image,
+                           Image::Create(memory_manager, /*iw=*/2, /*ih=*/1,
+                                         /*bitdepth=*/32, /*nb_chans=*/1));
+    image.channel[0].Row(0)[0] = INT32_MAX;
+    image.channel[0].Row(0)[1] = INT32_MIN;
+    EXPECT_FALSE(FwdSqueeze(image, squeezes, nullptr));
+    ASSERT_EQ(1u, image.channel.size());
+    EXPECT_EQ(INT32_MAX, image.channel[0].Row(0)[0]);
+    EXPECT_EQ(INT32_MIN, image.channel[0].Row(0)[1]);
+  }
+  // The difference fits (INT32_MAX - 0) but the predicted residual
+  // (diff - tendency = INT32_MAX - (-1)) does not.
+  {
+    SCOPED_TRACE("residual");
+    JXL_TEST_ASSIGN_OR_DIE(Image image,
+                           Image::Create(memory_manager, /*iw=*/4, /*ih=*/1,
+                                         /*bitdepth=*/32, /*nb_chans=*/1));
+    static const pixel_type kRow[4] = {INT32_MAX, 0, INT32_MAX, INT32_MAX};
+    for (size_t x = 0; x < 4; x++) image.channel[0].Row(0)[x] = kRow[x];
+    EXPECT_FALSE(FwdSqueeze(image, squeezes, nullptr));
+    ASSERT_EQ(1u, image.channel.size());
+    for (size_t x = 0; x < 4; x++) {
+      EXPECT_EQ(kRow[x], image.channel[0].Row(0)[x]) << "x = " << x;
+    }
+  }
+  // Vertical squeeze: same difference overflow.
+  {
+    SCOPED_TRACE("vertical");
+    params.horizontal = false;
+    squeezes[0] = params;
+    JXL_TEST_ASSIGN_OR_DIE(Image image,
+                           Image::Create(memory_manager, /*iw=*/1, /*ih=*/2,
+                                         /*bitdepth=*/32, /*nb_chans=*/1));
+    image.channel[0].Row(0)[0] = INT32_MAX;
+    image.channel[0].Row(1)[0] = INT32_MIN;
+    EXPECT_FALSE(FwdSqueeze(image, squeezes, nullptr));
+    ASSERT_EQ(1u, image.channel.size());
+    EXPECT_EQ(INT32_MAX, image.channel[0].Row(0)[0]);
+    EXPECT_EQ(INT32_MIN, image.channel[0].Row(1)[0]);
+  }
+  // Benign samples still squeeze and unsqueeze losslessly.
+  {
+    SCOPED_TRACE("benign");
+    params.horizontal = true;
+    squeezes[0] = params;
+    JXL_TEST_ASSIGN_OR_DIE(Image image,
+                           Image::Create(memory_manager, /*iw=*/4, /*ih=*/1,
+                                         /*bitdepth=*/32, /*nb_chans=*/1));
+    static const pixel_type kRow[4] = {5, 2, -3, 7};
+    for (size_t x = 0; x < 4; x++) image.channel[0].Row(0)[x] = kRow[x];
+    ASSERT_TRUE(FwdSqueeze(image, squeezes, nullptr));
+    ASSERT_TRUE(InvSqueeze(image, squeezes, nullptr));
+    for (size_t x = 0; x < 4; x++) {
+      EXPECT_EQ(kRow[x], image.channel[0].Row(0)[x]) << "x = " << x;
+    }
   }
 }
 
