@@ -1222,7 +1222,12 @@ jxl::Status JxlEncoder::ProcessOneEnqueuedInput() {
       if (input_frame->option_values.cparams.patches != jxl::Override::kOff) {
         patches_possible = true;
       }
-      if (save_as_reference == 3) {
+      if ((!last_frame && save_as_reference == 3) ||
+          input_frame->option_values.header.layer_info.blend_info.source == 3 ||
+          std::any_of(
+              input_frame->option_values.extra_channel_blend_info.cbegin(),
+              input_frame->option_values.extra_channel_blend_info.cend(),
+              [](const JxlBlendInfo& ecbi) { return ecbi.source == 3; })) {
         used_reference_3 = true;
       }
       if (patches_possible && used_reference_3) {
