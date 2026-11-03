@@ -409,6 +409,7 @@ struct JxlDecoder {
 
   // Set to true if either an image out buffer or an image out callback was set.
   bool image_out_buffer_set;
+  bool image_out_buffer_is_for_preview;
 
   // Owned by the caller, buffer for preview or full resolution image.
   void* image_out_buffer;
@@ -750,6 +751,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->box_count = 0;
   dec->downsampling_target = 8;
   dec->image_out_buffer_set = false;
+  dec->image_out_buffer_is_for_preview = false;
   dec->image_out_buffer = nullptr;
   dec->image_out_init_callback = nullptr;
   dec->image_out_run_callback = nullptr;
@@ -1432,6 +1434,11 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       }
 
       if (dec->image_out_buffer_set) {
+        if (!!dec->image_out_buffer &&
+            (dec->preview_frame != dec->image_out_buffer_is_for_preview)) {
+          return JXL_API_ERROR("API misuse: wrong out buffer is set %d",
+                               (int)dec->preview_frame);
+        }
         size_t xsize;
         size_t ysize;
         GetCurrentDimensions(dec, xsize, ysize);
@@ -2434,6 +2441,10 @@ size_t JxlDecoderGetIntendedDownsamplingRatio(JxlDecoder* dec) {
 
 JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
   if (!dec->image_out_buffer_set) return JXL_DEC_ERROR;
+  if (!!dec->image_out_buffer &&
+      (dec->preview_frame != dec->image_out_buffer_is_for_preview)) {
+    return JXL_API_ERROR("API misuse: wrong out buffer is set");
+  }
   if (dec->frame_stage != FrameStage::kFull) {
     return JXL_DEC_ERROR;
   }
@@ -2530,9 +2541,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
   if (size < min_size) return JXL_DEC_ERROR;
 
   dec->image_out_buffer_set = true;
+  dec->image_out_buffer_is_for_preview = true;
   dec->image_out_buffer = buffer;
   dec->image_out_size = size;
   dec->image_out_format = *format;
+  dec->image_out_run_callback = nullptr;
 
   return JXL_DEC_SUCCESS;
 }
@@ -2572,9 +2585,11 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
   if (size < min_size) return JXL_DEC_ERROR;
 
   dec->image_out_buffer_set = true;
+  dec->image_out_buffer_is_for_preview = false;
   dec->image_out_buffer = buffer;
   dec->image_out_size = size;
   dec->image_out_format = *format;
+  dec->image_out_run_callback = nullptr;
 
   return JXL_DEC_SUCCESS;
 }
@@ -2672,6 +2687,7 @@ JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
   dec->image_out_destroy_callback = destroy_callback;
   dec->image_out_init_opaque = init_opaque;
   dec->image_out_format = *format;
+  dec->image_out_buffer = nullptr;
 
   return JXL_DEC_SUCCESS;
 }
