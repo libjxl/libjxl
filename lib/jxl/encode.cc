@@ -1432,8 +1432,15 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
           enc, JXL_ENC_ERR_BAD_INPUT,
           "Cannot use RGB ICC profile with num_color_channels != 3");
     }
-    // TODO(jon): also check that a kBlack extra channel is provided in the CMYK
-    // case
+    if (enc->metadata.m.color_encoding.IsCMYK()) {
+      if (enc->basic_info.num_extra_channels < 1) {
+        return JXL_API_ERROR(
+            enc, JXL_ENC_ERR_BAD_INPUT,
+            "For CMYK there should be at least one extra channel (black)");
+        // TODO(jon): check that a kBlack extra channel is provided in the
+        // CMYK case
+      }
+    }
   }
   enc->color_encoding_set = true;
   if (!enc->intensity_target_set) {
