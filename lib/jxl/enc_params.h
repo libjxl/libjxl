@@ -40,7 +40,6 @@ struct CompressParams {
   bool disable_perceptual_optimizations = false;
 
   SpeedTier speed_tier = SpeedTier::kSquirrel;
-  bool speed_tier_tested = false;
   int brotli_effort = -1;
 
   // 0 = default.
