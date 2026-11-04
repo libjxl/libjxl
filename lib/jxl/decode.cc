@@ -410,6 +410,15 @@ struct JxlDecoder {
   JxlBoxType box_decoded_type;  // Underlying type for brob boxes
   // Set to true right after a JXL_DEC_BOX event only.
   bool box_event;
+  // Set to true right after a JXL_DEC_BOX event only; cleared once the box
+  // content decoder has been started for that box. Starting the content
+  // decoder must wait for the event so that a per-box
+  // JxlDecoderSetDecompressBoxes call made after the event takes effect.
+  bool new_box;
+  // Whether the box content decoder has been started for the current box; a
+  // JxlDecoderSetDecompressBoxes call cannot affect the current box anymore
+  // at that point.
+  bool box_content_active;
   bool decompress_boxes;
 
   bool box_out_buffer_set;
@@ -756,6 +765,8 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   memset(dec->box_type, 0, sizeof(dec->box_type));
   memset(dec->box_decoded_type, 0, sizeof(dec->box_decoded_type));
   dec->box_event = false;
+  dec->new_box = false;
+  dec->box_content_active = false;
   dec->box_stage = BoxStage::kHeader;
   dec->jxl_file_format_version = 0;
   dec->next_jxlp_index = 0;
@@ -1690,6 +1701,20 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       }
       if ((dec->events_wanted & JXL_DEC_BOX) &&
           dec->box_out_buffer_set_current_box) {
+        if (dec->new_box) {
+          // Start the box content decoder only now: the JXL_DEC_BOX event
+          // has been delivered, so a JxlDecoderSetDecompressBoxes call made
+          // after the event (the documented per-box window) is taken into
+          // account. Starting it at box-header time would latch the previous
+          // setting instead (https://github.com/libjxl/libjxl/issues/4581).
+          bool decompress =
+              dec->decompress_boxes && memcmp(dec->box_type, "brob", 4) == 0;
+          dec->box_content_decoder.StartBox(decompress,
+                                            dec->box_contents_unbounded,
+                                            dec->box_contents_size);
+          dec->new_box = false;
+          dec->box_content_active = true;
+        }
         uint8_t* next_out = dec->box_out_buffer + dec->box_out_buffer_pos;
         size_t avail_out = dec->box_out_buffer_size - dec->box_out_buffer_pos;
 
@@ -1700,9 +1725,11 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
             next_out - (dec->box_out_buffer + dec->box_out_buffer_pos);
         dec->box_out_buffer_pos += produced;
 
-        if (box_result == JXL_DEC_BOX_COMPLETE &&
-            !(dec->events_wanted & JXL_DEC_BOX_COMPLETE)) {
-          box_result = JXL_DEC_SUCCESS;
+        if (box_result == JXL_DEC_BOX_COMPLETE) {
+          dec->box_content_active = false;
+          if (!(dec->events_wanted & JXL_DEC_BOX_COMPLETE)) {
+            box_result = JXL_DEC_SUCCESS;
+          }
         }
 
         // Don't return JXL_DEC_NEED_MORE_INPUT: the box stages below, instead,
@@ -1905,14 +1932,6 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         }
       }
 #endif
-#if JPEGXL_ENABLE_BOXES
-      if (dec->events_wanted & JXL_DEC_BOX) {
-        bool decompress =
-            dec->decompress_boxes && memcmp(dec->box_type, "brob", 4) == 0;
-        dec->box_content_decoder.StartBox(
-            decompress, dec->box_contents_unbounded, dec->box_contents_size);
-      }
-#endif
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
       if (dec->store_exif == 1 || dec->store_xmp == 1) {
         bool brob = memcmp(dec->box_type, "brob", 4) == 0;
@@ -1945,6 +1964,7 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
 
       if (dec->events_wanted & JXL_DEC_BOX) {
         dec->box_event = true;
+        dec->new_box = true;
         dec->box_out_buffer_set_current_box = false;
         return JXL_DEC_BOX;
       }
@@ -2033,6 +2053,7 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
               dec->InjectNextBufferedJxlpBox(has_more_data));
           if (has_more_data) continue;
           dec->box_stage = BoxStage::kHeader;
+          dec->box_content_active = false;
           continue;
         }
       }
@@ -2075,6 +2096,7 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       }
       // Box fully buffered; parse the next box header.
       dec->box_stage = BoxStage::kHeader;
+      dec->box_content_active = false;
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
     } else if (dec->box_stage == BoxStage::kJpegRecon) {
       if (!dec->jpeg_decoder.IsParsingBox()) {
@@ -2114,6 +2136,7 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         }
 
         dec->box_stage = BoxStage::kHeader;
+        dec->box_content_active = false;
         // If successful JPEG reconstruction, return the success if the user
         // cares about it, otherwise continue.
         if (dec->events_wanted & JXL_DEC_JPEG_RECONSTRUCTION) {
@@ -2155,6 +2178,7 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         // Full box available, skip all its remaining bytes
         dec->AdvanceInput(remaining);
         dec->box_stage = BoxStage::kHeader;
+        dec->box_content_active = false;
       }
     } else {
       JXL_DEBUG_ABORT("Unreachable");
@@ -2927,6 +2951,11 @@ JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
                                               JXL_BOOL decompress) {
   // TODO(lode): return error if libbrotli is not compiled in the jxl decoding
   // library
+  if (dec->box_content_active) {
+    return JXL_API_ERROR(
+        "can only change box decompression before decoding or directly after "
+        "a JXL_DEC_BOX event");
+  }
   dec->decompress_boxes = FROM_JXL_BOOL(decompress);
   return JXL_DEC_SUCCESS;
 }

@@ -113,6 +113,9 @@ enum CodeStreamBoxFormat {
   kCSBF_Multi_Last_Empty_Other,
   // Have a compressed exif box before a regular codestream box
   kCSBF_Brob_Exif,
+  // Multiple identical compressed exif boxes before and after a regular
+  // codestream box
+  kCSBF_Brob_Exif_Repeated,
   // Not a value but used for counting amount of enum entries
   kCSBF_NUM_ENTRIES,
 };
@@ -418,6 +421,9 @@ std::vector<uint8_t> CreateTestJXLCodestream(
       }
       if (add_container == kCSBF_Brob_Exif) {
         Bytes(box_brob_exif, box_brob_exif_size).AppendTo(c);
+      } else if (add_container == kCSBF_Brob_Exif_Repeated) {
+        Bytes(box_brob_exif, box_brob_exif_size).AppendTo(c);
+        Bytes(box_brob_exif, box_brob_exif_size).AppendTo(c);
       }
       AppendU32BE(add_container == kCSBF_Single_Zero_Terminated
                       ? 0
@@ -431,6 +437,8 @@ std::vector<uint8_t> CreateTestJXLCodestream(
       if (add_container == kCSBF_Single_Other) {
         AppendTestBox(unk1_box_type, unk1_box_contents, unk1_box_size, false,
                       &c);
+      } else if (add_container == kCSBF_Brob_Exif_Repeated) {
+        Bytes(box_brob_exif, box_brob_exif_size).AppendTo(c);
       }
       compressed.swap(c);
     }
@@ -2195,6 +2203,8 @@ TEST(DecodeTest, ExtraBytesAfterCompressedStream) {
       // If boxes are not required, the decoder won't consume the last empty
       // jxlp box.
       last_unknown_box_size = 12 + unk3_box_size + 8;
+    } else if (box_format == kCSBF_Brob_Exif_Repeated) {
+      last_unknown_box_size = box_brob_exif_size;
     }
     jxl::TestCodestreamParams params;
     params.box_format = box_format;
@@ -5615,6 +5625,215 @@ JXL_BOXES_TEST(DecodeTest, ExifBrobBoxTest) {
 
     JxlDecoderDestroy(dec);
   }
+}
+
+// JxlDecoderSetDecompressBoxes documents that it can be changed "directly
+// after a JXL_DEC_BOX event" (https://github.com/libjxl/libjxl/issues/4581).
+// The setting must apply per box: a toggle made after the event must not be
+// ignored in favor of the value latched before the event, and must not leak
+// into the following box.
+JXL_BOXES_TEST(DecodeTest, DecompressBrobBoxPerBoxToggleTest) {
+  size_t xsize = 1;
+  size_t ysize = 1;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  jxl::TestCodestreamParams params;
+  // Lossless to verify pixels exactly after roundtrip.
+  params.cparams.SetLossless();
+  params.box_format = kCSBF_Brob_Exif_Repeated;
+  params.add_icc_profile = true;
+  std::vector<uint8_t> compressed = jxl::CreateTestJXLCodestream(
+      jxl::Bytes(pixels.data(), pixels.size()), xsize, ysize, 4, params);
+
+  for (int streaming = 0; streaming < 2; ++streaming) {
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
+
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, JXL_DEC_BOX));
+    if (!streaming) {
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+      JxlDecoderCloseInput(dec);
+    }
+    // for streaming input case
+    const uint8_t* next_in = compressed.data();
+    size_t avail_in = 0;
+    size_t total_in = 0;
+    size_t step_size = 64;
+
+    std::vector<uint8_t> box_buffer;
+    size_t box_num_output;
+    int exif_begin_count = 0;
+    int exif_end_count = 0;
+    bool decompress = false;
+
+    for (;;) {
+      JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+      if (status == JXL_DEC_NEED_MORE_INPUT) {
+        if (streaming) {
+          size_t remaining = JxlDecoderReleaseInput(dec);
+          EXPECT_LE(remaining, avail_in);
+          next_in += avail_in - remaining;
+          avail_in = remaining;
+          size_t amount = step_size;
+          if (total_in + amount > compressed.size()) {
+            amount = compressed.size() - total_in;
+          }
+          avail_in += amount;
+          total_in += amount;
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderSetInput(dec, next_in, avail_in));
+          if (total_in == compressed.size()) JxlDecoderCloseInput(dec);
+        } else {
+          FAIL();
+          break;
+        }
+      } else if (status == JXL_DEC_BOX || status == JXL_DEC_SUCCESS) {
+        if (!box_buffer.empty()) {
+          EXPECT_LT(0, exif_begin_count);
+          ++exif_end_count;
+          size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
+          box_num_output = box_buffer.size() - remaining;
+          // Expect that the output has the same size and contents as the
+          // compressed/uncompressed exif data. Only check contents if the sizes
+          // match to avoid comparing uninitialized memory in the test.
+          if (decompress) {
+            EXPECT_EQ(box_num_output, exif_uncompressed_size);
+            if (box_num_output == exif_uncompressed_size) {
+              EXPECT_EQ(0, memcmp(box_buffer.data(), exif_uncompressed,
+                                  exif_uncompressed_size));
+            }
+          } else {
+            EXPECT_EQ(box_num_output, box_brob_exif_size - 8u);
+            if (box_num_output == box_brob_exif_size - 8u) {
+              EXPECT_EQ(0, memcmp(box_buffer.data(), box_brob_exif + 8,
+                                  box_num_output));
+            }
+          }
+          box_buffer.clear();
+        }
+        if (status == JXL_DEC_SUCCESS) break;
+        JxlBoxType type;
+        EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_TRUE));
+        if (BoxTypeEquals("Exif", type)) {
+          ++exif_begin_count;
+          // There are 3 brob/Exif boxes in the input.
+          // Decompress only the second.
+          decompress = exif_begin_count == 2;
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderSetDecompressBoxes(
+                        dec, decompress ? JXL_TRUE : JXL_FALSE));
+          box_buffer.resize(8);
+          JxlDecoderSetBoxBuffer(dec, box_buffer.data(), box_buffer.size());
+        }
+      } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+        size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
+        box_num_output = box_buffer.size() - remaining;
+        box_buffer.resize(box_buffer.size() * 2);
+        JxlDecoderSetBoxBuffer(dec, box_buffer.data() + box_num_output,
+                               box_buffer.size() - box_num_output);
+      } else {
+        // We do not expect any other events or errors
+        FAIL();
+        break;
+      }
+    }
+
+    EXPECT_EQ(3, exif_begin_count);
+    EXPECT_EQ(3, exif_end_count);
+
+    JxlDecoderDestroy(dec);
+  }
+}
+
+// Once a box's content decoding has started, the decompression mode of that
+// box is fixed; a JxlDecoderSetDecompressBoxes call at that point must be
+// rejected rather than silently ignored (the documented windows are "before
+// decoding" and "directly after a JXL_DEC_BOX event").
+JXL_BOXES_TEST(DecodeTest, SetDecompressBoxesMidBoxRejectedTest) {
+  size_t xsize = 1;
+  size_t ysize = 1;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  jxl::TestCodestreamParams params;
+  params.cparams.SetLossless();
+  params.box_format = kCSBF_Brob_Exif_Repeated;
+  params.add_icc_profile = true;
+  std::vector<uint8_t> compressed = jxl::CreateTestJXLCodestream(
+      jxl::Bytes(pixels.data(), pixels.size()), xsize, ysize, 4, params);
+
+  // Stream in tiny chunks so that the first brob box's content is processed
+  // only partially, keeping the box mid-flight while we try to toggle.
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, JXL_DEC_BOX));
+  const uint8_t* next_in = compressed.data();
+  size_t avail_in = 0;
+  size_t total_in = 0;
+  constexpr size_t kStepSize = 8;
+
+  std::vector<uint8_t> box_buffer;
+  int mid_box_checks = 0;
+  bool armed = false;
+
+  for (;;) {
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+    if (status == JXL_DEC_NEED_MORE_INPUT) {
+      size_t remaining = JxlDecoderReleaseInput(dec);
+      EXPECT_LE(remaining, avail_in);
+      next_in += avail_in - remaining;
+      avail_in = remaining;
+      size_t amount = kStepSize;
+      if (total_in + amount > compressed.size()) {
+        amount = compressed.size() - total_in;
+      }
+      avail_in += amount;
+      total_in += amount;
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetInput(dec, next_in, avail_in));
+      if (total_in == compressed.size()) JxlDecoderCloseInput(dec);
+    } else if (status == JXL_DEC_BOX || status == JXL_DEC_SUCCESS) {
+      if (!box_buffer.empty()) {
+        size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
+        (void)remaining;
+        box_buffer.clear();
+      }
+      if (status == JXL_DEC_SUCCESS) break;
+      JxlBoxType type;
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_TRUE));
+      if (BoxTypeEquals("Exif", type)) {
+        box_buffer.resize(8);
+        JxlDecoderSetBoxBuffer(dec, box_buffer.data(), box_buffer.size());
+        armed = true;
+      }
+    } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+      size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
+      size_t box_num_output = box_buffer.size() - remaining;
+      box_buffer.resize(box_buffer.size() * 2);
+      JxlDecoderSetBoxBuffer(dec, box_buffer.data() + box_num_output,
+                             box_buffer.size() - box_num_output);
+      armed = true;
+    } else if (status == JXL_DEC_SUCCESS) {
+      break;
+    } else {
+      FAIL() << "unexpected status " << status;
+      break;
+    }
+    // Directly after the JXL_DEC_BOX event the documented window is open:
+    // the change must be accepted and is checked here as the control cell.
+    if (armed && status == JXL_DEC_BOX) {
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetDecompressBoxes(dec, JXL_FALSE));
+    }
+    // Once the box content decode is in flight (the first NEED_MORE_INPUT or
+    // NEED_MORE_OUTPUT after the buffer was set), changing the mode must fail
+    // rather than being silently ignored.
+    if (armed && (status == JXL_DEC_NEED_MORE_INPUT ||
+                  status == JXL_DEC_BOX_NEED_MORE_OUTPUT)) {
+      EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetDecompressBoxes(dec, JXL_TRUE))
+          << "mid-box toggle was accepted";
+      ++mid_box_checks;
+      armed = false;
+    }
+  }
+
+  EXPECT_LT(0, mid_box_checks);
+  JxlDecoderDestroy(dec);
 }
 
 JXL_BOXES_TEST(DecodeTest, PartialCodestreamBoxTest) {
