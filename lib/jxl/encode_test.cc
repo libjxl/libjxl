@@ -1577,6 +1577,52 @@ JXL_TRANSCODE_JPEG_TEST(EncodeTest, JPEGFrameTest) {
   }
 }
 
+// The adapter that serves a frame given as a whole-image buffer must not hand
+// out data from outside of that image, whatever rectangle it is asked for.
+TEST(EncodeTest, ChunkedFrameAdapterRectBounds) {
+  if (JXL_IS_DEBUG_BUILD) {
+    GTEST_SKIP() << "Out-of-bounds requests abort in debug builds";
+  }
+  constexpr size_t kXSize = 5;
+  constexpr size_t kYSize = 3;
+  const JxlPixelFormat color_format = {3, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  const JxlPixelFormat alpha_format = {1, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  std::vector<uint8_t> color(kXSize * kYSize * 3);
+  std::vector<uint8_t> alpha(kXSize * kYSize);
+  jxl::JxlEncoderChunkedFrameAdapter adapter(kXSize, kYSize,
+                                             /*num_extra_channels=*/1);
+  ASSERT_TRUE(
+      adapter.SetFromBuffer(0, color.data(), color.size(), color_format));
+  ASSERT_TRUE(
+      adapter.SetFromBuffer(1, alpha.data(), alpha.size(), alpha_format));
+  JxlChunkedFrameInputSource input = adapter.GetInputSource();
+  size_t row_offset;
+  auto color_at = [&](size_t x, size_t y, size_t xs, size_t ys) {
+    return input.get_color_channel_data_at(input.opaque, x, y, xs, ys,
+                                           &row_offset);
+  };
+  auto extra_at = [&](size_t ec, size_t x, size_t y, size_t xs, size_t ys) {
+    return input.get_extra_channel_data_at(input.opaque, ec, x, y, xs, ys,
+                                           &row_offset);
+  };
+
+  EXPECT_EQ(color.data(), color_at(0, 0, kXSize, kYSize));
+  EXPECT_EQ(kXSize * 3, row_offset);
+  EXPECT_EQ(color.data() + (2 * kXSize + 4) * 3, color_at(4, 2, 1, 1));
+  EXPECT_NE(nullptr, extra_at(0, 0, 0, kXSize, kYSize));
+
+  EXPECT_EQ(nullptr, color_at(1, 0, kXSize, 1));
+  EXPECT_EQ(nullptr, color_at(0, 1, 1, kYSize));
+  EXPECT_EQ(nullptr, color_at(kXSize, 0, 1, 1));
+  EXPECT_EQ(nullptr, color_at(0, kYSize, 1, 1));
+  // Rectangles whose end does not fit in size_t.
+  EXPECT_EQ(nullptr, color_at(2, 0, SIZE_MAX, 1));
+  EXPECT_EQ(nullptr, color_at(0, 2, 1, SIZE_MAX));
+  EXPECT_EQ(nullptr, extra_at(0, 0, 1, kXSize, kYSize));
+  // There is only one extra channel.
+  EXPECT_EQ(nullptr, extra_at(1, 0, 0, 1, 1));
+}
+
 namespace {
 class JxlStreamingAdapter {
  public:
@@ -2233,4 +2279,252 @@ TEST(EncodeTest, OutputModeComparisonTest) {
   //   over mode 1 (~0.22% of the ~285 kB file).
   EXPECT_LT(m1d.size(), m2d.size());
   EXPECT_SLIGHTLY_BELOW(m2d.size() - m1d.size(), 750);
+}
+
+TEST(EncodeTest, StripAlphaSetting) {
+  auto encode_rgba = [](bool opaque, int strip_alpha, float distance,
+                        bool animation = false, size_t num_frames = 1,
+                        bool with_box = false) -> uint32_t {
+    size_t xsize = 16;
+    size_t ysize = 16;
+    std::vector<uint8_t> pixels(xsize * ysize * 4);
+    for (size_t y = 0; y < ysize; ++y) {
+      for (size_t x = 0; x < xsize; ++x) {
+        size_t idx = (y * xsize + x) * 4;
+        pixels[idx + 0] = 120;
+        pixels[idx + 1] = 130;
+        pixels[idx + 2] = 140;
+        pixels[idx + 3] = opaque ? 255 : (x == 0 && y == 0 ? 128 : 255);
+      }
+    }
+
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    JxlEncoderFrameSettings* fs =
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+
+    JxlBasicInfo basic_info;
+    JxlEncoderInitBasicInfo(&basic_info);
+    basic_info.xsize = xsize;
+    basic_info.ysize = ysize;
+    basic_info.bits_per_sample = 8;
+    basic_info.num_color_channels = 3;
+    basic_info.num_extra_channels = 1;
+    basic_info.alpha_bits = 8;
+    if (animation) {
+      basic_info.have_animation = JXL_TRUE;
+    }
+    if (distance == 0.0f) {
+      basic_info.uses_original_profile = JXL_TRUE;
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetFrameLossless(fs, JXL_TRUE));
+    } else {
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetFrameDistance(fs, distance));
+    }
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+
+    JxlColorEncoding color_encoding;
+    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+
+    JxlExtraChannelInfo extra_channel_info;
+    JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &extra_channel_info);
+    extra_channel_info.bits_per_sample = 8;
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetExtraChannelInfo(enc.get(), 0, &extra_channel_info));
+
+    if (strip_alpha != -1) {
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderFrameSettingsSetOption(
+                    fs, JXL_ENC_FRAME_SETTING_STRIP_ALPHA, strip_alpha));
+    }
+
+    if (with_box) {
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseBoxes(enc.get()));
+      std::vector<uint8_t> exif_data = {1, 2, 3, 4};
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddBox(enc.get(), "Exif", exif_data.data(),
+                                 exif_data.size(), JXL_FALSE));
+      JxlEncoderCloseBoxes(enc.get());
+    }
+
+    JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+    for (size_t f = 0; f < num_frames; ++f) {
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddImageFrame(fs, &pixel_format, pixels.data(),
+                                        pixels.size()));
+    }
+    JxlEncoderCloseFrames(enc.get());
+
+    std::vector<uint8_t> compressed(64);
+    uint8_t* next_out = compressed.data();
+    size_t avail_out = compressed.size();
+    ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+
+    // Decode to check basic info
+    JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO));
+    JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+    JxlDecoderCloseInput(dec.get());
+
+    JxlBasicInfo decoded_info = {};
+    for (;;) {
+      JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
+      if (status == JXL_DEC_BASIC_INFO) {
+        EXPECT_EQ(JXL_DEC_SUCCESS,
+                  JxlDecoderGetBasicInfo(dec.get(), &decoded_info));
+        break;
+      }
+      if (status == JXL_DEC_SUCCESS || status == JXL_DEC_ERROR) break;
+    }
+    return decoded_info.num_extra_channels;
+  };
+
+  // Opaque image.
+  EXPECT_EQ(
+      0u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1, /*distance=*/1.0f));
+  EXPECT_EQ(
+      1u, encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1, /*distance=*/0.0f));
+  EXPECT_EQ(1u,
+            encode_rgba(/*opaque=*/true, /*strip_alpha=*/0, /*distance=*/1.0f));
+  EXPECT_EQ(0u,
+            encode_rgba(/*opaque=*/true, /*strip_alpha=*/2, /*distance=*/0.0f));
+  EXPECT_EQ(0u,
+            encode_rgba(/*opaque=*/true, /*strip_alpha=*/1, /*distance=*/0.0f));
+
+  // Transparent image.
+  EXPECT_EQ(
+      1u, encode_rgba(/*opaque=*/false, /*strip_alpha=*/-1, /*distance=*/1.0f));
+  EXPECT_EQ(
+      1u, encode_rgba(/*opaque=*/false, /*strip_alpha=*/2, /*distance=*/1.0f));
+  EXPECT_EQ(
+      0u, encode_rgba(/*opaque=*/false, /*strip_alpha=*/1, /*distance=*/1.0f));
+
+  // Metadata boxes preceding image frames.
+  EXPECT_EQ(0u, encode_rgba(
+                    /*opaque=*/true, /*strip_alpha=*/-1, /*distance=*/1.0f,
+                    /*animation=*/false, /*num_frames=*/1, /*with_box=*/true));
+  EXPECT_EQ(1u, encode_rgba(
+                    /*opaque=*/true, /*strip_alpha=*/0, /*distance=*/1.0f,
+                    /*animation=*/false, /*num_frames=*/1, /*with_box=*/true));
+
+  // Animation and multi-frame images.
+  EXPECT_EQ(1u,
+            encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1, /*distance=*/1.0f,
+                        /*animation=*/true));
+  EXPECT_EQ(1u,
+            encode_rgba(/*opaque=*/true, /*strip_alpha=*/2, /*distance=*/1.0f,
+                        /*animation=*/true));
+  EXPECT_EQ(0u,
+            encode_rgba(/*opaque=*/true, /*strip_alpha=*/1, /*distance=*/1.0f,
+                        /*animation=*/true));
+  EXPECT_EQ(1u,
+            encode_rgba(/*opaque=*/true, /*strip_alpha=*/-1, /*distance=*/1.0f,
+                        /*animation=*/false, /*num_frames=*/2));
+  EXPECT_EQ(1u,
+            encode_rgba(/*opaque=*/true, /*strip_alpha=*/2, /*distance=*/1.0f,
+                        /*animation=*/false, /*num_frames=*/2));
+  EXPECT_EQ(0u,
+            encode_rgba(/*opaque=*/true, /*strip_alpha=*/1, /*distance=*/1.0f,
+                        /*animation=*/false, /*num_frames=*/2));
+
+  // Interleaved RGBA passed without declaring extra channels in basic_info.
+  {
+    auto encode_undeclared = [](int strip_alpha) -> JxlEncoderStatus {
+      std::vector<uint8_t> pixels(16 * 16 * 4, 255);
+      JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+      JxlEncoderFrameSettings* fs =
+          JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+      JxlBasicInfo basic_info;
+      JxlEncoderInitBasicInfo(&basic_info);
+      basic_info.xsize = 16;
+      basic_info.ysize = 16;
+      basic_info.num_color_channels = 3;
+      basic_info.num_extra_channels = 0;
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+      JxlColorEncoding color_encoding;
+      JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+      if (strip_alpha != -1) {
+        EXPECT_EQ(JXL_ENC_SUCCESS,
+                  JxlEncoderFrameSettingsSetOption(
+                      fs, JXL_ENC_FRAME_SETTING_STRIP_ALPHA, strip_alpha));
+      }
+      JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+      return JxlEncoderAddImageFrame(fs, &pixel_format, pixels.data(),
+                                     pixels.size());
+    };
+    EXPECT_EQ(JXL_ENC_SUCCESS, encode_undeclared(1));
+    EXPECT_EQ(JXL_ENC_ERROR, encode_undeclared(0));
+    EXPECT_EQ(JXL_ENC_ERROR, encode_undeclared(2));
+    EXPECT_EQ(JXL_ENC_ERROR, encode_undeclared(-1));
+  }
+
+  // Float32 alpha exactness test.
+  {
+    auto encode_float = [](float alpha_val, int strip_alpha) -> uint32_t {
+      std::vector<float> pixels(16 * 16 * 4, 0.5f);
+      for (size_t i = 3; i < pixels.size(); i += 4) pixels[i] = alpha_val;
+      JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+      JxlEncoderFrameSettings* fs =
+          JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+      JxlBasicInfo basic_info;
+      JxlEncoderInitBasicInfo(&basic_info);
+      basic_info.xsize = 16;
+      basic_info.ysize = 16;
+      basic_info.bits_per_sample = 32;
+      basic_info.exponent_bits_per_sample = 8;
+      basic_info.num_color_channels = 3;
+      basic_info.num_extra_channels = 1;
+      basic_info.alpha_bits = 32;
+      basic_info.alpha_exponent_bits = 8;
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetFrameDistance(fs, 1.0f));
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+      JxlColorEncoding color_encoding;
+      JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+      JxlExtraChannelInfo extra_channel_info;
+      JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &extra_channel_info);
+      extra_channel_info.bits_per_sample = 32;
+      extra_channel_info.exponent_bits_per_sample = 8;
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetExtraChannelInfo(
+                                     enc.get(), 0, &extra_channel_info));
+      if (strip_alpha != -1) {
+        EXPECT_EQ(JXL_ENC_SUCCESS,
+                  JxlEncoderFrameSettingsSetOption(
+                      fs, JXL_ENC_FRAME_SETTING_STRIP_ALPHA, strip_alpha));
+      }
+      JxlPixelFormat pixel_format = {4, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddImageFrame(fs, &pixel_format, pixels.data(),
+                                        pixels.size() * sizeof(float)));
+      JxlEncoderCloseFrames(enc.get());
+      std::vector<uint8_t> compressed(64);
+      uint8_t* next_out = compressed.data();
+      size_t avail_out = compressed.size();
+      ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+      JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO));
+      JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+      JxlDecoderCloseInput(dec.get());
+      JxlBasicInfo decoded_info = {};
+      for (;;) {
+        JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
+        if (status == JXL_DEC_BASIC_INFO) {
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderGetBasicInfo(dec.get(), &decoded_info));
+          break;
+        }
+        if (status == JXL_DEC_SUCCESS || status == JXL_DEC_ERROR) break;
+      }
+      return decoded_info.num_extra_channels;
+    };
+    EXPECT_EQ(0u, encode_float(1.0f, 2));
+    EXPECT_EQ(1u, encode_float(0.999995f, 2));
+  }
 }

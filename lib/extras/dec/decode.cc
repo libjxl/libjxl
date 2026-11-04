@@ -38,14 +38,19 @@ namespace {
 constexpr size_t kMinBytes = 9;
 
 std::string GetExtension(const std::string& path) {
-  // Pattern: "name.png"
-  size_t pos = path.find_last_of('.');
-  if (pos != std::string::npos) {
-    return path.substr(pos);
+  // Pattern: "name.png". Only the final path component can carry an
+  // extension: strip any directory part (both '/' and '\' separators)
+  // first, so that dots inside directory names (e.g. "a.png/../../b")
+  // cannot leak into the returned extension, and a trailing dot that
+  // carries no extension (e.g. "out.png.") is reported as none.
+  const size_t sep = path.find_last_of("/\\");
+  const std::string base =
+      (sep == std::string::npos) ? path : path.substr(sep + 1);
+  const size_t pos = base.find_last_of('.');
+  if (pos == std::string::npos || pos == base.size() - 1) {
+    return "";
   }
-
-  // Extension not found
-  return "";
+  return base.substr(pos);
 }
 
 }  // namespace

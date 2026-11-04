@@ -18,6 +18,7 @@ https://www.bestpractices.dev/projects/7845)
 https://securityscorecards.dev/viewer/?uri=github.com/libjxl/libjxl)
 [![codecov](https://codecov.io/gh/libjxl/libjxl/branch/main/graph/badge.svg)](
 https://codecov.io/gh/libjxl/libjxl)
+[![Discord](https://img.shields.io/discord/794206087879852103?label=Discord&logo=discord)](https://discord.gg/DqkQgDRTFu)
 
 <img src="doc/jxl.svg" width="100" align="right" alt="JXL logo">
 

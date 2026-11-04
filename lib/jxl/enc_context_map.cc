@@ -148,7 +148,7 @@ Status EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
           4 + 4 + ctx_map.size() * 10 + 1024,
       LayerType::Ac, aux_out, [&]() -> Status {
         if (dct[0].empty() && dct[1].empty() && dct[2].empty() && qft.empty() &&
-            ctx_map.size() == 21 &&
+            ctx_map.size() == sizeof(BlockCtxMap::kDefaultCtxMap) &&
             std::equal(ctx_map.begin(), ctx_map.end(),
                        BlockCtxMap::kDefaultCtxMap)) {
           writer->Write(1, 1);  // default
