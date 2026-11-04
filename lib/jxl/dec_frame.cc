@@ -322,7 +322,6 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
 Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
   const size_t gx = dc_group_id % frame_dim_.xsize_dc_groups;
   const size_t gy = dc_group_id / frame_dim_.xsize_dc_groups;
-  const LoopFilter& lf = frame_header_.loop_filter;
   if (frame_header_.encoding == FrameEncoding::kVarDCT &&
       !(frame_header_.flags & FrameHeader::kUseDcFrame)) {
     JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeVarDCTDC(
@@ -338,8 +337,6 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeAcMetadata(
         frame_header_, dc_group_id, br, dec_state_));
-  } else if (lf.epf_iters > 0) {
-    FillImage(kInvSigmaNum / lf.epf_sigma_for_modular, &dec_state_->sigma);
   }
   decoded_dc_groups_[dc_group_id] = JXL_TRUE;
   return true;
@@ -358,6 +355,11 @@ Status FrameDecoder::FinalizeDC() {
         memory_manager, dec_state_->shared->quantizer.MulDC(),
         &dec_state_->shared_storage.dc_storage,
         frame_header_.chroma_subsampling, pool_));
+  }
+  if (frame_header_.encoding == FrameEncoding::kModular &&
+      frame_header_.loop_filter.epf_iters > 0) {
+    FillImage(kInvSigmaNum / frame_header_.loop_filter.epf_sigma_for_modular,
+              &dec_state_->sigma);
   }
 
   finalized_dc_ = true;
