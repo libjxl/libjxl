@@ -461,13 +461,13 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
   for (const auto& point : control_points_) {
     current_delta_x += point.first;
     current_delta_y += point.second;
+    JXL_RETURN_IF_ERROR(
+        ValidateSplinePointPos(current_delta_x, current_delta_y));
     manhattan_distance += std::abs(current_delta_x) + std::abs(current_delta_y);
     if (manhattan_distance > area_limit) {
       return JXL_FAILURE("Too large manhattan_distance reached: %" PRIu64,
                          manhattan_distance);
     }
-    JXL_RETURN_IF_ERROR(
-        ValidateSplinePointPos(current_delta_x, current_delta_y));
     current_x += current_delta_x;
     current_y += current_delta_y;
     JXL_RETURN_IF_ERROR(ValidateSplinePointPos(current_x, current_y));
