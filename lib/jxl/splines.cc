@@ -671,7 +671,8 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
     JXL_RETURN_IF_ERROR(data_.splines[i].Dequantize(
         data_.starting_points[i], quantization_adjustment_,
         color_correlation.YtoXRatio(0), color_correlation.YtoBRatio(0),
-        image_xsize * image_ysize, &total_estimated_area_reached, spline));
+        static_cast<uint64_t>(image_xsize) * image_ysize,
+        &total_estimated_area_reached, spline));
     if (std::adjacent_find(spline.control_points.begin(),
                            spline.control_points.end()) !=
         spline.control_points.end()) {
@@ -685,7 +686,8 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
   // TODO(firsching) Change this into a JXL_FAILURE for level 5 codestreams.
   if (total_estimated_area_reached >
       std::min(
-          (8 * image_xsize * image_ysize + (static_cast<uint64_t>(1) << 25)),
+          (static_cast<uint64_t>(8) * image_xsize * image_ysize +
+           (static_cast<uint64_t>(1) << 25)),
           (static_cast<uint64_t>(1) << 30))) {
     JXL_WARNING(
         "Large total_estimated_area_reached, expect slower decoding: %" PRIu64,

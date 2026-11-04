@@ -783,15 +783,23 @@ std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
   return thresholds;
 }
 
+constexpr int32_t kSampleRange = 512;
+
+void ClampSamples(std::vector<int32_t> &samples) {
+  for (int& v : samples) {
+    v = jxl::Clamp1(v, -kSampleRange, kSampleRange);
+  }
+}
+
+// Should be invoked on values in the range [-kSampleRange .. kSampleRange].
 std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
                                      size_t num_chunks) {
   if (samples.empty()) return {};
   int min = *std::min_element(samples.begin(), samples.end());
-  constexpr int kRange = 512;
-  min = jxl::Clamp1(min, -kRange, kRange);
-  std::vector<uint32_t> counts(2 * kRange + 1);
+  // TODO(eustas): could be less for abs samples.
+  std::vector<uint32_t> counts(2 * kSampleRange + 1);
   for (int s : samples) {
-    uint32_t sample_offset = jxl::Clamp1(s, -kRange, kRange) - min;
+    uint32_t sample_offset = s - min;
     counts[sample_offset]++;
   }
   std::vector<int32_t> thresholds = QuantizeHistogram(counts, num_chunks);
@@ -818,6 +826,7 @@ void QuantMap(const std::vector<int32_t> &from, std::vector<T> &to,
 }
 }  // namespace
 
+// Note: `pixel_samples` and `diff_samples` contents are expendable.
 void TreeSamples::PreQuantizeProperties(
     const StaticPropRange &range,
     const std::vector<ModularMultiplierInfo> &multiplier_info,
@@ -881,6 +890,7 @@ void TreeSamples::PreQuantizeProperties(
   std::vector<int32_t> pixel_thresholds;
   auto quantize_pixel_property = [&]() {
     if (pixel_thresholds.empty()) {
+      ClampSamples(pixel_samples);
       pixel_thresholds = QuantizeSamples(pixel_samples, max_property_values);
     }
     return pixel_thresholds;
@@ -898,6 +908,7 @@ void TreeSamples::PreQuantizeProperties(
   std::vector<int32_t> diff_thresholds;
   auto quantize_diff_property = [&]() {
     if (diff_thresholds.empty()) {
+      ClampSamples(diff_samples);
       diff_thresholds = QuantizeSamples(diff_samples, max_property_values);
     }
     return diff_thresholds;

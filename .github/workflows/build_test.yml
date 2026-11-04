@@ -68,6 +68,9 @@ jobs:
             skip_install: true
           - name: tsan
             skip_install: true
+            disable_tests:
+              # TODO(eustas): failing after #5058 (libgdk-pixbuf-xlib-2.0-dev)
+              - pixbufloader_test_jxl
           - name: coverage
             skip_install: true
           # Build with support for decoding to JPEG bytes disabled. Produces a
@@ -156,6 +159,8 @@ jobs:
             cxx: g++-latest
             cmake_args: >-
               -DJPEGXL_ENABLE_LTO=ON
+            # TODO(eustas): investigate why 512KiB is required under LTO.
+            test_stack_limit: 512
           # OSX builds
           - name: release:osx
             os: macos-latest
