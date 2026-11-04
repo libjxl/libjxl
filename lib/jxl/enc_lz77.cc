@@ -478,6 +478,11 @@ public:
         for (uint16_t i = 0; i < hash_table_[h].size; i++) {
             const uint32_t candidate = hash_table_[h].data[i];
             size_t dist = pos - candidate;
+            // Only propose distances the decoder can represent faithfully:
+            // it clamps distances to kWindowSize (see dec_ans.h) and treats
+            // distance 0 as "fill with zeros", so anything outside (0,
+            // kWindowSize] would silently reconstruct from the wrong source.
+            if (dist == 0 || dist > kWindowSize) continue;
             size_t cur_length = MatchLength(candidate, pos);
 
             // Skip matches shorter than current best or min_length
