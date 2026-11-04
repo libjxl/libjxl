@@ -8,6 +8,7 @@
 #include <jxl/types.h>
 
 #include <algorithm>
+#include <cinttypes>  // PRIu64
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -41,6 +42,17 @@ struct JPEGInfo {
   size_t num_intermarker = 0;
   bool has_dri = false;
 };
+
+// Budget for the total declared APP/COM/inter-marker payload bytes when
+// reading a JPEG reconstruction bundle. Each marker length is a 16-bit
+// attacker-controlled value that is trusted before any payload byte is read,
+// so without a budget a ~49 KiB bundle can force allocation of up to 16384
+// markers x 64 KiB = 1 GiB (measured: VmHWM 3.5 MiB -> 1053 MiB on a 49200
+// byte jbrd box). 64 MiB comfortably covers the marker payloads of any real
+// JPEG (EXIF/XMP/ICC/COM) while keeping the amplification bounded.
+// This update extends the original PR #5025 budget (APP/COM only) to the
+// inter-marker family, which #5025 did not cover.
+constexpr uint64_t kMaxTotalMarkerPayloadBytes = uint64_t{1} << 26;
 
 Status VisitMarker(uint8_t* marker, Visitor* visitor, JPEGInfo* info) {
   uint32_t marker32 = *marker - 0xc0;
@@ -112,10 +124,9 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   JXL_ENSURE(app_marker_type.size() == info.num_app_markers);
   JXL_ENSURE(com_data.size() == info.num_com_markers);
   JXL_ENSURE(scan_info.size() == info.num_scans);
-  // Bound total APP/COM marker payload allocation: each marker's 16-bit length
-  // is attacker-controlled and trusted before any payload is read, so a small
-  // bitstream can otherwise claim ~1 GiB (16384 markers x 64 KiB).
-  size_t total_marker_bytes = 0;
+  // Running total of the declared APP/COM/inter-marker payload bytes; the
+  // allocations are refused before they happen once the budget is exceeded.
+  uint64_t total_marker_bytes = 0;
   for (size_t i = 0; i < app_data.size(); i++) {
     auto& app = app_data[i];
     // Encodes up to 8 different values.
@@ -132,9 +143,9 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     uint32_t len = app.size() - 1;
     JXL_RETURN_IF_ERROR(visitor->Bits(16, 0, &len));
     if (visitor->IsReading()) {
-      total_marker_bytes += static_cast<size_t>(len) + 1;
-      if (total_marker_bytes > (size_t{1} << 26)) {
-        return JXL_FAILURE("Too much APP marker data: %" PRIuS " bytes\n",
+      total_marker_bytes += static_cast<uint64_t>(len) + 1;
+      if (total_marker_bytes > kMaxTotalMarkerPayloadBytes) {
+        return JXL_FAILURE("Too much APP marker data: %" PRIu64 " bytes",
                            total_marker_bytes);
       }
       app.resize(len + 1);
@@ -147,9 +158,9 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     uint32_t len = com.size() - 1;
     JXL_RETURN_IF_ERROR(visitor->Bits(16, 0, &len));
     if (visitor->IsReading()) {
-      total_marker_bytes += static_cast<size_t>(len) + 1;
-      if (total_marker_bytes > (size_t{1} << 26)) {
-        return JXL_FAILURE("Too much COM marker data: %" PRIuS " bytes\n",
+      total_marker_bytes += static_cast<uint64_t>(len) + 1;
+      if (total_marker_bytes > kMaxTotalMarkerPayloadBytes) {
+        return JXL_FAILURE("Too much COM marker data: %" PRIu64 " bytes",
                            total_marker_bytes);
       }
       com.resize(len + 1);
@@ -381,7 +392,16 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   for (size_t i = 0; i < info.num_intermarker; ++i) {
     uint32_t len = visitor->IsReading() ? 0 : inter_marker_data[i].size();
     JXL_RETURN_IF_ERROR(visitor->Bits(16, 0, &len));
-    if (visitor->IsReading()) inter_marker_data_sizes.emplace_back(len);
+    if (visitor->IsReading()) {
+      // Inter-marker payloads are stored as `len` bytes (unlike APP/COM,
+      // which keep the 2-byte length field in the payload).
+      total_marker_bytes += static_cast<uint64_t>(len);
+      if (total_marker_bytes > kMaxTotalMarkerPayloadBytes) {
+        return JXL_FAILURE("Too much inter-marker data: %" PRIu64 " bytes",
+                           total_marker_bytes);
+      }
+      inter_marker_data_sizes.emplace_back(len);
+    }
   }
   uint32_t tail_data_len = tail_data.size();
   if (!visitor->IsReading() && tail_data_len > 4260096) {
