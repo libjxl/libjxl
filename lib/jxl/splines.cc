@@ -585,6 +585,7 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
 void Splines::SetData(SplineDataView data) {
   Clear();
   data_ = data;
+  quantization_adjustment_ = data.quantization_adjustment;
 }
 
 void Splines::Clear() {

@@ -110,6 +110,8 @@ struct SplineSegmentSpan {
 struct SplineDataView {
   Span<const QuantizedSpline> splines;
   Span<const Spline::Point> starting_points;
+  // The quantization adjustment the splines were quantized with (signaled).
+  int32_t quantization_adjustment = 0;
   bool HasAny() const { return !splines.empty(); }
 };
 

@@ -7,11 +7,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <queue>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -20,6 +22,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -567,6 +570,22 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels,
   return {};
 }
 
+void SetWPHeader(const ModularOptions& options, weighted::Header* header) {
+  Bundle::Init(header);
+  weighted::PredictorMode(options.wp_mode, header);
+  if (options.has_wp_params) {
+    const auto& p = options.wp_params;
+    header->p1C = p[0];
+    header->p2C = p[1];
+    header->p3Ca = p[2];
+    header->p3Cb = p[3];
+    header->p3Cc = p[4];
+    header->p3Cd = p[5];
+    header->p3Ce = p[6];
+    for (size_t k = 0; k < 4; k++) header->w[k] = p[7 + k];
+  }
+}
+
 StatusOr<Tree> LearnTree(
     const Image *images, const ModularOptions *options, const uint32_t start,
     const uint32_t stop,
@@ -623,7 +642,7 @@ StatusOr<Tree> LearnTree(
     // encode transforms
     Bundle::Init(&wp_header);
     if (PredictorHasWeighted(options[i].predictor)) {
-      weighted::PredictorMode(options[i].wp_mode, &wp_header);
+      SetWPHeader(options[i], &wp_header);
     }
 
     // Gather tree data
@@ -648,6 +667,330 @@ StatusOr<Tree> LearnTree(
   return tree;
 }
 
+Status EvaluateTreeWithZeroResiduals(const Tree& tree, size_t group_id,
+                                     Image* image,
+                                     const weighted::Header& wp_header) {
+  JxlMemoryManager* memory_manager = image->memory_manager();
+  for (size_t chan = 0; chan < image->channel.size(); chan++) {
+    Channel& channel = image->channel[chan];
+    if (channel.w == 0 || channel.h == 0) continue;
+    std::array<pixel_type, kNumStaticProperties> static_props = {
+        {static_cast<pixel_type>(chan), static_cast<int>(group_id)}};
+    bool has_wp;
+    bool is_wp_only;
+    bool is_gradient_only;
+    size_t num_props;
+    FlatTree flat_tree = FilterTree(tree, static_props, &num_props, &has_wp,
+                                    &is_wp_only, &is_gradient_only);
+    MATreeLookup tree_lookup(flat_tree);
+    Properties properties(num_props);
+    const ptrdiff_t onerow = channel.plane.PixelsPerRow();
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(memory_manager,
+                        properties.size() - kNumNonrefProperties, channel.w));
+    weighted::State wp_state(wp_header, channel.w, channel.h);
+    for (size_t y = 0; y < channel.h; y++) {
+      pixel_type* JXL_RESTRICT p = channel.Row(y);
+      InitPropsRow(&properties, static_props, y);
+      PrecomputeReferences(channel, y, *image, chan, &references);
+      for (size_t x = 0; x < channel.w; x++) {
+        // A zero residual: the sample is the prediction (a decoder computes
+        // residual * multiplier + guess).
+        PredictionResult res =
+            PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
+                          tree_lookup, references, &wp_state);
+        p[x] = res.guess;
+        wp_state.UpdateErrors(p[x], x, y, channel.w);
+      }
+    }
+  }
+  return true;
+}
+
+// The tokens of a stream whose residuals are `pattern` (all zero if null), for
+// the channels [0, num_coded) of `image` (only their sizes are used), with LZ77
+// applied: the residuals of the first prefix + period samples as symbols, in
+// the contexts `tree` gives there (their samples are computed: prediction plus
+// residual), then one LZ77 copy with the period as distance for the rest.
+// `distance_multiplier` is the stream's (the widest channel), `num_contexts`
+// the tree's; the distance symbol goes to context num_contexts.
+Status TokenizeResidualPattern(const Tree& tree, size_t group_id,
+                               const Image& image, size_t num_coded,
+                               const ResidualPattern* pattern,
+                               size_t distance_multiplier, size_t num_contexts,
+                               bool inner_lz77, bool context_costs,
+                               const weighted::Header& wp_header,
+                               std::vector<Token>* tokens) {
+  static const ResidualPattern kZero = {{}, {0}};
+  const ResidualPattern& p = pattern ? *pattern : kZero;
+  JXL_ENSURE(!p.period.empty());
+  size_t total = 0;
+  // The meta channels (e.g. palette entries) keep zero residuals: the
+  // pattern starts at the first other channel.
+  size_t meta = 0;
+  for (size_t i = 0; i < num_coded; i++) {
+    total += image.channel[i].w * image.channel[i].h;
+    if (i < image.nb_meta_channels && !p.include_meta) {
+      meta += image.channel[i].w * image.channel[i].h;
+    }
+  }
+  if (total == 0) return true;
+  const size_t period = p.period.size();
+  const size_t prefix = meta + p.prefix.size();
+  const auto residual = [&](size_t k) -> int32_t {
+    if (k < meta) return 0;
+    return k < prefix ? p.prefix[k - meta] : p.period[(k - prefix) % period];
+  };
+  // Symbols up to here; the LZ77 copy needs at least min_length (3) values.
+  size_t literals = std::min(total, prefix + period);
+  if (total - literals < 3) literals = total;
+  // Samples of the first literals (+ 1 for the copy's context).
+  const size_t needed = std::min(total, literals + 1);
+  JxlMemoryManager* memory_manager = image.memory_manager();
+  Image work(memory_manager);
+  work.w = image.w;
+  work.h = image.h;
+  work.bitdepth = image.bitdepth;
+  work.nb_meta_channels = image.nb_meta_channels;
+  // Residual symbols and contexts of the first `needed` samples.
+  std::vector<uint32_t> values;
+  std::vector<int> contexts;
+  values.reserve(needed);
+  contexts.reserve(needed);
+  size_t k = 0;
+  for (size_t chan = 0; chan < num_coded && k < needed; chan++) {
+    const Channel& from = image.channel[chan];
+    JXL_ASSIGN_OR_RETURN(
+        Channel ch, Channel::Create(memory_manager, from.w, from.h, from.hshift,
+                                    from.vshift));
+    work.channel.emplace_back(std::move(ch));
+    Channel& channel = work.channel.back();
+    if (channel.w == 0 || channel.h == 0) continue;
+    std::array<pixel_type, kNumStaticProperties> static_props = {
+        {static_cast<pixel_type>(chan), static_cast<int>(group_id)}};
+    bool has_wp;
+    bool is_wp_only;
+    bool is_gradient_only;
+    size_t num_props;
+    FlatTree flat_tree = FilterTree(tree, static_props, &num_props, &has_wp,
+                                    &is_wp_only, &is_gradient_only);
+    MATreeLookup tree_lookup(flat_tree);
+    Properties properties(num_props);
+    const ptrdiff_t onerow = channel.plane.PixelsPerRow();
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(memory_manager,
+                        properties.size() - kNumNonrefProperties, channel.w));
+    weighted::State wp_state(wp_header, channel.w, channel.h);
+    for (size_t y = 0; y < channel.h && k < needed; y++) {
+      pixel_type* JXL_RESTRICT row = channel.Row(y);
+      InitPropsRow(&properties, static_props, y);
+      PrecomputeReferences(channel, y, work, chan, &references);
+      for (size_t x = 0; x < channel.w && k < needed; x++, k++) {
+        PredictionResult res =
+            PredictTreeWP(&properties, channel.w, row + x, onerow, x, y,
+                          tree_lookup, references, &wp_state);
+        const int32_t r = residual(k);
+        row[x] = static_cast<pixel_type>(res.guess + static_cast<int64_t>(r) *
+                                                         res.multiplier);
+        wp_state.UpdateErrors(row[x], x, y, channel.w);
+        values.push_back(PackSigned(r));
+        contexts.push_back(res.context);
+      }
+    }
+  }
+  const auto distance_symbol = [&](size_t distance) {
+    return static_cast<uint32_t>(distance_multiplier != 0
+                                     ? distance + kNumSpecialDistances - 1
+                                     : distance - 1);
+  };
+  // The literal part, with LZ77 where it repeats itself (greedy: runs and
+  // repeated blocks of at least kMinMatch values, found with a hash of the
+  // next 4 values and the most recent candidates).
+  constexpr size_t kMinMatch = 8;
+  constexpr size_t kMaxCandidates = 32;
+  // Estimated cost of the literals, so that a match is only taken where it
+  // replaces more bits than it costs: from the frequencies of the values
+  // (with a floor), or with context_costs from their frequencies in their own
+  // context. Neither is always better (contexts get clustered), so the tool
+  // tries both.
+  std::vector<double> lit_cost(literals + 1, 0.0);
+  {
+    std::unordered_map<uint64_t, size_t> freq;
+    std::unordered_map<int, size_t> ctx_total;
+    const auto key = [&](size_t i) -> uint64_t {
+      if (!context_costs) return values[i];
+      return (static_cast<uint64_t>(static_cast<uint32_t>(contexts[i])) << 32) |
+             values[i];
+    };
+    for (size_t i = 0; i < literals; i++) {
+      freq[key(i)]++;
+      ctx_total[contexts[i]]++;
+    }
+    for (size_t i = 0; i < literals; i++) {
+      const double f = static_cast<double>(freq[key(i)]);
+      lit_cost[i + 1] =
+          lit_cost[i] +
+          (context_costs
+               ? std::log2(static_cast<double>(ctx_total[contexts[i]]) / f)
+               : std::max(0.05, std::log2(static_cast<double>(literals) / f)));
+    }
+  }
+  const auto match_cost = [](size_t len, size_t dist) {
+    return 6.0 + 2.0 * std::log2(static_cast<double>(len)) +
+           std::log2(static_cast<double>(dist) + 1.0);
+  };
+  std::unordered_map<uint64_t, std::vector<uint32_t>> recent;
+  const auto hash_at = [&](size_t i) {
+    uint64_t h = 0;
+    for (size_t j = 0; j < 4; j++)
+      h = h * 0x9E3779B97F4A7C15ull + values[i + j];
+    return h;
+  };
+  for (size_t i = 0; i < literals;) {
+    size_t best_len = 0;
+    if (!inner_lz77) {
+      tokens->emplace_back(contexts[i], values[i]);
+      i++;
+      continue;
+    }
+    size_t best_dist = 0;
+    size_t run_len = 0;
+    const auto try_candidate = [&](size_t j) {
+      size_t len = 0;
+      while (i + len < literals && values[j + len] == values[i + len]) len++;
+      if (j + 1 == i) run_len = len;
+      if (len >= kMinMatch &&
+          lit_cost[i + len] - lit_cost[i] > match_cost(len, i - j) &&
+          len > best_len) {
+        best_len = len;
+        best_dist = i - j;
+      }
+    };
+    if (i > 0) try_candidate(i - 1);
+    if (best_len < kMinMatch && run_len >= kMinMatch) {
+      // A run that is not worth a match (its literals are cheap): no match
+      // starting inside it gains more, so it is all literals (and it is not
+      // scanned again from every position: quadratic on long runs).
+      for (size_t e = i; e < i + run_len; e++) {
+        tokens->emplace_back(contexts[e], values[e]);
+      }
+      for (size_t e = i; e < i + run_len && e + 4 <= literals; e++) {
+        auto& list = recent[hash_at(e)];
+        if (list.size() == kMaxCandidates) list.erase(list.begin());
+        list.push_back(static_cast<uint32_t>(e));
+      }
+      i += run_len;
+      continue;
+    }
+    if (i + 4 <= literals) {
+      auto it = recent.find(hash_at(i));
+      if (it != recent.end()) {
+        for (size_t c = it->second.size(); c-- > 0;)
+          try_candidate(it->second[c]);
+      }
+    }
+    const size_t step = best_len >= kMinMatch ? best_len : 1;
+    if (best_len >= kMinMatch) {
+      tokens->emplace_back(contexts[i], static_cast<uint32_t>(best_len - 3));
+      tokens->back().is_lz77_length = true;
+      tokens->emplace_back(static_cast<uint32_t>(num_contexts),
+                           distance_symbol(best_dist));
+    } else {
+      tokens->emplace_back(contexts[i], values[i]);
+    }
+    for (size_t e = i; e < i + step; e++) {
+      if (e + 4 > literals) break;
+      auto& list = recent[hash_at(e)];
+      if (list.size() == kMaxCandidates) list.erase(list.begin());
+      list.push_back(static_cast<uint32_t>(e));
+    }
+    i += step;
+  }
+  if (literals < total) {
+    // The rest: a copy of the values `period` back (the pattern repeats with
+    // that period from the end of the prefix on).
+    tokens->emplace_back(contexts[literals],
+                         static_cast<uint32_t>(total - literals - 3));
+    tokens->back().is_lz77_length = true;
+    tokens->emplace_back(static_cast<uint32_t>(num_contexts),
+                         distance_symbol(period));
+  }
+  return true;
+}
+
+Status EvaluateTreeWithResiduals(const Tree& tree, size_t group_id,
+                                 const ResidualPattern* pattern,
+                                 size_t first_channel, size_t num_channels,
+                                 Image* image, int64_t* min_value,
+                                 int64_t* max_value,
+                                 const weighted::Header& wp_header) {
+  JxlMemoryManager* memory_manager = image->memory_manager();
+  size_t meta = 0;
+  const bool include_meta = pattern != nullptr && pattern->include_meta;
+  for (size_t i = 0;
+       !include_meta && i < image->nb_meta_channels && i < num_channels; i++) {
+    meta += image->channel[i].w * image->channel[i].h;
+  }
+  const size_t prefix = pattern ? meta + pattern->prefix.size() : 0;
+  const auto residual = [&](size_t k) -> int64_t {
+    if (!pattern || k < meta) return 0;
+    if (k < prefix) return pattern->prefix[k - meta];
+    return pattern->period[(k - prefix) % pattern->period.size()];
+  };
+  size_t k = 0;
+  for (size_t chan = 0; chan < num_channels; chan++) {
+    Channel& channel = image->channel[chan];
+    if (channel.w == 0 || channel.h == 0) continue;
+    if (chan < first_channel) {
+      k += channel.w * channel.h;
+      for (size_t y = 0; y < channel.h; y++) {
+        for (size_t x = 0; x < channel.w; x++) {
+          *min_value = std::min<int64_t>(*min_value, channel.Row(y)[x]);
+          *max_value = std::max<int64_t>(*max_value, channel.Row(y)[x]);
+        }
+      }
+      continue;
+    }
+    std::array<pixel_type, kNumStaticProperties> static_props = {
+        {static_cast<pixel_type>(chan), static_cast<int>(group_id)}};
+    bool has_wp;
+    bool is_wp_only;
+    bool is_gradient_only;
+    size_t num_props;
+    FlatTree flat_tree = FilterTree(tree, static_props, &num_props, &has_wp,
+                                    &is_wp_only, &is_gradient_only);
+    MATreeLookup tree_lookup(flat_tree);
+    Properties properties(num_props);
+    const ptrdiff_t onerow = channel.plane.PixelsPerRow();
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(memory_manager,
+                        properties.size() - kNumNonrefProperties, channel.w));
+    weighted::State wp_state(wp_header, channel.w, channel.h);
+    for (size_t y = 0; y < channel.h; y++) {
+      pixel_type* JXL_RESTRICT row = channel.Row(y);
+      InitPropsRow(&properties, static_props, y);
+      PrecomputeReferences(channel, y, *image, chan, &references);
+      for (size_t x = 0; x < channel.w; x++, k++) {
+        PredictionResult res =
+            PredictTreeWP(&properties, channel.w, row + x, onerow, x, y,
+                          tree_lookup, references, &wp_state);
+        const int64_t v = res.guess + residual(k) * res.multiplier;
+        *min_value = std::min(*min_value, v);
+        *max_value = std::max(*max_value, v);
+        // Saturate so that later predictions stay well defined.
+        row[x] = static_cast<pixel_type>(std::min<int64_t>(
+            std::max<int64_t>(v, std::numeric_limits<pixel_type>::min()),
+            std::numeric_limits<pixel_type>::max()));
+        wp_state.UpdateErrors(row[x], x, y, channel.w);
+      }
+    }
+  }
+  return true;
+}
+
 Status ModularCompress(const Image &image, const ModularOptions &options,
                        size_t group_id, const Tree &tree, GroupHeader &header,
                        std::vector<Token> &tokens, size_t *width) {
@@ -663,8 +1006,8 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
 
   // encode transforms
   Bundle::Init(&header);
-  if (PredictorHasWeighted(options.predictor)) {
-    weighted::PredictorMode(options.wp_mode, &header.wp_header);
+  if (PredictorHasWeighted(options.predictor) || options.has_wp_params) {
+    SetWPHeader(options, &header.wp_header);
   }
   header.transforms = image.transform;
   header.use_global_tree = true;
@@ -680,7 +1023,68 @@ Status ModularCompress(const Image &image, const ModularOptions &options,
     if (image.channel[i].w > image_width) image_width = image.channel[i].w;
     total_tokens += image.channel[i].w * image.channel[i].h;
   }
-  if (options.zero_tokens) {
+  if (options.zero_tokens && options.residual_patterns != nullptr) {
+    size_t num_coded = 0;
+    while (num_coded < nb_channels &&
+           !(num_coded >= image.nb_meta_channels &&
+             (image.channel[num_coded].w > options.max_chan_size ||
+              image.channel[num_coded].h > options.max_chan_size))) {
+      num_coded++;
+    }
+    const ResidualPattern* pattern = nullptr;
+    auto it = options.residual_patterns->find(static_cast<int>(group_id));
+    if (it == options.residual_patterns->end()) {
+      it = options.residual_patterns->find(-1);
+    }
+    if (it != options.residual_patterns->end()) pattern = &it->second;
+    JXL_RETURN_IF_ERROR(TokenizeResidualPattern(
+        tree, group_id, image, num_coded, pattern, image_width,
+        (tree.size() + 1) / 2, options.residual_inner_lz77,
+        options.residual_lz77_context_costs, header.wp_header, &tokens));
+  } else if (options.zero_tokens && options.code_meta_channels &&
+             image.nb_meta_channels > 0) {
+    // The meta channels are coded from the image; the other channels are
+    // what the tree gives with zero residuals, tokenized with their real
+    // contexts (so that the meta channels' contexts only hold their tokens).
+    size_t num_coded = 0;
+    while (num_coded < nb_channels &&
+           !(num_coded >= image.nb_meta_channels &&
+             (image.channel[num_coded].w > options.max_chan_size ||
+              image.channel[num_coded].h > options.max_chan_size))) {
+      num_coded++;
+    }
+    // Only the channels of this stream (the others may be placeholders).
+    Image coded(image.memory_manager());
+    coded.w = image.w;
+    coded.h = image.h;
+    coded.bitdepth = image.bitdepth;
+    coded.nb_meta_channels = image.nb_meta_channels;
+    for (size_t i = 0; i < num_coded; i++) {
+      const Channel& from = image.channel[i];
+      JXL_ASSIGN_OR_RETURN(
+          Channel ch, Channel::Create(image.memory_manager(), from.w, from.h,
+                                      from.hshift, from.vshift));
+      coded.channel.emplace_back(std::move(ch));
+    }
+    JXL_RETURN_IF_ERROR(EvaluateTreeWithZeroResiduals(tree, group_id, &coded,
+                                                      header.wp_header));
+    for (size_t i = 0; i < image.nb_meta_channels && i < num_coded; i++) {
+      for (size_t y = 0; y < image.channel[i].h; y++) {
+        memcpy(coded.channel[i].Row(y), image.channel[i].Row(y),
+               image.channel[i].w * sizeof(pixel_type));
+      }
+    }
+    size_t pos = tokens.size();
+    tokens.resize(pos + total_tokens);
+    Token* tokenp = tokens.data() + pos;
+    for (size_t i = 0; i < num_coded; i++) {
+      if (!coded.channel[i].w || !coded.channel[i].h) continue;
+      JXL_RETURN_IF_ERROR(
+          EncodeModularChannelMAANS(coded, i, header.wp_header, tree, &tokenp,
+                                    group_id, options.skip_encoder_fast_path));
+    }
+    JXL_ENSURE(tokenp == tokens.data() + tokens.size());
+  } else if (options.zero_tokens) {
     tokens.resize(tokens.size() + total_tokens, {0, 0});
   } else {
     // Do one big allocation for all the tokens we'll need,
@@ -734,8 +1138,8 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
   // encode transforms
   GroupHeader header;
   Bundle::Init(&header);
-  if (PredictorHasWeighted(options.predictor)) {
-    weighted::PredictorMode(options.wp_mode, &header.wp_header);
+  if (PredictorHasWeighted(options.predictor) || options.has_wp_params) {
+    SetWPHeader(options, &header.wp_header);
   }
   header.transforms = image.transform;
 

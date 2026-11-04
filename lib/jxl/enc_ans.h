@@ -130,6 +130,15 @@ Status EncodeHistograms(const EntropyEncodingData& codes, BitWriter* writer,
 // nullptr, the bit estimate will not take into account the context map (which
 // does not get written if `num_contexts` == 1).
 // Returns cost
+// Writes entropy codes in which every context always yields one fixed token
+// (tokens[context], below 2^15 - 1, coded without raw bits): prefix codes with
+// a single symbol each, so decoding any number of tokens reads no bits.
+StatusOr<size_t> EncodeFixedTokenHistograms(JxlMemoryManager* memory_manager,
+                                            const std::vector<uint32_t>& tokens,
+                                            EntropyEncodingData* codes,
+                                            BitWriter* writer, LayerType layer,
+                                            AuxOut* aux_out);
+
 StatusOr<size_t> BuildAndEncodeHistograms(
     JxlMemoryManager* memory_manager, const HistogramParams& params,
     size_t num_contexts, std::vector<std::vector<Token>>& tokens,
