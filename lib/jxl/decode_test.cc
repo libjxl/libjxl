@@ -4317,6 +4317,88 @@ TEST(DecodeTest, InputHandlingTestOneShot) {
   }
 }
 
+namespace {
+// Decodes `data`, counting JXL_DEC_FRAME_PROGRESSION events. The progressive
+// detail level must already be installed on `dec`. Returns the count.
+size_t CountProgressionEvents(JxlDecoder* dec, const std::vector<uint8_t>& data,
+                              JxlPixelFormat format) {
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME |
+                                               JXL_DEC_FRAME_PROGRESSION |
+                                               JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec, data.data(), data.size()));
+  JxlDecoderCloseInput(dec);
+  size_t progressions = 0;
+  std::vector<uint8_t> out;
+  for (;;) {
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+    if (status == JXL_DEC_FRAME_PROGRESSION) {
+      ++progressions;
+    } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+      size_t buffer_size;
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+      out.resize(buffer_size);
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetImageOutBuffer(dec, &format, out.data(),
+                                            out.size()));
+    } else if (status == JXL_DEC_FULL_IMAGE || status == JXL_DEC_SUCCESS) {
+      break;
+    } else if (status == JXL_DEC_BASIC_INFO || status == JXL_DEC_COLOR_ENCODING ||
+               status == JXL_DEC_FRAME) {
+      // Informational events: nothing to do.
+    } else {
+      ADD_FAILURE() << "Unexpected decoder status " << status;
+      break;
+    }
+  }
+  return progressions;
+}
+}  // namespace
+
+// The progressive-detail setting is not in the list of settings that
+// JxlDecoderRewind keeps, and JxlDecoderReset promises to restore every state
+// and setting as if the object were newly created. A non-default detail level
+// must therefore not survive JxlDecoderReset: the next decode has to pause at
+// the default (kDC) progression steps again.
+TEST(DecodeTest, ProgressiveDetailNotKeptAcrossReset) {
+  size_t xsize = 277;
+  size_t ysize = 280;
+  uint32_t num_channels = 3;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+  const jxl::PassDefinition kPassDefs[] = {
+      {2, 0, 4}, {4, 0, 4}, {8, 2, 2}, {8, 1, 2}, {8, 0, 1}};
+  jxl::ProgressiveMode progressive_mode{kPassDefs};
+  jxl::TestCodestreamParams params;
+  params.cparams.custom_progressive_mode = &progressive_mode;
+  std::vector<uint8_t> data = jxl::CreateTestJXLCodestream(
+      jxl::Bytes(pixels.data(), pixels.size()), xsize, ysize, num_channels,
+      params);
+  JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  // Reference: a freshly created decoder uses the default detail level (kDC).
+  size_t fresh_progressions;
+  {
+    JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+    fresh_progressions = CountProgressionEvents(dec.get(), data, format);
+  }
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  // First decode: install kPasses, which pauses at more progression steps than
+  // the default and so reports a different number of events.
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetProgressiveDetail(dec.get(), kPasses));
+  size_t passes_progressions = CountProgressionEvents(dec.get(), data, format);
+  EXPECT_NE(fresh_progressions, passes_progressions);
+
+  // Reset must drop the kPasses setting, so the second decode behaves like a
+  // fresh decoder again.
+  JxlDecoderReset(dec.get());
+  EXPECT_EQ(fresh_progressions, CountProgressionEvents(dec.get(), data, format));
+}
+
 JXL_TRANSCODE_JPEG_TEST(DecodeTest, InputHandlingTestJPEGOneshot) {
   TEST_LIBJPEG_SUPPORT();
   size_t xsize = 123;
