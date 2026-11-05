@@ -1294,10 +1294,10 @@ Status ModularFrameEncoder::MaybeRetuneJPEGTranscodeTreeThreshold(
   // AC metadata, and quantization tables. At effort 10, the default
   // splitting_heuristics_node_threshold can sometimes over-split the tree
   // and produce larger files than effort 9.
-  // Evaluate offsets around effort 9's values to find a local minimum
+  // Evaluate offsets at a variety of values to find a local minimum
   // of total modular bit cost without redoing the full-frame VarDCT AC work.
   const int base_threshold = 75 + 10 * cparams_.decoding_speed_tier;
-  const int jpeg_transcode_offsets[] = {0, 9, 12, 14, 16, 19};
+  const int jpeg_transcode_offsets[] = {0, 14, 65, 85, 105};
   constexpr size_t kNumOffsets =
       sizeof(jpeg_transcode_offsets) / sizeof(jpeg_transcode_offsets[0]);
 
