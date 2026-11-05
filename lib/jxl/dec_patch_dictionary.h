@@ -118,6 +118,8 @@ class PatchDictionary {
 
   void Clear() {
     positions_.clear();
+    ref_positions_.clear();
+    blendings_.clear();
     ComputePatchTree();
   }
 

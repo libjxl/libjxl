@@ -458,9 +458,9 @@ constexpr uint32_t MakeTag(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
 
 /** Reusable image data container. */
 struct Pixels {
-  // Use array instead of vector to avoid memory initialization.
-  uninitialized_vector<uint8_t> pixels_storage =
-      jxl::make_uninitialized_vector<uint8_t>(0);
+  // Zero-initialized: rows that libpng never delivers (truncated or corrupt
+  // data) are copied to the output as well.
+  std::vector<uint8_t> pixels_storage;
   size_t pixels_size = 0;
   std::vector<uint8_t*> rows;
   std::atomic<uint32_t> has_error{0};

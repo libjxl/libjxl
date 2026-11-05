@@ -125,8 +125,29 @@ JXL_INLINE void ComputePixel(
   Store(out, d, out_rows[2] + x);
 }
 
+template <typename D>
+JXL_INLINE void ComputePixelSingleChannel(const float dc_factor,
+                                          const float* JXL_RESTRICT row_top,
+                                          const float* JXL_RESTRICT row,
+                                          const float* JXL_RESTRICT row_bottom,
+                                          float* JXL_RESTRICT out_row,
+                                          size_t x) {
+  const D d;
+  auto mc = Undefined(d);
+  auto sm = Undefined(d);
+  auto gap = Set(d, 0.5f);
+  ComputePixelChannel(d, dc_factor, row_top, row, row_bottom, &mc, &sm, &gap,
+                      x);
+  auto factor = MulAdd(Set(d, -4.0f), gap, Set(d, 3.0f));
+  factor = ZeroIfNegative(factor);
+
+  auto out = MulAdd(Sub(sm, mc), factor, mc);
+  Store(out, d, out_row + x);
+}
+
 Status AdaptiveDCSmoothing(JxlMemoryManager* memory_manager,
                            const float* dc_factors, Image3F* dc,
+                           const YCbCrChromaSubsampling& chroma_subsampling,
                            ThreadPool* pool) {
   const size_t xsize = dc->xsize();
   const size_t ysize = dc->ysize();
@@ -137,63 +158,107 @@ Status AdaptiveDCSmoothing(JxlMemoryManager* memory_manager,
   // the x and b channels through color correlation.
   JXL_ENSURE(w1 + w2 < 0.25f);
 
-  JXL_ASSIGN_OR_RETURN(Image3F smoothed,
-                       Image3F::Create(memory_manager, xsize, ysize));
-  // Fill in borders that the loop below will not. First and last are unused.
-  for (size_t c = 0; c < 3; c++) {
-    for (size_t y : {static_cast<size_t>(0), ysize - 1}) {
-      memcpy(smoothed.PlaneRow(c, y), dc->PlaneRow(c, y),
-             xsize * sizeof(float));
-    }
-  }
-  auto process_row = [&](const uint32_t y, size_t /*thread*/) -> Status {
-    const float* JXL_RESTRICT rows_top[3]{
-        dc->ConstPlaneRow(0, y - 1),
-        dc->ConstPlaneRow(1, y - 1),
-        dc->ConstPlaneRow(2, y - 1),
-    };
-    const float* JXL_RESTRICT rows[3] = {
-        dc->ConstPlaneRow(0, y),
-        dc->ConstPlaneRow(1, y),
-        dc->ConstPlaneRow(2, y),
-    };
-    const float* JXL_RESTRICT rows_bottom[3] = {
-        dc->ConstPlaneRow(0, y + 1),
-        dc->ConstPlaneRow(1, y + 1),
-        dc->ConstPlaneRow(2, y + 1),
-    };
-    float* JXL_RESTRICT rows_out[3] = {
-        smoothed.PlaneRow(0, y),
-        smoothed.PlaneRow(1, y),
-        smoothed.PlaneRow(2, y),
-    };
-    for (size_t x : {static_cast<size_t>(0), xsize - 1}) {
-      for (size_t c = 0; c < 3; c++) {
-        rows_out[c][x] = rows[c][x];
+  if (chroma_subsampling.Is444()) {
+    JXL_ASSIGN_OR_RETURN(Image3F smoothed,
+                         Image3F::Create(memory_manager, xsize, ysize));
+    // Fill in borders that the loop below will not. First and last are unused.
+    for (size_t c = 0; c < 3; c++) {
+      for (size_t y : {static_cast<size_t>(0), ysize - 1}) {
+        memcpy(smoothed.PlaneRow(c, y), dc->PlaneRow(c, y),
+               xsize * sizeof(float));
       }
     }
+    auto process_row = [&](const uint32_t y, size_t /*thread*/) -> Status {
+      const float* JXL_RESTRICT rows_top[3]{
+          dc->ConstPlaneRow(0, y - 1),
+          dc->ConstPlaneRow(1, y - 1),
+          dc->ConstPlaneRow(2, y - 1),
+      };
+      const float* JXL_RESTRICT rows[3] = {
+          dc->ConstPlaneRow(0, y),
+          dc->ConstPlaneRow(1, y),
+          dc->ConstPlaneRow(2, y),
+      };
+      const float* JXL_RESTRICT rows_bottom[3] = {
+          dc->ConstPlaneRow(0, y + 1),
+          dc->ConstPlaneRow(1, y + 1),
+          dc->ConstPlaneRow(2, y + 1),
+      };
+      float* JXL_RESTRICT rows_out[3] = {
+          smoothed.PlaneRow(0, y),
+          smoothed.PlaneRow(1, y),
+          smoothed.PlaneRow(2, y),
+      };
+      for (size_t x : {static_cast<size_t>(0), xsize - 1}) {
+        for (size_t c = 0; c < 3; c++) {
+          rows_out[c][x] = rows[c][x];
+        }
+      }
 
-    size_t x = 1;
-    // First pixels
-    const size_t N = Lanes(D());
-    for (; x < std::min(N, xsize - 1); x++) {
-      ComputePixel<DScalar>(dc_factors, rows_top, rows, rows_bottom, rows_out,
-                            x);
+      size_t x = 1;
+      // First pixels
+      const size_t N = Lanes(D());
+      for (; x < std::min(N, xsize - 1); x++) {
+        ComputePixel<DScalar>(dc_factors, rows_top, rows, rows_bottom, rows_out,
+                              x);
+      }
+      // Full vectors.
+      for (; x + N <= xsize - 1; x += N) {
+        ComputePixel<D>(dc_factors, rows_top, rows, rows_bottom, rows_out, x);
+      }
+      // Last pixels.
+      for (; x < xsize - 1; x++) {
+        ComputePixel<DScalar>(dc_factors, rows_top, rows, rows_bottom, rows_out,
+                              x);
+      }
+      return true;
+    };
+    JXL_RETURN_IF_ERROR(RunOnPool(pool, 1, ysize - 1, ThreadPool::NoInit,
+                                  process_row, "DCSmoothingRow"));
+    dc->Swap(smoothed);
+  } else {
+    JXL_ASSIGN_OR_RETURN(ImageF smoothed,
+                         ImageF::Create(memory_manager, xsize, ysize));
+    for (size_t c = 0; c < 3; c++) {
+      const size_t xsize_c = xsize >> chroma_subsampling.HShift(c);
+      const size_t ysize_c = ysize >> chroma_subsampling.VShift(c);
+      if (ysize_c <= 2 || xsize_c <= 2) continue;
+      for (size_t y : {static_cast<size_t>(0), ysize_c - 1}) {
+        memcpy(smoothed.Row(y), dc->PlaneRow(c, y), xsize_c * sizeof(float));
+      }
+      auto process_row = [&](const uint32_t y, size_t /*thread*/) -> Status {
+        const float* JXL_RESTRICT row_top = dc->ConstPlaneRow(c, y - 1);
+        const float* JXL_RESTRICT row = dc->ConstPlaneRow(c, y);
+        const float* JXL_RESTRICT row_bottom = dc->ConstPlaneRow(c, y + 1);
+        float* JXL_RESTRICT row_out = smoothed.Row(y);
+        for (size_t x : {static_cast<size_t>(0), xsize_c - 1}) {
+          row_out[x] = row[x];
+        }
+
+        size_t x = 1;
+        // First pixels
+        const size_t N = Lanes(D());
+        for (; x < std::min(N, xsize_c - 1); x++) {
+          ComputePixelSingleChannel<DScalar>(dc_factors[c], row_top, row,
+                                             row_bottom, row_out, x);
+        }
+        // Full vectors.
+        for (; x + N <= xsize_c - 1; x += N) {
+          ComputePixelSingleChannel<D>(dc_factors[c], row_top, row, row_bottom,
+                                       row_out, x);
+        }
+        // Last pixels.
+        for (; x < xsize_c - 1; x++) {
+          ComputePixelSingleChannel<DScalar>(dc_factors[c], row_top, row,
+                                             row_bottom, row_out, x);
+        }
+        return true;
+      };
+      JXL_RETURN_IF_ERROR(RunOnPool(pool, 1, ysize_c - 1, ThreadPool::NoInit,
+                                    process_row, "DCSmoothingRow"));
+      dc->Plane(c).Swap(smoothed);
     }
-    // Full vectors.
-    for (; x + N <= xsize - 1; x += N) {
-      ComputePixel<D>(dc_factors, rows_top, rows, rows_bottom, rows_out, x);
-    }
-    // Last pixels.
-    for (; x < xsize - 1; x++) {
-      ComputePixel<DScalar>(dc_factors, rows_top, rows, rows_bottom, rows_out,
-                            x);
-    }
-    return true;
-  };
-  JXL_RETURN_IF_ERROR(RunOnPool(pool, 1, ysize - 1, ThreadPool::NoInit,
-                                process_row, "DCSmoothingRow"));
-  dc->Swap(smoothed);
+  }
   return true;
 }
 
@@ -307,9 +372,10 @@ HWY_EXPORT(DequantDC);
 HWY_EXPORT(AdaptiveDCSmoothing);
 Status AdaptiveDCSmoothing(JxlMemoryManager* memory_manager,
                            const float* dc_factors, Image3F* dc,
+                           const YCbCrChromaSubsampling& chroma_subsampling,
                            ThreadPool* pool) {
-  return HWY_DYNAMIC_DISPATCH(AdaptiveDCSmoothing)(memory_manager, dc_factors,
-                                                   dc, pool);
+  return HWY_DYNAMIC_DISPATCH(AdaptiveDCSmoothing)(
+      memory_manager, dc_factors, dc, chroma_subsampling, pool);
 }
 
 void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,

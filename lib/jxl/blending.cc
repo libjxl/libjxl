@@ -142,6 +142,10 @@ Status PerformBlending(
   };
 
   const auto copy = [&](const float* const* src) {
+    // Match the guards the other blend paths already carry: a zero-width
+    // ImageF is not allocated (see PlaneBase::Allocate), so tmp.Row(p) is null
+    // and memcpy would be handed a null destination even with a zero size.
+    if (xsize == 0) return;
     for (size_t p = 0; p < 3; p++) {
       memcpy(tmp.Row(p), src[p] + x0, xsize * sizeof(**src));
     }
