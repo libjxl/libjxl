@@ -47,6 +47,73 @@ Status PnmParseUnsigned(Bytes str, size_t* v);
 
 namespace {
 
+TEST(CodecTest, EncodersRejectSurplusFrameExtraChannel) {
+  PackedPixelFile ppf;
+  ppf.info.xsize = 1;
+  ppf.info.ysize = 1;
+  ppf.info.num_color_channels = 1;
+  ppf.info.bits_per_sample = 8;
+  const JxlPixelFormat gray{1, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+  JXL_TEST_ASSIGN_OR_DIE(PackedFrame frame, PackedFrame::Create(1, 1, gray));
+  JXL_TEST_ASSIGN_OR_DIE(PackedImage ec, PackedImage::Create(1, 1, gray));
+  memset(frame.color.pixels(), 0x7f, frame.color.pixels_size);
+  memset(ec.pixels(), 0x3f, ec.pixels_size);
+  frame.extra_channels.emplace_back(std::move(ec));
+  ppf.frames.emplace_back(std::move(frame));
+  for (const char* extension : {".pgm", ".png"}) {
+    auto encoder = Encoder::FromExtension(extension);
+    if (!encoder) continue;
+    EncodedImage encoded;
+    EXPECT_FALSE(encoder->Encode(ppf, &encoded, nullptr)) << extension;
+  }
+}
+
+TEST(CodecTest, PackedPixelFileValidExtraChannelCounts) {
+  PackedPixelFile ppf;
+  ppf.info.xsize = 1;
+  ppf.info.ysize = 1;
+  ppf.info.num_color_channels = 1;
+  ppf.info.bits_per_sample = 8;
+  PackedExtraChannel metadata{};
+  metadata.ec_info.bits_per_sample = 8;
+  ppf.extra_channels_info.push_back(metadata);
+  const JxlPixelFormat gray{1, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+  for (int i = 0; i < 2; ++i) {
+    JXL_TEST_ASSIGN_OR_DIE(PackedFrame frame, PackedFrame::Create(1, 1, gray));
+    JXL_TEST_ASSIGN_OR_DIE(PackedImage ec, PackedImage::Create(1, 1, gray));
+    memset(frame.color.pixels(), 0x7f, frame.color.pixels_size);
+    memset(ec.pixels(), 0x3f, ec.pixels_size);
+    frame.extra_channels.emplace_back(std::move(ec));
+    ppf.frames.emplace_back(std::move(frame));
+  }
+  ASSERT_TRUE(ppf.Validate());
+  for (const char* extension : {".pgm", ".png"}) {
+    auto encoder = Encoder::FromExtension(extension);
+    if (!encoder) continue;
+    EncodedImage encoded;
+    ASSERT_TRUE(encoder->Encode(ppf, &encoded, nullptr)) << extension;
+    ASSERT_EQ(encoded.bitstreams.size(), 2u);
+    ASSERT_EQ(encoded.extra_channel_bitstreams.size(), 1u);
+    ASSERT_EQ(encoded.extra_channel_bitstreams[0].size(), 2u);
+    for (const auto& bytes : encoded.extra_channel_bitstreams[0]) {
+      PackedPixelFile decoded;
+      ASSERT_TRUE(DecodeBytes(Bytes(bytes), ColorHints(), &decoded));
+      ASSERT_EQ(decoded.frames.size(), 1u);
+      EXPECT_EQ(*static_cast<const uint8_t*>(decoded.frames[0].color.pixels()),
+                0x3f);
+    }
+  }
+
+  ppf.frames[1].extra_channels.clear();
+  EXPECT_FALSE(ppf.Validate());
+  for (const char* extension : {".pgm", ".png"}) {
+    auto encoder = Encoder::FromExtension(extension);
+    if (!encoder) continue;
+    EncodedImage encoded;
+    EXPECT_FALSE(encoder->Encode(ppf, &encoded, nullptr)) << extension;
+  }
+}
+
 Span<const uint8_t> MakeSpan(const char* str) {
   return Bytes(reinterpret_cast<const uint8_t*>(str), strlen(str));
 }

@@ -180,6 +180,15 @@ ChunkedPackedFrame::ChunkedPackedFrame(
 
 PackedPixelFile::PackedPixelFile() { JxlEncoderInitBasicInfo(&info); };
 
+Status PackedPixelFile::Validate() const {
+  for (const auto& frame : frames) {
+    if (frame.extra_channels.size() != extra_channels_info.size()) {
+      return JXL_FAILURE("Extra channel count mismatch");
+    }
+  }
+  return true;
+}
+
 Status PackedPixelFile::ShrinkTo(size_t new_xsize, size_t new_ysize) {
   for (auto& frame : frames) {
     JXL_RETURN_IF_ERROR(frame.ShrinkTo(new_xsize, new_ysize));

@@ -98,6 +98,7 @@ class APNGEncoder : public Encoder {
   }
   Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded_image,
                 ThreadPool* pool) const override {
+    JXL_RETURN_IF_ERROR(ppf.Validate());
     // Encode main image frames
     JXL_RETURN_IF_ERROR(VerifyBasicInfo(ppf.info));
     encoded_image->icc.clear();
