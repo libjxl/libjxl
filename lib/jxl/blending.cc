@@ -192,7 +192,7 @@ Status PerformBlending(
   }
 
   for (size_t i = 0; i < 3 + num_ec; i++) {
-    if (xsize != 0) memcpy(out[i] + x0, tmp.Row(i), xsize * sizeof(**out));
+    memcpy(out[i] + x0, tmp.Row(i), xsize * sizeof(**out));
   }
   return true;
 }
