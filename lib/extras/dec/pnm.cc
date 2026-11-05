@@ -340,6 +340,35 @@ class Parser {
   const uint8_t* const end_;
 };
 
+// Netpbm requires every sample to be in [0, MaxVal]. MaxVal is 2^bits - 1, so
+// a sample is out of range iff it has a bit set at or above `bits_per_sample`.
+// Samples are big-endian, so for 16-bit storage only the first byte of each
+// sample can hold such bits. `data` holds `size` bytes of integer samples.
+Status VerifySampleRange(const uint8_t* data, size_t size,
+                         size_t bits_per_sample) {
+  // Every value of the storage type is a valid sample.
+  if (bits_per_sample == 8 || bits_per_sample == 16) return true;
+  // OR the input 8 bytes at a time: byte k of `acc` is then the OR of all
+  // bytes at offsets equal to k modulo 8.
+  uint64_t acc = 0;
+  size_t i = 0;
+  for (; i + 8 <= size; i += 8) {
+    uint64_t v;
+    memcpy(&v, data + i, 8);
+    acc |= v;
+  }
+  uint8_t acc_bytes[8];
+  memcpy(acc_bytes, &acc, 8);
+  for (; i < size; ++i) acc_bytes[i % 8] |= data[i];
+  const size_t step = bits_per_sample > 8 ? 2 : 1;
+  const size_t shift =
+      bits_per_sample > 8 ? bits_per_sample - 8 : bits_per_sample;
+  uint8_t bits = 0;
+  for (size_t k = 0; k < 8; k += step) bits |= acc_bytes[k];
+  if (bits >> shift) return JXL_FAILURE("PNM: sample value exceeds MaxVal");
+  return true;
+}
+
 }  // namespace
 
 struct PNMChunkedInputFrame {
@@ -432,6 +461,9 @@ StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(
   if (size < required_size) {
     return JXL_FAILURE("PNM file too small");
   }
+  JXL_RETURN_IF_ERROR(VerifySampleRange(dec.pnm_.data() + dec.data_start_,
+                                        required_size - dec.data_start_,
+                                        header.bits_per_sample));
   return dec;
 }
 
@@ -554,6 +586,10 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
   size_t pnm_remaining_size = bytes.data() + bytes.size() - pos;
   if (pnm_remaining_size < required_pnm_size) {
     return JXL_FAILURE("PNM file too small");
+  }
+  if (!header.floating_point) {
+    JXL_RETURN_IF_ERROR(
+        VerifySampleRange(pos, required_pnm_size, header.bits_per_sample));
   }
 
   ppf->frames.clear();
