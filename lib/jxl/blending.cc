@@ -52,6 +52,12 @@ Status PerformBlending(
       break;
     }
   }
+  if (JXL_UNLIKELY(xsize == 0)) {
+    // An empty segment is reachable (e.g. a patch whose right edge lands
+    // exactly on the segment start).  Blending nothing also avoids creating
+    // zero-width (unallocated) ImageF planes and null memcpy destinations.
+    return true;
+  }
   JXL_ASSIGN_OR_RETURN(ImageF tmp,
                        ImageF::Create(memory_manager, xsize, 3 + num_ec));
   // Blend extra channels first so that we use the pre-blending alpha.
@@ -103,11 +109,11 @@ Status PerformBlending(
         continue;
 
       case PatchBlendMode::kReplace:
-        if (xsize) memcpy(tmp.Row(3 + i), fg[3 + i] + x0, xsize * sizeof(**fg));
+        memcpy(tmp.Row(3 + i), fg[3 + i] + x0, xsize * sizeof(**fg));
         continue;
 
       case PatchBlendMode::kNone:
-        if (xsize) memcpy(tmp.Row(3 + i), bg[3 + i] + x0, xsize * sizeof(**fg));
+        memcpy(tmp.Row(3 + i), bg[3 + i] + x0, xsize * sizeof(**fg));
         continue;
     }
   }
@@ -142,10 +148,8 @@ Status PerformBlending(
   };
 
   const auto copy = [&](const float* const* src) {
-    // Match the guards the other blend paths already carry: a zero-width
-    // ImageF is not allocated (see PlaneBase::Allocate), so tmp.Row(p) is null
-    // and memcpy would be handed a null destination even with a zero size.
-    if (xsize == 0) return;
+    // Reaching here implies xsize > 0: empty segments return before the
+    // zero-width (unallocated) ImageF would hand memcpy a null destination.
     for (size_t p = 0; p < 3; p++) {
       memcpy(tmp.Row(p), src[p] + x0, xsize * sizeof(**src));
     }
@@ -188,7 +192,7 @@ Status PerformBlending(
   }
 
   for (size_t i = 0; i < 3 + num_ec; i++) {
-    if (xsize != 0) memcpy(out[i] + x0, tmp.Row(i), xsize * sizeof(**out));
+    memcpy(out[i] + x0, tmp.Row(i), xsize * sizeof(**out));
   }
   return true;
 }
