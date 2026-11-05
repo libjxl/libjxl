@@ -240,6 +240,9 @@ class PackedPixelFile {
   size_t xsize() const { return info.xsize; }
   size_t ysize() const { return info.ysize; }
 
+  // Each frame must supply exactly the declared extra channels.
+  Status Validate() const;
+
   // Logical resize; storage is not reallocated; stride is unchanged.
   Status ShrinkTo(size_t new_xsize, size_t new_ysize);
 };
