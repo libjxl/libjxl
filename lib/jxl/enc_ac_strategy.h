@@ -8,6 +8,7 @@
 
 #include <jxl/memory_manager.h>
 
+#include <algorithm>
 #include <cstddef>
 
 #include "lib/jxl/base/compiler_specific.h"
@@ -31,34 +32,59 @@ class AcStrategyImage;
 
 // AC strategy selection: utility struct.
 
+// Keeps the images that the AC strategy search reads together with their
+// dimensions, so that every read can be checked against them (in debug builds,
+// which include the fuzzers). Coordinates are in the frame, which is the
+// `src_rect` area of `src`.
 struct ACSConfig {
   const DequantMatrices* JXL_RESTRICT dequant;
-  const float* JXL_RESTRICT quant_field_row;
-  size_t quant_field_stride;
-  const float* JXL_RESTRICT masking_field_row;
-  size_t masking_field_stride;
-  const float* JXL_RESTRICT masking1x1_field_row;
-  size_t masking1x1_field_stride;
-  size_t mask1x1_xsize;
-  const float* JXL_RESTRICT src_rows[3];
-  size_t src_stride;
+  // One value per block.
+  const ImageF* quant_field;
+  const ImageF* masking_field;
+  // One value per pixel; empty unless computed for this speed tier.
+  const ImageF* masking1x1_field;
+  const Image3F* src;
+  Rect src_rect;
   float info_loss_multiplier;
   float cost_delta;
   float zeros_mul;
-  const float& Pixel(size_t c, size_t x, size_t y) const {
-    return src_rows[c][y * src_stride + x];
+  // First pixel of the xsize x ysize block of channel c at (x, y); rows are
+  // PixelStride() floats apart.
+  const float* PixelBlock(size_t c, size_t x, size_t y, size_t xsize,
+                          size_t ysize) const {
+    JXL_DASSERT(x + xsize <= src_rect.xsize());
+    JXL_DASSERT(y + ysize <= src_rect.ysize());
+    return src_rect.ConstPlaneRow(*src, c, y) + x;
   }
+  size_t PixelStride() const { return src->PixelsPerRow(); }
   float Masking(size_t bx, size_t by) const {
-    JXL_DASSERT(masking_field_row[by * masking_field_stride + bx] > 0);
-    return masking_field_row[by * masking_field_stride + bx];
+    JXL_DASSERT(bx < masking_field->xsize());
+    const float masking = masking_field->ConstRow(by)[bx];
+    JXL_DASSERT(masking > 0);
+    return masking;
   }
-  const float* MaskingPtr1x1(size_t bx, size_t by) const {
-    JXL_DASSERT(masking1x1_field_row[by * masking1x1_field_stride + bx] > 0);
-    return &masking1x1_field_row[by * masking1x1_field_stride + bx];
+  // How many of the n columns (rows) starting at x (y) the 1x1 masking field
+  // has.
+  size_t Masking1x1Columns(size_t x, size_t n) const {
+    const size_t xsize = masking1x1_field->xsize();
+    return x < xsize ? std::min(n, xsize - x) : 0;
+  }
+  size_t Masking1x1Rows(size_t y, size_t n) const {
+    const size_t ysize = masking1x1_field->ysize();
+    return y < ysize ? std::min(n, ysize - y) : 0;
+  }
+  // The n values of row y of the 1x1 masking field starting at column x.
+  const float* Masking1x1Row(size_t x, size_t y, size_t n) const {
+    JXL_DASSERT(n > 0 && x + n <= masking1x1_field->xsize());
+    const float* row = masking1x1_field->ConstRow(y) + x;
+    JXL_DASSERT(row[0] > 0);
+    return row;
   }
   float Quant(size_t bx, size_t by) const {
-    JXL_DASSERT(quant_field_row[by * quant_field_stride + bx] > 0);
-    return quant_field_row[by * quant_field_stride + bx];
+    JXL_DASSERT(bx < quant_field->xsize());
+    const float quant = quant_field->ConstRow(by)[bx];
+    JXL_DASSERT(quant > 0);
+    return quant;
   }
 };
 
