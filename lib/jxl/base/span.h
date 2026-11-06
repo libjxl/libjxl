@@ -57,7 +57,7 @@ class Span {
   constexpr T& operator[](size_t i) const noexcept {
     JXL_DASSERT(i < len_);
     // MSVC 2015 accepts this as constexpr, but not ptr_[i]
-    return *(data() + i);
+    return JXL_SECURITY_CHECK(i < len_), *(data() + i);
   }
 
   Status remove_prefix(size_t n) noexcept {
