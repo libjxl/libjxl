@@ -116,8 +116,8 @@ void Run(BitReader& reader, JxlMemoryManager* memory_manager) {
     Channel& ch = image.channel[c];
     ch.hshift = hshift[c];
     ch.vshift = vshift[c];
-    Check(ch.shrink(jxl::DivCeil(w, 1 << hshift[c]),
-                    jxl::DivCeil(h, 1 << vshift[c])));
+    Check(ch.shrink(jxl::DivCeilPow2(w, hshift[c]),
+                    jxl::DivCeilPow2(h, vshift[c])));
   }
 
   for (size_t ec = 0; ec < nb_extra; ec++) {
@@ -160,8 +160,8 @@ void Run(BitReader& reader, JxlMemoryManager* memory_manager) {
     const Channel& ch = image.channel[c];
     Check(ch.hshift == hshift[c]);
     Check(ch.vshift == vshift[c]);
-    Check(ch.w == jxl::DivCeil(w, 1 << hshift[c]));
-    Check(ch.h == jxl::DivCeil(h, 1 << vshift[c]));
+    Check(ch.w == jxl::DivCeilPow2(w, hshift[c]));
+    Check(ch.h == jxl::DivCeilPow2(h, vshift[c]));
   }
 
   for (size_t ec = 0; ec < nb_extra; ec++) {

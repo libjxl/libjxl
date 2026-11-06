@@ -411,8 +411,9 @@ Status DownsampleImage2_Sharper(Image3F* opsin) {
   JxlMemoryManager* memory_manager = opsin->memory_manager();
   JXL_ASSIGN_OR_RETURN(
       Image3F downsampled,
-      Image3F::Create(memory_manager, DivCeil(opsin->xsize(), 2) + kBlockDim,
-                      DivCeil(opsin->ysize(), 2) + kBlockDim));
+      Image3F::Create(memory_manager,
+                      DivCeil<size_t>(opsin->xsize(), 2) + kBlockDim,
+                      DivCeil<size_t>(opsin->ysize(), 2) + kBlockDim));
   JXL_RETURN_IF_ERROR(downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
                                            downsampled.ysize() - kBlockDim));
 
@@ -658,8 +659,8 @@ void ReduceRinging(const ImageF& initial, const ImageF& mask, ImageF& down) {
 Status DownsampleImage2_Iterative(const ImageF& orig, ImageF* output) {
   int64_t xsize = orig.xsize();
   int64_t ysize = orig.ysize();
-  int64_t xsize2 = DivCeil(orig.xsize(), 2);
-  int64_t ysize2 = DivCeil(orig.ysize(), 2);
+  int64_t xsize2 = DivCeil<size_t>(orig.xsize(), 2);
+  int64_t ysize2 = DivCeil<size_t>(orig.ysize(), 2);
   JxlMemoryManager* memory_manager = orig.memory_manager();
 
   JXL_ASSIGN_OR_RETURN(ImageF box_downsample,
@@ -677,8 +678,9 @@ Status DownsampleImage2_Iterative(const ImageF& orig, ImageF* output) {
   // Allocate extra space to avoid a reallocation when padding.
   JXL_ASSIGN_OR_RETURN(
       ImageF initial,
-      ImageF::Create(memory_manager, DivCeil(orig.xsize(), 2) + kBlockDim,
-                     DivCeil(orig.ysize(), 2) + kBlockDim));
+      ImageF::Create(memory_manager,
+                     DivCeil<size_t>(orig.xsize(), 2) + kBlockDim,
+                     DivCeil<size_t>(orig.ysize(), 2) + kBlockDim));
   JXL_RETURN_IF_ERROR(initial.ShrinkTo(initial.xsize() - kBlockDim,
                                        initial.ysize() - kBlockDim));
   JXL_RETURN_IF_ERROR(DownsampleImage2_Sharper(orig, &initial));
@@ -743,8 +745,9 @@ Status DownsampleImage2_Iterative(Image3F* opsin) {
   // Allocate extra space to avoid a reallocation when padding.
   JXL_ASSIGN_OR_RETURN(
       Image3F downsampled,
-      Image3F::Create(memory_manager, DivCeil(opsin->xsize(), 2) + kBlockDim,
-                      DivCeil(opsin->ysize(), 2) + kBlockDim));
+      Image3F::Create(memory_manager,
+                      DivCeil<size_t>(opsin->xsize(), 2) + kBlockDim,
+                      DivCeil<size_t>(opsin->ysize(), 2) + kBlockDim));
   JXL_RETURN_IF_ERROR(downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
                                            downsampled.ysize() - kBlockDim));
 
