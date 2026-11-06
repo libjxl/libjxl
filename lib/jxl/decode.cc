@@ -1856,6 +1856,9 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         return status;
       }
       if (memcmp(dec->box_type, "brob", 4) == 0) {
+        if (box_size != 0 && box_size < header_size + 4) {
+          return JXL_INPUT_ERROR("brob box too small to contain decoded type");
+        }
         if (dec->avail_in < header_size + 4) {
           return JXL_DEC_NEED_MORE_INPUT;
         }
