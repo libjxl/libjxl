@@ -2528,3 +2528,107 @@ TEST(EncodeTest, StripAlphaSetting) {
     EXPECT_EQ(1u, encode_float(0.999995f, 2));
   }
 }
+
+TEST(EncodeTest, BlendSourceValidation) {
+  // Make sure only 0, 1, and 2 are usable in the encoder API as reference
+  // frames, with 3 available iff all frames have patches disabled.
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+
+  JxlBasicInfo basic_info;
+  JxlEncoderInitBasicInfo(&basic_info);
+  basic_info.xsize = 1;
+  basic_info.ysize = 1;
+  basic_info.bits_per_sample = 8;
+  basic_info.num_color_channels = 3;
+  basic_info.num_extra_channels = 1;
+  basic_info.alpha_bits = 8;
+
+  // Encode a series of 2-frame RGBA images with various combinations
+  // of blend source / save as reference.
+  // Different error conditions may be caught at different points,
+  // so just check for overall success/failure.
+  struct BlendTest {
+    struct {
+      uint32_t color_blend_source;
+      uint32_t alpha_blend_source;
+      uint32_t save_as_reference;
+      bool allow_patches;
+    } frameConfigs[2];
+    bool expect_success;
+  } tests[] = {
+      // Can always save as or blend from refs 0-2
+      {{{0, 0, 0, true}, {0, 0, 0, true}}, true},
+      {{{0, 1, 2, true}, {2, 1, 0, true}}, true},
+      // Can save as or blend from ref 3 if patches disabled everywhere
+      {{{3, 3, 3, false}, {3, 3, 3, false}}, true},
+      // Can't save as or blend from ref 4
+      {{{0, 0, 4, false}, {0, 0, 0, false}}, false},
+      {{{4, 0, 0, false}, {0, 0, 0, false}}, false},
+      // Can't blend from ref 3 if patches enabled
+      {{{3, 0, 0, true}, {0, 0, 0, true}}, false},
+      {{{3, 0, 0, false}, {0, 0, 0, true}}, false},
+      {{{0, 3, 0, false}, {0, 0, 0, true}}, false},
+      {{{0, 0, 0, true}, {3, 0, 0, false}}, false},
+      // Can't save as ref 3 if patches enabled
+      {{{0, 0, 3, true}, {0, 0, 0, false}}, false},
+      {{{0, 0, 3, false}, {0, 0, 0, true}}, false},
+      // Last frame save_as_reference is ignored
+      {{{0, 0, 0, true}, {0, 0, 3, true}}, true},
+  };
+
+  auto encode_rgba = [](const BlendTest& blendTest, JxlEncoder* enc,
+                        const JxlBasicInfo& basic_info) -> bool {
+    JxlEncoderReset(enc);
+    if (JxlEncoderSetBasicInfo(enc, &basic_info) != JXL_ENC_SUCCESS) {
+      return false;
+    }
+    for (const auto& frameConfig : blendTest.frameConfigs) {
+      JxlEncoderFrameSettings* fs = JxlEncoderFrameSettingsCreate(enc, nullptr);
+      if (!frameConfig.allow_patches &&
+          JxlEncoderFrameSettingsSetOption(fs, JXL_ENC_FRAME_SETTING_PATCHES,
+                                           0) != JXL_ENC_SUCCESS) {
+        return false;
+      }
+      if (frameConfig.color_blend_source != 0 ||
+          frameConfig.save_as_reference != 0) {
+        JxlFrameHeader frame_header;
+        JxlEncoderInitFrameHeader(&frame_header);
+        frame_header.layer_info.blend_info.source =
+            frameConfig.color_blend_source;
+        frame_header.layer_info.save_as_reference =
+            frameConfig.save_as_reference;
+        if (JxlEncoderSetFrameHeader(fs, &frame_header) != JXL_ENC_SUCCESS) {
+          return false;
+        }
+      }
+      if (frameConfig.alpha_blend_source != 0) {
+        JxlBlendInfo ec_blend_info;
+        JxlEncoderInitBlendInfo(&ec_blend_info);
+        ec_blend_info.blendmode = JXL_BLEND_BLEND;
+        ec_blend_info.source = frameConfig.alpha_blend_source;
+        if (JxlEncoderSetExtraChannelBlendInfo(fs, 0, &ec_blend_info) !=
+            JXL_ENC_SUCCESS) {
+          return false;
+        }
+      }
+      uint8_t pixel[4] = {};
+      static const JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8,
+                                                  JXL_NATIVE_ENDIAN, 0};
+      if (JxlEncoderAddImageFrame(fs, &pixel_format, pixel, sizeof pixel) !=
+          JXL_ENC_SUCCESS) {
+        return false;
+      }
+    }
+    JxlEncoderCloseInput(enc);
+    uint8_t compressed[64];
+    uint8_t* next_out = compressed;
+    size_t avail_out = sizeof compressed;
+    return JxlEncoderProcessOutput(enc, &next_out, &avail_out) ==
+           JXL_ENC_SUCCESS;
+  };
+
+  for (const auto& test : tests) {
+    EXPECT_EQ(test.expect_success, encode_rgba(test, enc.get(), basic_info))
+        << "iteration " << (&test - tests);
+  }
+}
