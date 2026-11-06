@@ -1,6 +1,6 @@
 # Building WASM artifacts
 
-This file describes the building and testing of JPEG XL
+This file describes the building and testing of JPEG XL
 [Web Assembly](https://webassembly.org/) bundles and wrappers.
 
 These instructions assume an up-to-date Debian/Ubuntu system.
