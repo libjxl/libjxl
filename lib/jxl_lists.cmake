@@ -133,6 +133,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/common.h
   jxl/compressed_dc.cc
   jxl/compressed_dc.h
+  jxl/compressed_icc.cc
   jxl/convolve-inl.h
   jxl/convolve.h
   jxl/convolve_slow.cc
@@ -181,6 +182,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/frame_dimensions.h
   jxl/frame_header.cc
   jxl/frame_header.h
+  jxl/gain_map.cc
   jxl/headers.cc
   jxl/headers.h
   jxl/huffman_table.cc
@@ -316,6 +318,7 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_coeff_order.h
   jxl/enc_comparator.cc
   jxl/enc_comparator.h
+  jxl/enc_compressed_icc.cc
   jxl/enc_context_map.cc
   jxl/enc_context_map.h
   jxl/enc_convolve_separable5.cc
@@ -337,6 +340,7 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_frame.h
   jxl/enc_gaborish.cc
   jxl/enc_gaborish.h
+  jxl/enc_gain_map.cc
   jxl/enc_gamma_correct.h
   jxl/enc_group.cc
   jxl/enc_group.h
@@ -422,7 +426,6 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/alpha_blend.h
   extras/common.cc
   extras/common.h
-  extras/compressed_icc.cc
   extras/dec/color_description.cc
   extras/dec/color_description.h
   extras/dec/color_hints.cc
@@ -433,7 +436,6 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/enc/encode.h
   extras/exif.cc
   extras/exif.h
-  extras/gain_map.cc
   extras/include_jpeglib.h
   extras/mmap.cc
   extras/mmap.h
