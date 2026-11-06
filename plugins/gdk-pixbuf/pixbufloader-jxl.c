@@ -27,6 +27,7 @@ typedef struct {
   // JPEG XL decoder and related structures.
   JxlParallelRunner *parallel_runner;
   JxlDecoder *decoder;
+  GByteArray *pending_input;
   JxlPixelFormat pixel_format;
 
   // Decoding is `done` when JXL_DEC_SUCCESS is received; calling
@@ -48,6 +49,7 @@ static void jxl_decoder_state_free(JxlDecoderState *state) {
   }
   JxlResizableParallelRunnerDestroy(state->parallel_runner);
   JxlDecoderDestroy(state->decoder);
+  if (state->pending_input) g_byte_array_unref(state->pending_input);
   g_free(state->icc_base64);
   g_free(state);
 }
@@ -66,6 +68,13 @@ static gpointer begin_load(GdkPixbufModuleSizeFunc size_func,
   decoder_state->pixbuf_prepared_callback = prepare_func;
   decoder_state->area_updated_callback = update_func;
   decoder_state->user_data = user_data;
+
+  decoder_state->pending_input = g_byte_array_new();
+  if (decoder_state->pending_input == NULL) {
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                "Creation of the input buffer failed");
+    goto cleanup;
+  }
 
   if (!(decoder_state->parallel_runner =
             JxlResizableParallelRunnerCreate(NULL))) {
@@ -123,7 +132,11 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
 
   JxlDecoderStatus status;
 
-  if ((status = JxlDecoderSetInput(decoder_state->decoder, buf, size)) !=
+  g_byte_array_append(decoder_state->pending_input, buf, size);
+
+  if ((status = JxlDecoderSetInput(decoder_state->decoder,
+                                   decoder_state->pending_input->data,
+                                   decoder_state->pending_input->len)) !=
       JXL_DEC_SUCCESS) {
     // Should never happen if things are done properly.
     g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
@@ -135,7 +148,18 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
     status = JxlDecoderProcessInput(decoder_state->decoder);
     switch (status) {
       case JXL_DEC_NEED_MORE_INPUT: {
-        JxlDecoderReleaseInput(decoder_state->decoder);
+        size_t remaining = JxlDecoderReleaseInput(decoder_state->decoder);
+        if (remaining > decoder_state->pending_input->len) {
+          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                      "JXL decoder logic error: invalid remaining input");
+          return FALSE;
+        }
+        size_t consumed = decoder_state->pending_input->len - remaining;
+        if (remaining > 0 && consumed > 0) {
+          memmove(decoder_state->pending_input->data,
+                  decoder_state->pending_input->data + consumed, remaining);
+        }
+        g_byte_array_set_size(decoder_state->pending_input, remaining);
         return TRUE;
       }
 
