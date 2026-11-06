@@ -139,6 +139,13 @@ bool TreeToLookupTable(const FlatTree &tree,
 Status ValidateChannelDimensions(const Image &image,
                                  const ModularOptions &options);
 
+// Maximum number of nodes of a local (per-stream) MA tree for the given
+// image. This is the limit that ModularGenericDecompress enforces when it
+// decodes the stream's tree; ModularGenericCompress must learn trees within
+// the same bound, or the stream it writes is rejected at decode time
+// (see issue #4600).
+uint64_t MaxLocalTreeSize(const Image &image, size_t max_chan_size);
+
 Status ModularGenericDecompress(BitReader *br, Image &image,
                                 GroupHeader *header, size_t group_id,
                                 ModularOptions *options,
