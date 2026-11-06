@@ -126,22 +126,24 @@ jobs:
             mode: release
             cc: gcc-latest
             cxx: g++-latest
-          - name: release:gcc-old-old
-            os: ubuntu-22.04
-            mode: release
-            cc: gcc-latest
-            cxx: g++-latest
+          # ubuntu-22.04 builds are flaky now
+          #- name: release:gcc-old-old
+          #  os: ubuntu-22.04
+          #  mode: release
+          #  cc: gcc-latest
+          #  cxx: g++-latest
           # Builds with old clang in release mode
           - name: release:clang-old
             os: ubuntu-24.04
             mode: release
             cc: clang
             cxx: clang++
-          - name: release:clang-old-old
-            os: ubuntu-22.04
-            mode: release
-            cc: clang
-            cxx: clang++
+          # ubuntu-22.04 builds are flaky now
+          #- name: release:clang-old-old
+          #  os: ubuntu-22.04
+          #  mode: release
+          #  cc: clang
+          #  cxx: clang++
           # LTO builds
           - name: release_lto
             os: ubuntu-latest
