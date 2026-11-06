@@ -429,6 +429,7 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/dec/color_hints.h
   extras/dec/decode.cc
   extras/dec/decode.h
+  extras/dec/sample_range.h
   extras/enc/encode.cc
   extras/enc/encode.h
   extras/exif.cc
