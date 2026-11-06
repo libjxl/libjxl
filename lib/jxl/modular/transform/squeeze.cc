@@ -128,23 +128,25 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
 Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   JXL_ENSURE(c < input.channel.size());
   JXL_ENSURE(rc < input.channel.size());
-  Channel &chin = input.channel[c];
+  const Channel& chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
   JXL_ENSURE(chin.w == DivCeil(chin.w + chin_residual.w, 2));
   JXL_ENSURE(chin.h == chin_residual.h);
+  JXL_ENSURE(chin.hshift != 0);
   JxlMemoryManager *memory_manager = input.memory_manager();
+  int new_hshift = (chin.hshift > 0) ? chin.hshift - 1 : chin.hshift;
 
   if (chin_residual.w == 0) {
     // Short-circuit: output channel has same dimensions as input.
-    input.channel[c].hshift--;
+    input.channel[c].hshift = new_hshift;
     return true;
   }
 
   // Note: chin.w >= chin_residual.w and at most 1 different.
   JXL_ASSIGN_OR_RETURN(Channel chout,
                        Channel::Create(memory_manager, chin.w + chin_residual.w,
-                                       chin.h, chin.hshift - 1, chin.vshift));
+                                       chin.h, new_hshift, chin.vshift));
   JXL_DEBUG_V(4,
               "Undoing horizontal squeeze of channel %i using residuals in "
               "channel %i (going from width %" PRIuS " to %" PRIuS ")",
@@ -246,19 +248,20 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   // These must be valid since we ran MetaApply already.
   JXL_ENSURE(chin.h == DivCeil(chin.h + chin_residual.h, 2));
   JXL_ENSURE(chin.w == chin_residual.w);
+  JXL_ENSURE(chin.vshift != 0);
   JxlMemoryManager *memory_manager = input.memory_manager();
+  int new_vshift = (chin.vshift > 0) ? chin.vshift - 1 : chin.vshift;
 
   if (chin_residual.h == 0) {
     // Short-circuit: output channel has same dimensions as input.
-    input.channel[c].vshift--;
+    input.channel[c].vshift = new_vshift;
     return true;
   }
 
   // Note: chin.h >= chin_residual.h and at most 1 different.
-  JXL_ASSIGN_OR_RETURN(
-      Channel chout,
-      Channel::Create(memory_manager, chin.w, chin.h + chin_residual.h,
-                      chin.hshift, chin.vshift - 1));
+  JXL_ASSIGN_OR_RETURN(Channel chout, Channel::Create(memory_manager, chin.w,
+                                                      chin.h + chin_residual.h,
+                                                      chin.hshift, new_vshift));
   JXL_DEBUG_V(
       4,
       "Undoing vertical squeeze of channel %i using residuals in channel "
