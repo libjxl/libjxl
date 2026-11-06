@@ -80,10 +80,10 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
     ref_pos.y0 = read_num(kPatchReferencePositionContext);
     ref_pos.xsize = read_num(kPatchSizeContext) + 1;
     ref_pos.ysize = read_num(kPatchSizeContext) + 1;
-    if (ref_pos.x0 + ref_pos.xsize > ib.xsize()) {
+    if (ref_pos.x0 > ib.xsize() || ref_pos.xsize > ib.xsize() - ref_pos.x0) {
       return JXL_FAILURE("Invalid position specified in reference frame");
     }
-    if (ref_pos.y0 + ref_pos.ysize > ib.ysize()) {
+    if (ref_pos.y0 > ib.ysize() || ref_pos.ysize > ib.ysize() - ref_pos.y0) {
       return JXL_FAILURE("Invalid position specified in reference frame");
     }
     size_t id_count = read_num(kPatchCountContext);
@@ -127,12 +127,12 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
         }
         pos.y = positions_.back().y + deltay;
       }
-      if (pos.x + ref_pos.xsize > xsize) {
+      if (pos.x > xsize || ref_pos.xsize > xsize - pos.x) {
         return JXL_FAILURE("Invalid patch x: at %" PRIuS " + %" PRIuS
                            " > %" PRIuS,
                            pos.x, ref_pos.xsize, xsize);
       }
-      if (pos.y + ref_pos.ysize > ysize) {
+      if (pos.y > ysize || ref_pos.ysize > ysize - pos.y) {
         return JXL_FAILURE("Invalid patch y: at %" PRIuS " + %" PRIuS
                            " > %" PRIuS,
                            pos.y, ref_pos.ysize, ysize);
