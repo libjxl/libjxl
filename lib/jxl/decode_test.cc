@@ -66,7 +66,9 @@
 #if JPEGXL_ENABLE_BOXES
 #include "lib/jxl/box_content_decoder.h"
 #endif  // JPEGXL_ENABLE_BOXES
+#include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/padded_bytes.h"
 #include "lib/jxl/test_image.h"
@@ -5254,6 +5256,369 @@ JXL_TRANSCODE_JPEG_TEST(DecodeTest, JPEGReconstructionMetadataTest) {
   const std::vector<uint8_t> jxl = jxl::test::ReadTestData(jxl_path);
   VerifyJPEGReconstruction(jxl::Bytes(jxl), jxl::Bytes(jpeg));
 }
+
+#if JPEGXL_ENABLE_TRANSCODE_JPEG
+namespace {
+
+jxl::jpeg::JPEGData MakeMinimalGrayJpegData() {
+  jxl::jpeg::JPEGData jpg;
+  jpg.width = 8;
+  jpg.height = 8;
+  jpg.marker_order = {0xDB, 0xC0, 0xC4, 0xDA, 0xD9};
+
+  jpg.quant.resize(1);
+  jpg.quant[0].values.fill(1);
+  jpg.quant[0].precision = 0;
+  jpg.quant[0].index = 0;
+  jpg.quant[0].is_last = true;
+
+  jpg.components.resize(1);
+  jpg.components[0].id = 1;
+  jpg.components[0].h_samp_factor = 1;
+  jpg.components[0].v_samp_factor = 1;
+  jpg.components[0].quant_idx = 0;
+  jpg.components[0].width_in_blocks = 1;
+  jpg.components[0].height_in_blocks = 1;
+  jpg.components[0].coeffs.assign(jxl::kDCTBlockSize, 0);
+
+  jpg.huffman_code.resize(2);
+  jpg.huffman_code[0].slot_id = 0x00;
+  jpg.huffman_code[0].is_last = false;
+  jpg.huffman_code[0].counts[1] = 2;
+  jpg.huffman_code[0].values[0] = 0;
+  jpg.huffman_code[0].values[1] = jxl::jpeg::kJpegHuffmanAlphabetSize;
+
+  jpg.huffman_code[1].slot_id = 0x10;
+  jpg.huffman_code[1].is_last = true;
+  jpg.huffman_code[1].counts[1] = 2;
+  jpg.huffman_code[1].values[0] = 0;
+  jpg.huffman_code[1].values[1] = jxl::jpeg::kJpegHuffmanAlphabetSize;
+
+  jpg.scan_info.resize(1);
+  jpg.scan_info[0].Ss = 0;
+  jpg.scan_info[0].Se = 63;
+  jpg.scan_info[0].Ah = 0;
+  jpg.scan_info[0].Al = 0;
+  jpg.scan_info[0].num_components = 1;
+  jpg.scan_info[0].components[0].comp_idx = 0;
+  jpg.scan_info[0].components[0].dc_tbl_idx = 0;
+  jpg.scan_info[0].components[0].ac_tbl_idx = 0;
+  return jpg;
+}
+
+jxl::jpeg::JPEGData MakeProgressiveGrayJpegData() {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.marker_order = {0xDB, 0xC2, 0xC4, 0xDA, 0xDA, 0xDA, 0xDA, 0xD9};
+  jpg.scan_info.resize(4, jpg.scan_info[0]);
+  jpg.scan_info[0].Ss = 0;
+  jpg.scan_info[0].Se = 0;
+  jpg.scan_info[0].Ah = 0;
+  jpg.scan_info[0].Al = 1;
+  jpg.scan_info[1].Ss = 1;
+  jpg.scan_info[1].Se = 63;
+  jpg.scan_info[1].Ah = 0;
+  jpg.scan_info[1].Al = 1;
+  jpg.scan_info[2].Ss = 0;
+  jpg.scan_info[2].Se = 0;
+  jpg.scan_info[2].Ah = 1;
+  jpg.scan_info[2].Al = 0;
+  jpg.scan_info[3].Ss = 1;
+  jpg.scan_info[3].Se = 63;
+  jpg.scan_info[3].Ah = 1;
+  jpg.scan_info[3].Al = 0;
+  return jpg;
+}
+
+jxl::jpeg::JPEGData MakeStandaloneEmptyDhtJpegData() {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.marker_order = {0xDB, 0xC0, 0xC4, 0xC4, 0xDA, 0xD9};
+  const jxl::jpeg::JPEGHuffmanCode dc = jpg.huffman_code[0];
+  const jxl::jpeg::JPEGHuffmanCode ac = jpg.huffman_code[1];
+  jpg.huffman_code.resize(3);
+  jpg.huffman_code[0] = jxl::jpeg::JPEGHuffmanCode{};
+  jpg.huffman_code[0].is_last = true;
+  jpg.huffman_code[1] = dc;
+  jpg.huffman_code[1].is_last = false;
+  jpg.huffman_code[2] = ac;
+  jpg.huffman_code[2].is_last = true;
+  return jpg;
+}
+
+bool WriteJpegBytes(const jxl::jpeg::JPEGData& jpg,
+                    std::vector<uint8_t>* bytes) {
+  bytes->clear();
+  auto write_out = [bytes](const uint8_t* data, size_t len) {
+    bytes->insert(bytes->end(), data, data + len);
+    return len;
+  };
+  return jxl::jpeg::WriteJpeg(jpg, write_out);
+}
+
+bool EncodeJpegDataForTest(jxl::jpeg::JPEGData jpg) {
+  std::vector<uint8_t> encoded;
+  jxl::CompressParams cparams;
+  return jxl::jpeg::EncodeJPEGData(jxl::test::MemoryManager(), jpg, &encoded,
+                                   cparams);
+}
+
+bool BuildJxlContainerWithJbrd(const jxl::jpeg::JPEGData& frame_jpg,
+                               jxl::jpeg::JPEGData jbrd_jpg,
+                               std::vector<uint8_t>* container) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  auto io = jxl::make_unique<jxl::CodecInOut>(memory_manager);
+  auto frame_copy = jxl::make_unique<jxl::jpeg::JPEGData>(frame_jpg);
+  if (!jxl::test::JpegDataToCodecInOut(std::move(frame_copy), io.get())) {
+    return false;
+  }
+  io->metadata.m.xyb_encoded = false;
+  jxl::BitWriter writer{memory_manager};
+  if (!WriteCodestreamHeaders(&io->metadata, &writer, nullptr)) return false;
+  writer.ZeroPadToByte();
+  jxl::CompressParams cparams;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  if (!jxl::EncodeFrame(memory_manager, cparams, jxl::FrameInfo{},
+                        &io->metadata, io->Main(), *JxlGetDefaultCms(),
+                        /*pool=*/nullptr, &writer, /*aux_out=*/nullptr)) {
+    return false;
+  }
+  std::vector<uint8_t> encoded_jpeg_data;
+  if (!jxl::jpeg::EncodeJPEGData(memory_manager, jbrd_jpg, &encoded_jpeg_data,
+                                 cparams)) {
+    return false;
+  }
+  *container = jxl::MakeContainerHeader(0);
+  jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), encoded_jpeg_data.size(),
+                       false, container);
+  jxl::Bytes(encoded_jpeg_data).AppendTo(*container);
+  jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, container);
+  jxl::PaddedBytes codestream = std::move(writer).TakeBytes();
+  jxl::Bytes(codestream).AppendTo(*container);
+  return true;
+}
+
+JxlDecoderStatus DecodeJpegReconstructionContainer(
+    jxl::Span<const uint8_t> container, size_t output_size,
+    std::vector<uint8_t>* reconstructed) {
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  if (JxlDecoderSubscribeEvents(
+          dec.get(), JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_FULL_IMAGE) !=
+      JXL_DEC_SUCCESS) {
+    return JXL_DEC_ERROR;
+  }
+  if (JxlDecoderSetInput(dec.get(), container.data(), container.size()) !=
+      JXL_DEC_SUCCESS) {
+    return JXL_DEC_ERROR;
+  }
+  JxlDecoderCloseInput(dec.get());
+  if (JxlDecoderProcessInput(dec.get()) != JXL_DEC_JPEG_RECONSTRUCTION) {
+    return JXL_DEC_ERROR;
+  }
+  reconstructed->assign(output_size, 0);
+  if (JxlDecoderSetJPEGBuffer(dec.get(), reconstructed->data(),
+                              reconstructed->size()) != JXL_DEC_SUCCESS) {
+    return JXL_DEC_ERROR;
+  }
+  if (JxlDecoderProcessInput(dec.get()) != JXL_DEC_FULL_IMAGE) {
+    return JXL_DEC_ERROR;
+  }
+  const size_t remaining = JxlDecoderReleaseJPEGBuffer(dec.get());
+  reconstructed->resize(reconstructed->size() - remaining);
+  return JxlDecoderProcessInput(dec.get());
+}
+
+}  // namespace
+
+// Positive controls for exact JPEG reconstruction compatibility.
+TEST(DecodeTest, JPEGReconstructionExactBaselineRoundTrip) {
+  const jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  std::vector<uint8_t> expected;
+  ASSERT_TRUE(WriteJpegBytes(jpg, &expected));
+  std::vector<uint8_t> container;
+  ASSERT_TRUE(BuildJxlContainerWithJbrd(jpg, jpg, &container));
+  std::vector<uint8_t> reconstructed;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            DecodeJpegReconstructionContainer(jxl::Bytes(container),
+                                              expected.size(), &reconstructed));
+  EXPECT_EQ(expected, reconstructed);
+}
+
+TEST(DecodeTest, JPEGReconstructionExactProgressiveRefinementRoundTrip) {
+  const jxl::jpeg::JPEGData jpg = MakeProgressiveGrayJpegData();
+  std::vector<uint8_t> expected;
+  ASSERT_TRUE(WriteJpegBytes(jpg, &expected));
+  std::vector<uint8_t> container;
+  ASSERT_TRUE(BuildJxlContainerWithJbrd(jpg, jpg, &container));
+  std::vector<uint8_t> reconstructed;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            DecodeJpegReconstructionContainer(jxl::Bytes(container),
+                                              expected.size(), &reconstructed));
+  EXPECT_EQ(expected, reconstructed);
+}
+
+TEST(DecodeTest, JPEGReconstructionStandaloneEmptyDhtRoundTrip) {
+  const jxl::jpeg::JPEGData jpg = MakeStandaloneEmptyDhtJpegData();
+  std::vector<uint8_t> expected;
+  ASSERT_TRUE(WriteJpegBytes(jpg, &expected));
+  jxl::jpeg::JPEGData parsed;
+  ASSERT_TRUE(jxl::jpeg::ReadJpeg(expected.data(), expected.size(),
+                                  jxl::jpeg::JpegReadMode::kReadAll, &parsed));
+  ASSERT_GE(parsed.huffman_code.size(), 3u);
+  EXPECT_TRUE(parsed.huffman_code[0].is_last);
+  EXPECT_EQ(0u, parsed.huffman_code[0].counts[0]);
+  EXPECT_EQ(0u, parsed.huffman_code[0].counts[1]);
+  std::vector<uint8_t> container;
+  ASSERT_TRUE(BuildJxlContainerWithJbrd(jpg, jpg, &container));
+  std::vector<uint8_t> reconstructed;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            DecodeJpegReconstructionContainer(jxl::Bytes(container),
+                                              expected.size(), &reconstructed));
+  EXPECT_EQ(expected, reconstructed);
+}
+
+TEST(DecodeTest, JPEGDataRejectsZeroLengthHuffmanCount) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.huffman_code[0].counts[0] = 1;
+  jpg.huffman_code[0].values[0] = 0;
+  jpg.huffman_code[0].values[1] = 1;
+  jpg.huffman_code[0].values[2] = jxl::jpeg::kJpegHuffmanAlphabetSize;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataRejectsOversubscribedHuffmanTree) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.huffman_code[0].counts[1] = 4;
+  jpg.huffman_code[0].values[0] = 0;
+  jpg.huffman_code[0].values[1] = 1;
+  jpg.huffman_code[0].values[2] = 2;
+  jpg.huffman_code[0].values[3] = jxl::jpeg::kJpegHuffmanAlphabetSize;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataRejectsInvalidHuffmanTableClass) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.huffman_code[1].slot_id = 0x20;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataRejectsUnterminatedEmptyDht) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  const jxl::jpeg::JPEGHuffmanCode dc = jpg.huffman_code[0];
+  const jxl::jpeg::JPEGHuffmanCode ac = jpg.huffman_code[1];
+  jpg.huffman_code.resize(3);
+  jpg.huffman_code[0] = jxl::jpeg::JPEGHuffmanCode{};
+  jpg.huffman_code[0].is_last = false;
+  jpg.huffman_code[1] = dc;
+  jpg.huffman_code[1].is_last = false;
+  jpg.huffman_code[2] = ac;
+  jpg.huffman_code[2].is_last = true;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataRejectsMixedEmptyDht) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.marker_order = {0xDB, 0xC0, 0xC4, 0xC4, 0xDA, 0xD9};
+  const jxl::jpeg::JPEGHuffmanCode ac = jpg.huffman_code[1];
+  jpg.huffman_code.resize(3);
+  jpg.huffman_code[0].is_last = false;
+  jpg.huffman_code[1] = jxl::jpeg::JPEGHuffmanCode{};
+  jpg.huffman_code[1].is_last = true;
+  jpg.huffman_code[2] = ac;
+  jpg.huffman_code[2].is_last = true;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataRejectsUnterminatedDhtGroup) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.huffman_code.back().is_last = false;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataRejectsDhtMarkerCountMismatch) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.marker_order = {0xDB, 0xC0, 0xC4, 0xC4, 0xDA, 0xD9};
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataRejectsUnterminatedDqtGroup) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.quant.back().is_last = false;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataRejectsInvertedSpectralSelection) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.marker_order[1] = 0xC2;
+  jpg.scan_info[0].Ss = 10;
+  jpg.scan_info[0].Se = 5;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataRejectsInvalidAl) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.marker_order[1] = 0xC2;
+  jpg.scan_info[0].Ss = 0;
+  jpg.scan_info[0].Se = 0;
+  jpg.scan_info[0].Al = 14;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataRejectsInvalidAh) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.marker_order[1] = 0xC2;
+  jpg.scan_info[0].Ss = 0;
+  jpg.scan_info[0].Se = 0;
+  jpg.scan_info[0].Al = 13;
+  jpg.scan_info[0].Ah = 14;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataQuantizationPrecisionBoundControl) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.quant[0].precision = 2;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGDataQuantizationIndexBoundControl) {
+  jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  jpg.quant[0].index = jxl::jpeg::kMaxQuantTables;
+  EXPECT_FALSE(EncodeJpegDataForTest(std::move(jpg)));
+}
+
+TEST(DecodeTest, JPEGReaderRejectsNullInput) {
+  EXPECT_EXIT(
+      {
+        jxl::jpeg::JPEGData parsed;
+        const bool ok = jxl::jpeg::ReadJpeg(
+            nullptr, 2, jxl::jpeg::JpegReadMode::kReadAll, &parsed);
+        std::_Exit(ok ? 1 : 0);
+      },
+      ::testing::ExitedWithCode(0), "");
+}
+
+TEST(DecodeTest, JPEGReaderRejectsNullOutput) {
+  const jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  std::vector<uint8_t> bytes;
+  ASSERT_TRUE(WriteJpegBytes(jpg, &bytes));
+  EXPECT_EXIT(
+      {
+        const bool ok =
+            jxl::jpeg::ReadJpeg(bytes.data(), bytes.size(),
+                                jxl::jpeg::JpegReadMode::kReadAll, nullptr);
+        std::_Exit(ok ? 1 : 0);
+      },
+      ::testing::ExitedWithCode(0), "");
+}
+
+TEST(DecodeTest, JPEGReaderRejectsInvalidReadMode) {
+  const jxl::jpeg::JPEGData jpg = MakeMinimalGrayJpegData();
+  std::vector<uint8_t> bytes;
+  ASSERT_TRUE(WriteJpegBytes(jpg, &bytes));
+  jxl::jpeg::JPEGData parsed;
+  EXPECT_FALSE(jxl::jpeg::ReadJpeg(bytes.data(), bytes.size(),
+                                   static_cast<jxl::jpeg::JpegReadMode>(-1),
+                                   &parsed));
+}
+#endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
 
 TEST(DecodeTest, ContinueFinalNonEssentialBoxTest) {
   size_t xsize = 80;

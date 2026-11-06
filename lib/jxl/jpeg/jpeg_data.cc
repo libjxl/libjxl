@@ -37,6 +37,8 @@ enum JPEGComponentType : uint32_t {
 struct JPEGInfo {
   size_t num_app_markers = 0;
   size_t num_com_markers = 0;
+  size_t num_dht_markers = 0;
+  size_t num_dqt_markers = 0;
   size_t num_scans = 0;
   size_t num_intermarker = 0;
   bool has_dri = false;
@@ -51,6 +53,12 @@ Status VisitMarker(uint8_t* marker, Visitor* visitor, JPEGInfo* info) {
   }
   if (*marker == 0xfe) {
     info->num_com_markers++;
+  }
+  if (*marker == 0xc4) {
+    info->num_dht_markers++;
+  }
+  if (*marker == 0xdb) {
+    info->num_dqt_markers++;
   }
   if (*marker == 0xda) {
     info->num_scans++;
@@ -150,6 +158,7 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   if (visitor->IsReading()) {
     quant.resize(num_quant_tables);
   }
+  size_t num_dqt_groups = 0;
   for (size_t i = 0; i < num_quant_tables; i++) {
     if (quant[i].precision > 1) {
       return JXL_FAILURE(
@@ -158,6 +167,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     JXL_RETURN_IF_ERROR(visitor->Bits(1, 0, &quant[i].precision));
     JXL_RETURN_IF_ERROR(visitor->Bits(2, i, &quant[i].index));
     JXL_RETURN_IF_ERROR(visitor->Bool(true, &quant[i].is_last));
+    if (quant[i].is_last) ++num_dqt_groups;
+  }
+  if (num_dqt_groups != info.num_dqt_markers) {
+    return JXL_FAILURE("Quantization table groups do not match DQT markers");
   }
 
   JPEGComponentType component_type =
@@ -229,7 +242,12 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   if (visitor->IsReading()) {
     huffman_code.resize(num_huff);
   }
+  size_t num_dht_groups = 0;
+  bool at_dht_group_start = true;
   for (JPEGHuffmanCode& hc : huffman_code) {
+    if (!visitor->IsReading() && (hc.slot_id >> 4) > 1) {
+      return JXL_FAILURE("Invalid Huffman table class: %u", hc.slot_id);
+    }
     bool is_ac = ((hc.slot_id >> 4) != 0);
     uint32_t id = hc.slot_id & 0xF;
     JXL_RETURN_IF_ERROR(visitor->Bool(false, &is_ac));
@@ -242,13 +260,27 @@ Status JPEGData::VisitFields(Visitor* visitor) {
                                        Bits(8), 0, &hc.counts[i]));
       num_symbols += hc.counts[i];
     }
+    if (hc.counts[0] != 0) {
+      return JXL_FAILURE("Invalid zero-length Huffman code count");
+    }
     if (num_symbols == 0) {
       // Actually, at least 2 symbols are required, since one of them is EOI.
       // This case is used to represent an empty DHT marker.
+      if (!at_dht_group_start || !hc.is_last) {
+        return JXL_FAILURE("Empty Huffman table must be a complete DHT marker");
+      }
+      ++num_dht_groups;
       continue;
     }
     if (num_symbols > hc.values.size()) {
       return JXL_FAILURE("Huffman code too large (%" PRIuS ")", num_symbols);
+    }
+    int space = 1 << kJpegHuffmanMaxBitLength;
+    for (size_t i = 1; i <= kJpegHuffmanMaxBitLength; ++i) {
+      space -= hc.counts[i] << (kJpegHuffmanMaxBitLength - i);
+    }
+    if (space < 0) {
+      return JXL_FAILURE("Invalid Huffman code lengths");
     }
     // Presence flags for 4 * 64 + 1 values.
     uint64_t value_slots[5] = {};
@@ -275,6 +307,11 @@ Status JPEGData::VisitFields(Visitor* visitor) {
                       value_slots[2] | value_slots[3]) == 0;
       if (!only_dc) return JXL_FAILURE("Huffman symbols out of DC range");
     }
+    at_dht_group_start = hc.is_last;
+    if (hc.is_last) ++num_dht_groups;
+  }
+  if (!at_dht_group_start || num_dht_groups != info.num_dht_markers) {
+    return JXL_FAILURE("Huffman table groups do not match DHT markers");
   }
 
   for (auto& scan : scan_info) {
@@ -285,8 +322,14 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     }
     JXL_RETURN_IF_ERROR(visitor->Bits(6, 0, &scan.Ss));
     JXL_RETURN_IF_ERROR(visitor->Bits(6, 63, &scan.Se));
+    if (scan.Ss > scan.Se) {
+      return JXL_FAILURE("Invalid spectral selection range");
+    }
     JXL_RETURN_IF_ERROR(visitor->Bits(4, 0, &scan.Al));
     JXL_RETURN_IF_ERROR(visitor->Bits(4, 0, &scan.Ah));
+    if (scan.Al > 13 || scan.Ah > 13) {
+      return JXL_FAILURE("Invalid successive approximation bit position");
+    }
     for (size_t i = 0; i < scan.num_components; i++) {
       JXL_RETURN_IF_ERROR(visitor->Bits(2, 0, &scan.components[i].comp_idx));
       if (scan.components[i].comp_idx >= components.size()) {
