@@ -1303,6 +1303,9 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
     }
     size_t num_histogram_groups = shared.num_histograms;
     if (enc_state->streaming_mode) {
+      // In streaming mode we reuse params; thus it might happen that we enable
+      // LZ77 not at the very beginning. So we disable it here for consistency.
+      hist_params.lz77_method = HistogramParams::LZ77Method::kNone;
       size_t prev_num_histograms =
           enc_state->passes[i].codes.encoding_info.size();
       if (enc_state->initialize_global_state) {
