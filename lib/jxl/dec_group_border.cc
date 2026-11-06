@@ -6,6 +6,7 @@
 #include "lib/jxl/dec_group_border.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +16,16 @@
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/frame_dimensions.h"
+
+// Keep this file free of unsafe buffer accesses: index only std::array and
+// other bounds-carrying types. See the Safe Buffers programming model:
+// https://clang.llvm.org/docs/SafeBuffers.html
+#if defined(__has_warning)
+#if __has_warning("-Wunsafe-buffer-usage")
+#define JXL_GROUP_BORDER_SAFE_BUFFERS 1
+#pragma clang diagnostic error "-Wunsafe-buffer-usage"
+#endif
+#endif
 
 namespace jxl {
 
@@ -100,14 +111,14 @@ void GroupBorderAssigner::GroupDone(size_t group_id, size_t padx, size_t pady,
 
   // Start of border of neighbouring group, end of border of this group, start
   // of border of this group (on the other side), end of border of next group.
-  size_t xpos[4] = {
+  std::array<size_t, 4> xpos = {
       block_rect.x0() == 0 ? 0 : block_rect.x0() * kBlockDim - padx,
       block_rect.x0() == 0
           ? 0
           : std::min(frame_dim_.xsize, block_rect.x0() * kBlockDim + padx),
       is_last_group_x ? frame_dim_.xsize : x1 * kBlockDim - padx,
       std::min(frame_dim_.xsize, x1 * kBlockDim + padx)};
-  size_t ypos[4] = {
+  std::array<size_t, 4> ypos = {
       block_rect.y0() == 0 ? 0 : block_rect.y0() * kBlockDim - pady,
       block_rect.y0() == 0
           ? 0
@@ -120,7 +131,15 @@ void GroupBorderAssigner::GroupDone(size_t group_id, size_t padx, size_t pady,
     Rect rect(xpos[x0], ypos[y0], xpos[x1] - xpos[x0], ypos[y1] - ypos[y0]);
     if (rect.xsize() == 0 || rect.ysize() == 0) return;
     JXL_DASSERT(*num_to_finalize < kMaxToFinalize);
+    // The caller owns kMaxToFinalize entries; the assert above checks the
+    // index, and the API keeps a raw pointer for now.
+#if defined(JXL_GROUP_BORDER_SAFE_BUFFERS)
+#pragma clang unsafe_buffer_usage begin
+#endif
     rects_to_finalize[(*num_to_finalize)++] = rect;
+#if defined(JXL_GROUP_BORDER_SAFE_BUFFERS)
+#pragma clang unsafe_buffer_usage end
+#endif
   };
 
   // Because of how group borders are assigned, it is impossible that we need to
@@ -130,7 +149,7 @@ void GroupBorderAssigner::GroupDone(size_t group_id, size_t padx, size_t pady,
   // processed.
   // We do this horizontally rather than vertically because horizontal borders
   // are larger.
-  bool available_parts_mask[3][3] = {};  // [x][y]
+  std::array<std::array<bool, 3>, 3> available_parts_mask = {};  // [x][y]
   // Center
   available_parts_mask[1][1] = true;
   // Corners
@@ -146,9 +165,8 @@ void GroupBorderAssigner::GroupDone(size_t group_id, size_t padx, size_t pady,
 
   // Collect horizontal ranges.
   constexpr size_t kNoSegment = 3;
-  std::pair<size_t, size_t> horizontal_segments[3] = {{kNoSegment, kNoSegment},
-                                                      {kNoSegment, kNoSegment},
-                                                      {kNoSegment, kNoSegment}};
+  std::array<std::pair<size_t, size_t>, 3> horizontal_segments;
+  horizontal_segments.fill({kNoSegment, kNoSegment});
   for (size_t py = 0; py < 3; py++) {
     for (size_t px = 0; px < 3; px++) {
       if (!available_parts_mask[px][py]) continue;
