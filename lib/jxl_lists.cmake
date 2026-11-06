@@ -491,11 +491,13 @@ set(JPEGXL_INTERNAL_TESTS
   extras/compressed_icc_test.cc
   extras/dec/color_description_test.cc
   extras/dec/pgx_test.cc
+  extras/dec/pnm_test.cc
   extras/gain_map_test.cc
   jxl/ac_strategy_test.cc
   jxl/alpha_test.cc
   jxl/ans_common_test.cc
   jxl/ans_test.cc
+  jxl/base/span_test.cc
   jxl/bit_reader_test.cc
   jxl/bits_test.cc
   jxl/blending_test.cc
