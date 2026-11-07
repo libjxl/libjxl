@@ -934,5 +934,33 @@ TEST_F(ColorManagementTest, GoldenXYBCube) {
   EXPECT_EQ(actual, expected);
 }
 
+TEST_F(ColorManagementTest, DeclaredFieldsDisagreeWithEmbeddedICC) {
+  // A ColorEncoding carrying raw ICC bytes (SetICCRaw) may have declared
+  // fields that disagree with the embedded profile. JxlCmsInit sizes the
+  // interleave buffers from the *parsed* profile while the callers interleave
+  // using the declared fields, so a layout mismatch (declared RGB with a
+  // grayscale profile) is an out-of-bounds write. Such encodings must be
+  // rejected with an error instead.
+  ColorEncoding gray_srgb = ColorEncoding::SRGB(/*is_gray=*/true);
+  ASSERT_TRUE(gray_srgb.CreateICC());
+  const IccBytes gray_icc(gray_srgb.ICC());
+
+  ColorEncoding c_src = ColorEncoding::SRGB(/*is_gray=*/false);
+  c_src.SetICCRaw(IccBytes(gray_icc));  // declared sRGB RGB + raw gray ICC
+
+  ColorSpaceTransform transform(*JxlGetDefaultCms());
+  EXPECT_FALSE(
+      transform.Init(c_src, ColorEncoding::SRGB(/*is_gray=*/false),
+                     kDefaultIntensityTarget, kWidth, kNumThreads));
+
+  // Declared fields that agree with the profile must still be accepted.
+  ColorEncoding c_gray_raw = ColorEncoding::SRGB(/*is_gray=*/true);
+  c_gray_raw.SetICCRaw(IccBytes(gray_icc));  // declared gray + gray ICC
+  ColorSpaceTransform transform_ok(*JxlGetDefaultCms());
+  ASSERT_TRUE(
+      transform_ok.Init(c_gray_raw, ColorEncoding::SRGB(/*is_gray=*/false),
+                        kDefaultIntensityTarget, kWidth, kNumThreads));
+}
+
 }  // namespace
 }  // namespace jxl
