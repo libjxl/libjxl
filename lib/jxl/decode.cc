@@ -2459,6 +2459,31 @@ JxlDecoderStatus PrepareSizeCheck(const JxlDecoder* dec,
   return JXL_DEC_SUCCESS;
 }
 
+bool SamePixelFormat(const JxlPixelFormat& a, const JxlPixelFormat& b) {
+  return a.num_channels == b.num_channels && a.data_type == b.data_type &&
+         a.endianness == b.endianness && a.align == b.align;
+}
+
+// The render pipeline of a frame takes the output buffers, callbacks and bit
+// depth when it is built, once the DC of the frame is decoded. From then until
+// the frame is finished or skipped, or the decoder is rewound, a different
+// output would not be used.
+bool FrameOutputIsCommitted(const JxlDecoder* dec) {
+  return dec->frame_stage == FrameStage::kFull && dec->frame_dec &&
+         dec->frame_dec->HasDecodedDC();
+}
+
+// Changing the output of a committed frame is rejected instead of being
+// silently ignored: a caller that believes the change took effect may free or
+// reuse the old buffer while the decoder still writes to it. The decoder stops,
+// so that it does not write to that buffer even if the error is not checked.
+JxlDecoderStatus RejectCommittedOutputChange(JxlDecoder* dec) {
+  dec->stage = DecoderStage::kError;
+  return JXL_API_ERROR(
+      "Cannot change the output of a frame after its pixels started to be "
+      "decoded");
+}
+
 }  // namespace
 
 size_t JxlDecoderGetIntendedDownsamplingRatio(JxlDecoder* dec) {
@@ -2543,6 +2568,14 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
 
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
     JxlDecoder* dec, const JxlPixelFormat* format, void* buffer, size_t size) {
+  if (FrameOutputIsCommitted(dec)) {
+    if (dec->image_out_buffer_set && dec->image_out_buffer == buffer &&
+        dec->image_out_size == size &&
+        SamePixelFormat(dec->image_out_format, *format)) {
+      return JXL_DEC_SUCCESS;
+    }
+    return RejectCommittedOutputChange(dec);
+  }
   if (!dec->got_basic_info || !dec->metadata.m.have_preview ||
       !(dec->orig_events_wanted & JXL_DEC_PREVIEW_IMAGE) ||
       dec->got_preview_image || !dec->preview_frame) {
@@ -2583,6 +2616,14 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
 JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
                                              const JxlPixelFormat* format,
                                              void* buffer, size_t size) {
+  if (FrameOutputIsCommitted(dec)) {
+    if (dec->image_out_buffer_set && dec->image_out_buffer == buffer &&
+        dec->image_out_size == size &&
+        SamePixelFormat(dec->image_out_format, *format)) {
+      return JXL_DEC_SUCCESS;
+    }
+    return RejectCommittedOutputChange(dec);
+  }
   if (!dec->got_basic_info || !(dec->orig_events_wanted & JXL_DEC_FULL_IMAGE) ||
       dec->preview_frame) {
     return JXL_API_ERROR("No image out buffer needed at this time");
@@ -2640,6 +2681,18 @@ JxlDecoderStatus JxlDecoderSetExtraChannelBuffer(JxlDecoder* dec,
 
   if (size < min_size) return JXL_DEC_ERROR;
 
+  if (FrameOutputIsCommitted(dec)) {
+    JxlPixelFormat ec_format = *format;
+    ec_format.num_channels = 1;
+    if (index < dec->extra_channel_output.size() &&
+        dec->extra_channel_output[index].buffer == buffer &&
+        dec->extra_channel_output[index].buffer_size == size &&
+        SamePixelFormat(dec->extra_channel_output[index].format, ec_format)) {
+      return JXL_DEC_SUCCESS;
+    }
+    return RejectCommittedOutputChange(dec);
+  }
+
   if (dec->extra_channel_output.size() <= index) {
     dec->extra_channel_output.resize(dec->metadata.m.num_extra_channels,
                                      {{}, nullptr, 0});
@@ -2659,6 +2712,16 @@ JxlDecoderStatus JxlDecoderSetImageOutCallback(JxlDecoder* dec,
                                                const JxlPixelFormat* format,
                                                JxlImageOutCallback callback,
                                                void* opaque) {
+  if (FrameOutputIsCommitted(dec)) {
+    if (dec->image_out_buffer_set &&
+        dec->image_out_init_opaque == &dec->simple_image_out_callback &&
+        dec->simple_image_out_callback.callback == callback &&
+        dec->simple_image_out_callback.opaque == opaque &&
+        SamePixelFormat(dec->image_out_format, *format)) {
+      return JXL_DEC_SUCCESS;
+    }
+    return RejectCommittedOutputChange(dec);
+  }
   dec->simple_image_out_callback.callback = callback;
   dec->simple_image_out_callback.opaque = opaque;
   const auto init_callback =
@@ -2684,6 +2747,17 @@ JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
     JxlDecoder* dec, const JxlPixelFormat* format,
     JxlImageOutInitCallback init_callback, JxlImageOutRunCallback run_callback,
     JxlImageOutDestroyCallback destroy_callback, void* init_opaque) {
+  if (FrameOutputIsCommitted(dec)) {
+    if (dec->image_out_buffer_set &&
+        dec->image_out_init_callback == init_callback &&
+        dec->image_out_run_callback == run_callback &&
+        dec->image_out_destroy_callback == destroy_callback &&
+        dec->image_out_init_opaque == init_opaque &&
+        SamePixelFormat(dec->image_out_format, *format)) {
+      return JXL_DEC_SUCCESS;
+    }
+    return RejectCommittedOutputChange(dec);
+  }
   if (dec->image_out_buffer_set && !!dec->image_out_buffer) {
     return JXL_API_ERROR(
         "Cannot change from image out buffer to image out callback");
@@ -3002,6 +3076,16 @@ JxlDecoderStatus JxlDecoderSetImageOutBitDepth(JxlDecoder* dec,
                                                const JxlBitDepth* bit_depth) {
   if (!dec->image_out_buffer_set) {
     return JXL_API_ERROR("No image out buffer was set.");
+  }
+  if (FrameOutputIsCommitted(dec)) {
+    if (dec->image_out_bit_depth.type == bit_depth->type &&
+        dec->image_out_bit_depth.bits_per_sample ==
+            bit_depth->bits_per_sample &&
+        dec->image_out_bit_depth.exponent_bits_per_sample ==
+            bit_depth->exponent_bits_per_sample) {
+      return JXL_DEC_SUCCESS;
+    }
+    return RejectCommittedOutputChange(dec);
   }
   JXL_API_RETURN_IF_ERROR(
       VerifyOutputBitDepth(*bit_depth, dec->metadata.m, dec->image_out_format));
