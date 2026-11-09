@@ -687,10 +687,25 @@ bool CheckSizeLimit(JxlDecoder* dec, size_t xsize, size_t ysize) {
   return true;
 }
 
-}  // namespace
+void ResetImageOut(JxlDecoder* dec, bool clear_ec = true) {
+  dec->image_out_bit_depth.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
+  dec->image_out_buffer = nullptr;
+  dec->image_out_buffer_is_for_preview = false;
+  dec->image_out_buffer_set = false;
+  dec->image_out_destroy_callback = nullptr;
+  dec->image_out_format = {};
+  dec->image_out_init_callback = nullptr;
+  dec->image_out_init_opaque = nullptr;
+  dec->image_out_run_callback = nullptr;
+  dec->image_out_size = 0;
+  if (clear_ec) {
+    dec->extra_channel_output.clear();
+    dec->extra_channel_output.shrink_to_fit();
+  }
+}
 
 // Resets the state that must be reset for both Rewind and Reset
-void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
+void RewindDecodingState(JxlDecoder* dec) {
   dec->stage = DecoderStage::kInited;
   dec->got_signature = false;
   dec->last_codestream_seen = false;
@@ -750,16 +765,9 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->have_container = false;
   dec->box_count = 0;
   dec->downsampling_target = 8;
-  dec->image_out_buffer_set = false;
-  dec->image_out_buffer_is_for_preview = false;
-  dec->image_out_buffer = nullptr;
-  dec->image_out_init_callback = nullptr;
-  dec->image_out_run_callback = nullptr;
-  dec->image_out_destroy_callback = nullptr;
-  dec->image_out_init_opaque = nullptr;
-  dec->image_out_size = 0;
-  dec->image_out_bit_depth.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
-  dec->extra_channel_output.clear();
+  ResetImageOut(dec);
+  dec->simple_image_out_callback.callback = nullptr;
+  dec->simple_image_out_callback.opaque = nullptr;
   dec->next_in = nullptr;
   dec->avail_in = 0;
   dec->input_closed = false;
@@ -790,8 +798,10 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->external_frames = 0;
 }
 
+}  // namespace
+
 void JxlDecoderReset(JxlDecoder* dec) {
-  JxlDecoderRewindDecodingState(dec);
+  RewindDecodingState(dec);
 
   dec->thread_pool.reset();
   dec->keep_orientation = false;
@@ -837,7 +847,7 @@ void JxlDecoderDestroy(JxlDecoder* dec) {
   }
 }
 
-void JxlDecoderRewind(JxlDecoder* dec) { JxlDecoderRewindDecodingState(dec); }
+void JxlDecoderRewind(JxlDecoder* dec) { RewindDecodingState(dec); }
 
 void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
   // Increment amount, rather than set it: making the amount smaller is
@@ -880,8 +890,7 @@ JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec) {
   dec->AdvanceCodestream(dec->remaining_frame_size);
   if (dec->is_last_of_still) {
     // The output buffers only apply to the frame that was skipped.
-    dec->image_out_buffer_set = false;
-    dec->extra_channel_output.clear();
+    ResetImageOut(dec);
   }
   return JXL_DEC_SUCCESS;
 }
@@ -1518,8 +1527,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       }
 #endif
       if (dec->preview_frame || dec->is_last_of_still) {
-        dec->image_out_buffer_set = false;
-        dec->extra_channel_output.clear();
+        ResetImageOut(dec);
       }
     }
 
@@ -2540,12 +2548,12 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
 
   if (size < min_size) return JXL_DEC_ERROR;
 
+  ResetImageOut(dec, /*clear_ec=*/false);
   dec->image_out_buffer_set = true;
   dec->image_out_buffer_is_for_preview = true;
   dec->image_out_buffer = buffer;
   dec->image_out_size = size;
   dec->image_out_format = *format;
-  dec->image_out_run_callback = nullptr;
 
   return JXL_DEC_SUCCESS;
 }
@@ -2584,12 +2592,12 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
 
   if (size < min_size) return JXL_DEC_ERROR;
 
+  ResetImageOut(dec, /*clear_ec=*/false);
   dec->image_out_buffer_set = true;
   dec->image_out_buffer_is_for_preview = false;
   dec->image_out_buffer = buffer;
   dec->image_out_size = size;
   dec->image_out_format = *format;
-  dec->image_out_run_callback = nullptr;
 
   return JXL_DEC_SUCCESS;
 }
@@ -2681,13 +2689,13 @@ JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
   JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits_sink);
   if (status != JXL_DEC_SUCCESS) return status;
 
+  ResetImageOut(dec, /*clear_ec=*/false);
   dec->image_out_buffer_set = true;
   dec->image_out_init_callback = init_callback;
   dec->image_out_run_callback = run_callback;
   dec->image_out_destroy_callback = destroy_callback;
   dec->image_out_init_opaque = init_opaque;
   dec->image_out_format = *format;
-  dec->image_out_buffer = nullptr;
 
   return JXL_DEC_SUCCESS;
 }
