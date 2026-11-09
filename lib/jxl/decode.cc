@@ -446,7 +446,7 @@ struct JxlDecoder {
   size_t box_count;
 
   // The level of progressive detail in frame decoding.
-  JxlProgressiveDetail prog_detail = kDC;
+  JxlProgressiveDetail prog_detail;
   // The progressive detail of the current frame.
   JxlProgressiveDetail frame_prog_detail;
   // The intended downsampling ratio for the current progression step.
@@ -836,6 +836,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->desired_intensity_target = 0;
   dec->orig_events_wanted = 0;
   dec->events_wanted = 0;
+  dec->prog_detail = kDC;
   dec->frame_refs.clear();
   dec->frame_external_to_internal.clear();
   dec->frame_required.clear();
