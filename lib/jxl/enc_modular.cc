@@ -234,15 +234,33 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
   return true;
 }
 
+constexpr size_t kNumCutoffs = 33;
+constexpr int32_t kCutoffLim = 500;
+constexpr int32_t kCutoffLookupSize = kCutoffLim * 2 + 1;
+std::array<uint8_t, kCutoffLookupSize> MakeCutoffLookup() {
+  std::array<uint8_t, kCutoffLookupSize> result{};
+  std::array<int32_t, kNumCutoffs> cutoffs = {
+      -kCutoffLim, -392, -255, -191, -127, -95, -63, -47, -31, -23, -15,
+      -11,         -7,   -4,   -3,   -1,   0,   1,   3,   5,   7,   11,
+      15,          23,   31,   47,   63,   95,  127, 191, 255, 392, kCutoffLim};
+  size_t pos = 0;
+  for (size_t i = 0; i < result.size(); i++) {
+    int32_t c = static_cast<int32_t>(i) - kCutoffLim;
+    if (c == cutoffs[pos]) {
+      pos++;
+    }
+    result[i] = kNumCutoffs - pos;
+  }
+  return result;
+}
+
 float EstimateWPCost(const Image& img, size_t i) {
   size_t extra_bits = 0;
   float histo_cost = 0;
   HybridUintConfig config;
-  int32_t cutoffs[] = {-500, -392, -255, -191, -127, -95, -63, -47, -31,
-                       -23,  -15,  -11,  -7,   -4,   -3,  -1,  0,   1,
-                       3,    5,    7,    11,   15,   23,  31,  47,  63,
-                       95,   127,  191,  255,  392,  500};
-  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
+  static std::array<uint8_t, kCutoffLookupSize> kCutoffLookup =
+      MakeCutoffLookup();
+  constexpr size_t nc = kNumCutoffs + 1;
   Histogram histo[nc] = {};
   weighted::Header wp_header;
   PredictorMode(i, &wp_header);
@@ -265,8 +283,13 @@ float EstimateWPCost(const Image& img, size_t i) {
             x, y, ch.w, top, left, topright, topleft, toptop, &properties,
             offset);
         size_t ctx = 0;
-        for (int c : cutoffs) {
-          ctx += (c >= properties[0]) ? 1 : 0;
+        PropertyVal p0 = properties[0];
+        if (p0 < -kCutoffLim) {
+          ctx = kNumCutoffs;
+        } else if (p0 > kCutoffLim) {
+          ctx = 0;
+        } else {
+          ctx = kCutoffLookup[p0 + kCutoffLim];
         }
         pixel_type res;
         unhealthy |= SubOverflow(r[x], guess, res);
