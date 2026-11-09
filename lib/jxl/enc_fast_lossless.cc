@@ -200,7 +200,7 @@ uint32_t DetectCpuFeatures() {
 uint32_t DetectCpuFeatures() { return 0; }
 #endif  // FJXL_ARCH_IS_X86
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(__clang__)
 #define FJXL_UNUSED
 #else
 #define FJXL_UNUSED __attribute__((unused))
