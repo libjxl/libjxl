@@ -5988,3 +5988,97 @@ TEST(DecodeTest, Non444AdaptiveDCSmoothing) {
                                         pixels.size()));
   EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
 }
+
+#if JPEGXL_ENABLE_TRANSCODE_JPEG
+
+// Builds the JPEG reconstruction container for a transcode-encoded frame:
+// the codestream frame is written from frame_io, and the jbrd box payload is
+// encoded from jbrd_jpeg_data, which must be copied before EncodeFrame since
+// encoding consumes the JPEGData attached to the ImageBundle.
+namespace {
+std::vector<uint8_t> MakeJbrdContainer(JxlMemoryManager* memory_manager,
+                                       jxl::CodecInOut* frame_io,
+                                       jxl::jpeg::JPEGData* jbrd_jpeg_data,
+                                       const jxl::CompressParams& cparams) {
+  jxl::jpeg::JPEGData jbrd_copy = *jbrd_jpeg_data;
+  jxl::BitWriter writer{memory_manager};
+  EXPECT_TRUE(WriteCodestreamHeaders(&frame_io->metadata, &writer, nullptr));
+  writer.ZeroPadToByte();
+  EXPECT_TRUE(jxl::EncodeFrame(memory_manager, cparams, jxl::FrameInfo{},
+                               &frame_io->metadata, frame_io->Main(),
+                               *JxlGetDefaultCms(),
+                               /*pool=*/nullptr, &writer,
+                               /*aux_out=*/nullptr));
+  std::vector<uint8_t> encoded_jpeg_data;
+  EXPECT_TRUE(
+      EncodeJPEGData(memory_manager, jbrd_copy, &encoded_jpeg_data, cparams));
+  std::vector<uint8_t> container = jxl::MakeContainerHeader(0);
+  jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), encoded_jpeg_data.size(),
+                       false, &container);
+  jxl::Bytes(encoded_jpeg_data).AppendTo(container);
+  jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, &container);
+  jxl::PaddedBytes codestream = std::move(writer).TakeBytes();
+  jxl::Bytes(codestream).AppendTo(container);
+  return container;
+}
+}  // namespace
+
+// A grayscale jbrd box over a non-subsampled frame is the supported grayscale
+// JPEG reconstruction path and must keep round-tripping byte-identically.
+TEST(DecodeTest, JPEGReconstructionGrayJbrd444Roundtrip) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  const std::vector<uint8_t> gray =
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_gray.jpg");
+  JXL_TEST_ASSIGN_OR_DIE(std::unique_ptr<jxl::jpeg::JPEGData> gray_jpeg_data,
+                         jxl::jpeg::ParseJPG(memory_manager, jxl::Bytes(gray)));
+  jxl::CodecInOut frame_io{memory_manager};
+  ASSERT_TRUE(
+      jxl::test::JpegDataToCodecInOut(std::move(gray_jpeg_data), &frame_io));
+  frame_io.metadata.m.xyb_encoded = false;
+  jxl::CompressParams cparams;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  std::vector<uint8_t> container = MakeJbrdContainer(
+      memory_manager, &frame_io, frame_io.Main().jpeg_data.get(), cparams);
+  VerifyJPEGReconstruction(jxl::Bytes(container), jxl::Bytes(gray));
+}
+
+// A grayscale jbrd box over a chroma-subsampled frame is inconsistent: the
+// frame's Y channel is written at full resolution while the grayscale
+// component buffer would be sized with the subsampled shifts, so decoding
+// must fail instead of writing out of bounds.
+TEST(DecodeTest, JPEGReconstructionGrayJbrdSubsampledFrameRejected) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  const std::vector<uint8_t> color420 =
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
+  JXL_TEST_ASSIGN_OR_DIE(
+      std::unique_ptr<jxl::jpeg::JPEGData> color420_jpeg_data,
+      jxl::jpeg::ParseJPG(memory_manager, jxl::Bytes(color420)));
+  jxl::CodecInOut frame_io{memory_manager};
+  ASSERT_TRUE(jxl::test::JpegDataToCodecInOut(std::move(color420_jpeg_data),
+                                              &frame_io));
+  frame_io.metadata.m.xyb_encoded = false;
+  jxl::CompressParams cparams;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  const std::vector<uint8_t> gray =
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_gray.jpg");
+  JXL_TEST_ASSIGN_OR_DIE(std::unique_ptr<jxl::jpeg::JPEGData> gray_jpeg_data,
+                         jxl::jpeg::ParseJPG(memory_manager, jxl::Bytes(gray)));
+  std::vector<uint8_t> container = MakeJbrdContainer(
+      memory_manager, &frame_io, gray_jpeg_data.get(), cparams);
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec.get(), JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec.get(), container.data(), container.size()));
+  JxlDecoderCloseInput(dec.get());
+  ASSERT_EQ(JXL_DEC_JPEG_RECONSTRUCTION, JxlDecoderProcessInput(dec.get()));
+  std::vector<uint8_t> reconstructed_buffer(1 << 20);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetJPEGBuffer(dec.get(), reconstructed_buffer.data(),
+                                    reconstructed_buffer.size()));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
+}
+
+#endif  // JPEGXL_ENABLE_TRANSCODE_JPEG

@@ -224,6 +224,12 @@ Status FrameDecoder::InitFrameOutput() {
       return JXL_FAILURE("Cannot decode to JPEG an XYB image");
     }
     auto jpeg_c_map = JpegOrder(ColorTransform::kYCbCr, num_components == 1);
+    // A grayscale JPEG has only the Y component, which DecodeGroup writes at
+    // full resolution; sizing it with channel 0's shifts under-allocates.
+    if (num_components == 1 && !frame_header_.chroma_subsampling.Is444()) {
+      return JXL_FAILURE(
+          "Grayscale JPEG reconstruction requires 4:4:4 chroma subsampling");
+    }
     if (frame_dim_.xsize > static_cast<size_t>(jpeg::kMaxDimPixels) ||
         frame_dim_.ysize > static_cast<size_t>(jpeg::kMaxDimPixels)) {
       return JXL_FAILURE("Frame dimensions too large for JPEG reconstruction");
