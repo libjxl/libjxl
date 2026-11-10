@@ -22,6 +22,7 @@ class JxlBoxContentDecoder {
   JxlBoxContentDecoder();
   ~JxlBoxContentDecoder();
 
+  void Reset();
   void StartBox(bool brob_decode, bool box_until_eof, size_t contents_size);
 
   // Outputs decoded bytes from the box, decoding with brotli if needed.
