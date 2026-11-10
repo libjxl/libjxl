@@ -19,23 +19,26 @@ namespace jxl {
 
 JxlBoxContentDecoder::JxlBoxContentDecoder() = default;
 
-JxlBoxContentDecoder::~JxlBoxContentDecoder() {
-  if (brotli_dec) {
-    BrotliDecoderDestroyInstance(brotli_dec);
-  }
-}
+JxlBoxContentDecoder::~JxlBoxContentDecoder() { Reset(); }
 
-void JxlBoxContentDecoder::StartBox(bool brob_decode, bool box_until_eof,
-                                    size_t contents_size) {
+void JxlBoxContentDecoder::Reset() {
   if (brotli_dec) {
     BrotliDecoderDestroyInstance(brotli_dec);
     brotli_dec = nullptr;
   }
   header_done_ = false;
+  brob_decode_ = false;
+  box_until_eof_ = false;
+  remaining_ = 0;
+  pos_ = 0;
+}
+
+void JxlBoxContentDecoder::StartBox(bool brob_decode, bool box_until_eof,
+                                    size_t contents_size) {
+  Reset();
   brob_decode_ = brob_decode;
   box_until_eof_ = box_until_eof;
   remaining_ = box_until_eof ? 0 : contents_size;
-  pos_ = 0;
 }
 
 JxlDecoderStatus JxlBoxContentDecoder::Process(const uint8_t* next_in,
