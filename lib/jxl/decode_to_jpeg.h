@@ -64,6 +64,7 @@ class JxlToJpegDecoder {
   // SetOutputBuffer() may no longer be valid.
   void Reset() {
     buffer_.clear();
+    buffer_.shrink_to_fit();
     jpeg_data_.reset();
     inside_box_ = false;
     box_until_eof_ = false;
