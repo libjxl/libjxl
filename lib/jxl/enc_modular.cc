@@ -27,7 +27,7 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/printf_macros.h"  // PRIu under JXL_DEBUG
 #include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
@@ -234,15 +234,33 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
   return true;
 }
 
+constexpr size_t kNumCutoffs = 33;
+constexpr int32_t kCutoffLim = 500;
+constexpr int32_t kCutoffLookupSize = kCutoffLim * 2 + 1;
+std::array<uint8_t, kCutoffLookupSize> MakeCutoffLookup() {
+  std::array<uint8_t, kCutoffLookupSize> result{};
+  std::array<int32_t, kNumCutoffs> cutoffs = {
+      -kCutoffLim, -392, -255, -191, -127, -95, -63, -47, -31, -23, -15,
+      -11,         -7,   -4,   -3,   -1,   0,   1,   3,   5,   7,   11,
+      15,          23,   31,   47,   63,   95,  127, 191, 255, 392, kCutoffLim};
+  size_t pos = 0;
+  for (size_t i = 0; i < result.size(); i++) {
+    int32_t c = static_cast<int32_t>(i) - kCutoffLim;
+    if (c == cutoffs[pos]) {
+      pos++;
+    }
+    result[i] = kNumCutoffs - pos;
+  }
+  return result;
+}
+
 float EstimateWPCost(const Image& img, size_t i) {
   size_t extra_bits = 0;
   float histo_cost = 0;
   HybridUintConfig config;
-  int32_t cutoffs[] = {-500, -392, -255, -191, -127, -95, -63, -47, -31,
-                       -23,  -15,  -11,  -7,   -4,   -3,  -1,  0,   1,
-                       3,    5,    7,    11,   15,   23,  31,  47,  63,
-                       95,   127,  191,  255,  392,  500};
-  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
+  static std::array<uint8_t, kCutoffLookupSize> kCutoffLookup =
+      MakeCutoffLookup();
+  constexpr size_t nc = kNumCutoffs + 1;
   Histogram histo[nc] = {};
   weighted::Header wp_header;
   PredictorMode(i, &wp_header);
@@ -265,8 +283,13 @@ float EstimateWPCost(const Image& img, size_t i) {
             x, y, ch.w, top, left, topright, topleft, toptop, &properties,
             offset);
         size_t ctx = 0;
-        for (int c : cutoffs) {
-          ctx += (c >= properties[0]) ? 1 : 0;
+        PropertyVal p0 = properties[0];
+        if (p0 < -kCutoffLim) {
+          ctx = kNumCutoffs;
+        } else if (p0 > kCutoffLim) {
+          ctx = 0;
+        } else {
+          ctx = kCutoffLookup[p0 + kCutoffLim];
         }
         pixel_type res;
         unhealthy |= SubOverflow(r[x], guess, res);
@@ -432,10 +455,10 @@ Status try_palettes(Image& gi, int& max_bitdepth, int& maxval,
       if (did_ch_palette) {
         // effective bit depth is lower, adjust quantization accordingly
         compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
-        if (max < maxval) maxval = max;
+        maxval = std::min(max, maxval);
         int ch_bitdepth =
             (max > 0 ? CeilLog2Nonzero(static_cast<uint32_t>(max)) : 0);
-        if (ch_bitdepth > max_bitdepth) max_bitdepth = ch_bitdepth;
+        max_bitdepth = std::max(ch_bitdepth, max_bitdepth);
       } else {
         max_bitdepth = orig_bitdepth;
       }
@@ -846,9 +869,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     int exp_bits = eci.bit_depth.exponent_bits_per_sample;
     bool ec_fp = eci.bit_depth.floating_point_sample;
     double factor = (ec_fp ? 1 : ((1u << eci.bit_depth.bits_per_sample) - 1));
-    if (bits + (ec_fp ? 0 : 1) > max_bitdepth) {
-      max_bitdepth = bits + (ec_fp ? 0 : 1);
-    }
+    max_bitdepth = std::max(bits + (ec_fp ? 0 : 1), max_bitdepth);
     const auto process_row = [&](const int task, const int thread) -> Status {
       const size_t y = task;
       const float* const JXL_RESTRICT row_in =
@@ -1012,7 +1033,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     for (uint32_t i = gi.nb_meta_channels; i < gi.channel.size(); i++) {
       Channel& ch = gi.channel[i];
       int shift = ch.hshift + ch.vshift;  // number of pixel halvings
-      if (shift > 16) shift = 16;
+      shift = std::min(shift, 16);
       if (shift > 0) shift--;
       int component = (do_color ? 0 : 3) + ch.component;
       int q;
@@ -1029,7 +1050,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
               squeeze_luma_factor * squeeze_luma_qtable[shift];
         }
       }
-      if (q < 1) q = 1;
+      q = std::max(q, 1);
       QuantizeChannel(gi.channel[i], q);
       quants_[i] = q;
     }
@@ -1078,12 +1099,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
   gi_channel_.resize(stream_images_.size());
 
+  ModularOptions options_template = stream_options_[0];
   const auto process_row = [&](const uint32_t i,
                                size_t /* thread */) -> Status {
     size_t stream = stream_params_[i].id.ID(frame_dim_);
-    if (stream != 0) {
-      stream_options_[stream] = stream_options_[0];
-    }
+    stream_options_[stream] = options_template;
     JXL_RETURN_IF_ERROR(PrepareStreamParams(
         stream_params_[i].rect, cparams_, stream_params_[i].minShift,
         stream_params_[i].maxShift, stream_params_[i].id, do_color, groupwise));
@@ -1384,7 +1404,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // pixel values.
     return true;
   }
-  Image& full_image = stream_images_[0];
+  const Image& full_image = stream_images_[0];
   JxlMemoryManager* memory_manager = full_image.memory_manager();
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
@@ -1396,12 +1416,12 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     size_t c = full_image.nb_meta_channels;
     if (!groupwise) {
       for (; c < full_image.channel.size(); c++) {
-        Channel& fc = full_image.channel[c];
+        const Channel& fc = full_image.channel[c];
         if (fc.w > frame_dim_.group_dim || fc.h > frame_dim_.group_dim) break;
       }
     }
     for (; c < full_image.channel.size(); c++) {
-      Channel& fc = full_image.channel[c];
+      const Channel& fc = full_image.channel[c];
       int shift = std::min(fc.hshift, fc.vshift);
       if (shift > maxShift) continue;
       if (shift < minShift) continue;
@@ -1428,7 +1448,8 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // mode.
     if (cparams_.ModularPartIsLossless() && !cparams.responsive &&
         !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
-      int max_bitdepth = 0, maxval = 0;  // don't care about that here
+      int max_bitdepth = 0;
+      int maxval = 0;  // don't care about that here
       float channel_color_percent = 0;
         channel_color_percent = cparams.channel_colors_percent;
       JXL_RETURN_IF_ERROR(try_palettes(gi, max_bitdepth, maxval, cparams,

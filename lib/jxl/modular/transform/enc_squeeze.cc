@@ -27,16 +27,17 @@ namespace jxl {
 Status FwdHSqueeze(Image &input, int c, int rc) {
   const Channel &chin = input.channel[c];
   JxlMemoryManager *memory_manager = input.memory_manager();
+  int new_hshift = (chin.hshift >= 0) ? chin.hshift + 1 : chin.hshift;
 
   JXL_DEBUG_V(4, "Doing horizontal squeeze of channel %i to new channel %i", c,
               rc);
 
   JXL_ASSIGN_OR_RETURN(Channel chout,
                        Channel::Create(memory_manager, (chin.w + 1) / 2, chin.h,
-                                       chin.hshift + 1, chin.vshift));
+                                       new_hshift, chin.vshift));
   JXL_ASSIGN_OR_RETURN(Channel chout_residual,
                        Channel::Create(memory_manager, chin.w - chout.w,
-                                       chout.h, chin.hshift + 1, chin.vshift));
+                                       chout.h, new_hshift, chin.vshift));
   chout.component = chin.component;
   chout_residual.component = chin.component;
 
@@ -78,16 +79,17 @@ Status FwdHSqueeze(Image &input, int c, int rc) {
 Status FwdVSqueeze(Image &input, int c, int rc) {
   const Channel &chin = input.channel[c];
   JxlMemoryManager *memory_manager = input.memory_manager();
+  int new_vshift = (chin.vshift >= 0) ? chin.vshift + 1 : chin.vshift;
 
   JXL_DEBUG_V(4, "Doing vertical squeeze of channel %i to new channel %i", c,
               rc);
 
   JXL_ASSIGN_OR_RETURN(Channel chout,
                        Channel::Create(memory_manager, chin.w, (chin.h + 1) / 2,
-                                       chin.hshift, chin.vshift + 1));
+                                       chin.hshift, new_vshift));
   JXL_ASSIGN_OR_RETURN(Channel chout_residual,
                        Channel::Create(memory_manager, chin.w, chin.h - chout.h,
-                                       chin.hshift, chin.vshift + 1));
+                                       chin.hshift, new_vshift));
   chout.component = chin.component;
   chout_residual.component = chin.component;
 
