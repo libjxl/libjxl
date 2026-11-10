@@ -15,6 +15,7 @@
 # We need to CACHE the SJPEG_BUILD_EXAMPLES to not be removed by the option()
 # inside SJPEG.
 set(SJPEG_BUILD_EXAMPLES NO CACHE BOOL "Examples")
+set(SJPEG_BUILD_TESTS OFF CACHE BOOL "")
 # SJPEG uses OpenGL which throws a warning if multiple options are installed.
 # This setting makes it prefer the new version.
 set(OpenGL_GL_PREFERENCE GLVND)
