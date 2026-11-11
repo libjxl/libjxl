@@ -29,6 +29,7 @@
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
+#include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/quant_weights.h"
@@ -116,6 +117,7 @@ class ModularFrameEncoder {
   EntropyEncodingData code_;
   std::vector<uint8_t> context_map_;
   FrameDimensions frame_dim_;
+  size_t max_tree_size_ = kMaxTreeSize;
   CompressParams cparams_;
   std::vector<size_t> tree_splits_;
   std::vector<std::vector<uint32_t>> gi_channel_;
