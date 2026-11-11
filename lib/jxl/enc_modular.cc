@@ -556,9 +556,11 @@ Status ModularFrameEncoder::Init(const FrameHeader& frame_header,
     }
   }
 
-  cparams_.options.splitting_heuristics_node_threshold =
-      75 + 14 * static_cast<int>(cparams_.speed_tier) +
-      10 * cparams_.decoding_speed_tier;
+  if (cparams_.options.splitting_heuristics_node_threshold < 0.0f) {
+    cparams_.options.splitting_heuristics_node_threshold =
+        75 + 14 * static_cast<int>(cparams_.speed_tier) +
+        10 * cparams_.decoding_speed_tier;
+  }
 
   {
     // Set properties.
@@ -1301,6 +1303,168 @@ Status ModularFrameEncoder::ComputeTokens(ThreadPool* pool) {
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_streams, ThreadPool::NoInit,
                                 process_stream, "ComputeTokens"));
+  return true;
+}
+
+Status ModularFrameEncoder::MaybeRetuneJPEGTranscodeTreeThreshold(
+    ThreadPool* pool) {
+  if (cparams_.modular_mode || cparams_.speed_tier > SpeedTier::kGlacier) {
+    return true;
+  }
+
+  // In JPEG lossless transcoding, the modular frame only encodes VarDCT DC,
+  // AC metadata, and quantization tables. At effort 10, the default
+  // splitting_heuristics_node_threshold can sometimes over-split the tree
+  // and produce larger files than effort 9.
+  // Evaluate offsets at a variety of values to find a local minimum
+  // of total modular bit cost without redoing the full-frame VarDCT AC work.
+  const int base_threshold = 75 + 10 * cparams_.decoding_speed_tier;
+  const int jpeg_transcode_offsets[] = {0, 14, 65, 85, 105};
+  constexpr size_t kNumOffsets =
+      sizeof(jpeg_transcode_offsets) / sizeof(jpeg_transcode_offsets[0]);
+
+  std::vector<size_t> useful_splits;
+  useful_splits.reserve(tree_splits_.size());
+  for (size_t chunk = 0; chunk < tree_splits_.size() - 1; chunk++) {
+    size_t start = tree_splits_[chunk];
+    size_t stop = tree_splits_[chunk + 1];
+    for (size_t i = start; i < stop; i++) {
+      if (!stream_images_[i].empty()) {
+        useful_splits.push_back(start);
+        break;
+      }
+    }
+  }
+  if (useful_splits.empty()) return true;
+  useful_splits.push_back(tree_splits_.back());
+
+  const size_t num_streams = stream_images_.size();
+  HistogramParams base_params =
+      HistogramParams::ForModular(cparams_, extra_dc_precision, false);
+
+  std::vector<size_t> candidate_bits(kNumOffsets, SIZE_MAX);
+  std::vector<Tree> candidate_trees(kNumOffsets);
+  std::vector<std::vector<std::vector<Token>>> candidate_tree_tokens(
+      kNumOffsets);
+  std::vector<std::vector<GroupHeader>> candidate_headers(kNumOffsets);
+  std::vector<std::vector<std::vector<Token>>> candidate_tokens(kNumOffsets);
+  std::vector<std::vector<size_t>> candidate_widths(kNumOffsets);
+
+  const auto process_offset = [&](const uint32_t idx,
+                                  size_t /* thread */) -> Status {
+    const float threshold = base_threshold + jpeg_transcode_offsets[idx];
+    std::vector<ModularOptions> local_options = stream_options_;
+    for (auto& opt : local_options) {
+      opt.splitting_heuristics_node_threshold = threshold;
+    }
+
+    std::vector<Tree> chunk_trees(useful_splits.size() - 1);
+    for (size_t chunk = 0; chunk < useful_splits.size() - 1; chunk++) {
+      uint32_t start = useful_splits[chunk];
+      uint32_t stop = useful_splits[chunk + 1];
+      while (start < stop && stream_images_[start].empty()) ++start;
+      while (start < stop && stream_images_[stop - 1].empty()) --stop;
+
+      if (local_options[start].tree_kind == ModularOptions::TreeKind::kLearn) {
+        JXL_ASSIGN_OR_RETURN(
+            chunk_trees[chunk],
+            LearnTree(stream_images_.data(), local_options.data(), start, stop,
+                      {}));
+      } else {
+        size_t total_pixels = 0;
+        for (size_t i = start; i < stop; i++) {
+          for (const Channel& ch : stream_images_[i].channel) {
+            total_pixels += ch.w * ch.h;
+          }
+        }
+        total_pixels = std::max<size_t>(total_pixels, 1);
+        chunk_trees[chunk] = PredefinedTree(local_options[start].tree_kind,
+                                            total_pixels, 8, 0);
+      }
+    }
+
+    Tree tree;
+    JXL_RETURN_IF_ERROR(MergeTrees(chunk_trees, useful_splits, 0,
+                                   useful_splits.size() - 1, &tree));
+    std::vector<std::vector<Token>> tree_tokens(1);
+    Tree decoded_tree;
+    JXL_RETURN_IF_ERROR(TokenizeTree(tree, tree_tokens.data(), &decoded_tree));
+    JXL_ENSURE(tree.size() == decoded_tree.size());
+    tree = std::move(decoded_tree);
+
+    std::vector<GroupHeader> headers(num_streams);
+    std::vector<std::vector<Token>> tokens(num_streams);
+    std::vector<size_t> widths(num_streams);
+    for (size_t stream_id = 0; stream_id < num_streams; ++stream_id) {
+      JXL_RETURN_IF_ERROR(ModularCompress(
+          stream_images_[stream_id], local_options[stream_id], stream_id, tree,
+          headers[stream_id], tokens[stream_id], &widths[stream_id]));
+    }
+
+    // Measure total Modular bit cost (tree + histograms + all streams)
+    BitWriter writer{memory_manager_};
+    if (!tree_tokens[0].empty()) {
+      HistogramParams params = base_params;
+      std::vector<std::vector<Token>> tree_tokens_copy = tree_tokens;
+      std::vector<std::vector<Token>> tokens_copy = tokens;
+      EntropyEncodingData code;
+      {
+        EntropyEncodingData tree_code;
+        JXL_ASSIGN_OR_RETURN(
+            size_t cost,
+            BuildAndEncodeHistograms(memory_manager_, params, kNumTreeContexts,
+                                     tree_tokens_copy, &tree_code, &writer,
+                                     LayerType::ModularTree, nullptr));
+        (void)cost;
+        JXL_RETURN_IF_ERROR(WriteTokens(tree_tokens_copy[0], tree_code, 0,
+                                        &writer, LayerType::ModularTree,
+                                        nullptr));
+      }
+      params.image_widths = widths;
+      JXL_ASSIGN_OR_RETURN(
+          size_t cost,
+          BuildAndEncodeHistograms(memory_manager_, params,
+                                   (tree.size() + 1) / 2, tokens_copy, &code,
+                                   &writer, LayerType::ModularGlobal, nullptr));
+      (void)cost;
+      for (size_t stream_id = 0; stream_id < num_streams; ++stream_id) {
+        if (stream_images_[stream_id].channel.empty()) continue;
+        JXL_RETURN_IF_ERROR(Bundle::Write(headers[stream_id], &writer,
+                                          LayerType::ModularGlobal, nullptr));
+        JXL_RETURN_IF_ERROR(WriteTokens(tokens[stream_id], code, 0, &writer,
+                                        LayerType::ModularGlobal, nullptr));
+      }
+    }
+
+    candidate_bits[idx] = writer.BitsWritten();
+    candidate_trees[idx] = std::move(tree);
+    candidate_tree_tokens[idx] = std::move(tree_tokens);
+    candidate_headers[idx] = std::move(headers);
+    candidate_tokens[idx] = std::move(tokens);
+    candidate_widths[idx] = std::move(widths);
+    return true;
+  };
+
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, kNumOffsets, ThreadPool::NoInit,
+                                process_offset, "RetuneJPEGTranscodeModularTree"));
+
+  size_t best_idx = 0;
+  for (size_t i = 1; i < kNumOffsets; ++i) {
+    if (candidate_bits[i] < candidate_bits[best_idx]) {
+      best_idx = i;
+    }
+  }
+
+  const float best_threshold = base_threshold + jpeg_transcode_offsets[best_idx];
+  cparams_.options.splitting_heuristics_node_threshold = best_threshold;
+  for (auto& opt : stream_options_) {
+    opt.splitting_heuristics_node_threshold = best_threshold;
+  }
+  tree_ = std::move(candidate_trees[best_idx]);
+  tree_tokens_ = std::move(candidate_tree_tokens[best_idx]);
+  stream_headers_ = std::move(candidate_headers[best_idx]);
+  tokens_ = std::move(candidate_tokens[best_idx]);
+  image_widths_ = std::move(candidate_widths[best_idx]);
   return true;
 }
 

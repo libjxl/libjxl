@@ -1707,8 +1707,18 @@ Status ComputeEncodingData(
         (!(cparams.responsive == 1 && cparams.IsLossless()) &&
          cparams.buffering < 3) ||
         !cparams.custom_fixed_tree.empty()) {
-      JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
-      JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
+      // For lossless JPEG transcoding, etune the modular tree
+      // splitting threshold to find a local minimum and avoid regressions
+      // over effort 9.
+      if (jpeg_data && cparams.speed_tier <= SpeedTier::kGlacier &&
+          cparams.options.splitting_heuristics_node_threshold < 0.0f &&
+          cparams.custom_fixed_tree.empty()) {
+        JXL_RETURN_IF_ERROR(
+            enc_modular.MaybeRetuneJPEGTranscodeTreeThreshold(pool));
+      } else {
+        JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
+        JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
+      }
     }
     mutable_frame_header.UpdateFlag(shared.image_features.patches.HasAny(),
                                     FrameHeader::kPatches);
@@ -2581,7 +2591,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
                    JxlEncoderOutputProcessorWrapper* output_processor,
                    AuxOut* aux_out, uint32_t* jxlp_counter) {
   CompressParams cparams = cparams_orig;
-  if (cparams.speed_tier == SpeedTier::kTectonicPlate &&
+  if (cparams.speed_tier <= SpeedTier::kTectonicPlate &&
       !cparams.IsLossless()) {
     cparams.speed_tier = SpeedTier::kGlacier;
   }
@@ -2590,7 +2600,7 @@ Status EncodeFrame(JxlMemoryManager* memory_manager,
   if (cparams.speed_tier == SpeedTier::kLightning) {
     cparams.speed_tier = SpeedTier::kThunder;
   }
-  if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
+  if (cparams.speed_tier <= SpeedTier::kTectonicPlate) {
     // Test palette performance to inform later trials.
     std::vector<CompressParams> all_params;
     CompressParams cparams_attempt = cparams;
