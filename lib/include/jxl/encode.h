@@ -898,8 +898,22 @@ struct JxlChunkedFrameInputSource {
    * Callback to retrieve a rectangle of color channel data at a specific
    * location. It is guaranteed that xpos and ypos are multiples of 8. xsize,
    * ysize will be multiples of 8, unless the resulting rectangle would be out
-   * of image bounds. Moreover, xsize and ysize will be at most 2048. The
-   * returned data will be assumed to be in the format returned by the
+   * of image bounds.
+   *
+   * The requested rectangles are only guaranteed to be bounded if the encoder
+   * uses streaming input for the frame. This requires an output processor set
+   * with @ref JxlEncoderSetOutputProcessor, and also depends on the frame
+   * dimensions and on the frame settings (see @ref
+   * JXL_ENC_FRAME_SETTING_BUFFERING). Without streaming input, this callback
+   * may be called once for the entire frame, and the encoder will keep an
+   * internal copy of the data. With streaming input, a rectangle covers at
+   * most one DC group plus a border of up to 8 pixels on each side. DC groups
+   * are 2048 x 2048 pixels, so xsize and ysize will be at most 2064, unless a
+   * larger group size is set in modular mode with @ref
+   * JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE (DC groups of 4096 x 4096 or
+   * 8192 x 8192 pixels).
+   *
+   * The returned data will be assumed to be in the format returned by the
    * (preceding) call to get_color_channels_pixel_format, except the `align`
    * parameter of the pixel format will be ignored. Instead, the `i`-th row will
    * be assumed to start at position `return_value + i * *row_offset`, with the
@@ -941,12 +955,14 @@ struct JxlChunkedFrameInputSource {
    * Callback to retrieve a rectangle of extra channel `ec_index` data at a
    * specific location. It is guaranteed that xpos and ypos are multiples of
    * 8. xsize, ysize will be multiples of 8, unless the resulting rectangle
-   * would be out of image bounds. Moreover, xsize and ysize will be at most
-   * 2048. The returned data will be assumed to be in the format returned by the
-   * (preceding) call to get_extra_channels_pixel_format_at with the
-   * corresponding extra channel index `ec_index`, except the `align` parameter
-   * of the pixel format will be ignored. Instead, the `i`-th row will be
-   * assumed to start at position `return_value + i * *row_offset`, with the
+   * would be out of image bounds. The requested rectangles are the same as for
+   * `get_color_channel_data_at`: they are only guaranteed to be bounded when
+   * the encoder uses streaming input for the frame, and may otherwise cover the
+   * entire frame. The returned data will be assumed to be in the format
+   * returned by the (preceding) call to get_extra_channels_pixel_format_at with
+   * the corresponding extra channel index `ec_index`, except the `align`
+   * parameter of the pixel format will be ignored. Instead, the `i`-th row will
+   * be assumed to start at position `return_value + i * *row_offset`, with the
    * value of `*row_offset` decided by the callee.
    *
    * Note that multiple calls to `get_extra_channel_data_at` may happen before a
@@ -989,6 +1005,13 @@ struct JxlChunkedFrameInputSource {
  * @ref JxlChunkedFrameInputSource struct. Once the frame data has been
  * completely retrieved, this function will flush the input and close it if it
  * is the last frame.
+ *
+ * To reduce peak memory usage, set an output processor with @ref
+ * JxlEncoderSetOutputProcessor. When the output is retrieved with @ref
+ * JxlEncoderProcessOutput, or when the frame dimensions or settings do not
+ * allow streaming input (see @ref JXL_ENC_FRAME_SETTING_BUFFERING), the
+ * encoder may request the whole frame from the callbacks and copy it
+ * internally.
  *
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
