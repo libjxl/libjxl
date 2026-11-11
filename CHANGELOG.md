@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.13.0] - 2026-11-11
 
 ### Security
 
@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adapters and truncated EXR scanline streams, bounds-checked `Span::subspan`
   slicing, and null pointer guards (#4936, #4938, #5009, #5022, #5023,
   #5026, #5029, #5030, #5076, #5091, #5096, #5100)
+- decoder: more consistent image_out cleanup;
+  reported-by: Alejandro Pacheco (@alepacheco) and Eunji Ham
+- harden patch rect calculations;
+  reported-by: Robert McConnell and freezagent
+- make another decoding path aware of overflows (see #4808);
+  reported-by: Robert McConnell
+- decoder: guard against using wrong out buffer;
+  reported-by: Lakshit Verma
+- ensure CmsStage when converting CMYK has access to actual black channel;
+  reported-by: Marinko Ružić
+- fix using wrong subsampling when reconstructing gray JPEGs;
+  reported-by: synawk dsx, ptrstr and Lakshit Verma
 
 ### Added
 

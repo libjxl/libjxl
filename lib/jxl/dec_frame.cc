@@ -223,14 +223,16 @@ Status FrameDecoder::InitFrameOutput() {
     if (frame_header_.nonserialized_metadata->m.xyb_encoded) {
       return JXL_FAILURE("Cannot decode to JPEG an XYB image");
     }
-    auto jpeg_c_map = JpegOrder(ColorTransform::kYCbCr, num_components == 1);
+    bool is_gray = (num_components == 1);
+    auto jpeg_c_map = JpegOrder(ColorTransform::kYCbCr, is_gray);
     if (frame_dim_.xsize > static_cast<size_t>(jpeg::kMaxDimPixels) ||
         frame_dim_.ysize > static_cast<size_t>(jpeg::kMaxDimPixels)) {
       return JXL_FAILURE("Frame dimensions too large for JPEG reconstruction");
     }
     decoded_->jpeg_data->width = static_cast<int>(frame_dim_.xsize);
     decoded_->jpeg_data->height = static_cast<int>(frame_dim_.ysize);
-    for (size_t c = 0; c < num_components; c++) {
+    for (size_t c = 0; c < 3; ++c) {
+      if (is_gray && c != 1) continue;
       auto& component = jpeg_data->components[jpeg_c_map[c]];
       component.width_in_blocks =
           frame_dim_.xsize_blocks >> frame_header_.chroma_subsampling.HShift(c);
