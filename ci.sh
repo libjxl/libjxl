@@ -1490,6 +1490,8 @@ cmd_bump_version() {
   DEBCHANGE_RELEASE_HEURISTIC=log dch -M \
     --newversion "${newver}" \
     "Bump JPEG XL version to ${newver}."
+
+  echo "WARNING: JPEGXL_SO_MINOR_VERSION is not updated automatically!"
 }
 
 # Check that the AUTHORS file contains the email of the committer.
