@@ -15,6 +15,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/jpeg/enc_jpeg_huffman_decode.h"
+#include "lib/jxl/jpeg/jpeg_byte_cursor.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
@@ -347,33 +348,39 @@ Status ProcessDRI(const uint8_t* data, const size_t len, size_t* pos,
   return true;
 }
 
+// Returns the marker byte, length and payload as one checked view. The marker
+// prefix (0xff) has already been consumed by ReadJpeg and is not stored.
+Status ReadMarkerSegment(const uint8_t* data, size_t len, size_t* pos,
+                         Bytes* segment) {
+  JXL_ENSURE(*pos != 0);
+  JpegByteCursor cursor(Bytes(data, len));
+  JXL_RETURN_IF_ERROR(cursor.Skip(*pos - 1));
+  JpegByteCursor header = cursor;
+  JXL_RETURN_IF_ERROR(header.Skip(1));
+  uint16_t marker_len;
+  JXL_RETURN_IF_ERROR(header.U16BE(&marker_len));
+  *pos = header.offset();
+  JXL_JPEG_VERIFY_INPUT(marker_len, 2, 65535, MARKER_LEN);
+  JXL_RETURN_IF_ERROR(cursor.Take(static_cast<size_t>(marker_len) + 1, segment));
+  *pos = cursor.offset();
+  return true;
+}
+
 // Saves the APP marker segment as a string to *jpg.
 Status ProcessAPP(const uint8_t* data, const size_t len, size_t* pos,
                   JPEGData* jpg) {
-  JXL_JPEG_VERIFY_LEN(2);
-  size_t marker_len = ReadUint16(data, pos);
-  JXL_JPEG_VERIFY_INPUT(marker_len, 2, 65535, MARKER_LEN);
-  JXL_JPEG_VERIFY_LEN(marker_len - 2);
-  JXL_ENSURE(*pos >= 3);
-  // Save the marker type together with the app data.
-  const uint8_t* app_str_start = data + *pos - 3;
-  std::vector<uint8_t> app_str(app_str_start, app_str_start + marker_len + 1);
-  *pos += marker_len - 2;
-  jpg->app_data.push_back(app_str);
+  Bytes segment;
+  JXL_RETURN_IF_ERROR(ReadMarkerSegment(data, len, pos, &segment));
+  jpg->app_data.emplace_back(segment.begin(), segment.end());
   return true;
 }
 
 // Saves the COM marker segment as a string to *jpg.
 Status ProcessCOM(const uint8_t* data, const size_t len, size_t* pos,
                   JPEGData* jpg) {
-  JXL_JPEG_VERIFY_LEN(2);
-  size_t marker_len = ReadUint16(data, pos);
-  JXL_JPEG_VERIFY_INPUT(marker_len, 2, 65535, MARKER_LEN);
-  JXL_JPEG_VERIFY_LEN(marker_len - 2);
-  const uint8_t* com_str_start = data + *pos - 3;
-  std::vector<uint8_t> com_str(com_str_start, com_str_start + marker_len + 1);
-  *pos += marker_len - 2;
-  jpg->com_data.push_back(com_str);
+  Bytes segment;
+  JXL_RETURN_IF_ERROR(ReadMarkerSegment(data, len, pos, &segment));
+  jpg->com_data.emplace_back(segment.begin(), segment.end());
   return true;
 }
 
