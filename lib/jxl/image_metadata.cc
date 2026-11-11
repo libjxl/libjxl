@@ -329,6 +329,12 @@ Status ImageMetadata::VisitFields(Visitor* JXL_RESTRICT visitor) {
   JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(0), Val(1), BitsOffset(4, 2),
                                          BitsOffset(12, 1), 0,
                                          &num_extra_channels));
+  // Cap extra channels at decode time to the encoder limit (see encode.cc).
+  // Without this, a tiny file can force allocation of one full-frame plane
+  // per channel (up to 4096), a disproportionate-allocation DoS.
+  if (num_extra_channels > 256) {
+    return JXL_FAILURE("Too many extra channels: %u", num_extra_channels);
+  }
 
   if (visitor->Conditional(num_extra_channels != 0)) {
     if (visitor->IsReading()) {
