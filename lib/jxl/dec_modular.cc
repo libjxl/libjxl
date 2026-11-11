@@ -257,10 +257,8 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     for (size_t c = 0; c < nb_chans; c++) {
       gi.channel[c].hshift = frame_header.chroma_subsampling.HShift(c);
       gi.channel[c].vshift = frame_header.chroma_subsampling.VShift(c);
-      size_t xsize_shifted =
-          DivCeil(frame_dim.xsize, 1 << gi.channel[c].hshift);
-      size_t ysize_shifted =
-          DivCeil(frame_dim.ysize, 1 << gi.channel[c].vshift);
+      size_t xsize_shifted = DivCeilPow2(frame_dim.xsize, gi.channel[c].hshift);
+      size_t ysize_shifted = DivCeilPow2(frame_dim.ysize, gi.channel[c].vshift);
       JXL_RETURN_IF_ERROR(gi.channel[c].shrink(xsize_shifted, ysize_shifted));
       if (gi.channel[c].hshift != gi.channel[0].hshift ||
           gi.channel[c].vshift != gi.channel[0].vshift)
@@ -602,8 +600,8 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       Rect r = render_pipeline_input.GetBuffer(c).second;
       Rect mr(modular_rect.x0() >> ch_in.hshift,
               modular_rect.y0() >> ch_in.vshift,
-              DivCeil(modular_rect.xsize(), 1 << ch_in.hshift),
-              DivCeil(modular_rect.ysize(), 1 << ch_in.vshift));
+              DivCeilPow2(modular_rect.xsize(), ch_in.hshift),
+              DivCeilPow2(modular_rect.ysize(), ch_in.vshift));
       mr = mr.Crop(ch_in.plane);
       size_t xsize_shifted = r.xsize();
       size_t ysize_shifted = r.ysize();
@@ -708,8 +706,8 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     Rect r = buffer.second;
     Rect mr(modular_rect.x0() >> ch_in.hshift,
             modular_rect.y0() >> ch_in.vshift,
-            DivCeil(modular_rect.xsize(), 1 << ch_in.hshift),
-            DivCeil(modular_rect.ysize(), 1 << ch_in.vshift));
+            DivCeilPow2(modular_rect.xsize(), ch_in.hshift),
+            DivCeilPow2(modular_rect.ysize(), ch_in.vshift));
     mr = mr.Crop(ch_in.plane);
     if (r.ysize() != mr.ysize() || r.xsize() != mr.xsize()) {
       return JXL_FAILURE("Dimension mismatch: trying to fit a %" PRIuS

@@ -361,7 +361,7 @@ Status MaybeDecodeBase16(const char* key, const char* encoded,
   size_t tail = static_cast<size_t>(encoded_end - pos);
   bool ok = ((tail / 2) >= bytes_to_decode);
   if (ok) tail -= 2 * static_cast<size_t>(bytes_to_decode);
-  ok = ok && (tail == 1 + DivCeil(bytes_to_decode, 36));
+  ok = ok && (tail == 1 + DivCeil<size_t>(bytes_to_decode, 36));
   if (!ok) {
     return JXL_FAILURE("Not enough bytes to parse %d bytes in hex",
                        bytes_to_decode);
