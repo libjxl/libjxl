@@ -108,6 +108,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - fixed mingw32 build (#4940) and sequentialized CMake test discovery to avoid
     build races on macOS/multi-core machines (#4939)
 
+### Changed
+
+- Encoder API: reference frame ID 3 is now available for use by external frames
+  if patches are disabled for the whole image. (#4512)
+
 ## [0.12.0] - 2026-07-01
 
 ### Added
