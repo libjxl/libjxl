@@ -265,9 +265,19 @@ class ANSSymbolReader {
     br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
     size_t token = ReadSymbolHuffWithoutRefill(ctx, br);
     if (JXL_UNLIKELY(token >= lz77_threshold_)) {
-      *run =
-          ReadHybridUintConfig(lz77_length_uint_, token - lz77_threshold_, br) +
+      const size_t len =
+          static_cast<size_t>(ReadHybridUintConfig(
+              lz77_length_uint_, token - lz77_threshold_, br)) +
           lz77_min_length_ - 1;
+      if (JXL_UNLIKELY(len > 0xFFFFFFFFu)) {
+        // Same wrapped-length corruption the generic path guards against:
+        // stop accepting data so it surfaces at the next bounds check instead
+        // of emitting phantom repeated symbols.
+        *run = 0;
+        br->MarkUnhealthy();
+        return;
+      }
+      *run = static_cast<uint32_t>(len);
       return;
     }
     *value = ReadHybridUintConfig(configs[ctx], token, br);
