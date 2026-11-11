@@ -12,6 +12,7 @@
 #include <jxl/encode.h>
 #include <stddef.h>
 
+#include <cstdint>
 #include <vector>
 
 #include "lib/jxl/base/override.h"
@@ -186,6 +187,18 @@ struct CompressParams {
   // If not empty, these custom splines will be used instead of the computed
   // ones. Used in jxl_from_tee tool.
   SplineDataView custom_splines{};
+  // A patch placement for custom_patches: the rectangle (x0, y0, xsize, ysize)
+  // of reference frame `ref` is blended onto this frame at (x, y), with
+  // `blend_mode` (a PatchBlendMode value) for the color channels and
+  // `ec_blend_mode` for every extra channel.
+  struct CustomPatch {
+    size_t ref, x0, y0, xsize, ysize, x, y;
+    uint8_t blend_mode, ec_blend_mode;
+    bool clamp;
+  };
+  // If not empty, these patches will be used instead of computed ones (modular
+  // mode only). Used in jxl_from_tree tool.
+  std::vector<CustomPatch> custom_patches;
   // If not null, overrides progressive mode settings. Used in decode_test.
   const ProgressiveMode* custom_progressive_mode = nullptr;
 
