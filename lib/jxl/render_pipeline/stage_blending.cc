@@ -89,13 +89,6 @@ class BlendingStage : public RenderPipelineStage {
       return;
     }
 
-    if (state_.metadata->m.xyb_encoded) {
-      if (!dec_state->output_encoding_info.color_encoding_is_original) {
-        initialized_ = JXL_FAILURE("Blending in unsupported color space");
-        return;
-      }
-    }
-
     blending_info_.resize(ec_info.size() + 1);
     auto make_blending = [&](const BlendingInfo& info, PatchBlending* pb) {
       pb->alpha_channel = info.alpha_channel;
@@ -124,8 +117,17 @@ class BlendingStage : public RenderPipelineStage {
       }
     };
     make_blending(info_, blending_info_.data());
+    bool no_blending = (blending_info_[0].mode == PatchBlendMode::kReplace);
     for (size_t i = 0; i < ec_info.size(); i++) {
       make_blending(ec_info[i], &blending_info_[1 + i]);
+      no_blending &= (blending_info_[i + 1].mode == PatchBlendMode::kReplace);
+    }
+
+    if (state_.metadata->m.xyb_encoded && !no_blending) {
+      if (!dec_state->output_encoding_info.color_encoding_is_original) {
+        initialized_ = JXL_FAILURE("Blending in unsupported color space");
+        return;
+      }
     }
   }
 
