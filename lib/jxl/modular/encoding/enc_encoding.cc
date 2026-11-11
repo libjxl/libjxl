@@ -35,6 +35,7 @@
 #include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/pack_signed.h"
 
 namespace jxl {
@@ -286,7 +287,6 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     const ptrdiff_t onerow = channel.plane.PixelsPerRow();
     weighted::State wp_state(wp_header, channel.w, channel.h);
     Properties properties(1);
-    bool unhealthy = false;
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT r = channel.Row(y);
       for (size_t x = 0; x < channel.w; x++) {
@@ -304,14 +304,10 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
             kPropRangeFast +
             jxl::Clamp1(properties[0], -kPropRangeFast, kPropRangeFast - 1);
         uint32_t ctx_id = tree_lut->context_lookup[pos];
-        int32_t residual;
-        unhealthy |= SubOverflow(r[x], guess, residual);
+        const int32_t residual = PixelSub(r[x], guess);
         *tokenp++ = Token(ctx_id, PackSigned(residual));
         wp_state.UpdateErrors(r[x], x, y, channel.w);
       }
-    }
-    if (unhealthy) {
-      return JXL_FAILURE("Residual overflow");
     }
   } else if (tree.size() == 1 && tree[0].predictor == Predictor::Gradient &&
              tree[0].multiplier == 1 && tree[0].predictor_offset == 0 &&
@@ -321,7 +317,6 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                 &predictor_img.Plane(c));
     }
     const ptrdiff_t onerow = channel.plane.PixelsPerRow();
-    bool unhealthy = false;
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT r = channel.Row(y);
       for (size_t x = 0; x < channel.w; x++) {
@@ -329,13 +324,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
         pixel_type_w top = (y ? *(r + x - onerow) : left);
         pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
         int32_t guess = ClampedGradient(top, left, topleft);
-        int32_t residual;
-        unhealthy |= SubOverflow(r[x], guess, residual);
+        const int32_t residual = PixelSub(r[x], guess);
         *tokenp++ = Token(tree[0].childID, PackSigned(residual));
       }
-    }
-    if (unhealthy) {
-      return JXL_FAILURE("Residual overflow");
     }
   } else if (is_gradient_only && !skip_encoder_fast_path) {
     for (size_t c = 0; c < 3; c++) {
@@ -343,7 +334,6 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                 &predictor_img.Plane(c));
     }
     const ptrdiff_t onerow = channel.plane.PixelsPerRow();
-    bool unhealthy = false;
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT r = channel.Row(y);
       for (size_t x = 0; x < channel.w; x++) {
@@ -357,13 +347,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                 std::max<pixel_type_w>(-kPropRangeFast, top + left - topleft),
                 kPropRangeFast - 1);
         uint32_t ctx_id = tree_lut->context_lookup[pos];
-        int32_t residual;
-        unhealthy |= SubOverflow(r[x], guess, residual);
+        const int32_t residual = PixelSub(r[x], guess);
         *tokenp++ = Token(ctx_id, PackSigned(residual));
       }
-    }
-    if (unhealthy) {
-      return JXL_FAILURE("Residual overflow");
     }
   } else if (tree.size() == 1 && tree[0].predictor == Predictor::Zero &&
              tree[0].multiplier == 1 && tree[0].predictor_offset == 0 &&
