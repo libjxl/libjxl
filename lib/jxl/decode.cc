@@ -1657,14 +1657,15 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       }
       if ((dec->events_wanted & JXL_DEC_BOX) &&
           dec->box_out_buffer_set_current_box) {
-        uint8_t* next_out = dec->box_out_buffer + dec->box_out_buffer_pos;
-        size_t avail_out = dec->box_out_buffer_size - dec->box_out_buffer_pos;
-
+        jxl::Span<uint8_t> box_out(dec->box_out_buffer,
+                                   dec->box_out_buffer_size);
+        if (!box_out.remove_prefix(dec->box_out_buffer_pos)) {
+          return JXL_API_ERROR("box output position out of range");
+        }
+        size_t produced = 0;
         JxlDecoderStatus box_result = dec->box_content_decoder.Process(
-            dec->next_in, dec->avail_in,
-            dec->file_pos - dec->box_contents_begin, &next_out, &avail_out);
-        size_t produced =
-            next_out - (dec->box_out_buffer + dec->box_out_buffer_pos);
+            jxl::Bytes(dec->next_in, dec->avail_in),
+            dec->file_pos - dec->box_contents_begin, box_out, &produced);
         dec->box_out_buffer_pos += produced;
 
         if (box_result == JXL_DEC_BOX_COMPLETE &&
@@ -1690,13 +1691,14 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         constexpr size_t kBlockSizeLimit = 64u << 20;  // 64MiB
         for (;;) {
           if (metadata.empty()) metadata.resize(64);
-          uint8_t* orig_next_out = metadata.data() + dec->recon_out_buffer_pos;
-          uint8_t* next_out = orig_next_out;
-          size_t avail_out = metadata.size() - dec->recon_out_buffer_pos;
+          jxl::Span<uint8_t> metadata_out(metadata.data(), metadata.size());
+          if (!metadata_out.remove_prefix(dec->recon_out_buffer_pos)) {
+            return JXL_API_ERROR("metadata output position out of range");
+          }
+          size_t produced = 0;
           JxlDecoderStatus box_result = dec->metadata_decoder.Process(
-              dec->next_in, dec->avail_in,
-              dec->file_pos - dec->box_contents_begin, &next_out, &avail_out);
-          size_t produced = next_out - orig_next_out;
+              jxl::Bytes(dec->next_in, dec->avail_in),
+              dec->file_pos - dec->box_contents_begin, metadata_out, &produced);
           dec->recon_out_buffer_pos += produced;
           if (box_result == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
             if (metadata.size() >= kBlockSizeLimit) {
