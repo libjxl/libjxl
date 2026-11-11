@@ -994,6 +994,10 @@ Status FindBestQuantization(const FrameHeader& frame_header,
     }
     JXL_RETURN_IF_ERROR(quantizer.SetQuantField(initial_quant_dc, quant_field,
                                                 &raw_quant_field));
+    // The roundtrip and comparison below only steer the next quant field
+    // update. The last iteration makes no update, so its evaluation would
+    // only feed the debug output.
+    if (i == iters && !JXL_DEBUG_ADAPTIVE_QUANTIZATION) break;
     JXL_ASSIGN_OR_RETURN(
         ImageBundle dec_linear,
         RoundtripImage(frame_header, opsin, enc_state, cms, pool));
