@@ -755,7 +755,10 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->image_out_run_callback = nullptr;
   dec->image_out_destroy_callback = nullptr;
   dec->image_out_init_opaque = nullptr;
+  dec->simple_image_out_callback = JxlDecoder::SimpleImageOutCallback();
   dec->image_out_size = 0;
+  dec->image_out_format = JxlPixelFormat();
+  dec->image_out_bit_depth = JxlBitDepth();
   dec->image_out_bit_depth.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
   dec->extra_channel_output.clear();
   dec->next_in = nullptr;
@@ -786,6 +789,9 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->skipping_frame = false;
   dec->internal_frames = 0;
   dec->external_frames = 0;
+  dec->frame_prog_detail = kDC;
+  dec->dc_frame_progression_done = false;
+  dec->frame_index_box = jxl::JxlDecoderFrameIndexBox();
 }
 
 void JxlDecoderReset(JxlDecoder* dec) {
@@ -797,6 +803,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->render_spotcolors = true;
   dec->coalescing = true;
   dec->desired_intensity_target = 0;
+  dec->prog_detail = kDC;
   dec->orig_events_wanted = 0;
   dec->events_wanted = 0;
   dec->prog_detail = kDC;
