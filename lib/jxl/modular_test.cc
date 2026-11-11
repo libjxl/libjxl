@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -38,6 +39,7 @@
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_fields.h"
+#include "lib/jxl/enc_modular_simd.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_toc.h"
 #include "lib/jxl/fields.h"
@@ -52,6 +54,9 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/enc_rct.h"
+#include "lib/jxl/modular/transform/enc_squeeze.h"
+#include "lib/jxl/modular/transform/rct.h"
 #include "lib/jxl/modular/transform/squeeze_params.h"
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/padded_bytes.h"
@@ -175,6 +180,86 @@ TEST(ModularTest, RoundtripLosslessCustomWpPermuteRCT) {
       Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
   EXPECT_LE(compressed_size, 10169u);
   EXPECT_EQ(0.0f, test::ComputeDistance2(t.ppf(), ppf_out));
+}
+
+TEST(ModularTest, RctExtremeSamplesRoundtrip) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  constexpr size_t kXSize = 4;
+  constexpr pixel_type kSamples[3][kXSize] = {
+      {std::numeric_limits<pixel_type>::min(),
+       std::numeric_limits<pixel_type>::max(), -1, 0},
+      {std::numeric_limits<pixel_type>::max(),
+       std::numeric_limits<pixel_type>::min(), 0, -1},
+      {0, -1, std::numeric_limits<pixel_type>::max(),
+       std::numeric_limits<pixel_type>::min()},
+  };
+
+  for (size_t rct_type = 1; rct_type < 42; ++rct_type) {
+    JXL_TEST_ASSIGN_OR_DIE(
+        Image image,
+        Image::Create(memory_manager, kXSize, 1, /*bitdepth=*/32, 3));
+    for (size_t c = 0; c < 3; ++c) {
+      for (size_t x = 0; x < kXSize; ++x) {
+        image.channel[c].Row(0)[x] = kSamples[c][x];
+      }
+    }
+
+    ASSERT_TRUE(FwdRct(image, /*begin_c=*/0, rct_type, /*pool=*/nullptr));
+    ASSERT_TRUE(InvRCT(image, /*begin_c=*/0, rct_type, /*pool=*/nullptr));
+    for (size_t c = 0; c < 3; ++c) {
+      for (size_t x = 0; x < kXSize; ++x) {
+        EXPECT_EQ(kSamples[c][x], image.channel[c].Row(0)[x])
+            << "rct_type = " << rct_type << ", c = " << c
+            << ", x = " << x;
+      }
+    }
+  }
+}
+
+TEST(ModularTest, EstimateCostExtremeSamples) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  JXL_TEST_ASSIGN_OR_DIE(
+      Image image,
+      Image::Create(memory_manager, 2, 1, /*bitdepth=*/32, 1));
+  image.channel[0].Row(0)[0] = std::numeric_limits<pixel_type>::min();
+  image.channel[0].Row(0)[1] = std::numeric_limits<pixel_type>::max();
+
+  JXL_TEST_ASSIGN_OR_DIE(const float cost, EstimateCost(image));
+  EXPECT_TRUE(std::isfinite(cost));
+}
+
+TEST(ModularTest, SqueezeRejectsUnrepresentableDifference) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  for (bool horizontal : {false, true}) {
+    const size_t xsize = horizontal ? 2 : 1;
+    const size_t ysize = horizontal ? 1 : 2;
+    JXL_TEST_ASSIGN_OR_DIE(
+        Image image,
+        Image::Create(memory_manager, xsize, ysize, /*bitdepth=*/32, 1));
+    image.channel[0].Row(0)[0] = std::numeric_limits<pixel_type>::max();
+    if (horizontal) {
+      image.channel[0].Row(0)[1] = std::numeric_limits<pixel_type>::min();
+    } else {
+      image.channel[0].Row(1)[0] = std::numeric_limits<pixel_type>::min();
+    }
+
+    SqueezeParams params;
+    params.horizontal = horizontal;
+    params.in_place = true;
+    params.begin_c = 0;
+    params.num_c = 1;
+    EXPECT_FALSE(FwdSqueeze(image, {params}, /*pool=*/nullptr));
+    ASSERT_EQ(1u, image.channel.size());
+    EXPECT_EQ(std::numeric_limits<pixel_type>::max(),
+              image.channel[0].Row(0)[0]);
+    if (horizontal) {
+      EXPECT_EQ(std::numeric_limits<pixel_type>::min(),
+                image.channel[0].Row(0)[1]);
+    } else {
+      EXPECT_EQ(std::numeric_limits<pixel_type>::min(),
+                image.channel[0].Row(1)[0]);
+    }
+  }
 }
 
 TEST(ModularTest, RoundtripLossyDeltaPalette) {
