@@ -14,6 +14,7 @@
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
+#include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 
@@ -29,7 +30,8 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels,
 StatusOr<Tree> LearnTree(
     const Image *images, const ModularOptions *opts, uint32_t start,
     uint32_t stop,
-    const std::vector<ModularMultiplierInfo> &multiplier_info = {});
+    const std::vector<ModularMultiplierInfo> &multiplier_info = {},
+    size_t max_tree_size = kMaxTreeSize);
 
 // Default single-image compress.
 Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
