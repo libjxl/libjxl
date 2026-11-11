@@ -1003,6 +1003,23 @@ JXL_TRANSCODE_JPEG_TEST(EncodeTest, JPEGReconstructionTest) {
   EXPECT_EQ(0, memcmp(decoded_jpeg_bytes.data(), orig.data(), orig.size()));
 }
 
+JXL_TRANSCODE_JPEG_TEST(EncodeTest,
+                        JPEGReconstructionTailDataTooLargeErrorTest) {
+  const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
+  std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
+  orig.resize(orig.size() + 4260097, 0);
+
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  ASSERT_NE(nullptr, frame_settings);
+
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderAddJPEGFrame(frame_settings, orig.data(), orig.size()));
+  EXPECT_EQ(JXL_ENC_ERR_JBRD_TOO_MUCH_TAIL_DATA, JxlEncoderGetError(enc.get()));
+}
+
 JXL_TRANSCODE_JPEG_TEST(EncodeTest, ProgressiveJPEGReconstructionTest) {
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
   const std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
