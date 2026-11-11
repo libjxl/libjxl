@@ -128,39 +128,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-        - ubuntu:24.04
-        - ubuntu:22.04
-        - debian:bookworm
-        - debian:trixie
-        - debian:sid
+        include:
+          - distro: ubuntu
+            release: 24.04
+          - distro: ubuntu
+            release: 22.04
+          - distro: debian
+            release: bookworm
+          - distro: debian
+            release: trixie
+          - distro: debian
+            release: forky
 
     container:
-      image: ${{ matrix.os }}
+      image: ${{ format('buildpack-deps:{0}', matrix.release) }}
+
+    env:
+      ARTIFACT_SUFFIX: ${{ format('{0}-{1}', matrix.distro, matrix.release) }}
 
     steps:
     - name: Harden Runner
       uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
       with:
         egress-policy: audit
-
-    - name: Install build deps
-      run: |
-        rm -f /var/lib/man-db/auto-update
-        apt update
-        DEBIAN_FRONTEND=noninteractive apt install -y \
-          build-essential \
-          devscripts \
-          python3 \
-          sed \
-        #
-
-    - name: Calculate artifact suffix
-      shell: python3 {0}
-      run: |
-        import os
-        artifact_suffix="${{ matrix.os}}".replace(':', '-')
-        open(os.getenv("GITHUB_ENV"), "a").write(f"ARTIFACT_SUFFIX={artifact_suffix}\n")
 
     - name: Set git safe dir
       run: |
@@ -215,7 +205,7 @@ jobs:
     - name: Build libjxl
       run: |
         apt build-dep -y .
-        EXCLUDE_DEBIAN_PACKAGES="${{ matrix.exclude_debian_packages || '' }}" ./ci.sh debian_build jpeg-xl
+        ./ci.sh debian_build jpeg-xl
 
     - name: Stats
       run: |
