@@ -754,11 +754,10 @@ Status FrameDecoder::Flush() {
   if (has_blending && !is_finalized_) {
     return false;
   }
-  // No early Flush() - nothing to do - if the frame is a kSkipProgressive
-  // frame.
+  // No early Flush() if the frame is a kSkipProgressive frame.
   if (frame_header_.frame_type == FrameType::kSkipProgressive &&
       !is_finalized_) {
-    return true;
+    return false;
   }
   if (decoded_->IsJPEG()) {
     // Nothing to do.
