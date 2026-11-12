@@ -4584,6 +4584,83 @@ TEST(DecodeTest, FlushTest) {
   JxlDecoderDestroy(dec);
 }
 
+// A kSkipProgressive frame is not rendered before it is complete, so a flush
+// must fail instead of reporting success for a buffer it did not write.
+TEST(DecodeTest, FlushTestSkipProgressiveFrame) {
+  const size_t xsize = 333;
+  const size_t ysize = 300;
+  const uint32_t num_channels = 3;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+  JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  for (bool modular : {false, true}) {
+    SCOPED_TRACE(modular ? "modular" : "vardct");
+    jxl::TestCodestreamParams params;
+    params.cparams.modular_mode = modular;
+    // Several groups, so that the sections of a modular frame can be cut.
+    params.cparams.modular_group_size_shift = 0;
+    std::vector<uint8_t> data =
+        jxl::CreateTestJXLCodestream(jxl::Bytes(pixels.data(), pixels.size()),
+                                     xsize, ysize, num_channels, params);
+    StreamPositions streampos;
+    AnalyzeCodestream(data, &streampos);
+    ASSERT_EQ(1u, streampos.frames.size());
+    const size_t frame_start = streampos.frames[0].frame_start;
+    // Bit 0 is all_default and bits 1 and 2 are frame_type, kRegularFrame.
+    ASSERT_EQ(0u, data[frame_start] & 7);
+    // The cut is after the TOC, in the middle of the sections.
+    const size_t toc_end = streampos.frames[0].toc_end;
+    const size_t first_part =
+        toc_end + (streampos.codestream_end - toc_end) / 2;
+    const std::vector<uint8_t> expected = jxl::DecodeWithAPI(
+        jxl::Bytes(data.data(), data.size()), format, /*use_callback=*/false,
+        /*set_buffer_early=*/false, /*use_resizable_runner=*/false,
+        /*require_boxes=*/false, /*expect_success=*/true);
+
+    for (bool skip_progressive : {false, true}) {
+      SCOPED_TRACE(skip_progressive ? "kSkipProgressive" : "kRegularFrame");
+      std::vector<uint8_t> input = data;
+      if (skip_progressive) {
+        // Set frame_type to kSkipProgressive (3).
+        input[frame_start] |= 6;
+      }
+      const std::vector<uint8_t> untouched(expected.size(), 0xA5);
+      std::vector<uint8_t> out = untouched;
+
+      JxlDecoder* dec = JxlDecoderCreate(nullptr);
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
+                                     dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME |
+                                              JXL_DEC_FULL_IMAGE));
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetInput(dec, input.data(), first_part));
+      EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+      EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                     dec, &format, out.data(), out.size()));
+      EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+
+      const JxlDecoderStatus flush_status = JxlDecoderFlushImage(dec);
+      if (skip_progressive) {
+        EXPECT_EQ(JXL_DEC_ERROR, flush_status);
+      } else {
+        EXPECT_EQ(JXL_DEC_SUCCESS, flush_status);
+      }
+      // A flush that reports success has written the buffer.
+      EXPECT_EQ(flush_status != JXL_DEC_SUCCESS, untouched == out);
+
+      // The failed flush is not fatal, the frame still decodes completely.
+      const size_t consumed = first_part - JxlDecoderReleaseInput(dec);
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetInput(dec, input.data() + consumed,
+                                   input.size() - consumed));
+      EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+      EXPECT_EQ(expected, out);
+      JxlDecoderDestroy(dec);
+    }
+  }
+}
+
 TEST(DecodeTest, FlushTestImageOutCallback) {
   // Size large enough for multiple groups, required to have progressive
   // stages
