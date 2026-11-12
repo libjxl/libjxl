@@ -857,6 +857,9 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
               ++ss.extra_zero_runs_pos;
               ss.next_extra_zero_run_index = get_next_extra_zero_run_index();
             }
+            if (block_idx >= c.coeffs.size() / kDCTBlockSize) {
+              return SerializationStatus::ERROR;
+            }
             const coeff_t* coeffs = &c.coeffs[block_idx << 6];
             bool ok;
             // compressed size per block cannot be more than 512 bytes
