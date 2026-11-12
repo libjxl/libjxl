@@ -20,6 +20,7 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/jpeg/dec_jpeg_output_chunk.h"
@@ -335,7 +336,8 @@ bool EncodeSOF(const JPEGData& jpg, uint8_t marker, SerializationState* state) {
   const size_t n_comps = jpg.components.size();
   const size_t marker_len = 8 + 3 * n_comps;
   state->output_queue.emplace_back(marker_len + 2);
-  uint8_t* data = state->output_queue.back().buffer->data();
+  std::vector<uint8_t>& buffer = *state->output_queue.back().buffer;
+  Span<uint8_t> data(buffer.data(), buffer.size());
   size_t pos = 0;
   data[pos++] = 0xFF;
   data[pos++] = marker;
@@ -363,7 +365,8 @@ bool EncodeSOS(const JPEGData& jpg, const JPEGScanInfo& scan_info,
   const size_t n_scans = scan_info.num_components;
   const size_t marker_len = 6 + 2 * n_scans;
   state->output_queue.emplace_back(marker_len + 2);
-  uint8_t* data = state->output_queue.back().buffer->data();
+  std::vector<uint8_t>& buffer = *state->output_queue.back().buffer;
+  Span<uint8_t> data(buffer.data(), buffer.size());
   size_t pos = 0;
   data[pos++] = 0xFF;
   data[pos++] = 0xDA;
@@ -397,7 +400,8 @@ bool EncodeDHT(const JPEGData& jpg, SerializationState* state) {
     if (huff.is_last) break;
   }
   state->output_queue.emplace_back(marker_len + 2);
-  uint8_t* data = state->output_queue.back().buffer->data();
+  std::vector<uint8_t>& buffer = *state->output_queue.back().buffer;
+  Span<uint8_t> data(buffer.data(), buffer.size());
   size_t pos = 0;
   data[pos++] = 0xFF;
   data[pos++] = 0xC4;
@@ -455,7 +459,8 @@ bool EncodeDQT(const JPEGData& jpg, SerializationState* state) {
     if (table.is_last) break;
   }
   state->output_queue.emplace_back(marker_len + 2);
-  uint8_t* data = state->output_queue.back().buffer->data();
+  std::vector<uint8_t>& buffer = *state->output_queue.back().buffer;
+  Span<uint8_t> data(buffer.data(), buffer.size());
   size_t pos = 0;
   data[pos++] = 0xFF;
   data[pos++] = 0xDB;
