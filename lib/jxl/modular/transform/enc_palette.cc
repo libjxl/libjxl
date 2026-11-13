@@ -434,8 +434,8 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
                 if (ap.size() > 3) ay *= 1.f + ap[3];
                 by = (0.299f * bp[0] + 0.587f * bp[1] + 0.114f * bp[2] + 0.1f);
                 if (bp.size() > 3) by *= 1.f + bp[3];
-                // put common colors first, transparent dark to opaque bright,
-                // then rare colors, bright to dark
+                // put common colors first, opaque bright to transparent dark,
+                // then rare colors, transparent dark to opaque bright
                 ay = color_freq_map[ap] > freq_threshold ? -ay : ay;
                 by = color_freq_map[bp] > freq_threshold ? -by : by;
                 return ay < by;
