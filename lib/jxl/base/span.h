@@ -18,6 +18,16 @@
 
 namespace jxl {
 
+// Span is the audited safe-buffer abstraction: its bounds-carrying API
+// (operator[] is debug-checked, subspan() and remove_prefix() are
+// runtime-checked) is what callers use, while the pointer arithmetic that
+// implements it lives here. Mark the implementation as an audited region
+// for -Wunsafe-buffer-usage so that translation units opting into the
+// warning only diagnose unsafe operations in their own code.
+#if JXL_COMPILER_CLANG
+#pragma clang unsafe_buffer_usage begin
+#endif
+
 template <typename T>
 class Span {
  public:
@@ -100,6 +110,10 @@ class Span {
   T* ptr_;
   size_t len_;
 };
+
+#if JXL_COMPILER_CLANG
+#pragma clang unsafe_buffer_usage end
+#endif
 
 using Bytes = Span<const uint8_t>;
 
