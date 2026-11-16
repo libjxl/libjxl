@@ -252,6 +252,9 @@ jobs:
           brew install google-benchmark
         fi
 
+    - name: Enable parallel submodule fetches
+      run: git config --global submodule.fetchJobs 8
+
     - name: Checkout the source
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -305,6 +308,9 @@ jobs:
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
+
+    - name: Enable parallel submodule fetches
+      run: git config --global submodule.fetchJobs 8
 
     - name: Checkout the LLVM source
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
