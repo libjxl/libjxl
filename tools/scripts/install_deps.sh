@@ -94,4 +94,5 @@ if $SETUP_CROSS ; then
 fi
 
 DEBIAN_FRONTEND=noninteractive apt update -y
-DEBIAN_FRONTEND=noninteractive apt install -y "${PKGS[@]}"
+DEBIAN_FRONTEND=noninteractive \
+  apt install --no-install-recommends -y "${PKGS[@]}"
