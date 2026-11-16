@@ -53,7 +53,8 @@ main() {
 set -eux
 
 apt update
-DEBIAN_FRONTEND=noninteractive apt install -y build-essential zip cmake
+DEBIAN_FRONTEND=noninteractive \
+  apt install --no-install-recommends -y build-essential zip cmake
 
 cd /home/
 unzip -q pkg.zip
