@@ -35,25 +35,24 @@ struct HeaderPGX {
 
 class Parser {
  public:
-  explicit Parser(const Span<const uint8_t> bytes)
-      : pos_(bytes.data()), end_(pos_ + bytes.size()) {}
+  explicit Parser(const Span<const uint8_t> bytes) : data_(bytes), pos_(0) {}
 
-  // Sets "pos" to the first non-header byte/pixel on success.
-  Status ParseHeader(HeaderPGX* header, const uint8_t** pos) {
-    if (static_cast<size_t>(end_ - pos_) < 2) return false;
-    if (pos_[0] != 'P' || pos_[1] != 'G') return false;
+  // Sets "rest" to the bytes following the header on success.
+  Status ParseHeader(HeaderPGX* header, Bytes* rest) {
+    if (Remaining() < 2) return false;
+    if (Peek(0) != 'P' || Peek(1) != 'G') return false;
     pos_ += 2;
-    return ParseHeaderPGX(header, pos);
+    return ParseHeaderPGX(header, rest);
   }
 
   // Exposed for testing
   Status ParseUnsigned(size_t* number) {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before number");
-    if (!IsDigit(*pos_)) return JXL_FAILURE("PGX: expected unsigned number");
+    if (AtEnd()) return JXL_FAILURE("PGX: reached end before number");
+    if (!IsDigit(Peek())) return JXL_FAILURE("PGX: expected unsigned number");
 
     *number = 0;
-    while (pos_ < end_ && *pos_ >= '0' && *pos_ <= '9') {
-      const size_t digit = static_cast<size_t>(*pos_ - '0');
+    while (!AtEnd() && IsDigit(Peek())) {
+      const size_t digit = static_cast<size_t>(Peek() - '0');
       if (*number > (std::numeric_limits<size_t>::max() - digit) / 10) {
         return JXL_FAILURE("PGX: number too large");
       }
@@ -71,21 +70,28 @@ class Parser {
     return IsLineBreak(c) || c == '\t' || c == ' ';
   }
 
+  // Bytes not yet consumed. These are size_t comparisons: the previous code
+  // compared pointers, and an expression such as `pos_ + 2 > end_` forms a
+  // pointer more than one past the end of the array, which is undefined.
+  size_t Remaining() const { return data_.size() - pos_; }
+  bool AtEnd() const { return pos_ == data_.size(); }
+  // Callers must have established Remaining() > i.
+  uint8_t Peek(size_t i = 0) const { return data_[pos_ + i]; }
+
   Status SkipSpace() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before space");
-    const uint8_t c = *pos_;
-    if (c != ' ') return JXL_FAILURE("PGX: expected space");
+    if (AtEnd()) return JXL_FAILURE("PGX: reached end before space");
+    if (Peek() != ' ') return JXL_FAILURE("PGX: expected space");
     ++pos_;
     return true;
   }
 
   Status SkipLineBreak() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before line break");
+    if (AtEnd()) return JXL_FAILURE("PGX: reached end before line break");
     // Line break can be either "\n" (0a) or "\r\n" (0d 0a).
-    if (*pos_ == '\n') {
+    if (Peek() == '\n') {
       pos_++;
       return true;
-    } else if (*pos_ == '\r' && pos_ + 1 != end_ && *(pos_ + 1) == '\n') {
+    } else if (Peek() == '\r' && Remaining() >= 2 && Peek(1) == '\n') {
       pos_ += 2;
       return true;
     }
@@ -93,35 +99,35 @@ class Parser {
   }
 
   Status SkipSingleWhitespace() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before whitespace");
-    if (!IsWhitespace(*pos_)) return JXL_FAILURE("PGX: expected whitespace");
+    if (AtEnd()) return JXL_FAILURE("PGX: reached end before whitespace");
+    if (!IsWhitespace(Peek())) return JXL_FAILURE("PGX: expected whitespace");
     ++pos_;
     return true;
   }
 
-  Status ParseHeaderPGX(HeaderPGX* header, const uint8_t** pos) {
+  Status ParseHeaderPGX(HeaderPGX* header, Bytes* rest) {
     JXL_RETURN_IF_ERROR(SkipSpace());
-    if (pos_ + 2 > end_) return JXL_FAILURE("PGX: header too small");
-    if (*pos_ == 'M' && *(pos_ + 1) == 'L') {
+    if (Remaining() < 2) return JXL_FAILURE("PGX: header too small");
+    if (Peek(0) == 'M' && Peek(1) == 'L') {
       header->big_endian = true;
-    } else if (*pos_ == 'L' && *(pos_ + 1) == 'M') {
+    } else if (Peek(0) == 'L' && Peek(1) == 'M') {
       header->big_endian = false;
     } else {
       return JXL_FAILURE("PGX: invalid endianness");
     }
     pos_ += 2;
     JXL_RETURN_IF_ERROR(SkipSpace());
-    if (pos_ == end_) return JXL_FAILURE("PGX: header too small");
-    if (*pos_ == '+') {
+    if (AtEnd()) return JXL_FAILURE("PGX: header too small");
+    if (Peek() == '+') {
       header->is_signed = false;
-    } else if (*pos_ == '-') {
+    } else if (Peek() == '-') {
       header->is_signed = true;
     } else {
       return JXL_FAILURE("PGX: invalid signedness");
     }
     pos_++;
     // Skip optional space
-    if (pos_ < end_ && *pos_ == ' ') pos_++;
+    if (!AtEnd() && Peek() == ' ') pos_++;
     JXL_RETURN_IF_ERROR(ParseUnsigned(&header->bits_per_sample));
     JXL_RETURN_IF_ERROR(SkipSingleWhitespace());
     JXL_RETURN_IF_ERROR(ParseUnsigned(&header->xsize));
@@ -148,16 +154,16 @@ class Parser {
         !SafeMul(numpixels, bytes_per_pixel, bytes_needed)) {
       return JXL_FAILURE("PGX: image dimensions are too large");
     }
-    if (static_cast<size_t>(end_ - pos_) < bytes_needed) {
+    if (Remaining() < bytes_needed) {
       return JXL_FAILURE("PGX: data too small");
     }
 
-    *pos = pos_;
+    JXL_ASSIGN_OR_RETURN(*rest, data_.subspan(pos_));
     return true;
   }
 
-  const uint8_t* pos_;
-  const uint8_t* const end_;
+  Bytes data_;
+  size_t pos_;
 };
 
 }  // namespace
@@ -167,8 +173,8 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes,
                       const SizeConstraints* constraints) {
   Parser parser(bytes);
   HeaderPGX header = {};
-  const uint8_t* pos = nullptr;
-  if (!parser.ParseHeader(&header, &pos)) return false;
+  Bytes rest;
+  if (!parser.ParseHeader(&header, &rest)) return false;
   JXL_RETURN_IF_ERROR(
       VerifyDimensions(constraints, header.xsize, header.ysize));
   if (header.bits_per_sample == 0 || header.bits_per_sample > 32) {
@@ -212,11 +218,10 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes,
     ppf->frames.emplace_back(std::move(frame));
   }
   const auto& frame = ppf->frames.back();
-  size_t pgx_remaining_size = bytes.data() + bytes.size() - pos;
-  if (pgx_remaining_size < frame.color.pixels_size) {
+  if (rest.size() < frame.color.pixels_size) {
     return JXL_FAILURE("PGX file too small");
   }
-  memcpy(frame.color.pixels(), pos, frame.color.pixels_size);
+  memcpy(frame.color.pixels(), rest.data(), frame.color.pixels_size);
   return true;
 }
 
