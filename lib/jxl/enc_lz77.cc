@@ -31,7 +31,7 @@ class SymbolCostEstimator {
                       const std::vector<std::vector<Token>>& tokens,
                       const LZ77Params& lz77,
                       const HybridUintConfig& uint_config = HybridUintConfig())
-      : num_contexts_(num_contexts) {
+      : num_contexts_(num_contexts), uint_config_(uint_config) {
     std::vector<Histogram> builder(num_contexts);
     // Build histograms for estimating lz77 savings.
     for (const auto& stream : tokens) {
@@ -86,9 +86,9 @@ class SymbolCostEstimator {
     tok += lz77.min_symbol;
     return nbits + Bits(ctx, tok);
   }
-  float DistCost(size_t len, const LZ77Params& lz77) const {
+  float DistCost(size_t dist, const LZ77Params& lz77) const {
     uint32_t nbits, bits, tok;
-    HybridUintConfig().Encode(len, &tok, &nbits, &bits);
+    uint_config_.Encode(dist, &tok, &nbits, &bits);
     if (lz77.nonserialized_distance_context >= num_contexts_) {
       return nbits + ANS_LOG_TAB_SIZE;
     }
@@ -98,6 +98,7 @@ class SymbolCostEstimator {
 
  private:
   size_t num_contexts_;
+  HybridUintConfig uint_config_;
   size_t max_alphabet_size_;
   std::vector<float> bits_;
   std::vector<float> add_symbol_cost_;
@@ -108,11 +109,12 @@ std::vector<std::vector<Token>> ApplyLZ77_RLE(
     const std::vector<std::vector<Token>>& tokens, const LZ77Params& lz77) {
   std::vector<std::vector<Token>> tokens_lz77(tokens.size());
   // TODO(veluca): tune heuristics here.
-  SymbolCostEstimator sce(num_contexts, params.force_huffman, tokens, lz77);
+  HybridUintConfig uint_config = params.UintConfig();
+  SymbolCostEstimator sce(num_contexts, params.force_huffman, tokens, lz77,
+                          uint_config);
   float bit_decrease = 0;
   size_t total_symbols = 0;
   std::vector<float> sym_cost;
-  HybridUintConfig uint_config;
   for (size_t stream = 0; stream < tokens.size(); stream++) {
     size_t distance_multiplier =
         params.image_widths.size() > stream ? params.image_widths[stream] : 0;
