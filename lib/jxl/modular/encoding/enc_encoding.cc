@@ -41,7 +41,7 @@ namespace jxl {
 
 namespace {
 // Plot tree (if enabled) and predictor usage map.
-constexpr bool kWantDebug = true;
+constexpr bool kWantDebug = false;
 // constexpr bool kPrintTree = false;
 
 inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
