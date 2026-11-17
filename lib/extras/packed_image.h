@@ -42,6 +42,14 @@ class PackedImage {
   // The interleaved pixels as defined in the storage format.
   void* pixels() const { return pixels_.get(); }
 
+  // The address computation in these two accessors is an audited region
+  // for -Wunsafe-buffer-usage: the offsets are derived from the image
+  // geometry fixed at Create() time, and staying inside the allocation is
+  // the API contract for the coordinates, as with the byte_order.h
+  // primitives.
+#if JXL_COMPILER_CLANG
+#pragma clang unsafe_buffer_usage begin
+#endif
   uint8_t* pixels(size_t y, size_t x, size_t c) const {
     return (reinterpret_cast<uint8_t*>(pixels_.get()) + y * stride +
             x * pixel_stride_ + c * bytes_per_channel_);
@@ -51,6 +59,9 @@ class PackedImage {
     return (reinterpret_cast<const uint8_t*>(pixels_.get()) + y * stride +
             x * pixel_stride_ + c * bytes_per_channel_);
   }
+#if JXL_COMPILER_CLANG
+#pragma clang unsafe_buffer_usage end
+#endif
 
   // The image size in pixels.
   size_t xsize;
