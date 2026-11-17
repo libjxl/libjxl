@@ -343,6 +343,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
             first_used = std::min(first_used, p);
           }
         }
+        if (first_used == last_used) continue;
         costs_l.resize(last_used - first_used);
         costs_r.resize(last_used - first_used);
         // For all predictors, compute the right and left costs of each split.
