@@ -35,25 +35,28 @@ struct HeaderPGX {
 
 class Parser {
  public:
-  explicit Parser(const Span<const uint8_t> bytes)
-      : pos_(bytes.data()), end_(pos_ + bytes.size()) {}
+  explicit Parser(const Span<const uint8_t> bytes) : bytes_(bytes) {}
 
-  // Sets "pos" to the first non-header byte/pixel on success.
-  Status ParseHeader(HeaderPGX* header, const uint8_t** pos) {
-    if (static_cast<size_t>(end_ - pos_) < 2) return false;
-    if (pos_[0] != 'P' || pos_[1] != 'G') return false;
-    pos_ += 2;
-    return ParseHeaderPGX(header, pos);
+  // Sets "data" to the pixel data on success.
+  Status ParseHeader(HeaderPGX* header, Span<const uint8_t>* data) {
+    if (bytes_.size() < 2) return false;
+    if (bytes_[0] != 'P' || bytes_[1] != 'G') return false;
+    pos_ = 2;
+    return ParseHeaderPGX(header, data);
   }
 
   // Exposed for testing
   Status ParseUnsigned(size_t* number) {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before number");
-    if (!IsDigit(*pos_)) return JXL_FAILURE("PGX: expected unsigned number");
+    if (pos_ == bytes_.size()) {
+      return JXL_FAILURE("PGX: reached end before number");
+    }
+    if (!IsDigit(bytes_[pos_])) {
+      return JXL_FAILURE("PGX: expected unsigned number");
+    }
 
     *number = 0;
-    while (pos_ < end_ && *pos_ >= '0' && *pos_ <= '9') {
-      const size_t digit = static_cast<size_t>(*pos_ - '0');
+    while (pos_ < bytes_.size() && IsDigit(bytes_[pos_])) {
+      const size_t digit = static_cast<size_t>(bytes_[pos_] - '0');
       if (*number > (std::numeric_limits<size_t>::max() - digit) / 10) {
         return JXL_FAILURE("PGX: number too large");
       }
@@ -72,20 +75,25 @@ class Parser {
   }
 
   Status SkipSpace() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before space");
-    const uint8_t c = *pos_;
+    if (pos_ == bytes_.size()) {
+      return JXL_FAILURE("PGX: reached end before space");
+    }
+    const uint8_t c = bytes_[pos_];
     if (c != ' ') return JXL_FAILURE("PGX: expected space");
     ++pos_;
     return true;
   }
 
   Status SkipLineBreak() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before line break");
+    if (pos_ == bytes_.size()) {
+      return JXL_FAILURE("PGX: reached end before line break");
+    }
     // Line break can be either "\n" (0a) or "\r\n" (0d 0a).
-    if (*pos_ == '\n') {
+    if (bytes_[pos_] == '\n') {
       pos_++;
       return true;
-    } else if (*pos_ == '\r' && pos_ + 1 != end_ && *(pos_ + 1) == '\n') {
+    } else if (bytes_[pos_] == '\r' && pos_ + 1 < bytes_.size() &&
+               bytes_[pos_ + 1] == '\n') {
       pos_ += 2;
       return true;
     }
@@ -93,35 +101,39 @@ class Parser {
   }
 
   Status SkipSingleWhitespace() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before whitespace");
-    if (!IsWhitespace(*pos_)) return JXL_FAILURE("PGX: expected whitespace");
+    if (pos_ == bytes_.size()) {
+      return JXL_FAILURE("PGX: reached end before whitespace");
+    }
+    if (!IsWhitespace(bytes_[pos_])) {
+      return JXL_FAILURE("PGX: expected whitespace");
+    }
     ++pos_;
     return true;
   }
 
-  Status ParseHeaderPGX(HeaderPGX* header, const uint8_t** pos) {
+  Status ParseHeaderPGX(HeaderPGX* header, Span<const uint8_t>* data) {
     JXL_RETURN_IF_ERROR(SkipSpace());
-    if (pos_ + 2 > end_) return JXL_FAILURE("PGX: header too small");
-    if (*pos_ == 'M' && *(pos_ + 1) == 'L') {
+    if (pos_ + 2 > bytes_.size()) return JXL_FAILURE("PGX: header too small");
+    if (bytes_[pos_] == 'M' && bytes_[pos_ + 1] == 'L') {
       header->big_endian = true;
-    } else if (*pos_ == 'L' && *(pos_ + 1) == 'M') {
+    } else if (bytes_[pos_] == 'L' && bytes_[pos_ + 1] == 'M') {
       header->big_endian = false;
     } else {
       return JXL_FAILURE("PGX: invalid endianness");
     }
     pos_ += 2;
     JXL_RETURN_IF_ERROR(SkipSpace());
-    if (pos_ == end_) return JXL_FAILURE("PGX: header too small");
-    if (*pos_ == '+') {
+    if (pos_ == bytes_.size()) return JXL_FAILURE("PGX: header too small");
+    if (bytes_[pos_] == '+') {
       header->is_signed = false;
-    } else if (*pos_ == '-') {
+    } else if (bytes_[pos_] == '-') {
       header->is_signed = true;
     } else {
       return JXL_FAILURE("PGX: invalid signedness");
     }
     pos_++;
     // Skip optional space
-    if (pos_ < end_ && *pos_ == ' ') pos_++;
+    if (pos_ < bytes_.size() && bytes_[pos_] == ' ') pos_++;
     JXL_RETURN_IF_ERROR(ParseUnsigned(&header->bits_per_sample));
     JXL_RETURN_IF_ERROR(SkipSingleWhitespace());
     JXL_RETURN_IF_ERROR(ParseUnsigned(&header->xsize));
@@ -148,16 +160,16 @@ class Parser {
         !SafeMul(numpixels, bytes_per_pixel, bytes_needed)) {
       return JXL_FAILURE("PGX: image dimensions are too large");
     }
-    if (static_cast<size_t>(end_ - pos_) < bytes_needed) {
+    if (bytes_.size() - pos_ < bytes_needed) {
       return JXL_FAILURE("PGX: data too small");
     }
 
-    *pos = pos_;
+    JXL_ASSIGN_OR_RETURN(*data, bytes_.subspan(pos_));
     return true;
   }
 
-  const uint8_t* pos_;
-  const uint8_t* const end_;
+  const Span<const uint8_t> bytes_;
+  size_t pos_ = 0;
 };
 
 }  // namespace
@@ -167,8 +179,8 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes,
                       const SizeConstraints* constraints) {
   Parser parser(bytes);
   HeaderPGX header = {};
-  const uint8_t* pos = nullptr;
-  if (!parser.ParseHeader(&header, &pos)) return false;
+  Span<const uint8_t> data;
+  if (!parser.ParseHeader(&header, &data)) return false;
   JXL_RETURN_IF_ERROR(
       VerifyDimensions(constraints, header.xsize, header.ysize));
   if (header.bits_per_sample == 0 || header.bits_per_sample > 32) {
@@ -212,11 +224,15 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes,
     ppf->frames.emplace_back(std::move(frame));
   }
   const auto& frame = ppf->frames.back();
-  size_t pgx_remaining_size = bytes.data() + bytes.size() - pos;
-  if (pgx_remaining_size < frame.color.pixels_size) {
+  if (data.size() < frame.color.pixels_size) {
     return JXL_FAILURE("PGX file too small");
   }
-  memcpy(frame.color.pixels(), pos, frame.color.pixels_size);
+  // The subspan carries the validated bound into the copy: it covers exactly
+  // the destination buffer, and its size was checked against the remaining
+  // input above.
+  JXL_ASSIGN_OR_RETURN(const Span<const uint8_t> pixels,
+                       data.subspan(0, frame.color.pixels_size));
+  memcpy(frame.color.pixels(), pixels.data(), pixels.size());
   return true;
 }
 
