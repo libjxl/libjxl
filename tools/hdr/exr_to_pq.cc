@@ -101,6 +101,7 @@ int main(int argc, const char** argv) {
       jxl::make_unique<jxl::CodecInOut>(jpegxl::tools::NoMemoryManager());
   JPEGXL_TOOLS_CHECK(jxl::extras::ConvertPackedPixelFileToCodecInOut(
       ppf, pool.get(), image.get()));
+  image->metadata.m.bit_depth.bits_per_sample = 16;
   image->metadata.m.bit_depth.exponent_bits_per_sample = 0;
   jxl::ColorEncoding linear_rec_2020 = image->Main().c_current();
   JPEGXL_TOOLS_CHECK(linear_rec_2020.SetPrimariesType(jxl::Primaries::k2100));
