@@ -265,9 +265,14 @@ class ANSSymbolReader {
     br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
     size_t token = ReadSymbolHuffWithoutRefill(ctx, br);
     if (JXL_UNLIKELY(token >= lz77_threshold_)) {
-      *run =
-          ReadHybridUintConfig(lz77_length_uint_, token - lz77_threshold_, br) +
-          lz77_min_length_ - 1;
+      uint32_t addend =
+          ReadHybridUintConfig(lz77_length_uint_, token - lz77_threshold_, br);
+      uint32_t result = addend + lz77_min_length_ - 1;
+      *run = result;
+      if (JXL_UNLIKELY(result < addend)) {  // overflow
+        *run = 0;
+        br->MarkUnhealthy();
+      }
       return;
     }
     *value = ReadHybridUintConfig(configs[ctx], token, br);

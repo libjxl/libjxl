@@ -458,9 +458,9 @@ constexpr uint32_t MakeTag(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
 
 /** Reusable image data container. */
 struct Pixels {
-  // Use array instead of vector to avoid memory initialization.
-  uninitialized_vector<uint8_t> pixels_storage =
-      jxl::make_uninitialized_vector<uint8_t>(0);
+  // Zero-initialized: rows that libpng never delivers (truncated or corrupt
+  // data) are copied to the output as well.
+  std::vector<uint8_t> pixels_storage;
   size_t pixels_size = 0;
   std::vector<uint8_t*> rows;
   std::atomic<uint32_t> has_error{0};
@@ -904,10 +904,10 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     if (chunk.empty()) {
       return JXL_FAILURE("Malformed chunk");
     }
-    Bytes type(chunk.data() + 4, 4);
+    JXL_ASSIGN_OR_RETURN(Bytes type, chunk.subspan(4, 4));
     id = LoadLE32(type.data());
     // Cut 'size' and 'type' at front and 'CRC' at the end.
-    Bytes payload(chunk.data() + 8, chunk.size() - 12);
+    JXL_ASSIGN_OR_RETURN(Bytes payload, chunk.subspan(8, chunk.size() - 12));
 
     if (!isAbc(type[0]) || !isAbc(type[1]) || !isAbc(type[2]) ||
         !isAbc(type[3])) {
@@ -1063,7 +1063,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         png_save_uint_32(preamble.data(), payload.size() - 4);
         memcpy(preamble.data() + 4, "IDAT", 4);
         // Cut-off 'size', 'type' and 'sequence_number'
-        Bytes chunk_tail(chunk.data() + 12, chunk.size() - 12);
+        JXL_ASSIGN_OR_RETURN(Bytes chunk_tail, chunk.subspan(12));
         if (!ctx.FeedChunks(Bytes(preamble), chunk_tail)) {
           return JXL_FAILURE("Decoding fdAT failed");
         }

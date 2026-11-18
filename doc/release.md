@@ -310,7 +310,7 @@ git push gitlab v0.7-snapshot
 ### How to build downstream projects
 
 ```bash
-docker run -it debian:bookworm /bin/bash
+docker run -it debian:trixie /bin/bash
 
 apt update
 apt install -y clang cmake git libbrotli-dev libopenexr-dev libpng-dev nasm pkg-config ninja-build

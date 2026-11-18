@@ -241,7 +241,8 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     // TODO(veluca): this is only useful in tests and if inspection is enabled.
     if (!(frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing)) {
       JXL_RETURN_IF_ERROR(AdaptiveDCSmoothing(
-          memory_manager, shared.quantizer.MulDC(), &shared.dc_storage, pool));
+          memory_manager, shared.quantizer.MulDC(), &shared.dc_storage,
+          frame_header.chroma_subsampling, pool));
     }
   }
   return true;

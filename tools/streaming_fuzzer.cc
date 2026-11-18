@@ -160,8 +160,13 @@ struct FuzzSpec {
     bool modular = (spec.int_options[7].value == 1);
     Check(spec.int_options[18].flag == JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR);
     bool slow_predictor = (spec.int_options[18].value >= 14);
+    Check(spec.int_options[2].flag == JXL_ENC_FRAME_SETTING_NOISE);
+    bool use_noise = (spec.int_options[2].value == 1);
+    Check(spec.float_options[3].flag == JXL_ENC_FRAME_SETTING_PHOTON_NOISE);
+    bool use_photon_noise = (spec.float_options[3].value != -1);
     uint64_t max_size = kBaseMaxSize;
     if (modular && slow_predictor) max_size /= 2;
+    if (use_noise || use_photon_noise) max_size /= 1.75;
     if (sizeof(size_t) == 4) max_size /= 1.5;
     constexpr size_t group_dim = 256;
     uint64_t in_mem_xsize = RoundUpTo(spec.xsize, group_dim);

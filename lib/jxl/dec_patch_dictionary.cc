@@ -32,7 +32,11 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
                                size_t xsize, size_t ysize,
                                size_t num_extra_channels,
                                bool* uses_extra_channels) {
+  // The dictionary is reused across frames: blendings_ is indexed by position
+  // index, so stale entries from a previous frame must not remain.
   positions_.clear();
+  ref_positions_.clear();
+  blendings_.clear();
   blendings_stride_ = num_extra_channels + 1;
   std::vector<uint8_t> context_map;
   ANSCode code;
@@ -76,10 +80,14 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
     ref_pos.y0 = read_num(kPatchReferencePositionContext);
     ref_pos.xsize = read_num(kPatchSizeContext) + 1;
     ref_pos.ysize = read_num(kPatchSizeContext) + 1;
-    if (ref_pos.x0 + ref_pos.xsize > ib.xsize()) {
+    if ((ref_pos.xsize == 0) || (ref_pos.ysize == 0)) {  // overflow
       return JXL_FAILURE("Invalid position specified in reference frame");
     }
-    if (ref_pos.y0 + ref_pos.ysize > ib.ysize()) {
+    if (ref_pos.xsize > ib.xsize() || ref_pos.ysize > ib.ysize()) {
+      return JXL_FAILURE("Invalid position specified in reference frame");
+    }
+    if ((ref_pos.x0 > ib.xsize() - ref_pos.xsize) ||
+        (ref_pos.y0 > ib.ysize() - ref_pos.ysize)) {
       return JXL_FAILURE("Invalid position specified in reference frame");
     }
     size_t id_count = read_num(kPatchCountContext);
@@ -123,15 +131,11 @@ Status PatchDictionary::Decode(JxlMemoryManager* memory_manager, BitReader* br,
         }
         pos.y = positions_.back().y + deltay;
       }
-      if (pos.x + ref_pos.xsize > xsize) {
-        return JXL_FAILURE("Invalid patch x: at %" PRIuS " + %" PRIuS
-                           " > %" PRIuS,
-                           pos.x, ref_pos.xsize, xsize);
+      if ((ref_pos.xsize > xsize) || (ref_pos.ysize > ysize)) {
+        return JXL_FAILURE("Invalid patch position");
       }
-      if (pos.y + ref_pos.ysize > ysize) {
-        return JXL_FAILURE("Invalid patch y: at %" PRIuS " + %" PRIuS
-                           " > %" PRIuS,
-                           pos.y, ref_pos.ysize, ysize);
+      if ((pos.x > xsize - ref_pos.xsize) || (pos.y > ysize - ref_pos.ysize)) {
+        return JXL_FAILURE("Invalid patch position");
       }
       for (size_t j = 0; j < blendings_stride_; j++) {
         uint32_t blend_mode = read_num(kPatchBlendModeContext);

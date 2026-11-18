@@ -202,14 +202,6 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   if (group_codes_begin + section_sizes_sum_ < group_codes_begin) {
     return JXL_FAILURE("Invalid group codes");
   }
-
-  if (!frame_header_.chroma_subsampling.Is444() &&
-      !(frame_header_.flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
-      frame_header_.encoding == FrameEncoding::kVarDCT) {
-    return JXL_FAILURE(
-        "Non-444 chroma subsampling is not allowed when adaptive DC "
-        "smoothing is enabled");
-  }
   return true;
 }
 
@@ -231,10 +223,16 @@ Status FrameDecoder::InitFrameOutput() {
     if (frame_header_.nonserialized_metadata->m.xyb_encoded) {
       return JXL_FAILURE("Cannot decode to JPEG an XYB image");
     }
-    auto jpeg_c_map = JpegOrder(ColorTransform::kYCbCr, num_components == 1);
-    decoded_->jpeg_data->width = frame_dim_.xsize;
-    decoded_->jpeg_data->height = frame_dim_.ysize;
-    for (size_t c = 0; c < num_components; c++) {
+    bool is_gray = (num_components == 1);
+    auto jpeg_c_map = JpegOrder(ColorTransform::kYCbCr, is_gray);
+    if (frame_dim_.xsize > static_cast<size_t>(jpeg::kMaxDimPixels) ||
+        frame_dim_.ysize > static_cast<size_t>(jpeg::kMaxDimPixels)) {
+      return JXL_FAILURE("Frame dimensions too large for JPEG reconstruction");
+    }
+    decoded_->jpeg_data->width = static_cast<int>(frame_dim_.xsize);
+    decoded_->jpeg_data->height = static_cast<int>(frame_dim_.ysize);
+    for (size_t c = 0; c < 3; ++c) {
+      if (is_gray && c != 1) continue;
       auto& component = jpeg_data->components[jpeg_c_map[c]];
       component.width_in_blocks =
           frame_dim_.xsize_blocks >> frame_header_.chroma_subsampling.HShift(c);
@@ -244,9 +242,17 @@ Status FrameDecoder::InitFrameOutput() {
           1 << frame_header_.chroma_subsampling.RawHShift(c);
       component.v_samp_factor =
           1 << frame_header_.chroma_subsampling.RawVShift(c);
-      size_t num_blocks = static_cast<size_t>(component.width_in_blocks) *
-                          component.height_in_blocks;
-      component.coeffs.resize(num_blocks * jxl::kDCTBlockSize);
+      size_t num_blocks;
+      if (!SafeMul(static_cast<size_t>(component.width_in_blocks),
+                   static_cast<size_t>(component.height_in_blocks),
+                   num_blocks)) {
+        return JXL_FAILURE("JPEG component block count overflow");
+      }
+      size_t num_coeffs;
+      if (!SafeMul(num_blocks, jxl::kDCTBlockSize, num_coeffs)) {
+        return JXL_FAILURE("JPEG component coefficient count overflow");
+      }
+      component.coeffs.resize(num_coeffs);
     }
   }
 
@@ -318,7 +324,6 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
 Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
   const size_t gx = dc_group_id % frame_dim_.xsize_dc_groups;
   const size_t gy = dc_group_id / frame_dim_.xsize_dc_groups;
-  const LoopFilter& lf = frame_header_.loop_filter;
   if (frame_header_.encoding == FrameEncoding::kVarDCT &&
       !(frame_header_.flags & FrameHeader::kUseDcFrame)) {
     JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeVarDCTDC(
@@ -334,8 +339,6 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeAcMetadata(
         frame_header_, dc_group_id, br, dec_state_));
-  } else if (lf.epf_iters > 0) {
-    FillImage(kInvSigmaNum / lf.epf_sigma_for_modular, &dec_state_->sigma);
   }
   decoded_dc_groups_[dc_group_id] = JXL_TRUE;
   return true;
@@ -352,7 +355,13 @@ Status FrameDecoder::FinalizeDC() {
       !decoded_->IsJPEG()) {
     JXL_RETURN_IF_ERROR(AdaptiveDCSmoothing(
         memory_manager, dec_state_->shared->quantizer.MulDC(),
-        &dec_state_->shared_storage.dc_storage, pool_));
+        &dec_state_->shared_storage.dc_storage,
+        frame_header_.chroma_subsampling, pool_));
+  }
+  if (frame_header_.encoding == FrameEncoding::kModular &&
+      frame_header_.loop_filter.epf_iters > 0) {
+    FillImage(kInvSigmaNum / frame_header_.loop_filter.epf_sigma_for_modular,
+              &dec_state_->sigma);
   }
 
   finalized_dc_ = true;

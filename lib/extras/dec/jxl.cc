@@ -454,14 +454,22 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         fprintf(stderr, "Image too big\n");
         return false;
       }
-      total_pixel_count += static_cast<uint64_t>(ppf->xsize()) * ppf->ysize();
-      if (constraints && (total_pixel_count > constraints->dec_max_pixels)) {
-        return JXL_FAILURE("Image too big");
-      }
+      uint64_t file_px = static_cast<uint64_t>(ppf->xsize()) * ppf->ysize();
       JxlFrameHeader fh;
       if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &fh)) {
         fprintf(stderr, "JxlDecoderGetFrameHeader failed\n");
         return false;
+      }
+      if (!VerifyDimensions(constraints, fh.layer_info.xsize,
+                            fh.layer_info.ysize)) {
+        fprintf(stderr, "Image too big\n");
+        return false;
+      }
+      uint64_t frame_px =
+          static_cast<uint64_t>(fh.layer_info.xsize) * fh.layer_info.ysize;
+      total_pixel_count += std::max(file_px, frame_px);
+      if (constraints && (total_pixel_count > constraints->dec_max_pixels)) {
+        return JXL_FAILURE("Image too big");
       }
       JXL_ASSIGN_OR_QUIT(jxl::extras::PackedFrame frame,
                          jxl::extras::PackedFrame::Create(

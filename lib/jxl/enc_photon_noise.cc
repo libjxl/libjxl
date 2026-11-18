@@ -66,7 +66,7 @@ NoiseParams SimulatePhotonNoise(const size_t xsize, const size_t ysize,
     // scaled_index is used for XYB = (0, 2·scaled_index, 2·scaled_index)
     const float y = 2 * scaled_index;
     // 1 = default intensity target
-    const float linear = std::max(0.f, Cube(y - kOpsinAbsorbanceBiasCbrt) +
+    const float linear = std::max(0.f, Cube(y + kOpsinAbsorbanceBiasCbrt) -
                                            jxl::cms::kOpsinAbsorbanceBias[1]);
     const float electrons_per_pixel = electrons_per_pixel_18 * (linear / 0.18f);
     // Quadrature sum of read noise, photon shot noise (sqrt(S) so simply not
@@ -79,18 +79,19 @@ NoiseParams SimulatePhotonNoise(const size_t xsize, const size_t ysize,
     const float linear_noise = noise * (0.18f / electrons_per_pixel_18);
     const float opsin_derivative =
         (1.f / 3) /
-        Square(std::cbrt(linear - jxl::cms::kOpsinAbsorbanceBias[1]));
+        Square(std::cbrt(linear + jxl::cms::kOpsinAbsorbanceBias[1]));
     const float opsin_noise = linear_noise * opsin_derivative;
 
-    // TODO(sboukortt): verify more thoroughly whether the denominator is
-    // correct.
-    params.lut[i] =
-        Clamp1(opsin_noise /
-                   (0.22f             // norm_const
-                    * std::sqrt(2.f)  // red_noise + green_noise
-                    * 1.13f  // standard deviation of a plane of generated noise
-                    ),
-               0.f, kNoiseLutMax);
+    params.lut[i] = Clamp1(
+        opsin_noise / (  // norm_const
+                          0.22f *
+                          // red_noise + green_noise, taking their correlation
+                          // into account
+                          std::sqrt(Square(1.f / 128.f) + Square(1.f / 128.f) +
+                                    Square(2.f * 127.f / 128.f)) *
+                          // standard deviation of a plane of generated noise
+                          1.13f),
+        0.f, kNoiseLutMax);
   }
 
   return params;

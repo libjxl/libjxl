@@ -315,50 +315,6 @@ struct ExtraChannelOutput {
 
 }  // namespace
 
-namespace jxl {
-
-struct JxlDecoderFrameIndexBoxEntry {
-  // OFFi: offset of start byte of this frame compared to start
-  // byte of previous frame from this index in the JPEG XL codestream. For the
-  // first frame, this is the offset from the first byte of the JPEG XL
-  // codestream.
-  uint64_t OFFi;
-  // Ti: duration in ticks between the start of this frame and
-  // the start of the next frame in the index. If this is the last frame in the
-  // index, this is the duration in ticks between the start of this frame and
-  // the end of the stream. A tick lasts TNUM / TDEN seconds.
-  uint32_t Ti;
-  // Fi: amount of frames the next frame in the index occurs
-  // after this frame. If this is the last frame in the index, this is the
-  // amount of frames after this frame in the remainder of the stream. Only
-  // frames that are presented by the decoder are counted for this purpose, this
-  // excludes frames that are not intended for display but for compositing with
-  // other frames, such as frames that aren't the last frame with a duration of
-  // 0 ticks.
-  uint32_t Fi;
-};
-
-struct JxlDecoderFrameIndexBox {
-  int64_t NF() const { return entries.size(); }
-  int32_t TNUM = 1;
-  int32_t TDEN = 1000;
-
-  std::vector<JxlDecoderFrameIndexBoxEntry> entries;
-
-  // That way we can ensure that every index box will have the first frame.
-  // If the API user decides to mark it as an indexed frame, we call
-  // the AddFrame again, this time with requested.
-  void AddFrame(uint64_t OFFi, uint32_t Ti, uint32_t Fi) {
-    JxlDecoderFrameIndexBoxEntry e;
-    e.OFFi = OFFi;
-    e.Ti = Ti;
-    e.Fi = Fi;
-    entries.push_back(e);
-  }
-};
-
-}  // namespace jxl
-
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct JxlDecoder {
   JxlDecoder() = default;
@@ -387,7 +343,6 @@ struct JxlDecoder {
   bool got_all_headers;     // Codestream metadata headers.
   bool post_headers;        // Already decoding pixels.
   std::unique_ptr<jxl::ICCReader> icc_reader;
-  jxl::JxlDecoderFrameIndexBox frame_index_box;
   // This means either we actually got the preview image, or determined we
   // cannot get it or there is none.
   bool got_preview_image;
@@ -446,7 +401,7 @@ struct JxlDecoder {
   size_t box_count;
 
   // The level of progressive detail in frame decoding.
-  JxlProgressiveDetail prog_detail = kDC;
+  JxlProgressiveDetail prog_detail;
   // The progressive detail of the current frame.
   JxlProgressiveDetail frame_prog_detail;
   // The intended downsampling ratio for the current progression step.
@@ -454,6 +409,7 @@ struct JxlDecoder {
 
   // Set to true if either an image out buffer or an image out callback was set.
   bool image_out_buffer_set;
+  bool image_out_buffer_is_for_preview;
 
   // Owned by the caller, buffer for preview or full resolution image.
   void* image_out_buffer;
@@ -731,10 +687,25 @@ bool CheckSizeLimit(JxlDecoder* dec, size_t xsize, size_t ysize) {
   return true;
 }
 
-}  // namespace
+void ResetImageOut(JxlDecoder* dec, bool clear_ec = true) {
+  dec->image_out_bit_depth.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
+  dec->image_out_buffer = nullptr;
+  dec->image_out_buffer_is_for_preview = false;
+  dec->image_out_buffer_set = false;
+  dec->image_out_destroy_callback = nullptr;
+  dec->image_out_format = {};
+  dec->image_out_init_callback = nullptr;
+  dec->image_out_init_opaque = nullptr;
+  dec->image_out_run_callback = nullptr;
+  dec->image_out_size = 0;
+  if (clear_ec) {
+    dec->extra_channel_output.clear();
+    dec->extra_channel_output.shrink_to_fit();
+  }
+}
 
 // Resets the state that must be reset for both Rewind and Reset
-void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
+void RewindDecodingState(JxlDecoder* dec) {
   dec->stage = DecoderStage::kInited;
   dec->got_signature = false;
   dec->last_codestream_seen = false;
@@ -743,7 +714,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->got_transform_data = false;
   dec->got_all_headers = false;
   dec->post_headers = false;
-  if (dec->icc_reader) dec->icc_reader->Reset();
+  if (dec->icc_reader) dec->icc_reader.reset();
   dec->got_preview_image = false;
   dec->preview_frame = false;
   dec->file_pos = 0;
@@ -770,15 +741,23 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->box_out_buffer_begin = 0;
   dec->box_out_buffer_pos = 0;
 
+#if JPEGXL_ENABLE_BOXES
+  dec->box_content_decoder.Reset();
+#endif
+
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
+  dec->metadata_decoder.Reset();
   dec->exif_metadata.clear();
+  dec->exif_metadata.shrink_to_fit();
   dec->xmp_metadata.clear();
+  dec->xmp_metadata.shrink_to_fit();
   dec->store_exif = 0;
   dec->store_xmp = 0;
   dec->recon_out_buffer_pos = 0;
   dec->recon_exif_size = 0;
   dec->recon_xmp_size = 0;
   dec->recon_output_jpeg = JpegReconStage::kNone;
+  dec->jpeg_decoder.Reset();
 #endif
 
   dec->events_wanted = dec->orig_events_wanted;
@@ -786,15 +765,9 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->have_container = false;
   dec->box_count = 0;
   dec->downsampling_target = 8;
-  dec->image_out_buffer_set = false;
-  dec->image_out_buffer = nullptr;
-  dec->image_out_init_callback = nullptr;
-  dec->image_out_run_callback = nullptr;
-  dec->image_out_destroy_callback = nullptr;
-  dec->image_out_init_opaque = nullptr;
-  dec->image_out_size = 0;
-  dec->image_out_bit_depth.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
-  dec->extra_channel_output.clear();
+  ResetImageOut(dec);
+  dec->simple_image_out_callback.callback = nullptr;
+  dec->simple_image_out_callback.opaque = nullptr;
   dec->next_in = nullptr;
   dec->avail_in = 0;
   dec->input_closed = false;
@@ -803,13 +776,14 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->frame_dec.reset();
   dec->next_section = 0;
   dec->section_processed.clear();
+  dec->section_processed.shrink_to_fit();
 
   dec->ib.reset();
   dec->metadata = jxl::CodecMetadata();
   dec->image_metadata = dec->metadata.m;
   dec->frame_header = jxl::make_unique<jxl::FrameHeader>(&dec->metadata);
 
-  dec->codestream_copy.clear();
+  dec->codestream_copy = jxl::PaddedBytes(&dec->memory_manager);
   dec->codestream_unconsumed = 0;
   dec->codestream_pos = 0;
   dec->codestream_bits_ahead = 0;
@@ -824,8 +798,10 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->external_frames = 0;
 }
 
+}  // namespace
+
 void JxlDecoderReset(JxlDecoder* dec) {
-  JxlDecoderRewindDecodingState(dec);
+  RewindDecodingState(dec);
 
   dec->thread_pool.reset();
   dec->keep_orientation = false;
@@ -835,9 +811,13 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->desired_intensity_target = 0;
   dec->orig_events_wanted = 0;
   dec->events_wanted = 0;
+  dec->prog_detail = kDC;
   dec->frame_refs.clear();
+  dec->frame_refs.shrink_to_fit();
   dec->frame_external_to_internal.clear();
+  dec->frame_external_to_internal.shrink_to_fit();
   dec->frame_required.clear();
+  dec->frame_required.shrink_to_fit();
   dec->decompress_boxes = false;
 }
 
@@ -867,7 +847,7 @@ void JxlDecoderDestroy(JxlDecoder* dec) {
   }
 }
 
-void JxlDecoderRewind(JxlDecoder* dec) { JxlDecoderRewindDecodingState(dec); }
+void JxlDecoderRewind(JxlDecoder* dec) { RewindDecodingState(dec); }
 
 void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
   // Increment amount, rather than set it: making the amount smaller is
@@ -909,7 +889,8 @@ JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec) {
   dec->frame_stage = FrameStage::kHeader;
   dec->AdvanceCodestream(dec->remaining_frame_size);
   if (dec->is_last_of_still) {
-    dec->image_out_buffer_set = false;
+    // The output buffers only apply to the frame that was skipped.
+    ResetImageOut(dec);
   }
   return JXL_DEC_SUCCESS;
 }
@@ -1462,6 +1443,11 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       }
 
       if (dec->image_out_buffer_set) {
+        if (!!dec->image_out_buffer &&
+            (dec->preview_frame != dec->image_out_buffer_is_for_preview)) {
+          return JXL_API_ERROR("API misuse: wrong out buffer is set %d",
+                               (int)dec->preview_frame);
+        }
         size_t xsize;
         size_t ysize;
         GetCurrentDimensions(dec, xsize, ysize);
@@ -1541,8 +1527,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       }
 #endif
       if (dec->preview_frame || dec->is_last_of_still) {
-        dec->image_out_buffer_set = false;
-        dec->extra_channel_output.clear();
+        ResetImageOut(dec);
       }
     }
 
@@ -2464,6 +2449,10 @@ size_t JxlDecoderGetIntendedDownsamplingRatio(JxlDecoder* dec) {
 
 JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
   if (!dec->image_out_buffer_set) return JXL_DEC_ERROR;
+  if (!!dec->image_out_buffer &&
+      (dec->preview_frame != dec->image_out_buffer_is_for_preview)) {
+    return JXL_API_ERROR("API misuse: wrong out buffer is set");
+  }
   if (dec->frame_stage != FrameStage::kFull) {
     return JXL_DEC_ERROR;
   }
@@ -2559,7 +2548,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
 
   if (size < min_size) return JXL_DEC_ERROR;
 
+  ResetImageOut(dec, /*clear_ec=*/false);
   dec->image_out_buffer_set = true;
+  dec->image_out_buffer_is_for_preview = true;
   dec->image_out_buffer = buffer;
   dec->image_out_size = size;
   dec->image_out_format = *format;
@@ -2601,7 +2592,9 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
 
   if (size < min_size) return JXL_DEC_ERROR;
 
+  ResetImageOut(dec, /*clear_ec=*/false);
   dec->image_out_buffer_set = true;
+  dec->image_out_buffer_is_for_preview = false;
   dec->image_out_buffer = buffer;
   dec->image_out_size = size;
   dec->image_out_format = *format;
@@ -2696,6 +2689,7 @@ JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
   JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits_sink);
   if (status != JXL_DEC_SUCCESS) return status;
 
+  ResetImageOut(dec, /*clear_ec=*/false);
   dec->image_out_buffer_set = true;
   dec->image_out_init_callback = init_callback;
   dec->image_out_run_callback = run_callback;

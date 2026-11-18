@@ -8,7 +8,7 @@ Build-Depends:
  cmake,
  debhelper (>= 9),
  libbrotli-dev,
- libgdk-pixbuf-2.0-dev | libgdk-pixbuf2.0-dev,
+ libgdk-pixbuf-2.0-dev | libgdk-pixbuf2.0-dev | libgdk-pixbuf-xlib-2.0-dev,
  libgif-dev,
  libgoogle-perftools-dev,
  libgtest-dev,

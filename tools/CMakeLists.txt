@@ -45,7 +45,7 @@ else()
   else()
     set(CMAKE_MODULE_PATH ${ECM_FIND_MODULE_DIR})
     find_package(XCB COMPONENTS XCB)
-    if (XCB_FOUND)
+    if (XCB_FOUND AND QT_FEATURE_xcb)
       add_library(icc_detect STATIC EXCLUDE_FROM_ALL
         icc_detect/icc_detect_x11.cc
         icc_detect/icc_detect.h

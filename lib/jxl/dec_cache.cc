@@ -124,6 +124,20 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
       (options.render_noise && (frame_header.flags & FrameHeader::kNoise) != 0);
   size_t num_tmp_c = render_noise ? 3 : 0;
 
+  const auto find_ec = [&metadata](ExtraChannel type) -> int {
+    for (size_t i = 0; i < metadata->extra_channel_info.size(); i++) {
+      if (metadata->extra_channel_info[i].type == type) {
+        return 3 + i;
+      }
+    }
+    return -1;
+  };
+
+  int alpha_c = find_ec(ExtraChannel::kAlpha);
+  bool has_alpha = alpha_c > 0;
+  int black_c = find_ec(ExtraChannel::kBlack);
+  bool has_black = black_c > 0;
+
   if (frame_header.CanBeReferenced()) {
     // Necessary so that SetInputSizes() can allocate output buffers as needed.
     frame_storage_for_referencing = ImageBundle(memory_manager, metadata);
@@ -229,16 +243,6 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         &frame_storage_for_referencing, &metadata->color_encoding)));
   }
 
-  bool has_alpha = false;
-  size_t alpha_c = 0;
-  for (size_t i = 0; i < metadata->extra_channel_info.size(); i++) {
-    if (metadata->extra_channel_info[i].type == ExtraChannel::kAlpha) {
-      has_alpha = true;
-      alpha_c = 3 + i;
-      break;
-    }
-  }
-
   if (fast_xyb_srgb8_conversion) {
 #if !JXL_HIGH_PRECISION
     JXL_ENSURE(!NeedsBlending(frame_header));
@@ -305,7 +309,12 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
           if (!output_encoding_info.cms_set) {
             return JXL_FAILURE("Cannot tonemap this colorspace without a CMS");
           }
-          auto cms_stage = GetCmsStage(output_encoding_info);
+          if (output_encoding_info.linear_color_encoding.IsCMYK() &&
+              !has_black) {
+            return JXL_FAILURE("Cannot convert CMYK without black channel");
+          }
+          auto cms_stage =
+              GetCmsStage(output_encoding_info, black_c, /*linear=*/true);
           if (cms_stage) {
             JXL_RETURN_IF_ERROR(builder.AddStage(std::move(cms_stage)));
           }
@@ -342,14 +351,22 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         if (!output_encoding_info.linear_color_encoding.CreateICC()) {
           return JXL_FAILURE("Failed to create ICC");
         }
-        auto cms_stage = GetCmsStage(output_encoding_info);
+        if (output_encoding_info.linear_color_encoding.IsCMYK() && !has_black) {
+          return JXL_FAILURE("Cannot convert CMYK without black channel");
+        }
+        auto cms_stage =
+            GetCmsStage(output_encoding_info, black_c, /*linear=*/true);
         if (cms_stage) {
           JXL_RETURN_IF_ERROR(builder.AddStage(std::move(cms_stage)));
         }
       }
       linear = false;
     } else {
-      auto cms_stage = GetCmsStage(output_encoding_info, false);
+      if (output_encoding_info.orig_color_encoding.IsCMYK() && !has_black) {
+        return JXL_FAILURE("Cannot convert CMYK without black channel");
+      }
+      auto cms_stage =
+          GetCmsStage(output_encoding_info, black_c, /*linear=*/false);
       if (cms_stage) {
         JXL_RETURN_IF_ERROR(builder.AddStage(std::move(cms_stage)));
       }

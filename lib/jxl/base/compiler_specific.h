@@ -68,7 +68,7 @@
 #define JXL_NORETURN
 #endif
 
-#if JXL_COMPILER_MSVC
+#if JXL_COMPILER_MSVC && !defined(__clang__)
 #define JXL_MAYBE_UNUSED
 #else
 // Encountered "attribute list cannot appear here" when using the C++17

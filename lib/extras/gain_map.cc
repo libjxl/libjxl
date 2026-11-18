@@ -115,6 +115,13 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
     }                                                      \
   } while (false)
 
+  // Optional parts of the bundle may be absent (`nullptr` with size 0);
+  // passing a null pointer to memcpy is undefined behavior even then.
+#define SAFE_COPY(src, n)                                 \
+  do {                                                    \
+    if ((n) != 0) memcpy(output_buffer + cursor, src, n); \
+  } while (false)
+
   SAFE_CURSOR_UPDATE(1);
   memcpy(output_buffer + cursor, &jhgm_version, 1);
 
@@ -122,8 +129,7 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
   StoreBE16(map_bundle->gain_map_metadata_size, output_buffer + cursor);
 
   SAFE_CURSOR_UPDATE(map_bundle->gain_map_metadata_size);
-  memcpy(output_buffer + cursor, map_bundle->gain_map_metadata,
-         map_bundle->gain_map_metadata_size);
+  SAFE_COPY(map_bundle->gain_map_metadata, map_bundle->gain_map_metadata_size);
 
   jxl::Bytes bytes = color_encoding_writer.GetSpan();
   uint8_t color_enc_size = static_cast<uint8_t>(bytes.size());
@@ -132,18 +138,18 @@ JXL_BOOL JxlGainMapWriteBundle(const JxlGainMapBundle* map_bundle,
   memcpy(output_buffer + cursor, &color_enc_size, 1);
 
   SAFE_CURSOR_UPDATE(color_enc_size);
-  memcpy(output_buffer + cursor, bytes.data(), color_enc_size);
+  SAFE_COPY(bytes.data(), color_enc_size);
 
   SAFE_CURSOR_UPDATE(4);
   StoreBE32(map_bundle->alt_icc_size, output_buffer + cursor);
 
   SAFE_CURSOR_UPDATE(map_bundle->alt_icc_size);
-  memcpy(output_buffer + cursor, map_bundle->alt_icc, map_bundle->alt_icc_size);
+  SAFE_COPY(map_bundle->alt_icc, map_bundle->alt_icc_size);
 
   SAFE_CURSOR_UPDATE(map_bundle->gain_map_size);
-  memcpy(output_buffer + cursor, map_bundle->gain_map,
-         map_bundle->gain_map_size);
+  SAFE_COPY(map_bundle->gain_map, map_bundle->gain_map_size);
 
+#undef SAFE_COPY
 #undef SAFE_CURSOR_UPDATE
 
   cursor = next_cursor;

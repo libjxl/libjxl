@@ -47,6 +47,73 @@ Status PnmParseUnsigned(Bytes str, size_t* v);
 
 namespace {
 
+TEST(CodecTest, EncodersRejectSurplusFrameExtraChannel) {
+  PackedPixelFile ppf;
+  ppf.info.xsize = 1;
+  ppf.info.ysize = 1;
+  ppf.info.num_color_channels = 1;
+  ppf.info.bits_per_sample = 8;
+  const JxlPixelFormat gray{1, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+  JXL_TEST_ASSIGN_OR_DIE(PackedFrame frame, PackedFrame::Create(1, 1, gray));
+  JXL_TEST_ASSIGN_OR_DIE(PackedImage ec, PackedImage::Create(1, 1, gray));
+  memset(frame.color.pixels(), 0x7f, frame.color.pixels_size);
+  memset(ec.pixels(), 0x3f, ec.pixels_size);
+  frame.extra_channels.emplace_back(std::move(ec));
+  ppf.frames.emplace_back(std::move(frame));
+  for (const char* extension : {".pgm", ".png"}) {
+    auto encoder = Encoder::FromExtension(extension);
+    if (!encoder) continue;
+    EncodedImage encoded;
+    EXPECT_FALSE(encoder->Encode(ppf, &encoded, nullptr)) << extension;
+  }
+}
+
+TEST(CodecTest, PackedPixelFileValidExtraChannelCounts) {
+  PackedPixelFile ppf;
+  ppf.info.xsize = 1;
+  ppf.info.ysize = 1;
+  ppf.info.num_color_channels = 1;
+  ppf.info.bits_per_sample = 8;
+  PackedExtraChannel metadata{};
+  metadata.ec_info.bits_per_sample = 8;
+  ppf.extra_channels_info.push_back(metadata);
+  const JxlPixelFormat gray{1, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+  for (int i = 0; i < 2; ++i) {
+    JXL_TEST_ASSIGN_OR_DIE(PackedFrame frame, PackedFrame::Create(1, 1, gray));
+    JXL_TEST_ASSIGN_OR_DIE(PackedImage ec, PackedImage::Create(1, 1, gray));
+    memset(frame.color.pixels(), 0x7f, frame.color.pixels_size);
+    memset(ec.pixels(), 0x3f, ec.pixels_size);
+    frame.extra_channels.emplace_back(std::move(ec));
+    ppf.frames.emplace_back(std::move(frame));
+  }
+  ASSERT_TRUE(ppf.Validate());
+  for (const char* extension : {".pgm", ".png"}) {
+    auto encoder = Encoder::FromExtension(extension);
+    if (!encoder) continue;
+    EncodedImage encoded;
+    ASSERT_TRUE(encoder->Encode(ppf, &encoded, nullptr)) << extension;
+    ASSERT_EQ(encoded.bitstreams.size(), 2u);
+    ASSERT_EQ(encoded.extra_channel_bitstreams.size(), 1u);
+    ASSERT_EQ(encoded.extra_channel_bitstreams[0].size(), 2u);
+    for (const auto& bytes : encoded.extra_channel_bitstreams[0]) {
+      PackedPixelFile decoded;
+      ASSERT_TRUE(DecodeBytes(Bytes(bytes), ColorHints(), &decoded));
+      ASSERT_EQ(decoded.frames.size(), 1u);
+      EXPECT_EQ(*static_cast<const uint8_t*>(decoded.frames[0].color.pixels()),
+                0x3f);
+    }
+  }
+
+  ppf.frames[1].extra_channels.clear();
+  EXPECT_FALSE(ppf.Validate());
+  for (const char* extension : {".pgm", ".png"}) {
+    auto encoder = Encoder::FromExtension(extension);
+    if (!encoder) continue;
+    EncodedImage encoded;
+    EXPECT_FALSE(encoder->Encode(ppf, &encoded, nullptr)) << extension;
+  }
+}
+
 Span<const uint8_t> MakeSpan(const char* str) {
   return Bytes(reinterpret_cast<const uint8_t*>(str), strlen(str));
 }
@@ -435,6 +502,49 @@ TEST(CodecTest, TestPNM) {
   ASSERT_TRUE(std::abs(d - -3.141592) < 1E-15);
 }
 
+TEST(CodecTest, PNMSampleAboveMaxVal) {
+  const auto decode = [](const std::string& header,
+                         const std::vector<uint8_t>& samples) -> bool {
+    std::vector<uint8_t> pnm(header.begin(), header.end());
+    pnm.insert(pnm.end(), samples.begin(), samples.end());
+    PackedPixelFile ppf;
+    return static_cast<bool>(DecodeBytes(Bytes(pnm), ColorHints(), &ppf));
+  };
+  const std::string kPam12 =
+      "P7\nWIDTH 1\nHEIGHT 1\nDEPTH 4\nMAXVAL 4095\n"
+      "TUPLTYPE RGB_ALPHA\nENDHDR\n";
+
+  // Samples up to MaxVal are valid.
+  EXPECT_TRUE(decode("P5\n2 1\n15\n", {0, 15}));
+  EXPECT_TRUE(decode("P5\n2 1\n255\n", {0, 255}));
+  EXPECT_TRUE(decode("P6\n1 1\n4095\n", {0x0F, 0xFF, 0, 0, 0x0F, 0xFF}));
+  EXPECT_TRUE(decode("P5\n1 1\n65535\n", {0xFF, 0xFF}));
+  EXPECT_TRUE(decode(kPam12, {0, 0, 0, 0, 0, 0, 0x0F, 0xFF}));
+
+#if (!JXL_CRASH_ON_ERROR)
+  // Samples above MaxVal are rejected.
+  EXPECT_FALSE(decode("P5\n2 1\n15\n", {0, 16}));
+  EXPECT_FALSE(decode("P6\n1 1\n4095\n", {0x0F, 0xFF, 0x10, 0x00, 0, 0}));
+  EXPECT_FALSE(decode("P6\n1 1\n4095\n", {0, 0, 0, 0, 0xFF, 0xFF}));
+  EXPECT_FALSE(decode(kPam12, {0, 0, 0, 0, 0, 0, 0x10, 0x00}));
+  // Check every sample position of images larger than 8 bytes.
+  const std::vector<uint8_t> max4(19, 15);
+  std::vector<uint8_t> max12;
+  for (size_t i = 0; i < 19; ++i) max12.insert(max12.end(), {0x0F, 0xFF});
+  EXPECT_TRUE(decode("P5\n19 1\n15\n", max4));
+  EXPECT_TRUE(decode("P5\n19 1\n4095\n", max12));
+  for (size_t i = 0; i < 19; ++i) {
+    std::vector<uint8_t> samples4 = max4;
+    samples4[i] = 16;
+    EXPECT_FALSE(decode("P5\n19 1\n15\n", samples4)) << i;
+    std::vector<uint8_t> samples12 = max12;
+    samples12[2 * i] = 0x10;
+    samples12[2 * i + 1] = 0x00;
+    EXPECT_FALSE(decode("P5\n19 1\n4095\n", samples12)) << i;
+  }
+#endif
+}
+
 TEST(CodecTest, FormatNegotiation) {
   const std::vector<JxlPixelFormat> accepted_formats = {
       {/*num_channels=*/4,
@@ -570,6 +680,140 @@ TEST(CodecTest, EncodeToPNG) {
                   decoded_ppf.info.bits_per_sample);
 }
 
+TEST(CodecTest, ExtensionFromPath) {
+  // The extension is derived from the final path component only: dots in
+  // directory names must not leak into the result, the returned extension
+  // never contains a path separator, and a trailing dot that carries no
+  // extension is reported as none.
+  std::string extension;
+  size_t bits_per_sample = 0;
+
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("a.png/../../b", &bits_per_sample, &extension),
+            Codec::kUnknown);
+  EXPECT_EQ(extension, "");
+
+  // A valid codec extension in the final component is still detected even
+  // with a dotted directory part ahead of it.
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("a.jpg/../../b.jpg", &bits_per_sample, &extension),
+            Codec::kJPG);
+  EXPECT_EQ(extension, ".jpg");
+
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("dir.name/file", &bits_per_sample, &extension),
+            Codec::kUnknown);
+  EXPECT_EQ(extension, "");
+
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("out.png.", &bits_per_sample, &extension),
+            Codec::kUnknown);
+  EXPECT_EQ(extension, "");
+
+  // Backslash separators are stripped as well.
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("C:\\x\\y.png", &bits_per_sample, &extension),
+            Codec::kPNG);
+  EXPECT_EQ(extension, ".png");
+
+  extension.clear();
+  ASSERT_EQ(CodecFromPath("/dev/stdout", &bits_per_sample, &extension),
+            Codec::kUnknown);
+  EXPECT_EQ(extension, "");
+
+  // Bare extension strings (as passed by the benchmark tooling) keep
+  // working, including the .pfm bits_per_sample side effect.
+  extension.clear();
+  ASSERT_EQ(CodecFromPath(".pfm", &bits_per_sample, &extension), Codec::kPNM);
+  EXPECT_EQ(extension, ".pfm");
+  EXPECT_EQ(bits_per_sample, 32u);
+}
+
+TEST(CodecTest, DecodeTruncatedPNGLeavesMissingRowsZero) {
+  std::unique_ptr<Encoder> png_encoder = Encoder::FromExtension(".png");
+  if (!png_encoder || !CanDecode(Codec::kPNG)) {
+    fprintf(stderr, "Skipping test because of missing codec support.\n");
+    return;
+  }
+
+  constexpr size_t kXSize = 64;
+  constexpr size_t kYSize = 64;
+  TestImageParams params = {Codec::kPNG,
+                            kXSize,
+                            kYSize,
+                            /*bits_per_sample=*/8,
+                            /*is_gray=*/false,
+                            /*add_alpha=*/false,
+                            /*big_endian=*/true,
+                            /*add_extra_channels=*/false};
+  PackedPixelFile ppf_in;
+  CreateTestImage(params, &ppf_in);
+  EncodedImage encoded;
+  ASSERT_TRUE(png_encoder->Encode(ppf_in, &encoded, nullptr));
+  ASSERT_EQ(encoded.bitstreams.size(), 1u);
+  std::vector<uint8_t> png = encoded.bitstreams[0];
+
+  // Declare twice the height in IHDR (the chunk CRC is not checked), so the
+  // pixel data ends after half of the rows.
+  ASSERT_EQ(memcmp(&png[12], "IHDR", 4), 0);
+  ASSERT_EQ(LoadBE32(&png[20]), kYSize);
+  StoreBE32(2 * kYSize, &png[20]);
+
+  // Fill freed heap blocks of the size of the pixel buffer, so that a buffer
+  // that is not cleared holds stale bytes instead of fresh zero pages.
+  for (size_t i = 0; i < 4; ++i) {
+    std::vector<uint8_t> dirty(kXSize * 2 * kYSize * 3, 0xA5);
+    EXPECT_EQ(dirty.back(), 0xA5);
+  }
+
+  PackedPixelFile ppf_out;
+  ASSERT_TRUE(DecodeBytes(Bytes(png), ColorHints(), &ppf_out));
+  ASSERT_EQ(ppf_out.frames.size(), 1u);
+  const PackedImage& in = ppf_in.frames[0].color;
+  const PackedImage& out = ppf_out.frames[0].color;
+  ASSERT_EQ(out.xsize, kXSize);
+  ASSERT_EQ(out.ysize, 2 * kYSize);
+  ASSERT_EQ(out.pixels_size, 2 * in.pixels_size);
+
+  // The rows in the file are decoded, the rows missing from it are zero.
+  const auto* in_pixels = static_cast<const uint8_t*>(in.pixels());
+  const auto* out_pixels = static_cast<const uint8_t*>(out.pixels());
+  EXPECT_EQ(memcmp(in_pixels, out_pixels, in.pixels_size), 0);
+  for (size_t i = in.pixels_size; i < out.pixels_size; ++i) {
+    ASSERT_EQ(out_pixels[i], 0) << "byte " << i;
+  }
+}
+
+// Frame names are arbitrary bytes from the codestream. The NumPy metadata
+// writer must produce valid JSON for them: a raw '"' in a name used to
+// terminate the JSON string early, which both broke parsing and allowed a
+// crafted name to inject additional fields into the frame dictionary.
+TEST(CodecTest, NumPyMetadataEscapesFrameName) {
+  std::unique_ptr<Encoder> npy_encoder = Encoder::FromExtension(".npy");
+  ASSERT_TRUE(npy_encoder);
+
+  const JxlPixelFormat format{/*num_channels=*/1, JXL_TYPE_FLOAT,
+                              JXL_LITTLE_ENDIAN, /*align=*/0};
+  PackedPixelFile ppf;
+  ppf.info.xsize = 2;
+  ppf.info.ysize = 2;
+  ppf.info.num_color_channels = 1;
+  ppf.info.bits_per_sample = 32;
+  ppf.info.exponent_bits_per_sample = 8;
+  JXL_TEST_ASSIGN_OR_DIE(PackedFrame frame, PackedFrame::Create(2, 2, format));
+  memset(frame.color.pixels(), 0, frame.color.pixels_size);
+  frame.name = std::string("q\"b\\n\ne\x01", 8);
+  ppf.frames.emplace_back(std::move(frame));
+
+  EncodedImage encoded;
+  ASSERT_TRUE(npy_encoder->Encode(ppf, &encoded, nullptr));
+  const std::string metadata(encoded.metadata.begin(), encoded.metadata.end());
+  EXPECT_NE(metadata.find("\"name\": \"q\\\"b\\\\n\\ne\\u0001\""),
+            std::string::npos)
+      << metadata;
+  // A quote inside the name must never end the JSON string.
+  EXPECT_EQ(metadata.find("\"q\"b"), std::string::npos) << metadata;
+}
 }  // namespace
 }  // namespace extras
 }  // namespace jxl

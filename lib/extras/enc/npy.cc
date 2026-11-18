@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <ostream>
@@ -31,6 +32,52 @@ namespace {
 
 // JSON value writing
 
+// Returns `value` as a quoted JSON string literal. Frame names are arbitrary
+// bytes taken from the codestream, so '"', '\' and control characters have to
+// be escaped (RFC 8259, section 7); otherwise the metadata is not valid JSON
+// and a quote inside a name can inject arbitrary fields.
+std::string JSONStringLiteral(const std::string& value) {
+  std::string out;
+  out.reserve(value.size() + 2);
+  out.push_back('"');
+  for (const char ch : value) {
+    const uint8_t c = static_cast<uint8_t>(ch);
+    switch (c) {
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (c < 0x20) {
+          char buf[8];
+          snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(c));
+          out += buf;
+        } else {
+          out.push_back(ch);
+        }
+    }
+  }
+  out.push_back('"');
+  return out;
+}
+
 class JSONField {
  public:
   virtual ~JSONField() = default;
@@ -45,7 +92,8 @@ class JSONValue : public JSONField {
   template <typename T>
   explicit JSONValue(const T& value) : value_(std::to_string(value)) {}
 
-  explicit JSONValue(const std::string& value) : value_("\"" + value + "\"") {}
+  explicit JSONValue(const std::string& value)
+      : value_(JSONStringLiteral(value)) {}
 
   explicit JSONValue(bool value) : value_(value ? "true" : "false") {}
 

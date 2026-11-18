@@ -8,9 +8,11 @@
 #include <jxl/memory_manager.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
@@ -110,6 +112,26 @@ TEST(CodecPGXTest, RejectsDimensionProductOverflow) {
   std::string pgx = "PG ML + 8 8589934592 8589934592\n";
   PackedPixelFile ppf;
   EXPECT_FALSE(DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(), &ppf));
+}
+
+// The two-byte "PG" signature was read before any range check, relying on a
+// minimum input size enforced in a different translation unit
+// (extras/dec/decode.cc). DecodeImagePGX does not enforce that itself, so a
+// caller reaching it directly - as these tests do - read past the end of the
+// buffer. ParseHeader must enforce its own precondition.
+//
+// The buffers are heap-allocated at exactly the tested length so sanitizer
+// builds observe any overread; a string literal would hide it inside the
+// terminating NUL. Length 1 is checked first because it is the case a
+// sanitizer reports precisely - for length 0 an empty vector may yield a null
+// data() pointer, whose behaviour is not guaranteed across standard libraries.
+TEST(CodecPGXTest, RejectsInputShorterThanSignature) {
+  PackedPixelFile ppf;
+  for (const size_t len : {static_cast<size_t>(1), static_cast<size_t>(0)}) {
+    const std::vector<uint8_t> bytes(len, static_cast<uint8_t>('P'));
+    EXPECT_FALSE(
+        DecodeImagePGX(Bytes(bytes.data(), bytes.size()), ColorHints(), &ppf));
+  }
 }
 
 }  // namespace
