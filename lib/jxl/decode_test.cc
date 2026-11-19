@@ -2232,12 +2232,11 @@ TEST(DecodeTest, BrobBoxInputIsRestrictedToBoxSize) {
   std::vector<uint8_t> out(32);
   jxl::JxlBoxContentDecoder decoder;
   decoder.StartBox(true, false, sizeof(box_contents));
-  uint8_t* next_out = out.data();
-  size_t avail_out = out.size();
-  JxlDecoderStatus status = decoder.Process(
-      input.data(), input.size(), 0, &next_out, &avail_out);
+  size_t output_size = 0;
+  JxlDecoderStatus status =
+      decoder.Process(jxl::Bytes(input), 0,
+                      jxl::Span<uint8_t>(out.data(), out.size()), &output_size);
   EXPECT_EQ(JXL_DEC_BOX_COMPLETE, status);
-  size_t output_size = next_out - out.data();
   EXPECT_EQ(11u, output_size);
   EXPECT_EQ(std::string("hello world"), std::string(reinterpret_cast<char*>(out.data()), output_size));
 }
@@ -2253,11 +2252,30 @@ TEST(DecodeTest, BrobBoxTruncatedStreamWithExactBoxSizeReturnsError) {
   std::vector<uint8_t> out(32);
   jxl::JxlBoxContentDecoder decoder;
   decoder.StartBox(true, false, input.size());
-  uint8_t* next_out = out.data();
-  size_t avail_out = out.size();
-  JxlDecoderStatus status = decoder.Process(
-      input.data(), input.size(), 0, &next_out, &avail_out);
+  size_t produced = 0;
+  JxlDecoderStatus status =
+      decoder.Process(jxl::Bytes(input), 0,
+                      jxl::Span<uint8_t>(out.data(), out.size()), &produced);
   EXPECT_EQ(JXL_DEC_ERROR, status);
+}
+
+TEST(DecodeTest, BoxContentInputShorterThanConsumedPartReturnsError) {
+  // 8 bytes of box contents are consumed by the first call. A second call that
+  // claims its input starts at box position 0 must provide at least those 8
+  // bytes; here it only provides 4.
+  std::vector<uint8_t> input(8, 0x42);
+  std::vector<uint8_t> out(32);
+  jxl::Span<uint8_t> out_span(out.data(), out.size());
+  jxl::JxlBoxContentDecoder decoder;
+  decoder.StartBox(false, false, 16);
+  size_t produced = 0;
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT,
+            decoder.Process(jxl::Bytes(input), 0, out_span, &produced));
+  EXPECT_EQ(8u, produced);
+  input.resize(4);
+  EXPECT_EQ(JXL_DEC_ERROR,
+            decoder.Process(jxl::Bytes(input), 0, out_span, &produced));
+  EXPECT_EQ(0u, produced);
 }
 #endif  // JPEGXL_ENABLE_BOXES
 
