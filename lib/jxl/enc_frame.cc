@@ -1849,6 +1849,9 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.noise == Override::kOn || cparams.patches == Override::kOn) {
     return false;
   }
+  if (cparams.modular_mode && cparams.gaborish == Override::kOn) {
+    return false;
+  }
   if (cparams.progressive_dc != 0 || frame_info.dc_level != 0) {
     return false;
   }
