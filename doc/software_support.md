@@ -74,6 +74,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 ## Image viewers
 
 - [Aspect](https://aspect.bildhuus.com)
+- [Cobalt Photo](https://cobaltsmith.com/): Windows viewer and photo manager; opens, saves and plays animated JXL, JXL thumbnails in File Explorer (statically links libjxl 0.12.0)
 - [ImageGlass](https://imageglass.org/)
 - [IrfanView](https://www.irfanview.com/); supported since 4.59 - requires a [plugin](https://www.irfanview.com/plugins.htm) to be downloaded and enabled.
 - [jpegview](https://github.com/sylikc/jpegview/releases)
