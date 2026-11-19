@@ -28,6 +28,7 @@
 #include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_fields.h"
@@ -77,6 +78,27 @@ struct SplineData {
   std::vector<Spline> splines;
 };
 
+// Per-frame settings besides the tree. Patches go to cparams.custom_patches.
+struct FrameSettings {
+  // Reference slot to save this frame to; -1 = default (1 if not last).
+  int save_as_reference = -1;
+  // kReferenceOnly frame (not displayed; saved before the color transform, so
+  // usable as a patch source).
+  bool reference_only = false;
+  // Save a regular frame before the color transform (needed to use it as a
+  // patch source; only allowed for kReplace, full-frame blending).
+  bool save_before_ct = false;
+  // Reference slot this frame is blended onto (persists).
+  size_t blend_source = 1;
+  // Patch blend mode for extra channels of subsequent patches (persists).
+  uint8_t patch_ec_mode = static_cast<uint8_t>(jxl::PatchBlendMode::kNone);
+  // Whether subsequent patches clamp (kMul and alpha blend modes; persists).
+  bool patch_clamp = false;
+  // Image (canvas) size set by ImageSize; 0 = the first frame's size.
+  size_t image_xsize = 0;
+  size_t image_ysize = 0;
+};
+
 Status SplinesFromSplineData(const SplineData& spline_data,
                              std::vector<QuantizedSpline>& quantized_splines,
                              std::vector<Spline::Point>& starting_points) {
@@ -97,8 +119,8 @@ Status SplinesFromSplineData(const SplineData& spline_data,
 
 template <typename F>
 bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
-               CompressParams& cparams, size_t& W, size_t& H, CodecInOut& io,
-               JXL_BOOL& have_next, int& x0, int& y0,
+               FrameSettings& frame, CompressParams& cparams, size_t& W,
+               size_t& H, CodecInOut& io, JXL_BOOL& have_next, int& x0, int& y0,
                int& buffer_size) {
   std::unordered_map<std::string, int> property_map = {
       {"c", 0},
@@ -177,8 +199,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
     size_t pos = tree.size();
     tree.emplace_back(PropertyDecisionNode::Split(p, split, pos + 1));
-    JXL_RETURN_IF_ERROR(ParseNode(tok, tree, spline_data, cparams, W, H, io,
-                                  have_next, x0, y0, buffer_size));
+    JXL_RETURN_IF_ERROR(ParseNode(tok, tree, spline_data, frame, cparams, W, H,
+                                  io, have_next, x0, y0, buffer_size));
     tree[pos].rchild = tree.size();
   } else if (t == "-") {
     // Leaf
@@ -479,13 +501,87 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     buffer_size = 1;
   } else if (t == "32BitBuffers") {
     buffer_size = 2;
+  } else if (t == "ImageSize") {
+    // ImageSize <xsize> <ysize>: the image (canvas) size, if the first frame
+    // is not canvas-sized (e.g. a large ReferenceOnly sprite sheet).
+    for (size_t* v : {&frame.image_xsize, &frame.image_ysize}) {
+      t = tok();
+      size_t num = 0;
+      *v = std::stoul(t, &num);
+      if (num != t.size() || *v == 0) {
+        fprintf(stderr, "Invalid ImageSize: %s\n", t.c_str());
+        return false;
+      }
+    }
+  } else if (t == "ReferenceOnly") {
+    frame.reference_only = true;
+  } else if (t == "SaveBeforeCT") {
+    frame.save_before_ct = true;
+  } else if (t == "SaveAsReference" || t == "BlendSource") {
+    bool save = t == "SaveAsReference";
+    t = tok();
+    size_t num = 0;
+    size_t slot = std::stoul(t, &num);
+    if (num != t.size() || slot >= jxl::kMaxNumReferenceFrames) {
+      fprintf(stderr, "Invalid reference slot: %s\n", t.c_str());
+      return false;
+    }
+    if (save) {
+      frame.save_as_reference = static_cast<int>(slot);
+    } else {
+      frame.blend_source = slot;
+    }
+  } else if (t == "Patch" || t == "PatchExtraBlendMode") {
+    // Patch <ref> <x0> <y0> <xsize> <ysize> <x> <y> <blend mode>: blends the
+    // rectangle (x0, y0, xsize, ysize) of reference slot <ref> onto this frame
+    // at (x, y). PatchExtraBlendMode <blend mode>: mode used for the extra
+    // channels by later patches (default kNone).
+    static const std::unordered_map<std::string, jxl::PatchBlendMode> modes = {
+        {"kNone", jxl::PatchBlendMode::kNone},
+        {"kReplace", jxl::PatchBlendMode::kReplace},
+        {"kAdd", jxl::PatchBlendMode::kAdd},
+        {"kMul", jxl::PatchBlendMode::kMul},
+        {"kBlendAbove", jxl::PatchBlendMode::kBlendAbove},
+        {"kBlendBelow", jxl::PatchBlendMode::kBlendBelow},
+        {"kAlphaWeightedAddAbove", jxl::PatchBlendMode::kAlphaWeightedAddAbove},
+        {"kAlphaWeightedAddBelow", jxl::PatchBlendMode::kAlphaWeightedAddBelow},
+    };
+    bool is_patch = t == "Patch";
+    size_t v[7] = {};
+    for (size_t i = 0; is_patch && i < 7; i++) {
+      t = tok();
+      size_t num = 0;
+      v[i] = std::stoul(t, &num);
+      if (num != t.size()) {
+        fprintf(stderr, "Invalid patch coordinate: %s\n", t.c_str());
+        return false;
+      }
+    }
+    t = tok();
+    if (!modes.count(t)) {
+      fprintf(stderr, "Invalid patch blend mode: %s\n", t.c_str());
+      return false;
+    }
+    uint8_t mode = static_cast<uint8_t>(modes.at(t));
+    if (is_patch) {
+      if (v[0] >= jxl::kMaxNumReferenceFrames || v[3] == 0 || v[4] == 0) {
+        fprintf(stderr, "Invalid patch reference or size\n");
+        return false;
+      }
+      cparams.custom_patches.push_back({v[0], v[1], v[2], v[3], v[4], v[5],
+                                        v[6], mode, frame.patch_ec_mode,
+                                        frame.patch_clamp});
+    } else {
+      frame.patch_ec_mode = mode;
+    }
+  } else if (t == "PatchClamp") {
+    frame.patch_clamp = true;
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;
   }
-  JXL_RETURN_IF_ERROR(
-      ParseNode(tok, tree, spline_data, cparams, W, H, io, have_next, x0, y0,
-      buffer_size));
+  JXL_RETURN_IF_ERROR(ParseNode(tok, tree, spline_data, frame, cparams, W, H,
+                                io, have_next, x0, y0, buffer_size));
   return true;
 }
 }  // namespace
@@ -494,6 +590,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
                           const char* tree_out) {
   Tree tree;
   SplineData spline_data;
+  FrameSettings frame;
   CompressParams cparams = {};
   size_t width = 1024;
   size_t height = 1024;
@@ -526,8 +623,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     *f >> out;
     return out;
   };
-  if (!ParseNode(tok, tree, spline_data, cparams, width, height, *io, have_next,
-                 x0, y0, buffer_size)) {
+  if (!ParseNode(tok, tree, spline_data, frame, cparams, width, height, *io,
+                 have_next, x0, y0, buffer_size)) {
     return JXL_FAILURE("Failed to ParseNode");
   }
 
@@ -544,7 +641,11 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
                        Image3F::Create(memory_manager, width, height));
   JXL_RETURN_IF_ERROR(
       io->SetFromImage(std::move(image), io->metadata.m.color_encoding));
-  JXL_RETURN_IF_ERROR(io->SetSize((width + x0), (height + y0)));
+  if (frame.image_xsize) {
+    JXL_RETURN_IF_ERROR(io->SetSize(frame.image_xsize, frame.image_ysize));
+  } else {
+    JXL_RETURN_IF_ERROR(io->SetSize((width + x0), (height + y0)));
+  }
 
   io->metadata.m.color_encoding.DecideIfWantICC(*JxlGetDefaultCms());
   cparams.options.zero_tokens = true;
@@ -568,8 +669,11 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
 
   std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();
   *metadata = io->metadata;
-  JXL_RETURN_IF_ERROR(metadata->size.Set(io->xsize() * cparams.resampling,
-                                         io->ysize() * cparams.resampling));
+  // An explicit ImageSize is the final image size; otherwise the first frame's
+  // (upsampled) size is.
+  size_t image_ups = frame.image_xsize ? 1 : cparams.resampling;
+  JXL_RETURN_IF_ERROR(
+      metadata->size.Set(io->xsize() * image_ups, io->ysize() * image_ups));
 
   metadata->m.xyb_encoded = (cparams.color_transform == ColorTransform::kXYB);
 
@@ -581,8 +685,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       metadata->m.extra_channel_info.emplace_back();
       auto& eci = metadata->m.extra_channel_info.back();
       eci.type = jxl::ExtraChannel::kOptional;
-      JXL_ASSIGN_OR_RETURN(
-          ImageF ch, ImageF::Create(memory_manager, io->xsize(), io->ysize()));
+      JXL_ASSIGN_OR_RETURN(ImageF ch,
+                           ImageF::Create(memory_manager, width, height));
       io->frames[0].extra_channels().emplace_back(std::move(ch));
     }
   }
@@ -598,6 +702,26 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     io->frames[0].origin.x0 = x0;
     io->frames[0].origin.y0 = y0;
     info.clamp = false;
+    if (frame.save_as_reference >= 0) {
+      info.save_as_reference = frame.save_as_reference;
+    }
+    if (frame.reference_only) {
+      if (info.is_last) {
+        return JXL_FAILURE("The last frame cannot be ReferenceOnly");
+      }
+      info.frame_type = jxl::FrameType::kReferenceOnly;
+      info.save_before_color_transform = true;
+    }
+    if (frame.save_before_ct) info.save_before_color_transform = true;
+    info.source = frame.blend_source;
+    for (const auto& p : cparams.custom_patches) {
+      if (p.x + p.xsize > width || p.y + p.ysize > height) {
+        fprintf(stderr,
+                "Patch at (%zu, %zu) does not fit in the %zux%zu frame\n", p.x,
+                p.y, width, height);
+        return JXL_FAILURE("Patch outside the frame");
+      }
+    }
 
     JXL_RETURN_IF_ERROR(jxl::EncodeFrame(
         memory_manager, cparams, info, metadata.get(), io->frames[0],
@@ -605,13 +729,28 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     if (!have_next) break;
     tree.clear();
     spline_data.splines.clear();
+    cparams.custom_patches.clear();
+    frame.save_as_reference = -1;
+    frame.reference_only = false;
+    frame.save_before_ct = false;
     have_next = JXL_FALSE;
     cparams.manual_noise.clear();
-    if (!ParseNode(tok, tree, spline_data, cparams, width, height, *io,
+    if (!ParseNode(tok, tree, spline_data, frame, cparams, width, height, *io,
                    have_next, x0, y0, buffer_size)) {
       return JXL_FAILURE("Failed to ParseNode");
     }
     cparams.custom_fixed_tree = tree;
+    // This frame's own splines (previously the first frame's were reused).
+    JXL_RETURN_IF_ERROR(
+        SplinesFromSplineData(spline_data, quantized_splines, starting_points));
+    cparams.custom_splines = {Span<const QuantizedSpline>(quantized_splines),
+                              Span<const Spline::Point>(starting_points)};
+    // Extra channels (alpha, hidden channels) have the size of this frame.
+    for (ImageF& ec : io->frames[0].extra_channels()) {
+      if (ec.xsize() != width || ec.ysize() != height) {
+        JXL_ASSIGN_OR_RETURN(ec, ImageF::Create(memory_manager, width, height));
+      }
+    }
     JXL_ASSIGN_OR_RETURN(Image3F image,
                          Image3F::Create(memory_manager, width, height));
     JXL_RETURN_IF_ERROR(
