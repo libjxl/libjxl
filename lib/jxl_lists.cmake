@@ -108,6 +108,7 @@ set(JPEGXL_INTERNAL_DEC_JPEG_SOURCES
   jxl/jpeg/dec_jpeg_data_writer.h
   jxl/jpeg/dec_jpeg_output_chunk.h
   jxl/jpeg/dec_jpeg_serialization_state.h
+  jxl/jpeg/jpeg_byte_cursor.h
   jxl/jpeg/jpeg_data.cc
   jxl/jpeg/jpeg_data.h
 )
@@ -528,6 +529,8 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/icc_codec_test.cc
   jxl/image_bundle_test.cc
   jxl/image_ops_test.cc
+  jxl/jpeg/enc_jpeg_data_reader_test.cc
+  jxl/jpeg/jpeg_byte_cursor_test.cc
   jxl/jxl_test.cc
   jxl/lehmer_code_test.cc
   jxl/modular_test.cc
