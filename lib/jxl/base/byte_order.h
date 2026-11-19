@@ -52,6 +52,15 @@ static inline bool SwapEndianness(JxlEndianness endianness) {
 #define JXL_BSWAP64(x) __builtin_bswap64(x)
 #endif
 
+// The Load*/Store* accessors below are audited primitives for
+// -Wunsafe-buffer-usage: their contract is that the caller guarantees at
+// least the accessed extent at `p`, the same way it does for memcpy. The
+// whole family shares that contract, including the byte-indexed fallback
+// paths that are only compiled on big-endian hosts.
+#if JXL_COMPILER_CLANG
+#pragma clang unsafe_buffer_usage begin
+#endif
+
 static JXL_INLINE uint32_t LoadBE16(const uint8_t* p) {
   const uint32_t byte1 = p[0];
   const uint32_t byte0 = p[1];
@@ -270,5 +279,9 @@ static JXL_INLINE uint32_t Load32(OrderBE /*tag*/, const uint8_t* p) {
 static JXL_INLINE uint32_t Load32(OrderLE /*tag*/, const uint8_t* p) {
   return LoadLE32(p);
 }
+
+#if JXL_COMPILER_CLANG
+#pragma clang unsafe_buffer_usage end
+#endif
 
 #endif  // LIB_JXL_BASE_BYTE_ORDER_H_

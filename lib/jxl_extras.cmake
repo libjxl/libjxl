@@ -23,6 +23,15 @@ foreach(LIB jxl_extras_core-obj jxl_extras_core_nocodec-obj)
   add_library("${LIB}" OBJECT "${JPEGXL_EXTRAS_CORE_SOURCES}")
   list(APPEND JXL_EXTRAS_OBJECT_LIBRARIES "${LIB}")
 endforeach()
+
+# Pilot for the Safe Buffers model (issue #5016): enforce
+# -Wunsafe-buffer-usage on a single translation unit, Clang only, so the
+# rest of the tree and other compilers are unaffected.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set_source_files_properties(extras/dec/pgx.cc
+    PROPERTIES COMPILE_OPTIONS
+      "-Wunsafe-buffer-usage;-Werror=unsafe-buffer-usage")
+endif()
 list(APPEND JXL_EXTRAS_OBJECTS $<TARGET_OBJECTS:jxl_extras_core-obj>)
 
 # Object library for those parts of extras that depend on jxl internals.
