@@ -11,6 +11,7 @@
 #include <jxl/types.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -38,9 +39,9 @@ void StoreValue(float val, size_t bits_per_sample, JxlPixelFormat format,
                 uint8_t** out) {
   const float mul = (1u << bits_per_sample) - 1;
   if (format.data_type == JXL_TYPE_UINT8) {
-    **out = val * mul;
+    **out = static_cast<uint8_t>(std::lround(val * mul));
   } else if (format.data_type == JXL_TYPE_UINT16) {
-    uint16_t uval = val * mul;
+    uint16_t uval = static_cast<uint16_t>(std::lround(val * mul));
     if (SwapEndianness(format.endianness)) {
       uval = JXL_BSWAP16(uval);
     }
