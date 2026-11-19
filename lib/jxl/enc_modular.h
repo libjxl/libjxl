@@ -52,6 +52,9 @@ class ModularFrameEncoder {
       bool do_color);
   Status ComputeTree(ThreadPool* pool);
   Status ComputeTokens(ThreadPool* pool);
+  // For JPEG lossless transcoding at effort 10 (kGlacier), evaluate candidate
+  // splitting_heuristics_node_threshold offsets to find a local minimum.
+  Status MaybeRetuneJPEGTranscodeTreeThreshold(ThreadPool* pool);
   // Encodes global info (tree + histograms) in the `writer`.
   Status EncodeGlobalInfo(bool streaming_mode, BitWriter* writer,
                           AuxOut* aux_out);
