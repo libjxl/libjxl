@@ -115,9 +115,10 @@ Status LowMemoryRenderPipeline::LoadBorders(size_t group_id, size_t c,
   // Limits of the area to copy from, in image coordinates.
   JXL_ENSURE(r.x0() == 0 || (r.x0() << base_color_shift_) >= paddingx);
   size_t x0src = DivCeil(r.x0() << base_color_shift_, 1 << hshift);
-  if (x0src != 0) {
-    x0src -= paddingx;
-  }
+  // The padding is in channel units and the start is not guaranteed to be
+  // larger than it (the check above compares base units), so clamp at zero
+  // instead of letting the subtraction wrap around.
+  x0src = x0src > paddingx ? x0src - paddingx : 0;
   // r may be such that r.x1 (namely x0() + xsize()) is within paddingx of the
   // right side of the image, so we use min() here.
   size_t x1src =
@@ -128,9 +129,8 @@ Status LowMemoryRenderPipeline::LoadBorders(size_t group_id, size_t c,
   // Similar computation for y.
   JXL_ENSURE(r.y0() == 0 || (r.y0() << base_color_shift_) >= paddingy);
   size_t y0src = DivCeil(r.y0() << base_color_shift_, 1 << vshift);
-  if (y0src != 0) {
-    y0src -= paddingy;
-  }
+  // Same as for x: clamp at zero instead of wrapping around.
+  y0src = y0src > paddingy ? y0src - paddingy : 0;
   size_t y1src =
       DivCeil((r.y0() + r.ysize()) << base_color_shift_, 1 << vshift);
   y1src = std::min(y1src + paddingy,
