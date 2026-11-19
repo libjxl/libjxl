@@ -815,17 +815,21 @@ Status RoundtripPatchFrame(Image3F* reference_frame,
                            ThreadPool* pool, AuxOut* aux_out, bool subtract) {
   JxlMemoryManager* memory_manager = state->memory_manager();
   FrameInfo patch_frame_info;
-  cparams.resampling = 1;
-  cparams.ec_resampling = 1;
   cparams.dots = Override::kOff;
-  cparams.noise = Override::kOff;
+  cparams.ec_resampling = 1;
+  cparams.epf = 0;
+  cparams.gaborish = Override::kOff;
+  cparams.manual_noise.clear();
   cparams.modular_mode = true;
-  cparams.responsive = 0;
+  cparams.noise = Override::kOff;
+  cparams.photon_noise_iso = 0.0f;
   cparams.progressive_dc = 0;
   cparams.progressive_mode = Override::kOff;
   cparams.qprogressive_mode = Override::kOff;
   // Use gradient predictor and not Predictor::Best.
   cparams.options.predictor = Predictor::Gradient;
+  cparams.resampling = 1;
+  cparams.responsive = 0;
   patch_frame_info.save_as_reference = idx;  // always saved.
   patch_frame_info.frame_type = FrameType::kReferenceOnly;
   patch_frame_info.save_before_color_transform = true;

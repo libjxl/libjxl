@@ -724,12 +724,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   bool groupwise = enc_state->streaming_mode;
 
-  if (do_color && frame_header.loop_filter.gab && !groupwise) {
-    float w = 0.9908511000000001f;
-    float weights[3] = {w, w, w};
-    JXL_RETURN_IF_ERROR(GaborishInverse(color, Rect(*color), weights, pool));
-  }
-
   if (do_color && metadata.bit_depth.bits_per_sample <= 16 &&
       cparams_.speed_tier < SpeedTier::kCheetah &&
       cparams_.decoding_speed_tier < 2 && !groupwise) {
@@ -738,6 +732,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
         cparams_.color_transform == ColorTransform::kXYB));
     JXL_RETURN_IF_ERROR(PatchDictionaryEncoder::SubtractFrom(
         enc_state->shared.image_features.patches, color));
+  }
+
+  if (do_color && frame_header.loop_filter.gab && !groupwise) {
+    float w = 0.9908511000000001f;
+    float weights[3] = {w, w, w};
+    JXL_RETURN_IF_ERROR(GaborishInverse(color, Rect(*color), weights, pool));
   }
 
   if (cparams_.custom_splines.HasAny()) {
