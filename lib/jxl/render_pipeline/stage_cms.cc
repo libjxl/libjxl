@@ -41,6 +41,7 @@ class CmsStage : public RenderPipelineStage {
                     size_t xpos, size_t ypos, size_t thread_id) const final {
     JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
     JXL_ENSURE(xsize <= xsize_);
+    JXL_ENSURE(color_space_transform != nullptr && xsize <= allocated_xsize_);
     bool gray_src = (c_src_.Channels() == 1);
     bool gray_dst = (output_encoding_info_.color_encoding.Channels() == 1);
     float* mutable_buf_src = color_space_transform->BufSrc(thread_id);
@@ -112,7 +113,26 @@ class CmsStage : public RenderPipelineStage {
   ColorEncoding c_src_;
   const int black_c_;
   size_t xsize_ = 0;
+  size_t allocated_xsize_ = 0;
+  size_t num_threads_ = 0;
+  bool prepared_ = false;
   std::unique_ptr<jxl::ColorSpaceTransform> color_space_transform;
+
+  // The transform buffers are sized from xsize_ and num_threads_. Pipelines
+  // differ in whether SetInputSizes() or PrepareForThreads() comes first, so
+  // the transform is created once both are known.
+  Status InitTransform() {
+    if (!prepared_ || xsize_ == 0) return true;
+    if (color_space_transform && allocated_xsize_ >= xsize_) return true;
+    auto transform = jxl::make_unique<jxl::ColorSpaceTransform>(
+        output_encoding_info_.color_management_system);
+    JXL_RETURN_IF_ERROR(transform->Init(
+        c_src_, output_encoding_info_.color_encoding,
+        output_encoding_info_.desired_intensity_target, xsize_, num_threads_));
+    color_space_transform = std::move(transform);
+    allocated_xsize_ = xsize_;
+    return true;
+  }
 
   Status SetInputSizes(
       const std::vector<std::pair<size_t, size_t>>& input_sizes) override {
@@ -122,16 +142,15 @@ class CmsStage : public RenderPipelineStage {
       JXL_ENSURE(input_sizes[c].second == input_sizes[0].second);
     }
     xsize_ = input_sizes[0].first;
-    return true;
+    return InitTransform();
   }
 
   Status PrepareForThreads(size_t num_threads) override {
-    color_space_transform = jxl::make_unique<jxl::ColorSpaceTransform>(
-        output_encoding_info_.color_management_system);
-    JXL_RETURN_IF_ERROR(color_space_transform->Init(
-        c_src_, output_encoding_info_.color_encoding,
-        output_encoding_info_.desired_intensity_target, xsize_, num_threads));
-    return true;
+    num_threads_ = num_threads;
+    prepared_ = true;
+    allocated_xsize_ = 0;
+    color_space_transform.reset();
+    return InitTransform();
   }
 };
 
