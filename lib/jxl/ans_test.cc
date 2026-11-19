@@ -211,8 +211,9 @@ void TestCheckpointing(bool ans, bool lz77) {
   for (size_t i = 0; i < 1024; i++) {
     input_values[0].emplace_back(0, i % 4);
   }
-  // up to lz77 window size.
-  for (size_t i = 0; i < (1 << 20) - 1022; i++) {
+  // Advance beyond the LZ77 window using values that cannot match the
+  // surrounding 0..3 sequences.
+  for (size_t i = 0; i < kWindowSize; i++) {
     input_values[0].emplace_back(0, (i % 5) + 4);
   }
   // Ensure that when the window wraps around, new values are different.
