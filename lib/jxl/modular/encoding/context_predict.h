@@ -11,9 +11,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/field_encodings.h"
@@ -127,7 +129,8 @@ struct State {
     for (size_t i = 0; i < kNumPredictors; i++) {
       sum += p[i] * w[i];
     }
-    return (sum * divlookup[weight_sum - 1]) >> 24;
+    const int64_t mul = divlookup[weight_sum - 1];
+    return (sum >> 24) * mul + (((sum & 0xFFFFFF) * mul) >> 24);
   }
 
   template <bool compute_properties>
@@ -197,7 +200,10 @@ struct State {
     size_t cur_row = y & 1 ? 0 : (xsize + 2);
     size_t prev_row = y & 1 ? (xsize + 2) : 0;
     val = AddBits(val);
-    error[cur_row + x] = pred - val;
+    const pixel_type_w raw_err = pred - val;
+    error[cur_row + x] = static_cast<int32_t>(
+        Clamp1<pixel_type_w>(raw_err, std::numeric_limits<int32_t>::min(),
+                             std::numeric_limits<int32_t>::max()));
     for (size_t i = 0; i < kNumPredictors; i++) {
       pixel_type_w err =
           (std::abs(prediction[i] - val) + kPredictionRound) >> kPredExtraBits;
