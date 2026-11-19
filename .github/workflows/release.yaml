@@ -85,6 +85,9 @@ jobs:
     - name: Verify native architecture
       run: test "$(uname -m)" = "${RELEASE_ARCH}"
 
+    - name: Enable parallel submodule fetches
+      run: git config --global submodule.fetchJobs 8
+
     - name: Checkout the source
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -166,6 +169,9 @@ jobs:
       run: |
         export GIT_CEILING_DIRECTORIES=/__w # only work before git v2.35.2
         git config --global --add safe.directory /__w/libjxl/libjxl
+
+    - name: Enable parallel submodule fetches
+      run: git config --global submodule.fetchJobs 8
 
     - name: Checkout the source
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -280,6 +286,9 @@ jobs:
       uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
       with:
         egress-policy: audit
+
+    - name: Enable parallel submodule fetches
+      run: git config --global submodule.fetchJobs 8
 
     - name: Checkout the source
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -416,6 +425,9 @@ jobs:
       attestations: write
 
     steps:
+    - name: Enable parallel submodule fetches
+      run: git config --global submodule.fetchJobs 8
+
     - name: Checkout the source
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -451,6 +463,9 @@ jobs:
     runs-on: [ubuntu-latest]
 
     steps:
+    - name: Enable parallel submodule fetches
+      run: git config --global submodule.fetchJobs 8
+
     - name: Checkout the source
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
