@@ -56,10 +56,12 @@ std::unique_ptr<Encoder> GetAPNGEncoder() { return nullptr; }
 #include <jxl/color_encoding.h>
 #include <jxl/types.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <numeric>
 #include <string>
 #include <vector>
 
@@ -477,9 +479,34 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
       png_save_uint_32(fdata + 8, height);
       png_save_uint_32(fdata + 12, 0);
       png_save_uint_32(fdata + 16, 0);
-      png_save_uint_16(fdata + 20, frame.frame_info.duration *
-                                       ppf.info.animation.tps_denominator);
-      png_save_uint_16(fdata + 22, ppf.info.animation.tps_numerator);
+      {
+        // The fcTL delay fields are 16-bit: delay_num / delay_den seconds.
+        // Convert the JXL timing (duration ticks at tps_numerator /
+        // tps_denominator ticks per second) to that fraction, reduced and
+        // scaled to fit, instead of truncating the un-reduced product.
+        uint64_t delay_num =
+            static_cast<uint64_t>(frame.frame_info.duration) *
+            ppf.info.animation.tps_denominator;
+        uint64_t delay_den = ppf.info.animation.tps_numerator;
+        const uint64_t gcd = std::gcd(delay_num, delay_den);
+        if (gcd > 1) {
+          delay_num /= gcd;
+          delay_den /= gcd;
+        }
+        if (delay_num > 65535 || delay_den > 65535) {
+          // Not exactly representable in 16 bits: keep the ratio, with the
+          // extreme delay of 65535 seconds as the upper bound.
+          const double scale =
+              std::max(delay_num / 65535.0, delay_den / 65535.0);
+          if (delay_num != 0) {
+            delay_num =
+                std::max<uint64_t>(1, std::llround(delay_num / scale));
+          }
+          delay_den = std::max<uint64_t>(1, std::llround(delay_den / scale));
+        }
+        png_save_uint_16(fdata + 20, delay_num);
+        png_save_uint_16(fdata + 22, delay_den);
+      }
       fdata[24] = 1;
       fdata[25] = 0;
       png_byte fctl[5] = "fcTL";
