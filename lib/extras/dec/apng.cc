@@ -68,7 +68,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 #include <atomic>
 #include <csetjmp>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -458,22 +460,32 @@ constexpr uint32_t MakeTag(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
 
 /** Reusable image data container. */
 struct Pixels {
-  // Zero-initialized: rows that libpng never delivers (truncated or corrupt
+  // Malloc-backed storage so that allocation failures are reported through
+  // the returned Status instead of an exception (like PackedImage does). The
+  // buffer contents do not need to survive a Resize call. The storage is
+  // zero-initialized: rows that libpng never delivers (truncated or corrupt
   // data) are copied to the output as well.
-  std::vector<uint8_t> pixels_storage;
+  std::unique_ptr<uint8_t[], void (*)(void*)> pixels_storage{nullptr, free};
   size_t pixels_size = 0;
   std::vector<uint8_t*> rows;
   std::atomic<uint32_t> has_error{0};
 
   Status Resize(size_t row_bytes, size_t num_rows) {
-    size_t new_size = row_bytes * num_rows;  // it is assumed size is sane
+    size_t new_size;
+    if (!SafeMul(row_bytes, num_rows, new_size)) {
+      return JXL_FAILURE("APNG: image is too big");
+    }
     if (new_size > pixels_size) {
-      pixels_storage.resize(new_size);
+      uint8_t* storage = static_cast<uint8_t*>(calloc(new_size, 1));
+      if (storage == nullptr) {
+        return JXL_FAILURE("APNG: out of memory");
+      }
+      pixels_storage.reset(storage);
       pixels_size = new_size;
     }
     rows.resize(num_rows);
     for (size_t y = 0; y < num_rows; y++) {
-      rows[y] = pixels_storage.data() + y * row_bytes;
+      rows[y] = pixels_storage.get() + y * row_bytes;
     }
     return true;
   }
@@ -1033,7 +1045,10 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
               !SafeMul(row_bytes, image_rect.ysize(), total_bytes)) {
             return JXL_FAILURE("Image too big.");
           }
-          (void)total_bytes;  // Calculated only for check.
+          // The row buffer is allocated in full when the first IDAT chunk
+          // is seen; dimensions accepted by VerifyDimensions can still
+          // describe an infeasible amount of decompressed pixel data.
+          JXL_RETURN_IF_ERROR(VerifyBufferSize(constraints, total_bytes));
           // TODO(eustas): drop frameRaw
           JXL_RETURN_IF_ERROR(
               ctx.frameRaw.Resize(row_bytes, image_rect.ysize()));
