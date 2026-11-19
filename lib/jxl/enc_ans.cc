@@ -1370,6 +1370,7 @@ HistogramParams HistogramParams::ForModular(
   } else {
     params.lz77_method = HistogramParams::LZ77Method::kLZ77b3w3f;
   }
+  params.lz77_careful_first_pass = cparams.lz77_careful_first_pass;
   if (cparams.decoding_speed_tier >= 2) {
     params.max_histograms = 12;
   }
