@@ -42,6 +42,17 @@ struct JPEGInfo {
   bool has_dri = false;
 };
 
+// Budget for the total declared per-scan reset-point and extra-zero-run entry
+// storage when reading a JPEG reconstruction bundle. The entry counts are
+// attacker-controlled U32 values (up to 65555 each per scan) that are trusted
+// by `resize` before a single entry is read, and the totals are only bounded
+// by the marker count (16384 scans), so without a budget a bundle can declare
+// 16384 x 65555 entries x (4 + 8) bytes = ~12 GiB of allocation. These
+// entries are block-boundary bookkeeping that real JPEGs accumulate in single
+// digits; 64 MiB is orders of magnitude above any real file while keeping the
+// allocation bounded (same budget as kMaxTotalMarkerPayloadBytes).
+constexpr uint64_t kMaxTotalScanRunBytes = uint64_t{1} << 26;
+
 Status VisitMarker(uint8_t* marker, Visitor* visitor, JPEGInfo* info) {
   uint32_t marker32 = *marker - 0xc0;
   JXL_RETURN_IF_ERROR(visitor->Bits(6, 0x00, &marker32));
@@ -307,11 +318,21 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     JXL_RETURN_IF_ERROR(visitor->Bits(16, 0, &restart_interval));
   }
 
+  // Running total of the declared reset-point / extra-zero-run entry storage;
+  // the allocations are refused before they happen once the budget is
+  // exceeded.
+  uint64_t total_scan_run_bytes = 0;
   for (auto& scan : scan_info) {
     uint32_t num_reset_points = scan.reset_points.size();
     JXL_RETURN_IF_ERROR(visitor->U32(Val(0), BitsOffset(2, 1), BitsOffset(4, 4),
                                      BitsOffset(16, 20), 0, &num_reset_points));
     if (visitor->IsReading()) {
+      total_scan_run_bytes +=
+          static_cast<uint64_t>(num_reset_points) * sizeof(uint32_t);
+      if (total_scan_run_bytes > kMaxTotalScanRunBytes) {
+        return JXL_FAILURE("Too many scan reset points: %" PRIu64 " bytes",
+                           total_scan_run_bytes);
+      }
       scan.reset_points.resize(num_reset_points);
     }
     int last_block_idx = -1;
@@ -334,6 +355,12 @@ Status JPEGData::VisitFields(Visitor* visitor) {
                                      BitsOffset(16, 20), 0,
                                      &num_extra_zero_runs));
     if (visitor->IsReading()) {
+      total_scan_run_bytes += static_cast<uint64_t>(num_extra_zero_runs) *
+                              sizeof(JPEGScanInfo::ExtraZeroRunInfo);
+      if (total_scan_run_bytes > kMaxTotalScanRunBytes) {
+        return JXL_FAILURE("Too many scan extra zero runs: %" PRIu64 " bytes",
+                           total_scan_run_bytes);
+      }
       scan.extra_zero_runs.resize(num_extra_zero_runs);
     }
     last_block_idx = -1;
