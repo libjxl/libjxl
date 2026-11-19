@@ -8,10 +8,10 @@
 #include <jxl/color_encoding.h>
 
 #include <array>
-#include <cerrno>
 #include <cmath>
 #include <cstddef>
-#include <cstdlib>
+#include <locale>
+#include <sstream>
 #include <string>
 
 #include "lib/jxl/base/common.h"
@@ -100,17 +100,19 @@ class Tokenizer {
 };
 
 Status ParseDouble(const std::string& num, double* d) {
-  char* end;
-  errno = 0;
-  *d = strtod(num.c_str(), &end);
-  if (*d == 0.0 && end == num.c_str()) {
+  // strtod honors the global C locale, so under a non-C LC_NUMERIC (e.g. one
+  // that uses ',' as the decimal separator) it stops at the '.' and silently
+  // truncates values like "0.5" to 0. Parse with the classic (C) locale so a
+  // color description is decoded the same way regardless of the embedder's
+  // locale.
+  std::istringstream is(num);
+  is.imbue(std::locale::classic());
+  is >> *d;
+  if (is.fail()) {
     return JXL_FAILURE("Invalid double: %s", num.c_str());
   }
   if (std::isnan(*d)) {
     return JXL_FAILURE("Invalid double: %s", num.c_str());
-  }
-  if (errno == ERANGE) {
-    return JXL_FAILURE("Double out of range: %s", num.c_str());
   }
   return true;
 }
