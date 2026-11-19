@@ -167,7 +167,8 @@ void CollectExtraBitsIncrease(TreeSamples &tree_samples,
 void FindBestSplit(TreeSamples &tree_samples, float threshold,
                    const std::vector<ModularMultiplierInfo> &mul_info,
                    StaticPropRange initial_static_prop_range,
-                   float fast_decode_multiplier, Tree *tree) {
+                   float fast_decode_multiplier, size_t max_tree_size,
+                   Tree *tree) {
   struct NodeInfo {
     size_t pos;
     size_t begin;
@@ -464,7 +465,8 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       }
     }
 
-    if (best->Cost() + threshold < base_bits) {
+    if (best->Cost() + threshold < base_bits &&
+        tree->size() + 2 <= max_tree_size) {
       uint32_t p = tree_samples.PropertyFromIndex(best->prop);
       pixel_type dequant =
           tree_samples.UnquantizeProperty(best->prop, best->val);
@@ -512,7 +514,9 @@ HWY_EXPORT(FindBestSplit);  // Local function.
 Status ComputeBestTree(TreeSamples &tree_samples, float threshold,
                        const std::vector<ModularMultiplierInfo> &mul_info,
                        StaticPropRange static_prop_range,
-                       float fast_decode_multiplier, Tree *tree) {
+                       float fast_decode_multiplier, size_t max_tree_size,
+                       Tree *tree) {
+  JXL_ENSURE(max_tree_size >= 1);
   // TODO(veluca): take into account that different contexts can have different
   // uint configs.
   //
@@ -528,7 +532,7 @@ Status ComputeBestTree(TreeSamples &tree_samples, float threshold,
              std::numeric_limits<uint32_t>::max());
   HWY_DYNAMIC_DISPATCH(FindBestSplit)
   (tree_samples, threshold, mul_info, static_prop_range, fast_decode_multiplier,
-   tree);
+   max_tree_size, tree);
   return true;
 }
 
