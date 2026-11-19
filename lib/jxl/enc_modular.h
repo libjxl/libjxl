@@ -38,6 +38,9 @@ namespace jxl {
 struct AuxOut;
 enum class LayerType : uint8_t;
 
+// Test-only entry point: applies the modular quantizer to a channel.
+void QuantizeChannelForTest(Channel& ch, int q);
+
 class ModularFrameEncoder {
  public:
   static StatusOr<std::unique_ptr<ModularFrameEncoder>> Create(
