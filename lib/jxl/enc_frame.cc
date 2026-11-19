@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <utility>
@@ -1051,16 +1052,23 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
                 int Y = inputjpegY[kDCTBlockSize * bx + coeffpos];
                 int QChroma = inputjpeg[kDCTBlockSize * bx + coeffpos];
                 // Fixed-point multiply of CfL scale with quant table ratio
-                // first, and Y value second.
-                int coeff_scale =
-                    (scale * scaled_qtable[kDCTBlockSize * c + coeffpos] +
+                // first, and Y value second. Y is 16-bit and coeff_scale can
+                // exceed 16 bits, so evaluate the product in 64 bits.
+                const int64_t coeff_scale =
+                    (static_cast<int64_t>(scale) *
+                         scaled_qtable[kDCTBlockSize * c + coeffpos] +
                      (1 << (kCFLFixedPointPrecision - 1))) >>
                     kCFLFixedPointPrecision;
-                int cfl_factor =
-                    (Y * coeff_scale + (1 << (kCFLFixedPointPrecision - 1))) >>
+                const int64_t cfl_factor =
+                    (static_cast<int64_t>(Y) * coeff_scale +
+                     (1 << (kCFLFixedPointPrecision - 1))) >>
                     kCFLFixedPointPrecision;
-                int QCR = QChroma - cfl_factor;
-                block[x * 8 + y] = QCR;
+                const int64_t QCR = static_cast<int64_t>(QChroma) - cfl_factor;
+                if (QCR < std::numeric_limits<int32_t>::min() ||
+                    QCR > std::numeric_limits<int32_t>::max()) {
+                  return JXL_FAILURE("JPEG CfL coefficient out of range");
+                }
+                block[x * 8 + y] = static_cast<int32_t>(QCR);
               }
             }
           }
