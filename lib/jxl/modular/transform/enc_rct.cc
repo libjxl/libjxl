@@ -38,15 +38,22 @@ bool FwdRctRow(size_t w, const pixel_type* in0, const pixel_type* in1,
   constexpr size_t second = transform >> 1;
   constexpr size_t third = transform & 1;
 #if HWY_TARGET == HWY_SCALAR
+  // Signed overflow is UB, so the reversible RCT subtraction is performed in
+  // uint32_t: the result wraps modulo 2^32 exactly like PixelAdd() in
+  // transform.h and the SIMD operations below.
+  auto sub = [](pixel_type a, pixel_type b) {
+    return static_cast<pixel_type>(static_cast<uint32_t>(a) -
+                                   static_cast<uint32_t>(b));
+  };
   if (transform == 6) {
     for (size_t x = 0; x < w; x++) {
       pixel_type R = in0[x];
       pixel_type G = in1[x];
       pixel_type B = in2[x];
-      pixel_type o1 = R - B;
-      pixel_type tmp = B + (o1 >> 1);
-      pixel_type o2 = G - tmp;
-      out0[x] = tmp + (o2 >> 1);
+      pixel_type o1 = sub(R, B);
+      pixel_type tmp = PixelAdd(B, (o1 >> 1));
+      pixel_type o2 = sub(G, tmp);
+      out0[x] = PixelAdd(tmp, (o2 >> 1));
       out1[x] = o1;
       out2[x] = o2;
     }
@@ -58,11 +65,11 @@ bool FwdRctRow(size_t w, const pixel_type* in0, const pixel_type* in1,
     pixel_type Second = in1[x];
     pixel_type Third = in2[x];
     if (second == 1) {
-      Second = Second - First;
+      Second = sub(Second, First);
     } else if (second == 2) {
-      Second = Second - ((First + Third) >> 1);
+      Second = sub(Second, PixelAdd(First, Third) >> 1);
     }
-    if (third) Third = Third - First;
+    if (third) Third = sub(Third, First);
     out0[x] = First;
     out1[x] = Second;
     out2[x] = Third;

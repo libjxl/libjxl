@@ -84,7 +84,11 @@ StatusOr<float> EstimateCost(const Image& img) {
         for (uint32_t c : cutoffs) {
           ctx += (max_diff < c) ? 1 : 0;
         }
-        pixel_type res = r[x] - ClampedGradient(top, left, topleft);
+        // Signed overflow is UB: the residual is computed modulo 2^32 in
+        // uint32_t, matching the wrapping arithmetic of the SIMD path below.
+        pixel_type res = static_cast<pixel_type>(
+            static_cast<uint32_t>(r[x]) -
+            static_cast<uint32_t>(ClampedGradient(top, left, topleft)));
         uint32_t token;
         uint32_t nbits;
         uint32_t bits;

@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -22,7 +23,20 @@
 
 namespace jxl {
 
-#define AVERAGE(X, Y) (((X) + (Y) + (((X) > (Y)) ? 1 : 0)) >> 1)
+// Average of two pixel_type samples. The result is always representable as
+// pixel_type, but the intermediate sum is not: compute it in pixel_type_w so
+// that extreme samples cannot overflow a signed int (UB).
+#define AVERAGE(X, Y)                                                        \
+  ((static_cast<pixel_type_w>(X) + static_cast<pixel_type_w>(Y) +            \
+    (((X) > (Y)) ? 1 : 0)) >>                                                \
+   1)
+
+static JXL_INLINE bool PixelTypeFits(pixel_type_w v) {
+  return v >= static_cast<pixel_type_w>(
+                  std::numeric_limits<pixel_type>::min()) &&
+         v <= static_cast<pixel_type_w>(
+                  std::numeric_limits<pixel_type>::max());
+}
 
 Status FwdHSqueeze(Image &input, int c, int rc) {
   const Channel &chin = input.channel[c];
@@ -48,12 +62,16 @@ Status FwdHSqueeze(Image &input, int c, int rc) {
     for (size_t x = 0; x < chout_residual.w; x++) {
       pixel_type A = p_in[x * 2];
       pixel_type B = p_in[x * 2 + 1];
-      pixel_type avg = AVERAGE(A, B);
-      p_out[x] = avg;
+      pixel_type_w avg = AVERAGE(A, B);
+      // The average of two pixel_type values always fits in pixel_type.
+      p_out[x] = static_cast<pixel_type>(avg);
 
-      pixel_type diff = A - B;
+      pixel_type_w diff = static_cast<pixel_type_w>(A) - B;
+      if (!PixelTypeFits(diff)) {
+        return JXL_FAILURE("Horizontal squeeze difference out of range");
+      }
 
-      pixel_type next_avg = avg;
+      pixel_type_w next_avg = avg;
       if (x + 1 < chout_residual.w) {
         pixel_type C = p_in[x * 2 + 2];
         pixel_type D = p_in[x * 2 + 3];
@@ -61,10 +79,14 @@ Status FwdHSqueeze(Image &input, int c, int rc) {
       } else if (chin.w & 1) {
         next_avg = p_in[x * 2 + 2];
       }
-      pixel_type left = (x > 0 ? p_in[x * 2 - 1] : avg);
-      pixel_type tendency = SmoothTendency(left, avg, next_avg);
+      pixel_type_w left = (x > 0 ? p_in[x * 2 - 1] : avg);
+      pixel_type_w tendency = SmoothTendency(left, avg, next_avg);
 
-      p_res[x] = diff - tendency;
+      pixel_type_w residual = diff - tendency;
+      if (!PixelTypeFits(residual)) {
+        return JXL_FAILURE("Horizontal squeeze residual out of range");
+      }
+      p_res[x] = static_cast<pixel_type>(residual);
     }
     if (chin.w & 1) {
       int x = chout.w - 1;
@@ -101,12 +123,16 @@ Status FwdVSqueeze(Image &input, int c, int rc) {
     for (size_t x = 0; x < chout.w; x++) {
       pixel_type A = p_in[x];
       pixel_type B = p_in[x + onerow_in];
-      pixel_type avg = AVERAGE(A, B);
-      p_out[x] = avg;
+      pixel_type_w avg = AVERAGE(A, B);
+      // The average of two pixel_type values always fits in pixel_type.
+      p_out[x] = static_cast<pixel_type>(avg);
 
-      pixel_type diff = A - B;
+      pixel_type_w diff = static_cast<pixel_type_w>(A) - B;
+      if (!PixelTypeFits(diff)) {
+        return JXL_FAILURE("Vertical squeeze difference out of range");
+      }
 
-      pixel_type next_avg = avg;
+      pixel_type_w next_avg = avg;
       if (y + 1 < chout_residual.h) {
         pixel_type C = p_in[x + 2 * onerow_in];
         pixel_type D = p_in[x + 3 * onerow_in];
@@ -114,11 +140,15 @@ Status FwdVSqueeze(Image &input, int c, int rc) {
       } else if (chin.h & 1) {
         next_avg = p_in[x + 2 * onerow_in];
       }
-      pixel_type top =
+      pixel_type_w top =
           (y > 0 ? p_in[static_cast<ptrdiff_t>(x) - onerow_in] : avg);
-      pixel_type tendency = SmoothTendency(top, avg, next_avg);
+      pixel_type_w tendency = SmoothTendency(top, avg, next_avg);
 
-      p_res[x] = diff - tendency;
+      pixel_type_w residual = diff - tendency;
+      if (!PixelTypeFits(residual)) {
+        return JXL_FAILURE("Vertical squeeze residual out of range");
+      }
+      p_res[x] = static_cast<pixel_type>(residual);
     }
   }
   if (chin.h & 1) {
