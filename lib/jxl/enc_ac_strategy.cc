@@ -374,8 +374,11 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
   // Apply transform.
   for (size_t c = 0; c < 3; c++) {
     float* JXL_RESTRICT block_c = block + size * c;
-    TransformFromPixels(acs.Strategy(), &config.Pixel(c, x, y),
-                        config.src_stride, block_c, scratch_space);
+    TransformFromPixels(
+        acs.Strategy(),
+        config.PixelBlock(c, x, y, acs.covered_blocks_x() * kBlockDim,
+                          acs.covered_blocks_y() * kBlockDim),
+        config.PixelStride(), block_c, scratch_space);
   }
   HWY_FULL(float) df;
 
@@ -456,23 +459,26 @@ Status EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
 
       for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
         for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
-          for (size_t dy = 0; dy < kBlockDim; ++dy) {
-            for (size_t dx = 0; dx < kBlockDim; dx += Lanes(df8)) {
+          // The 1x1 masking field can end inside of the block; only whole
+          // vectors of masking values are used.
+          const size_t mx = x + ix * kBlockDim;
+          const size_t my = y + iy * kBlockDim;
+          const size_t mxsize = config.Masking1x1Columns(mx, kBlockDim);
+          const size_t mysize =
+              mxsize == 0 ? 0 : config.Masking1x1Rows(my, kBlockDim);
+          for (size_t dy = 0; dy < mysize; ++dy) {
+            const float* row_mask = config.Masking1x1Row(mx, my + dy, mxsize);
+            for (size_t dx = 0; dx + Lanes(df8) <= mxsize; dx += Lanes(df8)) {
               auto in = Load(df8, block +
                                       (iy * kBlockDim + dy) *
                                           (acs.covered_blocks_x() * kBlockDim) +
                                       ix * kBlockDim + dx);
-              if (x + ix * 8 + dx + Lanes(df8) <= config.mask1x1_xsize) {
-                auto masku =
-                    Add(Load(df8, config.MaskingPtr1x1(x + ix * 8 + dx,
-                                                       y + iy * 8 + dy)),
-                        masku_off);
-                in = Mul(masku, in);
-                in = Mul(in, in);
-                in = Mul(in, in);
-                in = Mul(in, in);
-                lossc = Add(lossc, in);
-              }
+              auto masku = Add(Load(df8, row_mask + dx), masku_off);
+              in = Mul(masku, in);
+              in = Mul(in, in);
+              in = Mul(in, in);
+              in = Mul(in, in);
+              lossc = Add(lossc, in);
             }
           }
         }
@@ -1086,23 +1092,11 @@ Status AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
     JXL_RETURN_IF_ERROR(matrices->EnsureComputed(memory_manager, acs_mask));
   }
 
-  // Image row pointers and strides.
-  config.quant_field_row = quant_field.Row(0);
-  config.quant_field_stride = quant_field.PixelsPerRow();
-  if (mask.xsize() > 0 && mask.ysize() > 0) {
-    config.masking_field_row = mask.Row(0);
-    config.masking_field_stride = mask.PixelsPerRow();
-  }
-  config.mask1x1_xsize = mask1x1.xsize();
-  if (mask1x1.xsize() > 0 && mask1x1.ysize() > 0) {
-    config.masking1x1_field_row = mask1x1.Row(0);
-    config.masking1x1_field_stride = mask1x1.PixelsPerRow();
-  }
-
-  config.src_rows[0] = rect_in.ConstPlaneRow(src, 0, 0);
-  config.src_rows[1] = rect_in.ConstPlaneRow(src, 1, 0);
-  config.src_rows[2] = rect_in.ConstPlaneRow(src, 2, 0);
-  config.src_stride = src.PixelsPerRow();
+  config.quant_field = &quant_field;
+  config.masking_field = &mask;
+  config.masking1x1_field = &mask1x1;
+  config.src = &src;
+  config.src_rect = rect_in;
 
   // Entropy estimate is composed of two factors:
   //  - estimate of the number of bits that will be used by the block
