@@ -991,6 +991,10 @@ Status FindBestQuantization(const FrameHeader& frame_header,
         }
         printf("\n");
       }
+    } else if (i == iters) {
+      // The final quant field is set after the loop. Its roundtrip and
+      // comparison would only feed the debug output.
+      break;
     }
     JXL_RETURN_IF_ERROR(quantizer.SetQuantField(initial_quant_dc, quant_field,
                                                 &raw_quant_field));
