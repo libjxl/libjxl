@@ -122,45 +122,35 @@ jobs:
 
   # Build .deb packages Ubuntu/Debian
   release_ubuntu_pkg:
-    name: .deb / ${{ matrix.os }}
+    name: ${{ format('.deb / {0}', matrix.distro) }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os:
-        - ubuntu:24.04
-        - ubuntu:22.04
-        - debian:bookworm
-        - debian:trixie
-        - debian:sid
+        include:
+          - distro: 22.04
+            image_hash: 3dbfcff54e02773819d50726a21517583fa71c115282d26aad87f9cd22333ae1
+          - distro: 24.04
+            image_hash: 890e8b5c0040e1deff5cc7dc7b4414e67069f79e3301afc4ec5bd49d64ef13e5
+          - distro: bookworm
+            image_hash: f53cd4c58cdb96a467b98696cd510a949ef4ccd7d23e07b75107de754773007a
+          - distro: trixie
+            image_hash: 188a9dfa5e813c917be00c3f474bc75488b62914305e13fa21dff1cfef2eb354
+          - distro: forky
+            image_hash: 9483ff307cc823af0f579837ea2e04458d2b3c5ea5258ee67dcbb56eb597e5b6
 
     container:
-      image: ${{ matrix.os }}
+      image: ${{ format('buildpack-deps:{0}@sha256:{1}', matrix.distro, matrix.image_hash) }}) }} # zizmor: ignore[unpinned-images]
+
+    env:
+      ARTIFACT_SUFFIX: ${{ matrix.distro }}
 
     steps:
     - name: Harden Runner
       uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
       with:
         egress-policy: audit
-
-    - name: Install build deps
-      run: |
-        rm -f /var/lib/man-db/auto-update
-        apt update
-        DEBIAN_FRONTEND=noninteractive apt install -y \
-          build-essential \
-          devscripts \
-          python3 \
-          sed \
-        #
-
-    - name: Calculate artifact suffix
-      shell: python3 {0}
-      run: |
-        import os
-        artifact_suffix="${{ matrix.os}}".replace(':', '-')
-        open(os.getenv("GITHUB_ENV"), "a").write(f"ARTIFACT_SUFFIX={artifact_suffix}\n")
 
     - name: Set git safe dir
       run: |

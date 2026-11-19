@@ -46,7 +46,6 @@ fi
 POST_MESSAGE_ON_ERROR="${POST_MESSAGE_ON_ERROR:-1}"
 # By default, do a lightweight debian HWY package build.
 HWY_PKG_OPTIONS="${HWY_PKG_OPTIONS:---set-envvar=HWY_EXTRA_CONFIG=-DBUILD_TESTING=OFF -DHWY_ENABLE_EXAMPLES=OFF -DHWY_ENABLE_CONTRIB=OFF}"
-EXCLUDE_DEBIAN_PACKAGES="${EXCLUDE_DEBIAN_PACKAGES:-}"
 
 # Set default compilers to clang if not already set
 export CC=${CC:-clang}
@@ -1409,11 +1408,6 @@ build_debian_pkg() {
       ln -s "${srcdir}/$f" "${builddir}/$f"
     fi
   done
-  if [[ -n "${EXCLUDE_DEBIAN_PACKAGES}" ]]; then
-    # TODO(eustas): support comma-separated list
-    rm -f "${builddir}"/debian/${EXCLUDE_DEBIAN_PACKAGES}.install
-    sed -i "/Package: ${EXCLUDE_DEBIAN_PACKAGES}/,/\n/d" "${builddir}"/debian/control
-  fi
   (
     cd "${builddir}"
     debuild "${options}" -b -uc -us
@@ -1436,51 +1430,16 @@ cmd_debian_build() {
   esac
 }
 
-get_version() {
-  local varname=$1
-  local line=$(grep -F "set(${varname} " lib/CMakeLists.txt | head -n 1)
-  [[ -n "${line}" ]]
-  line="${line#set(${varname} }"
-  line="${line%)}"
-  echo "${line}"
-}
-
 cmd_bump_version() {
-  local newver="${1:-}"
+  local new_ver="${1:-}"
 
   if ! which dch >/dev/null; then
     echo "Missing dch\nTo install it run:\n  sudo apt install devscripts"
     exit 1
   fi
 
-  if [[ -z "${newver}" ]]; then
-    local major=$(get_version JPEGXL_MAJOR_VERSION)
-    local minor=$(get_version JPEGXL_MINOR_VERSION)
-    local patch=0
-    minor=$(( ${minor}  + 1))
-  else
-    local major="${newver%%.*}"
-    newver="${newver#*.}"
-    local minor="${newver%%.*}"
-    newver="${newver#${minor}}"
-    local patch="${newver#.}"
-    if [[ -z "${patch}" ]]; then
-      patch=0
-    fi
-  fi
-
-  newver="${major}.${minor}.${patch}"
-
-  echo "Bumping version to ${newver} (${major}.${minor}.${patch})"
-  sed -E \
-    -e "s/(set\\(JPEGXL_MAJOR_VERSION) [0-9]+\\)/\\1 ${major})/" \
-    -e "s/(set\\(JPEGXL_MINOR_VERSION) [0-9]+\\)/\\1 ${minor})/" \
-    -e "s/(set\\(JPEGXL_PATCH_VERSION) [0-9]+\\)/\\1 ${patch})/" \
-    -i lib/CMakeLists.txt
-  sed -E \
-    -e "s/(LIBJXL_VERSION: )\"[0-9.]+\"/\\1\"${major}.${minor}.${patch}\"/" \
-    -e "s/(LIBJXL_ABI_VERSION: )\"[0-9.]+\"/\\1\"${major}.${minor}\"/" \
-    -i .github/workflows/conformance.yml
+  # Update lib/CMakeLists.txt and .github/workflows/conformance.yml
+  tools/scripts/bump_version.py "${new_ver}"
 
   # Update lib.gni
   tools/scripts/build_cleaner.py --update
@@ -1488,8 +1447,8 @@ cmd_bump_version() {
   # Mark the previous version as "unstable".
   DEBCHANGE_RELEASE_HEURISTIC=log dch -M --distribution unstable --release ''
   DEBCHANGE_RELEASE_HEURISTIC=log dch -M \
-    --newversion "${newver}" \
-    "Bump JPEG XL version to ${newver}."
+    --newversion "${new_ver}" \
+    "Bump JPEG XL version to ${new_ver}."
 
   echo "WARNING: JPEGXL_SO_MINOR_VERSION is not updated automatically!"
 }
