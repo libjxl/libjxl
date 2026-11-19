@@ -146,8 +146,11 @@ struct PsychoImage {
   Image3F lf;     // XYB
 };
 
-// Blur needs a transposed image.
-// Hold it here and only allocate on demand to reduce memory usage.
+// Blur needs scratch image storage. Allocated on demand to reduce memory usage.
+//
+// `transposed_temp` has dims swapped (used by the legacy ConvolutionWithTranspose
+// path); `same_size_temp` matches the input dims and is used by the direct
+// (non-transposing) H-then-V path in Blur().
 struct BlurTemp {
   Status GetTransposed(const ImageF &in, ImageF **out) {
     JxlMemoryManager *memory_manager = in.memory_manager();
@@ -160,7 +163,19 @@ struct BlurTemp {
     return true;
   }
 
+  Status GetSameSize(const ImageF &in, ImageF **out) {
+    JxlMemoryManager *memory_manager = in.memory_manager();
+    if (same_size_temp.xsize() == 0) {
+      JXL_ASSIGN_OR_RETURN(
+          same_size_temp,
+          ImageF::Create(memory_manager, in.xsize(), in.ysize()));
+    }
+    *out = &same_size_temp;
+    return true;
+  }
+
   ImageF transposed_temp;
+  ImageF same_size_temp;
 };
 
 class ButteraugliComparator {
