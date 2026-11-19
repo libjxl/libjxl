@@ -358,6 +358,7 @@ if(JPEGXL_ENABLE_TOOLS)
     rans_fuzzer
     set_from_bytes_fuzzer
     transforms_fuzzer
+    encoder_options_fuzzer
   )
 endif()
 
