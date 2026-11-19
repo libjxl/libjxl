@@ -82,15 +82,29 @@ Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
       frame_bits_per_sample, frame.color.format, pool, bundle,
       has_interleaved_alpha));
 
-  bundle->extra_channels().resize(io.metadata.m.extra_channel_info.size());
+  const bool frame_has_interleaved_alpha =
+      (frame.color.format.num_channels == 2 ||
+       frame.color.format.num_channels == 4);
+  const size_t total_ec = io.metadata.m.extra_channel_info.size();
+  size_t ec_offset = 0;
+  if (has_interleaved_alpha &&
+      (frame_has_interleaved_alpha ||
+       frame.extra_channels.size() + 1 == total_ec)) {
+    ec_offset = 1;
+  }
+  bundle->extra_channels().resize(total_ec);
+  if (total_ec < ec_offset ||
+      frame.extra_channels.size() != total_ec - ec_offset) {
+    return JXL_FAILURE("Extra channel count mismatch");
+  }
   for (size_t i = 0; i < frame.extra_channels.size(); i++) {
     const auto& ppf_ec = frame.extra_channels[i];
+    ImageF& ec = bundle->extra_channels()[ec_offset + i];
     JXL_ASSIGN_OR_RETURN(
-        bundle->extra_channels()[i],
-        ImageF::Create(memory_manager, ppf_ec.xsize, ppf_ec.ysize));
-    JXL_RETURN_IF_ERROR(BufferToImageF(
-        ppf_ec.format, ppf_ec.xsize, ppf_ec.ysize, ppf_ec.pixels(),
-        ppf_ec.pixels_size, pool, &bundle->extra_channels()[i]));
+        ec, ImageF::Create(memory_manager, ppf_ec.xsize, ppf_ec.ysize));
+    JXL_RETURN_IF_ERROR(BufferToImageF(ppf_ec.format, ppf_ec.xsize,
+                                       ppf_ec.ysize, ppf_ec.pixels(),
+                                       ppf_ec.pixels_size, pool, &ec));
   }
   return true;
 }
