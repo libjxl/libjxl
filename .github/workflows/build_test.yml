@@ -218,6 +218,7 @@ jobs:
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
+      LLVM_ROOT: ${{ (matrix.name == 'msan') && format('{0}/llvm_root', github.workspace) || '' }}
       # Whether we track the stack size.
       EMIT_STACK_SIZES: ${{ matrix.emit_stack_sizes }}
       TEST_STACK_LIMIT: ${{ matrix.test_stack_limit }}
@@ -295,9 +296,7 @@ jobs:
     - name: Setup the LLVM source path
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
       run: |
-        LLVM_ROOT=${GITHUB_WORKSPACE}/llvm_root
         mkdir -p ${LLVM_ROOT}
-        echo "LLVM_ROOT=${LLVM_ROOT}" >> $GITHUB_ENV
 
     - name: Cache LLVM sources
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'

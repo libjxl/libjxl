@@ -94,7 +94,6 @@ jobs:
       run: |
         tools/scripts/build_stats.py --save build/stats.json \
           ${{ matrix.build_target && format('--binutils {0}-', matrix.build_target) || ''}} \
-          --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so
 
     - name: Prepare artefacts

@@ -215,7 +215,7 @@ jobs:
     - name: Build libjxl
       run: |
         apt build-dep -y .
-        EXCLUDE_DEBIAN_PACKAGES="${{ matrix.exclude_debian_packages || '' }}" ./ci.sh debian_build jpeg-xl
+        ./ci.sh debian_build jpeg-xl
 
     - name: Stats
       run: |
