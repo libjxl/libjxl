@@ -1368,22 +1368,24 @@ HistogramParams HistogramParams::ForModular(
   } else if (cparams.speed_tier <= SpeedTier::kTortoise) {
     params.lz77_method = HistogramParams::LZ77Method::kOptc256;
   } else {
-    params.lz77_method = HistogramParams::LZ77Method::kLZ77b3w3t;
+    params.lz77_method = HistogramParams::LZ77Method::kLZ77b7w3t;
   }
   if (cparams.decoding_speed_tier >= 2) {
     params.max_histograms = 12;
   }
-    // No predictor requires LZ77 to compress residuals.
-    // Effort 3 and lower have forced predictors, so kNone is set.
-    if (cparams.options.predictor == Predictor::Zero && cparams.modular_mode) {
-        params.lz77_method = cparams.speed_tier >= SpeedTier::kFalcon
-            ? HistogramParams::LZ77Method::kNone
-            : cparams.speed_tier >= SpeedTier::kHare
-            ? HistogramParams::LZ77Method::kLZ77b1w3t
-            : cparams.speed_tier >= SpeedTier::kKitten
-            ? HistogramParams::LZ77Method::kLZ77b3w3t
-            : HistogramParams::LZ77Method::kOptc256;
-    }
+  // No predictor requires LZ77 to compress residuals.
+  // Effort 3 and lower have forced predictors, so kNone is set.
+  if (cparams.options.predictor == Predictor::Zero && cparams.modular_mode) {
+    params.lz77_method = cparams.speed_tier >= SpeedTier::kFalcon
+                             ? HistogramParams::LZ77Method::kNone
+                         : cparams.speed_tier >= SpeedTier::kHare
+                             ? HistogramParams::LZ77Method::kLZ77b1w3t
+                         : cparams.speed_tier >= SpeedTier::kSquirrel
+                             ? HistogramParams::LZ77Method::kLZ77b3w3t
+                         : cparams.speed_tier >= SpeedTier::kKitten
+                             ? HistogramParams::LZ77Method::kLZ77b31w3t
+                             : HistogramParams::LZ77Method::kOptc256;
+  }
   return params;
 }
 }  // namespace jxl

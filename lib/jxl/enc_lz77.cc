@@ -6,11 +6,11 @@
 #include "lib/jxl/enc_lz77.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <unordered_map>
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
@@ -225,8 +225,8 @@ struct HashChain {
   size_t min_length_;
   size_t max_length_;
 
-  // Map of special distance codes.
-  std::unordered_map<int, int> special_dist_table_;
+  // Flat lookup table of special distance codes.
+  std::vector<int16_t> special_dist_table_;
   size_t num_special_distances_ = 0;
 
   uint32_t maxchainlength = kMaxChainLength;  // window_size_ to allow all
@@ -258,10 +258,14 @@ struct HashChain {
     }
     // Translate distance to special distance code.
     if (distance_multiplier) {
+      special_dist_table_.assign(distance_multiplier * 8 + 9, -1);
       // Count down, so if due to small distance multiplier multiple distances
       // map to the same code, the smallest code will be used in the end.
       for (int i = kNumSpecialDistances - 1; i >= 0; --i) {
-        special_dist_table_[SpecialDistance(i, distance_multiplier)] = i;
+        size_t d = SpecialDistance(i, distance_multiplier);
+        if (d < special_dist_table_.size()) {
+          special_dist_table_[d] = static_cast<int16_t>(i);
+        }
       }
       num_special_distances_ = kNumSpecialDistances;
     }
@@ -341,10 +345,11 @@ struct HashChain {
         // best length, because it is possible for a slightly cheaper distance
         // symbol to occur.
         if (len >= min_length_ && len + 2 >= best_len) {
-          auto it = special_dist_table_.find(dist);
-          int dist_symbol = (it == special_dist_table_.end())
-                                ? (num_special_distances_ + dist - 1)
-                                : it->second;
+          int dist_symbol = num_special_distances_ + dist - 1;
+          if (static_cast<size_t>(dist) < special_dist_table_.size()) {
+            int lookup = special_dist_table_[dist];
+            if (lookup >= 0) dist_symbol = lookup;
+          }
           found_match(len, dist_symbol);
           if (len > best_len) best_len = len;
         }
