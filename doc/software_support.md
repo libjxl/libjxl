@@ -101,6 +101,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [jpegxl.io](https://jpegxl.io/)
 - [EXIF Viewer](https://stefan-oltmann.de/exif-viewer)
 - [Immich](https://immich.app/), a self-hosted image gallery service
+- [JXL to JPG](https://jxl-to-jpg.com/): converts a JPEG XL file to JPG in the browser. Decoding runs locally with WebAssembly.
 
 ## 3D Software
 
