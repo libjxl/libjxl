@@ -12,6 +12,7 @@ project(SAMPLE_LIBJXL LANGUAGES C CXX)
 # Use pkg-config to find libjxl.
 find_package(PkgConfig)
 pkg_check_modules(Jxl REQUIRED IMPORTED_TARGET libjxl libjxl_cms libjxl_threads)
+pkg_check_modules(JxlOnly REQUIRED IMPORTED_TARGET libjxl)
 
 # Build the example encoder/decoder binaries using the default shared libraries
 # installed.
@@ -26,3 +27,7 @@ target_link_libraries(decode_progressive PkgConfig::Jxl)
 
 add_executable(encode_oneshot encode_oneshot.cc)
 target_link_libraries(encode_oneshot PkgConfig::Jxl)
+
+# Exercise the public gain-map and ICC helpers through libjxl alone.
+add_executable(gain_map_api_roundtrip gain_map_api_roundtrip.c)
+target_link_libraries(gain_map_api_roundtrip PkgConfig::JxlOnly)
