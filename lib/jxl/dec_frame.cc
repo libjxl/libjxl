@@ -225,6 +225,14 @@ Status FrameDecoder::InitFrameOutput() {
     }
     bool is_gray = (num_components == 1);
     auto jpeg_c_map = JpegOrder(ColorTransform::kYCbCr, is_gray);
+    // A one-component scan always covers every 8x8 block of the image (see
+    // JPEGData::CalculateMcuSize), so the Y channel that the single component
+    // is sized from must not be subsampled.
+    if (is_gray && (frame_header_.chroma_subsampling.HShift(1) != 0 ||
+                    frame_header_.chroma_subsampling.VShift(1) != 0)) {
+      return JXL_FAILURE(
+          "Grayscale JPEG reconstruction requires a full-resolution luma");
+    }
     if (frame_dim_.xsize > static_cast<size_t>(jpeg::kMaxDimPixels) ||
         frame_dim_.ysize > static_cast<size_t>(jpeg::kMaxDimPixels)) {
       return JXL_FAILURE("Frame dimensions too large for JPEG reconstruction");
