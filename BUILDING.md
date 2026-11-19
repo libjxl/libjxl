@@ -98,7 +98,7 @@ If running a executable give you "error while loading shared libraries: libjxl_t
 sudo ldconfig
 ```
 
-## Building JPEG XL for developers
+## Building JPEG XL for developers
 
 For experienced developers, we provide build instructions for several other environments:
 

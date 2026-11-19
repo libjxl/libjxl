@@ -1,4 +1,4 @@
-# JPEG XL reference implementation
+# JPEG XL reference implementation
 
 [![Build/Test](https://github.com/libjxl/libjxl/actions/workflows/build_test.yml/badge.svg)](
 https://github.com/libjxl/libjxl/actions/workflows/build_test.yml)
@@ -25,18 +25,18 @@ https://codecov.io/gh/libjxl/libjxl)
 > [!IMPORTANT]
 > **Security Update:** It is highly recommended to update to v0.12 ASAP due to numerous security fixes.
 
-This repository contains a reference implementation of JPEG XL (encoder and
+This repository contains a reference implementation of JPEG XL (encoder and
 decoder), called `libjxl`. This software library is
-[used by many applications that support JPEG XL](doc/software_support.md).
+[used by many applications that support JPEG XL](doc/software_support.md).
 
-JPEG XL was standardized in 2022 as [ISO/IEC 18181](https://jpeg.org/jpegxl/workplan.html).
+JPEG XL was standardized in 2022 as [ISO/IEC 18181](https://jpeg.org/jpegxl/workplan.html).
 The [core codestream](doc/format_overview.md#codestream-features) is specified in 18181-1,
 the [file format](doc/format_overview.md#file-format-features) in 18181-2.
 [Decoder conformance](https://github.com/libjxl/conformance) is defined in 18181-3,
 and 18181-4 is the [reference software](https://github.com/libjxl/libjxl).
 
 The library API, command line options, and tools in this repository are subject
-to change, however files encoded with `cjxl` conform to the JPEG XL specification
+to change, however files encoded with `cjxl` conform to the JPEG XL specification
 and can be decoded with current and future `djxl` decoders or the `libjxl` decoding library.
 
 ## Installation
@@ -57,7 +57,7 @@ Of course you can also [build libjxl from sources](BUILDING.md).
 
 ## Usage
 
-To encode a source image to JPEG XL with default settings:
+To encode a source image to JPEG XL with default settings:
 
 ```bash
 cjxl input.png output.jxl
@@ -68,19 +68,22 @@ The desired visual fidelity can be selected using the `--distance` parameter
 or using `--quality` (on a scale from 0 to 100, roughly matching libjpeg).
 The [encode effort](doc/encode_effort.md) can be selected using the `--effort` parameter.
 
-For more settings run `cjxl --help` or for a full list of options
-run `cjxl -v -v --help`.
+For more settings, run `cjxl --help`. The help output can be combined with `-v` to increase verbosity.
+Up to four `-v` flags (e.g., `cjxl -v -v -v -v --help`) reveal progressively more advanced options.
 
-To decode a JPEG XL file run:
+To decode a JPEG XL file run:
 
 ```bash
 djxl input.jxl output.png
 ```
 
+Similar to encoding, you can run `djxl --help` to see decoding options, and pass up to two `-v` flags
+to see more advanced options.
+
 When possible, `cjxl`/`djxl` are able to read/write the following image formats:
 OpenEXR (`.exr`), GIF (`.gif`), JPEG (`.jpg`/`.jpeg`), NetPBM (`.pam`/`.pgm`/`.ppm`),
 Portable FloatMap (`.pfm`), PGX Test Format (`.pgx`), Portable Network Graphics (`.png`),
-Animated PNG (`.png`/`.apng`), and JPEG XL itself (`.jxl`).
+Animated PNG (`.png`/`.apng`), and JPEG XL itself (`.jxl`).
 
 Specifically for JPEG files, the default `cjxl` behavior is to apply lossless
 recompression and the default `djxl` behavior is to reconstruct the original
@@ -111,24 +114,24 @@ the [PATENTS](PATENTS) file.
 
 Please note that the PATENTS file only mentions Google since Google is the legal
 entity receiving the Contributor License Agreements (CLA) from all contributors
-to the JPEG XL Project, including the initial main contributors to the JPEG XL
+to the JPEG XL Project, including the initial main contributors to the JPEG XL
 format: Cloudinary and Google.
 
 ## Additional documentation
 
 ### Codec description
 
-*   [JPEG XL Format Overview](doc/format_overview.md)
+*   [JPEG XL Format Overview](doc/format_overview.md)
 *   [Introductory paper](https://www.spiedigitallibrary.org/proceedings/Download?fullDOI=10.1117%2F12.2529237) (open-access)
 *   [XL Overview](doc/xl_overview.md) - a brief introduction to the source code modules
-*   [JPEG XL white paper](https://ds.jpeg.org/whitepapers/jpeg-xl-whitepaper.pdf)
-*   [JPEG XL official website](https://jpeg.org/jpegxl)
-*   [JPEG XL community website](https://jpegxl.info)
+*   [JPEG XL white paper](https://ds.jpeg.org/whitepapers/jpeg-xl-whitepaper.pdf)
+*   [JPEG XL official website](https://jpeg.org/jpegxl)
+*   [JPEG XL community website](https://jpegxl.info)
 
 ### Development process
 
 *   [More information on testing/build options](doc/building_and_testing.md)
-*   [Git guide for JPEG XL](doc/developing_in_github.md) - for developers
+*   [Git guide for JPEG XL](doc/developing_in_github.md) - for developers
 *   [Fuzzing](doc/fuzzing.md) - for developers
 *   [Building Web Assembly artifacts](doc/building_wasm.md)
 *   [Test coverage on Codecov.io](https://app.codecov.io/gh/libjxl/libjxl) - for
@@ -140,6 +143,6 @@ format: Cloudinary and Google.
 
 If you encounter a bug or other issue with the software, please open an Issue here.
 
-There is a [subreddit about JPEG XL](https://www.reddit.com/r/jpegxl/), and
+There is a [subreddit about JPEG XL](https://www.reddit.com/r/jpegxl/), and
 informal chatting with developers and early adopters of `libjxl` can be done on the
-[JPEG XL Discord server](https://discord.gg/DqkQgDRTFu).
+[JPEG XL Discord server](https://discord.gg/DqkQgDRTFu).
