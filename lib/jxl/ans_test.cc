@@ -301,6 +301,104 @@ TEST(ANSTest, TestCheckpointingPrefixLZ77) {
   TestCheckpointing(/*ans=*/false, /*lz77=*/true);
 }
 
+// The greedy LZ77 matcher (LZ77HashMap in enc_lz77.cc) must not propose match
+// distances beyond the decoder's LZ77 window (kWindowSize in dec_ans.h): the
+// decoder clamps such distances to kWindowSize and then copies from the wrong
+// position, silently corrupting a lossless round trip. The stream below forces
+// the matcher to pick a match between two identical runs separated by more
+// than the window: the value sets of the prefix/suffix and of the filler in
+// between are disjoint, so the filler's hash-bucket inserts never evict the
+// prefix's candidates from the buckets the suffix hashes to.
+std::vector<std::vector<Token>> MakeLz77WindowTokens(size_t prefix_len,
+                                                     size_t suffix_len) {
+  std::vector<std::vector<Token>> input_values(1);
+  constexpr size_t kWindow = kWindowSize;
+  for (size_t i = 0; i < prefix_len; i++) {
+    input_values[0].emplace_back(0, i % 4);
+  }
+  for (size_t i = 0; i < kWindow + 32; i++) {
+    input_values[0].emplace_back(0, 4 + (i % 5));
+  }
+  for (size_t i = 0; i < suffix_len; i++) {
+    input_values[0].emplace_back(0, i % 4);
+  }
+  return input_values;
+}
+
+void TestLz77MatchDistanceWindow(HistogramParams::LZ77Method method, bool ans) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  std::vector<std::vector<Token>> input_values =
+      MakeLz77WindowTokens(/*prefix_len=*/12, /*suffix_len=*/12);
+  const std::vector<Token> original = input_values[0];
+
+  EntropyEncodingData codes;
+  HistogramParams params;
+  params.lz77_method = method;
+  params.force_huffman = !ans;
+  BitWriter writer{memory_manager};
+  {
+    auto input_values_copy = input_values;
+    JXL_TEST_ASSIGN_OR_DIE(
+        size_t cost,
+        BuildAndEncodeHistograms(memory_manager, params, 1, input_values_copy,
+                                 &codes, &writer, LayerType::Header, nullptr));
+    (void)cost;
+    size_t lz77_matches = 0;
+    for (size_t i = 0; i < input_values_copy[0].size(); i++) {
+      if (!input_values_copy[0][i].is_lz77_length) continue;
+      ++lz77_matches;
+      ASSERT_LT(i + 1, input_values_copy[0].size());
+      // No image_widths were given, so there are no special distances and the
+      // distance symbol encodes dist - 1.
+      size_t dist = static_cast<size_t>(input_values_copy[0][i + 1].value) + 1;
+      EXPECT_LE(dist, kWindowSize)
+          << "encoder emitted match distance " << dist << " at token " << i;
+    }
+    // Fail loudly instead of passing vacuously if the compression threshold
+    // ever stops selecting the LZ77 transform for this stream.
+    ASSERT_GT(lz77_matches, 0u) << "LZ77 transform not applied; broken premise";
+    ASSERT_TRUE(WriteTokens(input_values_copy[0], codes, 0, &writer,
+                            LayerType::Header, nullptr));
+    writer.ZeroPadToByte();
+  }
+
+  // The lossless round trip must reproduce the input exactly.
+  BitReader br(writer.GetSpan());
+  Status status = true;
+  {
+    BitReaderScopedCloser bc(br, status);
+    std::vector<uint8_t> dec_context_map;
+    ANSCode decoded_codes;
+    ASSERT_TRUE(DecodeHistograms(memory_manager, &br, 1, &decoded_codes,
+                                 &dec_context_map));
+    ASSERT_EQ(dec_context_map, codes.context_map);
+    JXL_TEST_ASSIGN_OR_DIE(ANSSymbolReader reader,
+                           ANSSymbolReader::Create(&decoded_codes, &br));
+    for (size_t i = 0; i < original.size(); i++) {
+      uint32_t read_symbol =
+          reader.ReadHybridUint(original[i].context, &br, dec_context_map);
+      ASSERT_EQ(read_symbol, original[i].value) << "i = " << i;
+    }
+    ASSERT_TRUE(reader.CheckANSFinalState());
+  }
+  EXPECT_TRUE(status);
+}
+
+TEST(ANSTest, Lz77MatchDistanceWithinWindowANS) {
+  TestLz77MatchDistanceWindow(HistogramParams::LZ77Method::kLZ77b3w3f,
+                              /*ans=*/true);
+}
+
+TEST(ANSTest, Lz77MatchDistanceWithinWindowPrefix) {
+  TestLz77MatchDistanceWindow(HistogramParams::LZ77Method::kLZ77b3w3f,
+                              /*ans=*/false);
+}
+
+TEST(ANSTest, Lz77MatchDistanceWithinWindowBucket7) {
+  TestLz77MatchDistanceWindow(HistogramParams::LZ77Method::kLZ77b7w3f,
+                              /*ans=*/true);
+}
+
 std::string AnsSimdTestDescription(
     const testing::TestParamInfo<HybridUintConfig>& info) {
   std::stringstream name;
