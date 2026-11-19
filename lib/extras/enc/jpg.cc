@@ -67,6 +67,41 @@ enum class JpegEncoder {
   kSJpeg,
 };
 
+// Error handling for the libjpeg compression path. The default
+// jpeg_std_error() error handler calls exit() on any fatal libjpeg error
+// (e.g. JERR_IMAGE_TOO_BIG, JERR_BAD_LENGTH, JERR_OUT_OF_MEMORY), which must
+// not happen for a library encoding untrusted input; mirror the pattern used
+// by the JPEG decoder (lib/extras/dec/jpg.cc) and convert fatal errors to a
+// regular Status failure via longjmp.
+struct CompressErrorContext {
+  jmp_buf env;
+  // jpeg_mem_dest() output buffer (caller-owned). Reset by MyErrorExit before
+  // unwinding; the setjmp() return path never reads it, so no
+  // setjmp/longjmp indeterminate-value issue arises.
+  unsigned char* outbuffer = nullptr;
+};
+
+void MyErrorExit(j_common_ptr cinfo) {
+  CompressErrorContext* ctx =
+      static_cast<CompressErrorContext*>(cinfo->client_data);
+  (*cinfo->err->output_message)(cinfo);
+  // The jpeg_mem_dest() output buffer is caller-owned; free it here so the
+  // error path does not leak it.
+  jpeg_destroy_compress(reinterpret_cast<j_compress_ptr>(cinfo));
+  free(ctx->outbuffer);
+  ctx->outbuffer = nullptr;
+  longjmp(ctx->env, 1);
+}
+
+void MyOutputMessage(j_common_ptr cinfo) {
+  if (JXL_IS_DEBUG_BUILD) {
+    char buf[JMSG_LENGTH_MAX + 1];
+    (*cinfo->err->format_message)(cinfo, buf);
+    buf[JMSG_LENGTH_MAX] = 0;
+    JXL_WARNING("%s", buf);
+  }
+}
+
 // Popular jpeg scan scripts
 // The fields of the individual scans are:
 // comps_in_scan, component_index[], Ss, Se, Ah, Al
@@ -224,8 +259,14 @@ void WriteICCProfile(jpeg_compress_struct* const cinfo,
     }
   }
 }
-void WriteExif(jpeg_compress_struct* const cinfo,
-               const std::vector<uint8_t>& exif) {
+Status WriteExif(jpeg_compress_struct* const cinfo,
+                 const std::vector<uint8_t>& exif) {
+  // JPEG APPn markers are limited to 65533 bytes of data; refuse to write an
+  // Exif payload that cannot be represented (libjpeg would otherwise abort
+  // the encoding with a fatal JERR_BAD_LENGTH).
+  if (exif.size() + sizeof kExifSignature > kMaxBytesInMarker) {
+    return JXL_FAILURE("Exif data does not fit in a JPEG APP1 marker");
+  }
   jpeg_write_m_header(
       cinfo, kExifMarker,
       static_cast<unsigned int>(exif.size() + sizeof kExifSignature));
@@ -235,6 +276,7 @@ void WriteExif(jpeg_compress_struct* const cinfo,
   for (uint8_t c : exif) {
     jpeg_write_m_byte(cinfo, c);
   }
+  return true;
 }
 
 Status SetChromaSubsampling(const std::string& subsampling,
@@ -287,17 +329,39 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
   if (BITS_IN_JSAMPLE != 8 || sizeof(JSAMPLE) != 1) {
     return JXL_FAILURE("Only 8 bit JSAMPLE is supported.");
   }
+  // Declare all non-trivial destructor local variables before the call to
+  // setjmp() (same rule as in lib/extras/dec/jpg.cc).
+  std::vector<jpeg_scan_info> scan_infos;
+  std::vector<uint8_t> row_bytes(image.stride);
+  CompressErrorContext ctx;
+
   jpeg_compress_struct cinfo = {};
   jpeg_error_mgr jerr;
   cinfo.err = jpeg_std_error(&jerr);
+  jerr.error_exit = &MyErrorExit;
+  jerr.output_message = &MyOutputMessage;
+  if (setjmp(ctx.env)) {
+    // A fatal libjpeg error occurred; the compress struct and the output
+    // buffer were already released by MyErrorExit.
+    return JXL_FAILURE("JPEG encoding failed");
+  }
+  cinfo.client_data = &ctx;
   jpeg_create_compress(&cinfo);
-  unsigned char* buffer = nullptr;
 #ifdef LIBJPEG_TURBO_VERSION
   unsigned long size = 0;  // NOLINT
 #else
   size_t size = 0;  // NOLINT
 #endif
-  jpeg_mem_dest(&cinfo, &buffer, &size);
+  jpeg_mem_dest(&cinfo, &ctx.outbuffer, &size);
+  // Releases the compress struct and the output buffer on the failure paths
+  // below, mirroring the cleanup MyErrorExit performs for fatal libjpeg
+  // errors.
+  const auto fail = [&](Status cause) -> Status {
+    jpeg_destroy_compress(&cinfo);
+    free(ctx.outbuffer);
+    ctx.outbuffer = nullptr;
+    return cause;
+  };
   cinfo.image_width = image.xsize;
   cinfo.image_height = image.ysize;
   cinfo.input_components = info.num_color_channels;
@@ -305,29 +369,33 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
   jpeg_set_defaults(&cinfo);
   cinfo.optimize_coding = static_cast<boolean>(params.optimize_coding);
   if (cinfo.input_components == 3) {
-    JXL_RETURN_IF_ERROR(
-        SetChromaSubsampling(params.chroma_subsampling, &cinfo));
+    if (!SetChromaSubsampling(params.chroma_subsampling, &cinfo)) {
+      return fail(JXL_FAILURE("unsupported chroma subsampling"));
+    }
   }
   if (params.is_xyb) {
     // Tell libjpeg not to convert XYB data to YCbCr.
     jpeg_set_colorspace(&cinfo, JCS_RGB);
   }
   jpeg_set_quality(&cinfo, params.quality, TRUE);
-  std::vector<jpeg_scan_info> scan_infos;
-  JXL_RETURN_IF_ERROR(
-      SetJpegProgression(params.progressive_id, &scan_infos, &cinfo));
+  {
+    Status progression =
+        SetJpegProgression(params.progressive_id, &scan_infos, &cinfo);
+    if (!progression) return fail(progression);
+  }
   jpeg_start_compress(&cinfo, TRUE);
   if (!icc.empty()) {
     WriteICCProfile(&cinfo, icc);
   }
   if (!exif.empty()) {
     ResetExifOrientation(exif);
-    WriteExif(&cinfo, exif);
+    if (!WriteExif(&cinfo, exif)) {
+      return fail(JXL_FAILURE("Exif data does not fit in a JPEG APP1 marker"));
+    }
   }
   if (cinfo.input_components > 3 || cinfo.input_components < 0)
-    return JXL_FAILURE("invalid numbers of components");
+    return fail(JXL_FAILURE("invalid numbers of components"));
 
-  std::vector<uint8_t> row_bytes(image.stride);
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
   if (cinfo.num_components == static_cast<int>(image.format.num_channels) &&
       image.format.data_type == JXL_TYPE_UINT8) {
@@ -366,9 +434,10 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
   bytes->resize(size);
   // Compressed image data is initialized by libjpeg, which we are not
   // instrumenting with msan.
-  msan::UnpoisonMemory(buffer, size);
-  std::copy_n(buffer, size, bytes->data());
-  std::free(buffer);
+  msan::UnpoisonMemory(ctx.outbuffer, size);
+  std::copy_n(ctx.outbuffer, size, bytes->data());
+  std::free(ctx.outbuffer);
+  ctx.outbuffer = nullptr;
   return true;
 }
 
@@ -538,6 +607,13 @@ Status EncodeImageJPG(const PackedImage& image, const JxlBasicInfo& info,
                       std::vector<uint8_t>* bytes) {
   if (params.quality > 100) {
     return JXL_FAILURE("please specify a 0-100 JPEG quality");
+  }
+  // The JPEG format cannot represent images wider or taller than
+  // JPEG_MAX_DIMENSION (65500) pixels; reject them up front with a useful
+  // error instead of letting libjpeg abort the encoding.
+  if (image.xsize > JPEG_MAX_DIMENSION || image.ysize > JPEG_MAX_DIMENSION) {
+    return JXL_FAILURE("image too large for JPEG (max dimension %u px)",
+                       static_cast<unsigned>(JPEG_MAX_DIMENSION));
   }
 
   switch (encoder) {

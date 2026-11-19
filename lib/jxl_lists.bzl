@@ -501,6 +501,7 @@ libjxl_tests = [
     "extras/dec/color_description_test.cc",
     "extras/dec/pgx_test.cc",
     "extras/dec/pnm_test.cc",
+    "extras/enc/jpg_test.cc",
     "extras/gain_map_test.cc",
     "jxl/ac_strategy_test.cc",
     "jxl/alpha_test.cc",
