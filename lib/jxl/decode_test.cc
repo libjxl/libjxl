@@ -3154,6 +3154,160 @@ TEST(DecodeTest, SkipCurrentFrameForgetsExtraChannelBuffers) {
                                            skipped_extra.end(), kUntouched)));
 }
 
+namespace {
+
+// Lossy image large enough to have several groups, so that its DC is decoded
+// (and its render pipeline built) before the rest of its pixels.
+std::vector<uint8_t> CreateMultiGroupTestImage(size_t num_channels) {
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(300, 300, num_channels, /*seed=*/0);
+  jxl::TestCodestreamParams params;
+  params.cparams.speed_tier = jxl::SpeedTier::kThunder;
+  return jxl::CreateTestJXLCodestream(jxl::Bytes(pixels.data(), pixels.size()),
+                                      300, 300, num_channels, params);
+}
+
+void CountingImageOutCallback(void* opaque, size_t x, size_t y,
+                              size_t num_pixels, const void* pixels) {
+  ++*static_cast<size_t*>(opaque);
+}
+
+}  // namespace
+
+// Once a frame's pixels started to be decoded, its output buffers are in use.
+// Setting a different one must fail and stop the decoder, instead of being
+// accepted and ignored while the decoder keeps writing to the old buffer.
+TEST(DecodeTest, OutputCannotChangeAfterFramePixelsStarted) {
+  std::vector<uint8_t> compressed = CreateMultiGroupTestImage(3);
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  for (int pass = 0; pass < 2; ++pass) {
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(
+                  dec.get(), JXL_DEC_FRAME_PROGRESSION | JXL_DEC_FULL_IMAGE));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetProgressiveDetail(dec.get(), kDC));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec.get(), compressed.data(),
+                                                  compressed.size()));
+    JxlDecoderCloseInput(dec.get());
+    ASSERT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
+    size_t buffer_size;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size));
+    std::vector<uint8_t> pixels(buffer_size);
+    std::vector<uint8_t> other(buffer_size, 0x5A);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels.data(),
+                                          pixels.size()));
+    ASSERT_EQ(JXL_DEC_FRAME_PROGRESSION, JxlDecoderProcessInput(dec.get()));
+    // Setting the same buffer again is harmless.
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels.data(),
+                                          pixels.size()));
+    JxlBitDepth bit_depth = {JXL_BIT_DEPTH_FROM_PIXEL_FORMAT, 0, 0};
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetImageOutBitDepth(dec.get(), &bit_depth));
+    if (pass == 0) {
+      EXPECT_EQ(JXL_DEC_ERROR,
+                JxlDecoderSetImageOutBuffer(dec.get(), &format, other.data(),
+                                            other.size()));
+    } else {
+      size_t num_calls = 0;
+      EXPECT_EQ(JXL_DEC_ERROR,
+                JxlDecoderSetImageOutCallback(
+                    dec.get(), &format, CountingImageOutCallback, &num_calls));
+      EXPECT_EQ(0u, num_calls);
+    }
+    EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
+    EXPECT_EQ(other.size(), static_cast<size_t>(
+                                std::count(other.begin(), other.end(), 0x5A)));
+    // Resetting makes the decoder usable again.
+    JxlDecoderReset(dec.get());
+  }
+}
+
+// The same applies to extra channel buffers and to the output bit depth.
+TEST(DecodeTest, ExtraChannelOutputCannotChangeAfterFramePixelsStarted) {
+  std::vector<uint8_t> compressed = CreateMultiGroupTestImage(4);
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  for (int pass = 0; pass < 2; ++pass) {
+    JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_FULL_IMAGE));
+    // Stop in the middle of the AC groups, after the DC.
+    size_t partial_size = compressed.size() * 3 / 4;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetInput(dec.get(), compressed.data(), partial_size));
+    ASSERT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
+    size_t buffer_size;
+    size_t extra_size;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderExtraChannelBufferSize(
+                                   dec.get(), &format, &extra_size, 0));
+    std::vector<uint8_t> pixels(buffer_size);
+    std::vector<uint8_t> extra(extra_size);
+    std::vector<uint8_t> other(extra_size, 0x5A);
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels.data(),
+                                          pixels.size()));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetExtraChannelBuffer(dec.get(), &format, extra.data(),
+                                              extra.size(), 0));
+    ASSERT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec.get()));
+    // Flushing only works once the DC was decoded.
+    ASSERT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec.get()));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetExtraChannelBuffer(dec.get(), &format, extra.data(),
+                                              extra.size(), 0));
+    if (pass == 0) {
+      EXPECT_EQ(JXL_DEC_ERROR,
+                JxlDecoderSetExtraChannelBuffer(dec.get(), &format,
+                                                other.data(), other.size(), 0));
+    } else {
+      JxlBitDepth bit_depth = {JXL_BIT_DEPTH_CUSTOM, 4, 0};
+      EXPECT_EQ(JXL_DEC_ERROR,
+                JxlDecoderSetImageOutBitDepth(dec.get(), &bit_depth));
+    }
+    JxlDecoderReleaseInput(dec.get());
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec.get(), compressed.data(),
+                                                  compressed.size()));
+    JxlDecoderCloseInput(dec.get());
+    EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
+    EXPECT_EQ(other.size(), static_cast<size_t>(
+                                std::count(other.begin(), other.end(), 0x5A)));
+  }
+}
+
+// Before the pixels of a frame started to be decoded, its output can still be
+// changed, and the last buffer set is the one that is used.
+TEST(DecodeTest, OutputCanChangeBeforeFramePixelsStarted) {
+  std::vector<uint8_t> compressed = CreateMultiGroupTestImage(3);
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec.get(), compressed.data(),
+                                                compressed.size()));
+  JxlDecoderCloseInput(dec.get());
+  ASSERT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
+  size_t buffer_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size));
+  std::vector<uint8_t> first(buffer_size, 0x5A);
+  std::vector<uint8_t> second(buffer_size, 0x5A);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetImageOutBuffer(dec.get(), &format, first.data(),
+                                        first.size()));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetImageOutBuffer(dec.get(), &format, second.data(),
+                                        second.size()));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(first.size(),
+            static_cast<size_t>(std::count(first.begin(), first.end(), 0x5A)));
+  EXPECT_NE(second.size(), static_cast<size_t>(
+                               std::count(second.begin(), second.end(), 0x5A)));
+}
+
 TEST(DecodeTest, SkipFrameTest) {
   JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   size_t xsize = 90;

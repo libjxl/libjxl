@@ -926,6 +926,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
  * @ref JxlPreviewHeader. The buffer is owned by the caller. Attempt to set
  * preview buffer before ::JXL_DEC_NEED_PREVIEW_OUT_BUFFER or after
  * ::JXL_DEC_PREVIEW_IMAGE will fail.
+ * Setting a different preview buffer after the decoder has started decoding
+ * the preview pixels returns ::JXL_DEC_ERROR and stops the decoder.
  *
  * @param dec decoder object
  * @param format format of pixels. Object owned by user and its contents are
@@ -1010,6 +1012,12 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
  * by @ref JxlPixelFormat. The buffer is owned by the caller. Attempt to set
  * image buffer while preview buffer is expected will fail.
  *
+ * Once the decoder has started decoding the pixels of the frame (for example
+ * when it returns ::JXL_DEC_FRAME_PROGRESSION, or ::JXL_DEC_NEED_MORE_INPUT in
+ * the middle of the frame), its output can no longer be changed: setting a
+ * different buffer, callback or bit depth for that frame returns
+ * ::JXL_DEC_ERROR and stops the decoder (see @ref JxlDecoderReset).
+ *
  * @param dec decoder object
  * @param format format of the pixels. Object owned by user and its contents
  *     are copied internally.
@@ -1091,6 +1099,9 @@ typedef void (*JxlImageOutDestroyCallback)(void* run_opaque);
  * occurs, and applies only for the current frame. Only one of @ref
  * JxlDecoderSetImageOutBuffer or @ref JxlDecoderSetImageOutCallback may be used
  * for the same frame, not both at the same time.
+ *
+ * As with @ref JxlDecoderSetImageOutBuffer, this cannot be changed once the
+ * decoder has started decoding the pixels of the frame.
  *
  * The callback will be called multiple times, to receive the image
  * data in small chunks. The callback receives a horizontal stripe of pixel
@@ -1189,6 +1200,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderExtraChannelBufferSize(
  * JxlDecoderSetImageOutBuffer, but additionally also can be gotten
  * separately as extra channel. The color channels themselves cannot be gotten
  * this way.
+ *
+ * As with @ref JxlDecoderSetImageOutBuffer, this cannot be changed once the
+ * decoder has started decoding the pixels of the frame.
  *
  *
  * @param dec decoder object
@@ -1457,6 +1471,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec);
  * Can be called after @ref JxlDecoderSetImageOutBuffer or @ref
  * JxlDecoderSetImageOutCallback. For float pixel data types, only the default
  * ::JXL_BIT_DEPTH_FROM_PIXEL_FORMAT setting is supported.
+ *
+ * As with @ref JxlDecoderSetImageOutBuffer, this cannot be changed once the
+ * decoder has started decoding the pixels of the frame.
  *
  * @param dec decoder object
  * @param bit_depth the bit depth setting of the pixel output

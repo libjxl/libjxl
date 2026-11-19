@@ -108,6 +108,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - fixed mingw32 build (#4940) and sequentialized CMake test discovery to avoid
     build races on macOS/multi-core machines (#4939)
 
+### Changed
+
+- decoder API: once the pixels of a frame are being decoded, changing its
+  output buffer, callback, extra channel buffer or output bit depth returns
+  `JXL_DEC_ERROR` and stops the decoder, instead of being accepted and then
+  ignored while the decoder kept writing to the previous buffer.
+
 ## [0.12.0] - 2026-07-01
 
 ### Added
