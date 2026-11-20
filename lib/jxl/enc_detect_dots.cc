@@ -407,12 +407,11 @@ void ComputeDotLosses(GaussianEllipse* ellipse, const ConnectedComponent& cc,
   ellipse->ridge_loss = ellipse->l2_loss + ridgeTerm;
 }
 
-StatusOr<GaussianEllipse> FitGaussianFast(const ConnectedComponent& cc,
-                                          const Rect& rect, const Image3F& img,
-                                          const Image3F& background) {
+bool FitGaussianFast(const ConnectedComponent& cc, const Rect& rect,
+                     const Image3F& img, const Image3F& background,
+                     GaussianEllipse& ans) {
   constexpr bool leastSqIntensity = true;
   constexpr double kEpsilon = 1e-6;
-  GaussianEllipse ans;
   constexpr int kRectBounds = (kEllipseWindowSize >> 1);
 
   // Compute the 1st and 2nd moments of the CC
@@ -430,30 +429,38 @@ StatusOr<GaussianEllipse> FitGaussianFast(const ConnectedComponent& cc,
     color[c] = rect.ConstPlaneRow(img, c, cc.mode.y)[cc.mode.x] -
                rect.ConstPlaneRow(background, c, cc.mode.y)[cc.mode.x];
   }
+  int min_sx = std::max(0, cc.mode.x - kRectBounds) - cc.mode.x;
+  int max_sx =
+      std::min(static_cast<int>(rect.xsize()), cc.mode.x + kRectBounds) -
+      cc.mode.x;
+  int min_sy = std::max(0, cc.mode.y - kRectBounds) - cc.mode.y;
+  int max_sy =
+      std::min(static_cast<int>(rect.ysize()), cc.mode.y + kRectBounds) -
+      cc.mode.y;
+  // Skip empty and degenerative cases (1xW and Hx1).
+  if (min_sx >= max_sx) return false;
+  if (min_sy >= max_sy) return false;
   double sign = (color[1] > 0) ? 1 : -1;
-  for (int sy = -kRectBounds; sy <= kRectBounds; sy++) {
-    int y = sy + cc.mode.y;
-    if (y < 0 || static_cast<size_t>(y) >= rect.ysize()) continue;
-    const float* JXL_RESTRICT row = rect.ConstPlaneRow(img, 1, y);
-    const float* JXL_RESTRICT bgrow = rect.ConstPlaneRow(background, 1, y);
-    for (int sx = -kRectBounds; sx <= kRectBounds; sx++) {
-      int x = sx + cc.mode.x;
-      if (x < 0 || static_cast<size_t>(x) >= rect.xsize()) continue;
-      double w = std::max(kEpsilon, sign * (row[x] - bgrow[x]));
+  for (int sy = min_sy; sy <= max_sy; sy++) {
+    int img_y = sy + cc.mode.y;
+    const float* JXL_RESTRICT row = rect.ConstPlaneRow(img, 1, img_y);
+    const float* JXL_RESTRICT bgrow = rect.ConstPlaneRow(background, 1, img_y);
+    for (int sx = min_sx; sx <= max_sx; sx++) {
+      int img_x = sx + cc.mode.x;
+      double w = std::max(kEpsilon, sign * (row[img_x] - bgrow[img_x]));
       sum += w;
 
-      m1[0] += w * x;
-      m1[1] += w * y;
-      m2[0] += w * x * x;
-      m2[1] += w * x * y;
-      m2[2] += w * y * y;
+      m1[0] += w * sx;
+      m1[1] += w * sy;
+      m2[0] += w * sx * sx;
+      m2[1] += w * sx * sy;
+      m2[2] += w * sy * sy;
       for (int c = 0; c < 3; c++) {
-        bgColor[c] += rect.ConstPlaneRow(background, c, y)[x];
+        bgColor[c] += rect.ConstPlaneRow(background, c, img_y)[img_x];
       }
       N++;
     }
   }
-  JXL_ENSURE(N > 0);
 
   for (int i = 0; i < 3; i++) {
     m1[i] /= sum;
@@ -466,8 +473,8 @@ StatusOr<GaussianEllipse> FitGaussianFast(const ConnectedComponent& cc,
   constexpr std::array<double, 3> kScaleMult{{1.1, 1.1, 1.1}};
 
   // Now set the parameters of the Gaussian
-  ans.x = m1[0];
-  ans.y = m1[1];
+  ans.x = m1[0] + cc.mode.x;
+  ans.y = m1[1] + cc.mode.y;
   for (int j = 0; j < 3; j++) {
     ans.intensity[j] = kScaleMult[j] * color[j];
   }
@@ -516,25 +523,26 @@ StatusOr<GaussianEllipse> FitGaussianFast(const ConnectedComponent& cc,
     }
   }
   ComputeDotLosses(&ans, cc, rect, img, background);
-  return ans;
+  return true;
 }
 
-StatusOr<GaussianEllipse> FitGaussian(const ConnectedComponent& cc,
-                                      const Rect& rect, const Image3F& img,
-                                      const Image3F& background) {
-  JXL_ASSIGN_OR_RETURN(GaussianEllipse ellipse,
-                       FitGaussianFast(cc, rect, img, background));
+bool FitGaussian(const ConnectedComponent& cc, const Rect& rect,
+                 const Image3F& img, const Image3F& background,
+                 GaussianEllipse& ellipse) {
+  if (!FitGaussianFast(cc, rect, img, background, ellipse)) {
+    return false;
+  }
   if (ellipse.sigma_x < ellipse.sigma_y) {
     std::swap(ellipse.sigma_x, ellipse.sigma_y);
     ellipse.angle += kPi / 2.0;
   }
+  JXL_DASSERT(ellipse.sigma_x >= ellipse.sigma_y);
   ellipse.angle -= kPi * std::floor(ellipse.angle / kPi);
   if (std::fabs(ellipse.angle - kPi) < 1e-6 ||
       std::fabs(ellipse.angle) < 1e-6) {
     ellipse.angle = 0.0;
   }
-  JXL_ENSURE(ellipse.angle >= 0 && ellipse.angle <= kPi &&
-             ellipse.sigma_x >= ellipse.sigma_y);
+  JXL_DASSERT(ellipse.angle >= 0 && ellipse.angle <= kPi);
   JXL_DEBUG(JXL_DEBUG_DOT_DETECT,
             "Ellipse mu=(%lf,%lf) sigma=(%lf,%lf) angle=%lf "
             "intensity=(%lf,%lf,%lf) bg=(%lf,%lf,%lf) l2_loss=%lf "
@@ -545,7 +553,7 @@ StatusOr<GaussianEllipse> FitGaussian(const ConnectedComponent& cc,
             ellipse.bgColor[2], ellipse.l2_loss, ellipse.custom_loss,
             ellipse.neg_pixels, ellipse.neg_value[0], ellipse.neg_value[1],
             ellipse.neg_value[2]);
-  return ellipse;
+  return true;
 }
 
 }  // namespace
@@ -573,8 +581,8 @@ StatusOr<std::vector<PatchInfo>> DetectGaussianEllipses(
     components.erase(components.begin() + numCC, components.end());
   }
   for (const auto& cc : components) {
-    JXL_ASSIGN_OR_RETURN(GaussianEllipse ellipse,
-                         FitGaussian(cc, rect, opsin, smooth));
+    GaussianEllipse ellipse{};
+    if (!FitGaussian(cc, rect, opsin, smooth, ellipse)) continue;
     if (ellipse.x < 0.0 ||
         std::ceil(ellipse.x) >= static_cast<double>(rect.xsize()) ||
         ellipse.y < 0.0 ||
