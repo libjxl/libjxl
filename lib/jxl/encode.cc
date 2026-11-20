@@ -2269,6 +2269,8 @@ JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
 
 void JxlEncoderReset(JxlEncoder* enc) {
   enc->thread_pool.reset();
+  enc->cms = *JxlGetDefaultCms();
+  enc->cms_set = true;
   enc->input_queue.clear();
   enc->num_queued_frames = 0;
   enc->num_queued_boxes = 0;
@@ -2276,6 +2278,7 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->codestream_bytes_written_end_of_frame = 0;
   enc->wrote_bytes = false;
   enc->jxlp_counter = 0;
+  enc->frame_index_box = jxl::JxlEncoderFrameIndexBox();
   enc->metadata = jxl::CodecMetadata();
   enc->last_used_cparams = jxl::CompressParams();
   enc->frames_closed = false;
@@ -2283,6 +2286,7 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->basic_info_set = false;
   enc->color_encoding_set = false;
   enc->intensity_target_set = false;
+  enc->allow_expert_options = false;
   enc->use_container = false;
   enc->use_boxes = false;
   enc->container_ftyp_version = -1;
@@ -2291,11 +2295,8 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->output_processor =
       JxlEncoderOutputProcessorWrapper(&enc->memory_manager);
   JxlEncoderInitBasicInfo(&enc->basic_info);
-
-  // jxl::JxlEncoderFrameIndexBox frame_index_box;
-  // JxlEncoderError error = JxlEncoderError::JXL_ENC_ERR_OK;
-  // bool allow_expert_options = false;
-  // int brotli_effort = -1;
+  enc->error = JxlEncoderError::JXL_ENC_ERR_OK;
+  enc->brotli_effort = -1;
 }
 
 void JxlEncoderDestroy(JxlEncoder* enc) {
