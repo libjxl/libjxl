@@ -275,6 +275,54 @@ TEST(EncodeTest, EncoderResetTest) {
   VerifyFrameEncoding(157, 77, enc.get(), frame_settings, 2300, false);
 }
 
+// JxlEncoderReset must leave the encoder-level state as in a new encoder, not
+// only the parts that a new image would overwrite anyway.
+TEST(EncodeTest, EncoderResetRestoresEncoderState) {
+  JxlEncoderPtr fresh = JxlEncoderMake(nullptr);
+  ASSERT_NE(nullptr, fresh.get());
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  ASSERT_NE(nullptr, enc.get());
+
+  // A failed call records an error.
+  JxlBasicInfo basic_info;
+  JxlEncoderInitBasicInfo(&basic_info);  // xsize == ysize == 0
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  EXPECT_NE(JXL_ENC_ERR_OK, JxlEncoderGetError(enc.get()));
+  // Expert options, an application CMS and the brotli effort are set on the
+  // encoder, not only on the frame settings.
+  JxlEncoderAllowExpertOptions(enc.get());
+  JxlCmsInterface cms = *JxlGetDefaultCms();
+  int app_cms_state = 0;
+  cms.init_data = &app_cms_state;
+  JxlEncoderSetCms(enc.get(), cms);
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  ASSERT_NE(nullptr, frame_settings);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderFrameSettingsSetOption(
+                frame_settings, JXL_ENC_FRAME_SETTING_BROTLI_EFFORT, 0));
+  // Frames recorded for the frame index box.
+  enc->frame_index_box.AddFrame(0, 0, /*to_be_indexed=*/true);
+  enc->frame_index_box.AddFrame(100, 0, /*to_be_indexed=*/true);
+
+  JxlEncoderReset(enc.get());
+
+  EXPECT_EQ(JxlEncoderGetError(fresh.get()), JxlEncoderGetError(enc.get()));
+  EXPECT_EQ(fresh->allow_expert_options, enc->allow_expert_options);
+  EXPECT_EQ(fresh->brotli_effort, enc->brotli_effort);
+  EXPECT_EQ(fresh->cms.init_data, enc->cms.init_data);
+  EXPECT_EQ(fresh->frame_index_box.entries.size(),
+            enc->frame_index_box.entries.size());
+
+  // Effort 11 needs JxlEncoderAllowExpertOptions again.
+  frame_settings = JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+  ASSERT_NE(nullptr, frame_settings);
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderFrameSettingsSetOption(
+                frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 11));
+  EXPECT_EQ(JXL_ENC_ERR_NOT_SUPPORTED, JxlEncoderGetError(enc.get()));
+}
+
 TEST(EncodeTest, CmsTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_NE(nullptr, enc.get());
