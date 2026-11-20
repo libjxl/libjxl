@@ -1110,7 +1110,6 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
     dec->metadata.m.color_encoding.SetICCRaw(std::move(icc));
   }
 
-  dec->got_all_headers = true;
   JXL_API_RETURN_IF_ERROR(reader->JumpToByteBoundary());
 
   dec->AdvanceCodestream(reader->TotalBitsConsumed() / jxl::kBitsPerByte);
@@ -1128,6 +1127,7 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
         dec->desired_intensity_target;
   }
   dec->image_metadata = dec->metadata.m;
+  dec->got_all_headers = true;
 
   return JXL_DEC_SUCCESS;
 }
@@ -2145,7 +2145,16 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
   return JXL_DEC_SUCCESS;
 }
 
+static JxlDecoderStatus ProcessInputImpl(JxlDecoder* dec);
+
 JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
+  JxlDecoderStatus status = ProcessInputImpl(dec);
+  // A decoding error leaves the decoder unusable until JxlDecoderReset.
+  if (status == JXL_DEC_ERROR) dec->stage = DecoderStage::kError;
+  return status;
+}
+
+static JxlDecoderStatus ProcessInputImpl(JxlDecoder* dec) {
   if (dec->stage == DecoderStage::kInited) {
     dec->stage = DecoderStage::kStarted;
   }
