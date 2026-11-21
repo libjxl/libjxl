@@ -303,6 +303,30 @@ static inline std::ostream& operator<<(std::ostream& os,
   return os << Description(c);
 }
 
+// JxlCmsInit sizes the per-thread interleave buffers from the *parsed* ICC
+// profiles, while the callers interleave using the *declared* fields of
+// c_src/c_dst (render_pipeline/stage_cms.cc, enc_image_bundle.cc). A
+// ColorEncoding carrying raw ICC bytes (SetICCRaw) may have declared fields
+// that disagree with the embedded profile; when the channel layouts differ
+// (e.g. declared RGB with a grayscale profile) the buffers are the wrong
+// size. Reject such encodings instead of writing out of bounds.
+static inline Status CheckChannelsAgree(const ColorEncoding& c,
+                                        const IccBytes& icc,
+                                        const JxlCmsInterface& cms) {
+  if (icc.empty()) return true;
+  ::jxl::cms::ColorEncoding c_icc;
+  Status st = c_icc.SetFieldsFromICC(IccBytes(icc), cms);
+  // Unparseable profiles are reported later, by JxlCmsInit.
+  if (st.code() != StatusCode::kOk) return true;
+  const size_t declared = c.IsGray() ? 1 : c.IsCMYK() ? 4 : 3;
+  const size_t parsed = c_icc.cmyk ? 4 : c_icc.Channels();
+  if (declared != parsed) {
+    return JXL_FAILURE("declared color encoding fields disagree with the "
+                        "embedded ICC profile");
+  }
+  return true;
+}
+
 class ColorSpaceTransform {
  public:
   explicit ColorSpaceTransform(const JxlCmsInterface& cms) : cms_(cms) {}
@@ -332,6 +356,8 @@ class ColorSpaceTransform {
     if (c_dst.IsCMYK())
       return JXL_FAILURE("Conversion to CMYK is not supported");
     output_profile.num_channels = c_dst.Channels();
+    JXL_RETURN_IF_ERROR(CheckChannelsAgree(c_src, icc_src_, cms_));
+    JXL_RETURN_IF_ERROR(CheckChannelsAgree(c_dst, icc_dst_, cms_));
     cms_data_ = cms_.init(cms_.init_data, num_threads, xsize, &input_profile,
                           &output_profile, intensity_target);
     JXL_RETURN_IF_ERROR(cms_data_ != nullptr);
