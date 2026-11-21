@@ -136,6 +136,10 @@ TEST(ModularTest, LargeGss3) {
   TestLarge(514 * 1024, 1, 3);
 }
 
+TEST(ModularTest, LargeMixedGss0) {
+  TestLarge(65 * 1024, 17, 0);
+}
+
 TEST(ModularTest, LargeDcGss0) {
   TestLarge(129 * 1024, 64, 0);
 }

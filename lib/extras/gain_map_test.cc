@@ -32,11 +32,15 @@ std::vector<uint8_t> GoldenTestGainMap(bool has_icc, bool has_color_encoding) {
   uint8_t color_encoding_size = has_color_encoding ? 3 : 0;
   std::vector<uint8_t> color_encoding = {0x50, 0xb4, 0x00};
 
+  std::vector<uint8_t> icc_data = jxl::test::GetCompressedIccTestProfile();
   std::vector<uint8_t> icc_size = {0x00, 0x00, 0x00, 0x00};
   if (has_icc) {
-    icc_size = {0x00, 0x00, 0x00, 0x88};  // 136 in decimal
+    const uint32_t size = static_cast<uint32_t>(icc_data.size());
+    icc_size = {static_cast<uint8_t>((size >> 24) & 0xff),
+                static_cast<uint8_t>((size >> 16) & 0xff),
+                static_cast<uint8_t>((size >> 8) & 0xff),
+                static_cast<uint8_t>(size & 0xff)};
   }
-  std::vector<uint8_t> icc_data = jxl::test::GetCompressedIccTestProfile();
   std::string second_placeholder =
       "placeholder for an actual naked JPEG XL codestream";
 

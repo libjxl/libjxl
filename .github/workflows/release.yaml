@@ -59,7 +59,7 @@ jobs:
       run: |
         sudo rm -f /var/lib/man-db/auto-update
         sudo apt update
-        sudo apt install -y \
+        sudo apt install --no-install-recommends -y \
           asciidoc \
           clang \
           cmake \
@@ -215,7 +215,7 @@ jobs:
     - name: Build libjxl
       run: |
         apt build-dep -y .
-        EXCLUDE_DEBIAN_PACKAGES="${{ matrix.exclude_debian_packages || '' }}" ./ci.sh debian_build jpeg-xl
+        ./ci.sh debian_build jpeg-xl
 
     - name: Stats
       run: |

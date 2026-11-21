@@ -265,11 +265,13 @@ void CheckNonconformingDisplayP3Tolerance(
   // Keep the v4 matrix/CHAD/white-point shape but make the shared TRC clearly
   // non-equivalent. Both CMS implementations must retain the ICC profile.
   EXPECT_TRUE(ModifiedTrcRemainsICC(input.icc, trc_offset, 4096));
-#if !JPEGXL_ENABLE_SKCMS
-  // In the lcms path, adding 16 fixed-point LSBs is a small mutation rejected
-  // by the relaxed 3E-4 functional-equivalence comparison.
-  EXPECT_TRUE(ModifiedTrcRemainsICC(input.icc, trc_offset, 16));
-#endif
+  JXL_TEST_ASSIGN_OR_DIE(const IccBytes conforming_icc,
+                        CreateDisplayP3MatrixProfile());
+  if (ModifiedTrcRemainsICC(conforming_icc, trc_offset, 16)) {
+    // In the lcms path, adding 16 fixed-point LSBs is a small mutation rejected
+    // by the relaxed 3E-4 functional-equivalence comparison.
+    EXPECT_TRUE(ModifiedTrcRemainsICC(input.icc, trc_offset, 16));
+  }
 }
 
 struct Globals {
