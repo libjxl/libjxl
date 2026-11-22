@@ -36,6 +36,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
 #else  // JPEGXL_ENABLE_EXR
 
 #include <ImfChannelList.h>
+#include <ImfCompression.h>
 #include <ImfFrameBuffer.h>
 #include <ImfIO.h>
 #include <ImfInputFile.h>
@@ -46,7 +47,10 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
+#include <iterator>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -114,13 +118,19 @@ class InMemoryIStream : public OpenEXR::IStream {
     }
     if (pos_ + n > bytes_.size()) {
       int can_read = static_cast<int>(bytes_.size() - pos_);
+      MarkRead(pos_, pos_ + can_read);
       std::copy_n(readMemoryMapped(can_read), can_read, c);
       JXL_EXR_THROW_LENGTH_ERROR("Read past end of file");
     } else {
+      MarkRead(pos_, pos_ + n);
       std::copy_n(readMemoryMapped(n), n, c);
     }
     return pos_ < bytes_.size();
   }
+
+  // Number of distinct input bytes handed out by read() so far. Bytes that are
+  // read again, e.g. by two chunks whose offsets overlap, are counted once.
+  uint64_t distinct_bytes_read() const { return distinct_bytes_read_; }
 
   ExrInt64 tellg() override { return pos_; }
   void seekg(const ExrInt64 pos) override {
@@ -131,9 +141,93 @@ class InMemoryIStream : public OpenEXR::IStream {
   }
 
  private:
+  // Records that [begin, end) was read. read_ holds disjoint, non-adjacent
+  // ranges, keyed by their first byte and mapped to one past their last byte.
+  void MarkRead(size_t begin, size_t end) {
+    if (begin >= end) return;
+    uint64_t fresh = end - begin;
+    size_t merged_begin = begin;
+    size_t merged_end = end;
+    auto it = read_.upper_bound(begin);
+    if (it != read_.begin() && std::prev(it)->second >= begin) --it;
+    while (it != read_.end() && it->first <= merged_end) {
+      const size_t overlap_begin = std::max(it->first, begin);
+      const size_t overlap_end = std::min(it->second, end);
+      if (overlap_end > overlap_begin) fresh -= overlap_end - overlap_begin;
+      merged_begin = std::min(merged_begin, it->first);
+      merged_end = std::max(merged_end, it->second);
+      it = read_.erase(it);
+    }
+    read_.emplace(merged_begin, merged_end);
+    distinct_bytes_read_ += fresh;
+  }
+
   const Span<const uint8_t> bytes_;
   size_t pos_ = 0;
+  std::map<size_t, size_t> read_;
+  uint64_t distinct_bytes_read_ = 0;
 };
+
+// Number of scan lines in one chunk of the file: the scan lines that OpenEXR
+// stores, and decodes, as a unit. For tiled files, that is the height of a
+// row of tiles. Unknown compression methods get the largest scan line count
+// of the known ones; reading a band then covers several chunks or decodes one
+// chunk more than once, which costs time but not correctness.
+int64_t ScanLinesPerChunk(const OpenEXR::Header& header) {
+  if (header.hasTileDescription()) {
+    return std::max<int64_t>(1, header.tileDescription().ySize);
+  }
+  switch (header.compression()) {
+    case OpenEXR::NO_COMPRESSION:
+    case OpenEXR::RLE_COMPRESSION:
+    case OpenEXR::ZIPS_COMPRESSION:
+      return 1;
+    case OpenEXR::ZIP_COMPRESSION:
+    case OpenEXR::PXR24_COMPRESSION:
+      return 16;
+    case OpenEXR::PIZ_COMPRESSION:
+    case OpenEXR::B44_COMPRESSION:
+    case OpenEXR::B44A_COMPRESSION:
+    case OpenEXR::DWAA_COMPRESSION:
+      return 32;
+    default:
+      return 256;
+  }
+}
+
+// How many bytes of scan lines a valid file can decode from one byte of
+// chunk data, with a margin of at least two over what the compression method
+// reaches on black frames: NONE stores samples as they are, RLE stores at most
+// 128 bytes in 2 (64:1), ZIP and ZIPS are limited by deflate (1032:1), PXR24
+// packs FLOAT samples into 24 bits before deflate (1376:1), B44A stores a flat
+// 4x4 block of HALF samples in 3 bytes (32:3), and PIZ reaches about 400:1.
+// DWAA and DWAB store the channels that they do not compress with a DCT (such
+// as alpha layers) with RLE and zlib, so black frames with many such channels
+// reach about 60000:1. Methods unknown to this code get the DWA bound.
+uint64_t MaxDecodedBytesPerInputByte(const OpenEXR::Header& header) {
+  switch (header.compression()) {
+    case OpenEXR::NO_COMPRESSION:
+      return 2;
+    case OpenEXR::RLE_COMPRESSION:
+      return 128;
+    case OpenEXR::B44_COMPRESSION:
+    case OpenEXR::B44A_COMPRESSION:
+      return 32;
+    case OpenEXR::ZIPS_COMPRESSION:
+    case OpenEXR::ZIP_COMPRESSION:
+      return 2048;
+    case OpenEXR::PXR24_COMPRESSION:
+    case OpenEXR::PIZ_COMPRESSION:
+      return 4096;
+    default:
+      return uint64_t{1} << 17;
+  }
+}
+
+struct FreeDeleter {
+  void operator()(void* p) const { free(p); }
+};
+using ScanlineBuffer = std::unique_ptr<char, FreeDeleter>;
 
 }  // namespace
 
@@ -187,6 +281,18 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
 
   const OpenEXR::Header& header = input.header();
   const OpenEXR::ChannelList& channels = header.channels();
+
+  // Bytes of the input that follow the header and its chunk offset table.
+  // Pixel data can only come from there, so no number of bands can be paid for
+  // with more input than this.
+  uint64_t input_after_header = 0;
+  {
+    const ExrInt64 header_end = is.tellg();
+    if (header_end > 0 && static_cast<uint64_t>(header_end) <= bytes.size()) {
+      input_after_header = static_cast<uint64_t>(bytes.size()) -
+                           static_cast<uint64_t>(header_end);
+    }
+  }
 
   // we don't support subsampled or UINT channels yet
   // TODO: support common cases of subsampling (2x, 4x)
@@ -283,16 +389,6 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
     return JXL_FAILURE("EXR: data_window too big");
   }
 
-  // https://www.openexr.com/documentation/ReadingAndWritingImageFiles.pdf
-  // recommends reading the whole file at once.
-  size_t num_pixels;
-  // Width must correspond to data scanlines in file.
-  // TODO(eustas): if projection of data_window on X axis is inside of
-  // projection of display_window, then we can avoid extra memcpy.
-  if (!SafeMul(image_height, data_width, num_pixels)) {
-    return JXL_FAILURE("EXR: image too big");
-  }
-
   // Intersect data and display window.
   const int x1 = std::max(data_window.min.x, display_window.min.x);
   const int x2 = std::min(data_window.max.x, display_window.max.x);
@@ -341,7 +437,6 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
 
   // Allocate extra channel images.
   std::set<const OpenEXR::Channel*> ec_set;
-  std::vector<std::vector<char> > ec_data;
   for (OpenEXR::ChannelList::ConstIterator it = channels.begin();
        it != channels.end(); ++it) {
     const std::string name = it.name();
@@ -357,13 +452,6 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
     OpenEXR::PixelType t = ch->type;
 
     ec_set.insert(ch);
-    size_t pixel_stride = get_pixel_stride(t);
-    size_t volume;
-    if (!SafeMul(pixel_stride, num_pixels, volume)) {
-      return JXL_FAILURE("EXR: image too big");
-    }
-    std::vector<char> storage(volume);
-    ec_data.emplace_back(std::move(storage));
 
     const JxlPixelFormat ec_format{/*num_channels=*/1,
                                    /*data_type=*/get_pixel_type(t),
@@ -373,7 +461,8 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
         PackedImage ec,
         PackedImage::Create(image_width, image_height, ec_format));
     frame.extra_channels.emplace_back(std::move(ec));
-    JXL_DASSERT(frame.extra_channels.back().pixel_stride() == pixel_stride);
+    JXL_DASSERT(frame.extra_channels.back().pixel_stride() ==
+                get_pixel_stride(t));
 
     PackedExtraChannel pec = {};
     pec.ec_info.bits_per_sample = get_bpp(t);
@@ -388,114 +477,222 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
 
   const size_t color_channel_bytes = get_pixel_stride(color_type);
   const size_t color_pixel_bytes = color_channel_bytes * format.num_channels;
-  size_t color_data_size;
-  if (!SafeMul(color_pixel_bytes, num_pixels, color_data_size)) {
-    return JXL_FAILURE("EXR: image too big");
-  }
-  // Interleaved RGB{A} / Gray{A}
-  std::vector<char> color_data(color_data_size);
 
   // If intersection is empty, then image is just zeroes.
   if (x_span > 0 && y_span > 0) {
-    // Setup framebuffer: color/grayscale
-    OpenEXR::FrameBuffer fb;
-    size_t x_stride = color_pixel_bytes;
-    size_t y_stride = x_stride * static_cast<size_t>(data_width);
-    char* virtual_image_origin = color_data.data();
-    // Offset to match output to allocation start; when EXR puts pixel at
-    // (data_window.min.x, y1) it goes to 0-th element.
-    virtual_image_origin -=
-        static_cast<ptrdiff_t>(y1) * static_cast<ptrdiff_t>(y_stride);
-    virtual_image_origin -= static_cast<ptrdiff_t>(data_window.min.x) *
-                            static_cast<ptrdiff_t>(x_stride);
-    if (has_rgb) {
-      fb.insert(ch_name_r.c_str(),
-                OpenEXR::Slice(color_type,
-                               virtual_image_origin + color_channel_bytes * 0,
-                               x_stride, y_stride));
-      fb.insert(ch_name_g.c_str(),
-                OpenEXR::Slice(color_type,
-                               virtual_image_origin + color_channel_bytes * 1,
-                               x_stride, y_stride));
-      fb.insert(ch_name_b.c_str(),
-                OpenEXR::Slice(color_type,
-                               virtual_image_origin + color_channel_bytes * 2,
-                               x_stride, y_stride));
-    } else {
-      fb.insert(ch_name_gray.c_str(),
-                OpenEXR::Slice(color_type,
-                               virtual_image_origin + color_channel_bytes * 0,
-                               x_stride, y_stride));
+    // The scan lines are read one band at a time, into scanline storage that
+    // holds a single band, and each band is copied into the output image
+    // before the next one is read. A band is the part of one chunk of the file
+    // (see ScanLinesPerChunk) that lies inside the display window, or of as
+    // many whole chunks as fit in kMinBandBytes, so that narrow images are not
+    // read a few scan lines at a time. OpenEXR only decodes a chunk when its
+    // scan lines are read, so reading the whole image at once would allocate
+    // the scanline storage of every channel that the header declares, for the
+    // whole data window, before finding out whether the file holds any pixel
+    // data at all. A file whose chunks are missing or point to the wrong place
+    // now fails while reading the first band that needs them.
+    //
+    // OpenEXR 3.1 also accepts a chunk whose payload is shorter than its scan
+    // lines need, and fills the rest from stale buffer contents, so a chunk of
+    // a few bytes can stand for any number of channels. Decoded scan lines
+    // therefore have to be paid for with input: the bands read so far may
+    // decode to at most MaxDecodedBytesPerInputByte() times the distinct input
+    // bytes that OpenEXR read for them, plus kDecodedBytesAllowance. This is
+    // checked before a band is copied into the output image.
+    const uint64_t max_decoded_per_input_byte =
+        MaxDecodedBytesPerInputByte(header);
+    constexpr uint64_t kDecodedBytesAllowance = uint64_t{16} << 20;
+    constexpr size_t kMinBandBytes = size_t{1} << 20;
+
+    const size_t width = static_cast<size_t>(data_width);
+    // Bytes of scanline storage per scan line, for all channels.
+    size_t line_pixel_bytes = color_pixel_bytes;
+    for (const PackedImage& ec : frame.extra_channels) {
+      line_pixel_bytes += ec.pixel_stride();
+    }
+    size_t line_bytes;
+    if (!SafeMul(line_pixel_bytes, width, line_bytes)) {
+      return JXL_FAILURE("EXR: image too big");
+    }
+    const int64_t chunk_lines = ScanLinesPerChunk(header);
+    int64_t band_chunks = 1;
+    if (line_bytes < kMinBandBytes / static_cast<size_t>(chunk_lines)) {
+      band_chunks = static_cast<int64_t>(
+          kMinBandBytes / (static_cast<size_t>(chunk_lines) * line_bytes));
+    }
+    const int64_t chunk_lines_per_band = chunk_lines * band_chunks;
+    const size_t band_lines =
+        static_cast<size_t>(std::min<int64_t>(chunk_lines_per_band, y_span));
+
+    // Total scanline storage of one full band, for all channels.
+    size_t band_bytes;
+    if (!SafeMul(line_bytes, band_lines, band_bytes)) {
+      return JXL_FAILURE("EXR: image too big");
     }
 
-    // Setup framebuffer: alpha
-    if (has_alpha) {
-      fb.insert(ch_name_a.c_str(),
-                OpenEXR::Slice(color_type,
-                               virtual_image_origin +
-                                   color_channel_bytes * (has_rgb ? 3 : 1),
-                               x_stride, y_stride));
+    // A band has to be paid for with input: the bands read so far, plus this
+    // one, may decode to at most MaxDecodedBytesPerInputByte() times the input
+    // that follows the header, plus kDecodedBytesAllowance. The check after
+    // readPixels() below applies the same rule to the bytes that were actually
+    // read; this one runs before the band's scanline storage is allocated and
+    // before readPixels() touches it. A header can declare a band of gigabytes
+    // while the file holds a few hundred bytes, and OpenEXR 3.1 fills a band
+    // from chunks that are shorter than their scan lines need without
+    // complaining, so such a band has to be refused on paper first.
+    const auto band_is_paid_for = [&](uint64_t decoded,
+                                      size_t bytes_of_band) -> bool {
+      if (bytes_of_band > UINT64_MAX - decoded) return false;
+      const uint64_t needed = decoded + bytes_of_band;
+      if (needed <= kDecodedBytesAllowance) return true;
+      return (needed - kDecodedBytesAllowance - 1) /
+                 max_decoded_per_input_byte <
+             input_after_header;
+    };
+    if (!band_is_paid_for(0, band_bytes)) {
+      return JXL_FAILURE("EXR: too little pixel data for the scan lines");
     }
 
-    // Setup framebuffer: extra channels
-    size_t ec_data_idx = 0;
-    for (OpenEXR::ChannelList::ConstIterator it = channels.begin();
-         it != channels.end(); ++it) {
-      const OpenEXR::Channel* ch = &it.channel();
-      if (ec_set.find(ch) == ec_set.end()) {
-        continue;
+    // Scanline storage of one band. It is not initialized: readPixels() writes
+    // every sample of the band before it is copied out.
+    const auto allocate_band = [&](size_t pixel_bytes,
+                                   ScanlineBuffer* buffer) -> Status {
+      size_t size;
+      if (!SafeMul(pixel_bytes, width, size) ||
+          !SafeMul(size, band_lines, size)) {
+        return JXL_FAILURE("EXR: image too big");
       }
-      auto& ec = ec_data[ec_data_idx++];
-      size_t ec_x_stride = get_pixel_stride(ch->type);
-      size_t ec_y_stride = ec_x_stride * static_cast<size_t>(data_width);
-
-      char* ec_virtual_image_origin = ec.data();
-      // Offset to match output to allocation start; when EXR puts pixel at
-      // (data_window.min.x, y1) it goes to 0-th element.
-      ec_virtual_image_origin -=
-          static_cast<ptrdiff_t>(y1) * static_cast<ptrdiff_t>(ec_y_stride);
-      ec_virtual_image_origin -= static_cast<ptrdiff_t>(data_window.min.x) *
-                                 static_cast<ptrdiff_t>(ec_x_stride);
-
-      fb.insert(it.name(), OpenEXR::Slice(ch->type, ec_virtual_image_origin,
-                                          ec_x_stride, ec_y_stride));
+      buffer->reset(static_cast<char*>(malloc(std::max<size_t>(1, size))));
+      if (!*buffer) return JXL_FAILURE("EXR: out of memory");
+      return true;
+    };
+    ScanlineBuffer color_data;
+    JXL_RETURN_IF_ERROR(allocate_band(color_pixel_bytes, &color_data));
+    std::vector<ScanlineBuffer> ec_data(frame.extra_channels.size());
+    for (size_t ec_idx = 0; ec_idx < ec_data.size(); ++ec_idx) {
+      JXL_RETURN_IF_ERROR(allocate_band(
+          frame.extra_channels[ec_idx].pixel_stride(), &ec_data[ec_idx]));
     }
 
-    // Read EXR data
-    input.setFrameBuffer(fb);
-    input.readPixels(y1, y2);
-
+    const size_t x_stride = color_pixel_bytes;
+    const size_t y_stride = x_stride * width;
     const int x_data = x1 - data_window.min.x;
     const int x_out = x1 - display_window.min.x;
     JXL_DASSERT(x_out >= 0);
     JXL_DASSERT(x_out + x_span <= image_width);
 
-    // Copy read data into the result image.
-    // TODO(eustas): should we deal with unpopulated pixels?
-    for (int y = y1; y <= y2; ++y) {  // Scanline index
-      const int y_data = y - y1;
-      const int y_out = y - display_window.min.y;
-      JXL_DASSERT(y_out >= 0);
-      JXL_DASSERT(y_out < image_height);
-      const char* const JXL_RESTRICT data_ptr =
-          &color_data[x_data * color_pixel_bytes + y_data * y_stride];
-      uint8_t* pixels = static_cast<uint8_t*>(frame.color.pixels());
-      uint8_t* image_ptr =
-          pixels + x_out * color_pixel_bytes + y_out * frame.color.stride;
-      memcpy(image_ptr, data_ptr, x_span * color_pixel_bytes);
+    uint64_t decoded_bytes = 0;
+    const uint64_t read_before_pixels = is.distinct_bytes_read();
+    for (int64_t band_begin = y1; band_begin <= y2;) {
+      const int64_t chunk = (band_begin - data_window.min.y) / chunk_lines;
+      const int64_t band_end = std::min<int64_t>(
+          y2, data_window.min.y + (chunk + band_chunks) * chunk_lines - 1);
 
-      for (size_t ec_idx = 0; ec_idx < frame.extra_channels.size(); ++ec_idx) {
-        PackedImage& ec = frame.extra_channels[ec_idx];
-        auto& data = ec_data[ec_idx];
-        size_t ec_x_stride = ec.pixel_stride();
-        size_t ec_y_stride = ec_x_stride * static_cast<size_t>(data_width);
-        const char* const JXL_RESTRICT ec_data_ptr =
-            &data[x_data * ec_x_stride + y_data * ec_y_stride];
-        uint8_t* ec_pixels = static_cast<uint8_t*>(ec.pixels());
-        uint8_t* ec_image_ptr =
-            ec_pixels + x_out * ec_x_stride + y_out * ec.stride;
-        memcpy(ec_image_ptr, ec_data_ptr, x_span * ec_x_stride);
+      // Offset to match output to allocation start; when EXR puts pixel at
+      // (data_window.min.x, band_begin) it goes to 0-th element.
+      const auto virtual_origin = [&](char* data, size_t pixel_bytes) {
+        return data -
+               static_cast<ptrdiff_t>(band_begin) *
+                   static_cast<ptrdiff_t>(pixel_bytes * width) -
+               static_cast<ptrdiff_t>(data_window.min.x) *
+                   static_cast<ptrdiff_t>(pixel_bytes);
+      };
+
+      // Setup framebuffer: color/grayscale
+      OpenEXR::FrameBuffer fb;
+      char* virtual_image_origin = virtual_origin(color_data.get(), x_stride);
+      if (has_rgb) {
+        fb.insert(ch_name_r.c_str(),
+                  OpenEXR::Slice(color_type,
+                                 virtual_image_origin + color_channel_bytes * 0,
+                                 x_stride, y_stride));
+        fb.insert(ch_name_g.c_str(),
+                  OpenEXR::Slice(color_type,
+                                 virtual_image_origin + color_channel_bytes * 1,
+                                 x_stride, y_stride));
+        fb.insert(ch_name_b.c_str(),
+                  OpenEXR::Slice(color_type,
+                                 virtual_image_origin + color_channel_bytes * 2,
+                                 x_stride, y_stride));
+      } else {
+        fb.insert(ch_name_gray.c_str(),
+                  OpenEXR::Slice(color_type,
+                                 virtual_image_origin + color_channel_bytes * 0,
+                                 x_stride, y_stride));
       }
+
+      // Setup framebuffer: alpha
+      if (has_alpha) {
+        fb.insert(ch_name_a.c_str(),
+                  OpenEXR::Slice(color_type,
+                                 virtual_image_origin +
+                                     color_channel_bytes * (has_rgb ? 3 : 1),
+                                 x_stride, y_stride));
+      }
+
+      // Setup framebuffer: extra channels
+      size_t ec_data_idx = 0;
+      for (OpenEXR::ChannelList::ConstIterator it = channels.begin();
+           it != channels.end(); ++it) {
+        const OpenEXR::Channel* ch = &it.channel();
+        if (ec_set.find(ch) == ec_set.end()) {
+          continue;
+        }
+        const size_t ec_x_stride = get_pixel_stride(ch->type);
+        const size_t ec_y_stride = ec_x_stride * width;
+        char* ec_virtual_image_origin =
+            virtual_origin(ec_data[ec_data_idx++].get(), ec_x_stride);
+        fb.insert(it.name(), OpenEXR::Slice(ch->type, ec_virtual_image_origin,
+                                            ec_x_stride, ec_y_stride));
+      }
+
+      const size_t num_lines = static_cast<size_t>(band_end - band_begin + 1);
+      if (!band_is_paid_for(decoded_bytes, line_bytes * num_lines)) {
+        return JXL_FAILURE("EXR: too little pixel data for the scan lines");
+      }
+
+      // Read EXR data
+      input.setFrameBuffer(fb);
+      input.readPixels(static_cast<int>(band_begin),
+                       static_cast<int>(band_end));
+
+      decoded_bytes += static_cast<uint64_t>(line_bytes) * num_lines;
+      const uint64_t read_bytes = is.distinct_bytes_read() - read_before_pixels;
+      if (decoded_bytes > kDecodedBytesAllowance &&
+          (decoded_bytes - kDecodedBytesAllowance - 1) /
+                  max_decoded_per_input_byte >=
+              read_bytes) {
+        return JXL_FAILURE("EXR: too little pixel data for the scan lines");
+      }
+
+      // Copy read data into the result image.
+      // TODO(eustas): should we deal with unpopulated pixels?
+      for (int64_t y = band_begin; y <= band_end; ++y) {  // Scanline index
+        const size_t y_data = static_cast<size_t>(y - band_begin);
+        const int64_t y_out = y - display_window.min.y;
+        JXL_DASSERT(y_out >= 0);
+        JXL_DASSERT(y_out < image_height);
+        const char* const JXL_RESTRICT data_ptr =
+            color_data.get() + x_data * color_pixel_bytes + y_data * y_stride;
+        uint8_t* pixels = static_cast<uint8_t*>(frame.color.pixels());
+        uint8_t* image_ptr =
+            pixels + x_out * color_pixel_bytes + y_out * frame.color.stride;
+        memcpy(image_ptr, data_ptr, x_span * color_pixel_bytes);
+
+        for (size_t ec_idx = 0; ec_idx < frame.extra_channels.size();
+             ++ec_idx) {
+          PackedImage& ec = frame.extra_channels[ec_idx];
+          size_t ec_x_stride = ec.pixel_stride();
+          size_t ec_y_stride = ec_x_stride * width;
+          const char* const JXL_RESTRICT ec_data_ptr = ec_data[ec_idx].get() +
+                                                       x_data * ec_x_stride +
+                                                       y_data * ec_y_stride;
+          uint8_t* ec_pixels = static_cast<uint8_t*>(ec.pixels());
+          uint8_t* ec_image_ptr =
+              ec_pixels + x_out * ec_x_stride + y_out * ec.stride;
+          memcpy(ec_image_ptr, ec_data_ptr, x_span * ec_x_stride);
+        }
+      }
+      band_begin = band_end + 1;
     }
   }
 

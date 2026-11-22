@@ -864,6 +864,63 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   JxlPixelFormat format = {};
   size_t bytes_per_pixel = 0;
   std::vector<Frame> frames;
+  // Upper bound on the total amount of decoded pixel memory held at once.
+  // VerifyDimensions only bounds a single image, while APNG keeps every frame
+  // alive until the animation is coalesced, and the number of frames is not
+  // bounded by acTL, so without a global budget a few hundred bytes of input
+  // can pin gigabytes of memory. Two limits are applied; the first one mirrors
+  // gif.cc:
+  //  * when the caller provides SizeConstraints, the total number of decoded
+  //    pixels across all frames must stay within dec_max_pixels;
+  //  * independently of that, the decoded bytes of all frames may not exceed a
+  //    multiple of the encoded size. Deflate expands by at most 1032x, and
+  //    libpng expands 1/2/4-bit palette and gray samples to 8-bit RGB(A)
+  //    (png_set_expand below), i.e. at most 8 * bytes_per_pixel output bits per
+  //    input bit, so a complete image is bounded by 1032 * 8 * bytes_per_pixel
+  //    times its encoded size; twice that, plus a floor so that small but
+  //    highly compressible images keep working, is the budget. There is
+  //    deliberately no absolute ceiling: the budget has to scale with the
+  //    input, otherwise legitimate large animations are rejected.
+  size_t total_frame_bytes = 0;
+  uint64_t total_frame_pixels = 0;
+  const auto check_total_frame_size = [&](size_t xsize,
+                                          size_t ysize) -> Status {
+    constexpr uint64_t kDeflateMaxExpansion = 1032;
+    constexpr uint64_t kExpansionMargin = 2;
+    constexpr size_t kMinTotalFrameBytes = size_t{64} << 20;  // 64 MiB
+    size_t frame_pixels;
+    size_t frame_bytes;
+    if (!SafeMul(xsize, ysize, frame_pixels) ||
+        !SafeMul(frame_pixels, bytes_per_pixel, frame_bytes)) {
+      return JXL_FAILURE("APNG: frame too big");
+    }
+    size_t max_total_frame_bytes = kMinTotalFrameBytes;
+    size_t ratio_budget;
+    if (SafeMul(bytes.size(),
+                static_cast<size_t>(kDeflateMaxExpansion * kExpansionMargin) *
+                    8 * bytes_per_pixel,
+                ratio_budget)) {
+      max_total_frame_bytes = std::max(max_total_frame_bytes, ratio_budget);
+    } else {
+      // Overflow: the ratio bound cannot be computed, keep it out of the way
+      // instead of falling back to the floor (which would reject the file).
+      max_total_frame_bytes = SIZE_MAX;
+    }
+    if (total_frame_bytes >= max_total_frame_bytes ||
+        frame_bytes > max_total_frame_bytes - total_frame_bytes) {
+      return JXL_FAILURE("APNG: total decoded frame size too big");
+    }
+    total_frame_bytes += frame_bytes;
+    if (UINT64_MAX - total_frame_pixels < frame_pixels) {
+      return JXL_FAILURE("APNG: too many frames");
+    }
+    total_frame_pixels += frame_pixels;
+    if (constraints != nullptr &&
+        total_frame_pixels > constraints->dec_max_pixels) {
+      return JXL_FAILURE("APNG: total decoded area too big");
+    }
+    return true;
+  };
   FrameControl current_frame = {/*delay_num=*/1, /*delay_den=*/10, image_rect,
                                 DisposeOp::NONE, BlendOp::SOURCE};
 
@@ -884,6 +941,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     size_t xsize = static_cast<size_t>(vp.xsize());
     size_t ysize = static_cast<size_t>(vp.ysize());
     JXL_ENSURE(ysize <= ctx.frameRaw.rows.size());
+    JXL_RETURN_IF_ERROR(check_total_frame_size(xsize, ysize));
     JXL_ASSIGN_OR_RETURN(PackedImage image,
                          PackedImage::Create(xsize, ysize, format));
     for (size_t y = 0; y < ysize; ++y) {
@@ -1234,6 +1292,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                  py0 + pys >= y0 + ysize && use_for_next_frame) {
         // If the new frame is contained within the old frame, we can pad the
         // new frame with zeros and not blend.
+        JXL_RETURN_IF_ERROR(check_total_frame_size(pxs, pys));
         JXL_ASSIGN_OR_RETURN(PackedImage new_data,
                              PackedImage::Create(pxs, pys, pixels.format));
         memset(new_data.pixels(), 0, new_data.pixels_size);
@@ -1258,6 +1317,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         ppf->frames.emplace_back(std::move(new_data));
       } else {
         // If all else fails, insert a placeholder blank frame with kReplace.
+        JXL_RETURN_IF_ERROR(check_total_frame_size(pxs, pys));
         JXL_ASSIGN_OR_RETURN(PackedImage blank,
                              PackedImage::Create(pxs, pys, pixels.format));
         memset(blank.pixels(), 0, blank.pixels_size);
