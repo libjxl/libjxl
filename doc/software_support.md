@@ -101,6 +101,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [jpegxl.io](https://jpegxl.io/)
 - [EXIF Viewer](https://stefan-oltmann.de/exif-viewer)
 - [Immich](https://immich.app/), a self-hosted image gallery service
+- [JPEG XL Convert](https://jpegxlconvert.com/en/), an in-browser converter (libjxl compiled to WebAssembly, files are not uploaded)
 
 ## 3D Software
 
