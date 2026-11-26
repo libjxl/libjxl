@@ -34,6 +34,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -63,6 +64,32 @@ struct PackedRgb {
   uint8_t r, g, b;
 };
 
+template <typename T>
+StatusOr<Span<T>> PackedImageSpan(PackedImage& img) {
+  if (img.xsize > 0 &&
+      img.ysize > std::numeric_limits<size_t>::max() / img.xsize) {
+    return JXL_FAILURE("PackedImage pixel count overflow");
+  }
+  const size_t count = img.xsize * img.ysize;
+  if (count > img.pixels_size / sizeof(T)) {
+    return JXL_FAILURE("PackedImage buffer smaller than expected pixel count");
+  }
+  return Span<T>(static_cast<T*>(img.pixels()), count);
+}
+
+template <typename T>
+StatusOr<Span<const T>> PackedImageConstSpan(const PackedImage& img) {
+  if (img.xsize > 0 &&
+      img.ysize > std::numeric_limits<size_t>::max() / img.xsize) {
+    return JXL_FAILURE("PackedImage pixel count overflow");
+  }
+  const size_t count = img.xsize * img.ysize;
+  if (count > img.pixels_size / sizeof(T)) {
+    return JXL_FAILURE("PackedImage buffer smaller than expected pixel count");
+  }
+  return Span<const T>(static_cast<const T*>(img.pixels()), count);
+}
+
 Status ensure_have_alpha(PackedFrame* frame) {
   if (!frame->extra_channels.empty()) return true;
   const JxlPixelFormat alpha_format{
@@ -76,8 +103,9 @@ Status ensure_have_alpha(PackedFrame* frame) {
                                            frame->color.ysize, alpha_format));
   frame->extra_channels.emplace_back(std::move(image));
   // We need to set opaque-by-default.
-  std::fill_n(static_cast<uint8_t*>(frame->extra_channels[0].pixels()),
-              frame->color.xsize * frame->color.ysize, 255u);
+  JXL_ASSIGN_OR_RETURN(Span<uint8_t> alpha_span,
+                       PackedImageSpan<uint8_t>(frame->extra_channels[0]));
+  std::fill(alpha_span.begin(), alpha_span.end(), static_cast<uint8_t>(255u));
   return true;
 }
 }  // namespace
@@ -89,16 +117,18 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
                       const SizeConstraints* constraints) {
   int error = GIF_OK;
   ReadState state = {bytes};
-  const auto ReadFromSpan = [](GifFileType* const gif, GifByteType* const bytes,
-                               int n) {
+  const auto ReadFromSpan = [](GifFileType* const gif, GifByteType* const out,
+                               int n) -> int {
     ReadState* const state = reinterpret_cast<ReadState*>(gif->UserData);
     // giflib API requires the input size `n` to be signed int.
-    if (static_cast<size_t>(n) > state->bytes.size()) {
-      n = state->bytes.size();
-    }
-    memcpy(bytes, state->bytes.data(), n);
-    if (!state->bytes.remove_prefix(n)) return 0;
-    return n;
+    if (n <= 0 || out == nullptr) return 0;
+    const size_t to_read =
+        std::min(static_cast<size_t>(n), state->bytes.size());
+    if (to_read == 0) return 0;
+    const Span<const uint8_t> chunk(state->bytes.data(), to_read);
+    memcpy(out, chunk.data(), chunk.size());
+    if (!state->bytes.remove_prefix(chunk.size())) return 0;
+    return static_cast<int>(chunk.size());
   };
   GifUniquePtr gif(DGifOpen(&state, ReadFromSpan, &error));
   if (gif == nullptr) {
@@ -115,23 +145,39 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
   }
 
   msan::UnpoisonMemory(gif.get(), sizeof(*gif));
+  if (gif->SWidth < 0 || gif->SHeight < 0 || gif->ImageCount < 0) {
+    return JXL_FAILURE("Invalid negative GIF header dimensions or image count");
+  }
   if (gif->SColorMap) {
     msan::UnpoisonMemory(gif->SColorMap, sizeof(*gif->SColorMap));
+    if (gif->SColorMap->ColorCount < 0 ||
+        (gif->SColorMap->ColorCount > 0 && gif->SColorMap->Colors == nullptr)) {
+      return JXL_FAILURE("Invalid GIF global color map");
+    }
     msan::UnpoisonMemory(
         gif->SColorMap->Colors,
-        sizeof(*gif->SColorMap->Colors) * gif->SColorMap->ColorCount);
+        sizeof(*gif->SColorMap->Colors) *
+            static_cast<size_t>(gif->SColorMap->ColorCount));
+  }
+  const size_t image_count = static_cast<size_t>(gif->ImageCount);
+  if (image_count > 0 && gif->SavedImages == nullptr) {
+    return JXL_FAILURE("Missing GIF saved images");
   }
   msan::UnpoisonMemory(gif->SavedImages,
-                       sizeof(*gif->SavedImages) * gif->ImageCount);
+                       sizeof(*gif->SavedImages) * image_count);
+  const Span<const SavedImage> saved_images(gif->SavedImages, image_count);
 
   JXL_RETURN_IF_ERROR(
       VerifyDimensions<uint32_t>(constraints, gif->SWidth, gif->SHeight));
   uint64_t total_pixel_count =
       static_cast<uint64_t>(gif->SWidth) * gif->SHeight;
-  for (int i = 0; i < gif->ImageCount; ++i) {
-    const SavedImage& image = gif->SavedImages[i];
-    uint32_t w = image.ImageDesc.Width;
-    uint32_t h = image.ImageDesc.Height;
+  for (const SavedImage& image : saved_images) {
+    if (image.ImageDesc.Left < 0 || image.ImageDesc.Top < 0 ||
+        image.ImageDesc.Width < 0 || image.ImageDesc.Height < 0) {
+      return JXL_FAILURE("Invalid negative GIF frame dimensions");
+    }
+    uint32_t w = static_cast<uint32_t>(image.ImageDesc.Width);
+    uint32_t h = static_cast<uint32_t>(image.ImageDesc.Height);
     JXL_RETURN_IF_ERROR(VerifyDimensions<uint32_t>(constraints, w, h));
     uint64_t pixel_count = static_cast<uint64_t>(w) * h;
     if (total_pixel_count + pixel_count < total_pixel_count) {
@@ -144,8 +190,8 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
   }
 
   if (!gif->SColorMap) {
-    for (int i = 0; i < gif->ImageCount; ++i) {
-      if (!gif->SavedImages[i].ImageDesc.ColorMap) {
+    for (const SavedImage& image : saved_images) {
+      if (!image.ImageDesc.ColorMap) {
         return JXL_FAILURE("Missing GIF color map");
       }
     }
@@ -159,7 +205,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
   }
 
   ppf->frames.clear();
-  ppf->frames.reserve(gif->ImageCount);
+  ppf->frames.reserve(image_count);
 
   ppf->info.xsize = gif->SWidth;
   ppf->info.ysize = gif->SHeight;
@@ -194,32 +240,46 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
   };
 
   GifColorType background_color;
-  if (gif->SColorMap == nullptr ||
+  if (gif->SColorMap == nullptr || gif->SBackGroundColor < 0 ||
       gif->SBackGroundColor >= gif->SColorMap->ColorCount) {
     background_color = {0, 0, 0};
   } else {
-    background_color = gif->SColorMap->Colors[gif->SBackGroundColor];
+    const Span<const GifColorType> global_colors(
+        gif->SColorMap->Colors,
+        static_cast<size_t>(gif->SColorMap->ColorCount));
+    background_color =
+        global_colors[static_cast<size_t>(gif->SBackGroundColor)];
   }
   const PackedRgba background_rgba{background_color.Red, background_color.Green,
                                    background_color.Blue, 0};
   JXL_ASSIGN_OR_RETURN(
       PackedFrame canvas,
       PackedFrame::Create(gif->SWidth, gif->SHeight, canvas_format));
-  std::fill_n(static_cast<PackedRgba*>(canvas.color.pixels()),
-              canvas.color.xsize * canvas.color.ysize, background_rgba);
+  {
+    JXL_ASSIGN_OR_RETURN(Span<PackedRgba> canvas_span,
+                         PackedImageSpan<PackedRgba>(canvas.color));
+    std::fill(canvas_span.begin(), canvas_span.end(), background_rgba);
+  }
   Rect canvas_rect{0, 0, canvas.color.xsize, canvas.color.ysize};
 
   Rect previous_rect_if_restore_to_background;
 
   bool replace = true;
   bool last_base_was_none = true;
-  for (int i = 0; i < gif->ImageCount; ++i) {
-    const SavedImage& image = gif->SavedImages[i];
-    msan::UnpoisonMemory(image.RasterBits, sizeof(*image.RasterBits) *
-                                               image.ImageDesc.Width *
-                                               image.ImageDesc.Height);
-    const Rect image_rect(image.ImageDesc.Left, image.ImageDesc.Top,
-                          image.ImageDesc.Width, image.ImageDesc.Height);
+  for (size_t i = 0; i < saved_images.size(); ++i) {
+    const SavedImage& image = saved_images[i];
+    const size_t img_w = static_cast<size_t>(image.ImageDesc.Width);
+    const size_t img_h = static_cast<size_t>(image.ImageDesc.Height);
+    const size_t raster_size = img_w * img_h;
+    if (raster_size > 0 && image.RasterBits == nullptr) {
+      return JXL_FAILURE("Missing GIF raster data");
+    }
+    msan::UnpoisonMemory(image.RasterBits,
+                         sizeof(*image.RasterBits) * raster_size);
+    const Span<const GifByteType> raster_bits(image.RasterBits, raster_size);
+    const Rect image_rect(static_cast<size_t>(image.ImageDesc.Left),
+                          static_cast<size_t>(image.ImageDesc.Top), img_w,
+                          img_h);
 
     Rect total_rect;
     if (previous_rect_if_restore_to_background.xsize() != 0 ||
@@ -267,8 +327,15 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
       // "no alpha channel = no transparency".
       if (a == 255 && frame->extra_channels.empty()) return true;
       JXL_RETURN_IF_ERROR(ensure_have_alpha(frame));
-      static_cast<uint8_t*>(
-          frame->extra_channels[0].pixels())[y * frame->color.xsize + x] = a;
+      JXL_ASSIGN_OR_RETURN(Span<uint8_t> alpha_span,
+                           PackedImageSpan<uint8_t>(frame->extra_channels[0]));
+      JXL_ASSIGN_OR_RETURN(
+          Span<uint8_t> alpha_row,
+          alpha_span.subspan(y * frame->color.xsize, frame->color.xsize));
+      if (x >= alpha_row.size()) {
+        return JXL_FAILURE("GIF alpha pixel coordinate out of bounds");
+      }
+      alpha_row[x] = a;
       return true;
     };
 
@@ -276,10 +343,17 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
         image.ImageDesc.ColorMap ? image.ImageDesc.ColorMap : gif->SColorMap;
     JXL_ENSURE(color_map);
     msan::UnpoisonMemory(color_map, sizeof(*color_map));
+    if (color_map->ColorCount < 0 ||
+        (color_map->ColorCount > 0 && color_map->Colors == nullptr)) {
+      return JXL_FAILURE("Invalid GIF frame color map");
+    }
+    const size_t color_count = static_cast<size_t>(color_map->ColorCount);
     msan::UnpoisonMemory(color_map->Colors,
-                         sizeof(*color_map->Colors) * color_map->ColorCount);
+                         sizeof(*color_map->Colors) * color_count);
+    const Span<const GifColorType> colors(color_map->Colors, color_count);
+
     GraphicsControlBlock gcb;
-    DGifSavedExtensionToGCB(gif.get(), i, &gcb);
+    DGifSavedExtensionToGCB(gif.get(), static_cast<int>(i), &gcb);
     msan::UnpoisonMemory(&gcb, sizeof(gcb));
     bool is_full_size = total_rect.x0() == 0 && total_rect.y0() == 0 &&
                         total_rect.xsize() == canvas.color.xsize &&
@@ -335,37 +409,56 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
         PackedImage new_canvas_image,
         PackedImage::Create(canvas.color.xsize, canvas.color.ysize,
                             canvas.color.format));
-    memcpy(new_canvas_image.pixels(), canvas.color.pixels(),
-           new_canvas_image.pixels_size);
-    for (size_t y = 0, byte_index = 0; y < image_rect.ysize(); ++y) {
-      // Assumes format.align == 0. row points to the beginning of the y row in
-      // the image_rect.
-      PackedRgba* row = static_cast<PackedRgba*>(new_canvas_image.pixels()) +
-                        (y + image_rect.y0()) * new_canvas_image.xsize +
-                        image_rect.x0();
-      for (size_t x = 0; x < image_rect.xsize(); ++x, ++byte_index) {
-        const GifByteType byte = image.RasterBits[byte_index];
-        if (byte >= color_map->ColorCount) {
+    JXL_ASSIGN_OR_RETURN(Span<PackedRgba> new_canvas_span,
+                         PackedImageSpan<PackedRgba>(new_canvas_image));
+    {
+      JXL_ASSIGN_OR_RETURN(Span<const PackedRgba> old_canvas_span,
+                           PackedImageConstSpan<PackedRgba>(canvas.color));
+      if (old_canvas_span.size() != new_canvas_span.size()) {
+        return JXL_FAILURE("GIF canvas size mismatch");
+      }
+      std::copy(old_canvas_span.begin(), old_canvas_span.end(),
+                new_canvas_span.begin());
+    }
+    for (size_t y = 0; y < image_rect.ysize(); ++y) {
+      JXL_ASSIGN_OR_RETURN(
+          Span<PackedRgba> row,
+          new_canvas_span.subspan(
+              (y + image_rect.y0()) * new_canvas_image.xsize + image_rect.x0(),
+              image_rect.xsize()));
+      JXL_ASSIGN_OR_RETURN(
+          Span<const GifByteType> raster_row,
+          raster_bits.subspan(y * image_rect.xsize(), image_rect.xsize()));
+      for (size_t x = 0; x < image_rect.xsize(); ++x) {
+        const GifByteType byte = raster_row[x];
+        if (static_cast<size_t>(byte) >= colors.size()) {
           return JXL_FAILURE("GIF color is out of bounds");
         }
 
         if (byte == gcb.TransparentColor) continue;
-        GifColorType color = color_map->Colors[byte];
+        GifColorType color = colors[byte];
         row[x].r = color.Red;
         row[x].g = color.Green;
         row[x].b = color.Blue;
         row[x].a = 255;
       }
     }
-    const PackedImage& sub_frame_image = frame->color;
+    PackedImage& sub_frame_image = frame->color;
+    JXL_ASSIGN_OR_RETURN(Span<PackedRgb> sub_frame_span,
+                         PackedImageSpan<PackedRgb>(sub_frame_image));
     if (replace) {
       // Copy from the new canvas image to the subframe
       for (size_t y = 0; y < total_rect.ysize(); ++y) {
-        const PackedRgba* row_in =
-            static_cast<const PackedRgba*>(new_canvas_image.pixels()) +
-            (y + total_rect.y0()) * new_canvas_image.xsize + total_rect.x0();
-        PackedRgb* row_out = static_cast<PackedRgb*>(sub_frame_image.pixels()) +
-                             y * sub_frame_image.xsize;
+        JXL_ASSIGN_OR_RETURN(
+            Span<PackedRgba> row_in,
+            new_canvas_span.subspan(
+                (y + total_rect.y0()) * new_canvas_image.xsize +
+                    total_rect.x0(),
+                sub_frame_image.xsize));
+        JXL_ASSIGN_OR_RETURN(
+            Span<PackedRgb> row_out,
+            sub_frame_span.subspan(y * sub_frame_image.xsize,
+                                   sub_frame_image.xsize));
         for (size_t x = 0; x < sub_frame_image.xsize; ++x) {
           row_out[x].r = row_in[x].r;
           row_out[x].g = row_in[x].g;
@@ -374,13 +467,17 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
         }
       }
     } else {
-      for (size_t y = 0, byte_index = 0; y < image_rect.ysize(); ++y) {
-        // Assumes format.align == 0
-        PackedRgb* row = static_cast<PackedRgb*>(sub_frame_image.pixels()) +
-                         y * sub_frame_image.xsize;
-        for (size_t x = 0; x < image_rect.xsize(); ++x, ++byte_index) {
-          const GifByteType byte = image.RasterBits[byte_index];
-          if (byte >= color_map->ColorCount) {
+      for (size_t y = 0; y < image_rect.ysize(); ++y) {
+        JXL_ASSIGN_OR_RETURN(
+            Span<PackedRgb> row,
+            sub_frame_span.subspan(y * sub_frame_image.xsize,
+                                   image_rect.xsize()));
+        JXL_ASSIGN_OR_RETURN(
+            Span<const GifByteType> raster_row,
+            raster_bits.subspan(y * image_rect.xsize(), image_rect.xsize()));
+        for (size_t x = 0; x < image_rect.xsize(); ++x) {
+          const GifByteType byte = raster_row[x];
+          if (static_cast<size_t>(byte) >= colors.size()) {
             return JXL_FAILURE("GIF color is out of bounds");
           }
           if (byte == gcb.TransparentColor) {
@@ -390,7 +487,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
             JXL_RETURN_IF_ERROR(set_pixel_alpha(x, y, 0));
             continue;
           }
-          GifColorType color = color_map->Colors[byte];
+          GifColorType color = colors[byte];
           row[x].r = color.Red;
           row[x].g = color.Green;
           row[x].b = color.Blue;
@@ -408,19 +505,23 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
         canvas.color = std::move(new_canvas_image);
         break;
 
-      case DISPOSE_BACKGROUND:
-        std::fill_n(static_cast<PackedRgba*>(canvas.color.pixels()),
-                    canvas.color.xsize * canvas.color.ysize, background_rgba);
+      case DISPOSE_BACKGROUND: {
+        JXL_ASSIGN_OR_RETURN(Span<PackedRgba> canvas_span,
+                             PackedImageSpan<PackedRgba>(canvas.color));
+        std::fill(canvas_span.begin(), canvas_span.end(), background_rgba);
         previous_rect_if_restore_to_background = image_rect;
         break;
+      }
 
       case DISPOSE_PREVIOUS:
         break;
 
       case DISPOSAL_UNSPECIFIED:
-      default:
-        std::fill_n(static_cast<PackedRgba*>(canvas.color.pixels()),
-                    canvas.color.xsize * canvas.color.ysize, background_rgba);
+      default: {
+        JXL_ASSIGN_OR_RETURN(Span<PackedRgba> canvas_span,
+                             PackedImageSpan<PackedRgba>(canvas.color));
+        std::fill(canvas_span.begin(), canvas_span.end(), background_rgba);
+      }
     }
   }
   // Finally, if any frame has an alpha-channel, every frame will need
