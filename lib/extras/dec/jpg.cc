@@ -35,8 +35,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <memory>
-#include <numeric>
 #include <utility>
 #include <vector>
 
@@ -63,22 +63,35 @@ inline bool IsJPG(const Span<const uint8_t> bytes) {
   return true;
 }
 
-bool MarkerIsICC(const jpeg_saved_marker_ptr marker) {
-  return marker->marker == kICCMarker &&
-         marker->data_length >= sizeof kICCSignature + 2 &&
-         std::equal(std::begin(kICCSignature), std::end(kICCSignature),
-                    marker->data);
+Span<const uint8_t> MarkerData(const jpeg_saved_marker_ptr marker) {
+  if (marker == nullptr || marker->data == nullptr ||
+      marker->data_length == 0) {
+    return Span<const uint8_t>();
+  }
+  return Span<const uint8_t>(marker->data, marker->data_length);
 }
+
+bool MarkerIsICC(const jpeg_saved_marker_ptr marker) {
+  if (marker == nullptr) return false;
+  const Span<const uint8_t> data = MarkerData(marker);
+  return marker->marker == kICCMarker &&
+         data.size() >= sizeof(kICCSignature) + 2 &&
+         std::equal(std::begin(kICCSignature), std::end(kICCSignature),
+                    data.begin());
+}
+
 bool MarkerIsExif(const jpeg_saved_marker_ptr marker) {
+  if (marker == nullptr) return false;
+  const Span<const uint8_t> data = MarkerData(marker);
   return marker->marker == kExifMarker &&
-         marker->data_length >= sizeof kExifSignature + 2 &&
+         data.size() >= sizeof(kExifSignature) + 2 &&
          std::equal(std::begin(kExifSignature), std::end(kExifSignature),
-                    marker->data);
+                    data.begin());
 }
 
 Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
                       std::vector<uint8_t>* const icc) {
-  constexpr size_t kICCSignatureSize = sizeof kICCSignature;
+  constexpr size_t kICCSignatureSize = sizeof(kICCSignature);
   // ICC signature + uint8_t index + uint8_t max_index.
   constexpr size_t kICCHeadSize = kICCSignatureSize + 2;
   // Markers are 1-indexed, and we keep them that way in this vector to get a
@@ -95,11 +108,12 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
     msan::UnpoisonMemory(marker->data, marker->data_length);
     if (!MarkerIsICC(marker)) continue;
 
-    const int current_marker = marker->data[kICCSignatureSize];
+    const Span<const uint8_t> data = MarkerData(marker);
+    const int current_marker = data[kICCSignatureSize];
     if (current_marker == 0) {
       return JXL_FAILURE("inconsistent JPEG ICC marker numbering");
     }
-    const int current_num_markers = marker->data[kICCSignatureSize + 1];
+    const int current_num_markers = data[kICCSignatureSize + 1];
     if (current_marker > current_num_markers) {
       return JXL_FAILURE("inconsistent JPEG ICC marker numbering");
     }
@@ -110,10 +124,10 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
     } else {
       num_markers = current_num_markers;
       has_num_markers = true;
-      marker_lengths.resize(num_markers + 1);
+      marker_lengths.resize(static_cast<size_t>(num_markers) + 1);
     }
 
-    size_t marker_length = marker->data_length - kICCHeadSize;
+    const size_t marker_length = data.size() - kICCHeadSize;
 
     if (marker_length == 0) {
       // NB: if we allow empty chunks, then the next check is incorrect.
@@ -137,26 +151,38 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
     return JXL_FAILURE("Incomplete set of ICC chunks");
   }
 
-  std::vector<size_t> offsets = std::move(marker_lengths);
-  std::partial_sum(offsets.begin(), offsets.end(), offsets.begin());
-  icc->resize(offsets.back());
+  std::vector<size_t> offsets(marker_lengths.size(), 0);
+  size_t total_size = 0;
+  for (size_t i = 1; i < marker_lengths.size(); ++i) {
+    if (marker_lengths[i] > std::numeric_limits<size_t>::max() - total_size) {
+      return JXL_FAILURE("JPEG ICC profile size overflow");
+    }
+    total_size += marker_lengths[i];
+    offsets[i] = total_size;
+  }
+  icc->resize(total_size);
+  Span<uint8_t> icc_span(icc->data(), icc->size());
 
   for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr;
        marker = marker->next) {
     if (!MarkerIsICC(marker)) continue;
-    const uint8_t* first = marker->data + kICCHeadSize;
-    uint8_t current_marker = marker->data[kICCSignatureSize];
-    size_t offset = offsets[current_marker - 1];
-    size_t marker_length = offsets[current_marker] - offset;
-    std::copy_n(first, marker_length, icc->data() + offset);
+    const Span<const uint8_t> data = MarkerData(marker);
+    const uint8_t current_marker = data[kICCSignatureSize];
+    const size_t offset = offsets[current_marker - 1];
+    const size_t marker_length = offsets[current_marker] - offset;
+    JXL_ASSIGN_OR_RETURN(Span<const uint8_t> src,
+                         data.subspan(kICCHeadSize, marker_length));
+    JXL_ASSIGN_OR_RETURN(Span<uint8_t> dst,
+                         icc_span.subspan(offset, marker_length));
+    std::copy(src.begin(), src.end(), dst.begin());
   }
 
   return true;
 }
 
-void ReadExif(jpeg_decompress_struct* const cinfo,
-              std::vector<uint8_t>* const exif) {
-  constexpr size_t kExifSignatureSize = sizeof kExifSignature;
+Status ReadExif(jpeg_decompress_struct* const cinfo,
+                std::vector<uint8_t>* const exif) {
+  constexpr size_t kExifSignatureSize = sizeof(kExifSignature);
   for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr;
        marker = marker->next) {
     // marker is initialized by libjpeg, which we are not instrumenting with
@@ -164,11 +190,13 @@ void ReadExif(jpeg_decompress_struct* const cinfo,
     msan::UnpoisonMemory(marker, sizeof(*marker));
     msan::UnpoisonMemory(marker->data, marker->data_length);
     if (!MarkerIsExif(marker)) continue;
-    size_t marker_length = marker->data_length - kExifSignatureSize;
-    exif->resize(marker_length);
-    std::copy_n(marker->data + kExifSignatureSize, marker_length, exif->data());
-    return;
+    const Span<const uint8_t> data = MarkerData(marker);
+    JXL_ASSIGN_OR_RETURN(Span<const uint8_t> payload,
+                         data.subspan(kExifSignatureSize));
+    exif->assign(payload.begin(), payload.end());
+    return true;
   }
+  return true;
 }
 
 void MyErrorExit(j_common_ptr cinfo) {
@@ -187,17 +215,32 @@ void MyOutputMessage(j_common_ptr cinfo) {
   }
 }
 
-Status UnmapColors(uint8_t* row, size_t xsize, int components,
+Status UnmapColors(Span<uint8_t> row, size_t xsize, int components,
                    JSAMPARRAY colormap, size_t num_colors) {
   JXL_ENSURE(colormap != nullptr);
-  std::vector<uint8_t> tmp(xsize * components);
+  if (components <= 0) {
+    return JXL_FAILURE("Invalid JPEG component count");
+  }
+  const size_t ncomp = static_cast<size_t>(components);
+  if (xsize > std::numeric_limits<size_t>::max() / ncomp) {
+    return JXL_FAILURE("JPEG scanline size overflow");
+  }
+  const size_t total = xsize * ncomp;
+  JXL_ASSIGN_OR_RETURN(Span<uint8_t> out_row, row.subspan(0, total));
+  std::vector<uint8_t> tmp(total);
+  const Span<const JSAMPROW> planes(colormap, ncomp);
+  for (size_t c = 0; c < ncomp; ++c) {
+    JXL_ENSURE(planes[c] != nullptr);
+  }
   for (size_t x = 0; x < xsize; ++x) {
-    JXL_ENSURE(row[x] < num_colors);
-    for (int c = 0; c < components; ++c) {
-      tmp[x * components + c] = colormap[c][row[x]];
+    const uint8_t idx = out_row[x];
+    JXL_ENSURE(idx < num_colors);
+    for (size_t c = 0; c < ncomp; ++c) {
+      const Span<const JSAMPLE> table(planes[c], num_colors);
+      tmp[x * ncomp + c] = static_cast<uint8_t>(table[idx]);
     }
   }
-  memcpy(row, tmp.data(), tmp.size());
+  std::copy(tmp.begin(), tmp.end(), out_row.begin());
   return true;
 }
 
@@ -213,10 +256,6 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
   if (!IsJPG(bytes)) return false;
 
   // TODO(veluca): use JPEGData also for pixels?
-
-  // We need to declare all the non-trivial destructor local variables before
-  // the call to setjmp().
-  std::unique_ptr<JSAMPLE[]> row;
 
   const auto try_catch_block = [&]() -> bool {
     jpeg_decompress_struct cinfo = {};
@@ -274,7 +313,9 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
       ppf->color_encoding.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
       ppf->color_encoding.rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;
     }
-    ReadExif(&cinfo, &ppf->metadata.exif);
+    if (!ReadExif(&cinfo, &ppf->metadata.exif)) {
+      return failure("ReadExif failed");
+    }
     if (!ApplyColorHints(color_hints, /*color_already_set=*/true,
                          /*is_gray=*/false, ppf)) {
       return failure("ApplyColorHints failed");
@@ -322,7 +363,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
           PackedFrame::Create(cinfo.image_width, cinfo.image_height, format));
       ppf->frames.emplace_back(std::move(frame));
     }
-    const auto& frame = ppf->frames.back();
+    PackedFrame& frame = ppf->frames.back();
     JXL_ENSURE(sizeof(JSAMPLE) * cinfo.out_color_components *
                    cinfo.image_width <=
                frame.color.stride);
@@ -339,18 +380,23 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     }
     if (dparams && dparams->num_colors > 0) {
       JXL_ENSURE(cinfo.colormap != nullptr);
+      JXL_ENSURE(cinfo.actual_number_of_colors >= 0);
     }
+    Span<uint8_t> frame_bytes(static_cast<uint8_t*>(frame.color.pixels()),
+                              frame.color.pixels_size);
     for (size_t y = 0; y < cinfo.image_height; ++y) {
-      JSAMPROW rows[] = {reinterpret_cast<JSAMPLE*>(
-          static_cast<uint8_t*>(frame.color.pixels()) +
-          frame.color.stride * y)};
+      JXL_ASSIGN_OR_RETURN(
+          Span<uint8_t> row_bytes,
+          frame_bytes.subspan(frame.color.stride * y, frame.color.stride));
+      JSAMPROW rows[] = {reinterpret_cast<JSAMPLE*>(row_bytes.data())};
       jpeg_read_scanlines(&cinfo, rows, 1);
       msan::UnpoisonMemory(rows[0], sizeof(JSAMPLE) * cinfo.output_components *
                                         cinfo.image_width);
       if (dparams && dparams->num_colors > 0) {
-        JXL_RETURN_IF_ERROR(
-            UnmapColors(rows[0], cinfo.output_width, cinfo.out_color_components,
-                        cinfo.colormap, cinfo.actual_number_of_colors));
+        JXL_RETURN_IF_ERROR(UnmapColors(
+            row_bytes, cinfo.output_width, cinfo.out_color_components,
+            cinfo.colormap,
+            static_cast<size_t>(cinfo.actual_number_of_colors)));
       }
     }
 
