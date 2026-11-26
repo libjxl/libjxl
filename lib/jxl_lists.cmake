@@ -81,6 +81,7 @@ set(JPEGXL_INTERNAL_CODEC_NPY_SOURCES
 )
 
 set(JPEGXL_INTERNAL_CODEC_PGX_SOURCES
+  extras/dec/byte_reader.h
   extras/dec/pgx.cc
   extras/dec/pgx.h
   extras/enc/pgx.cc
@@ -489,6 +490,7 @@ set(JPEGXL_INTERNAL_TESTLIB_FILES
 set(JPEGXL_INTERNAL_TESTS
   extras/codec_test.cc
   extras/compressed_icc_test.cc
+  extras/dec/byte_reader_test.cc
   extras/dec/color_description_test.cc
   extras/dec/pgx_test.cc
   extras/dec/pnm_test.cc

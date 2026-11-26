@@ -13,6 +13,7 @@
 #include <limits>
 #include <utility>
 
+#include "lib/extras/dec/byte_reader.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/size_constraints.h"
@@ -35,30 +36,36 @@ struct HeaderPGX {
 
 class Parser {
  public:
-  explicit Parser(const Span<const uint8_t> bytes)
-      : pos_(bytes.data()), end_(pos_ + bytes.size()) {}
+  explicit Parser(const Span<const uint8_t> bytes) : reader_(bytes) {}
 
   // Sets "pos" to the first non-header byte/pixel on success.
   Status ParseHeader(HeaderPGX* header, const uint8_t** pos) {
-    if (static_cast<size_t>(end_ - pos_) < 2) return false;
-    if (pos_[0] != 'P' || pos_[1] != 'G') return false;
-    pos_ += 2;
+    if (reader_.remaining() < 2) return false;
+    uint8_t p;
+    uint8_t g;
+    JXL_RETURN_IF_ERROR(reader_.ReadU8(&p));
+    JXL_RETURN_IF_ERROR(reader_.ReadU8(&g));
+    if (p != 'P' || g != 'G') return false;
     return ParseHeaderPGX(header, pos);
   }
 
   // Exposed for testing
   Status ParseUnsigned(size_t* number) {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before number");
-    if (!IsDigit(*pos_)) return JXL_FAILURE("PGX: expected unsigned number");
+    uint8_t c;
+    if (reader_.AtEnd()) return JXL_FAILURE("PGX: reached end before number");
+    JXL_RETURN_IF_ERROR(reader_.Peek(&c));
+    if (!IsDigit(c)) return JXL_FAILURE("PGX: expected unsigned number");
 
     *number = 0;
-    while (pos_ < end_ && *pos_ >= '0' && *pos_ <= '9') {
-      const size_t digit = static_cast<size_t>(*pos_ - '0');
+    while (!reader_.AtEnd()) {
+      JXL_RETURN_IF_ERROR(reader_.Peek(&c));
+      if (!IsDigit(c)) break;
+      const size_t digit = static_cast<size_t>(c - '0');
       if (*number > (std::numeric_limits<size_t>::max() - digit) / 10) {
         return JXL_FAILURE("PGX: number too large");
       }
       *number = *number * 10 + digit;
-      ++pos_;
+      JXL_RETURN_IF_ERROR(reader_.Skip(1));
     }
 
     return true;
@@ -72,56 +79,77 @@ class Parser {
   }
 
   Status SkipSpace() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before space");
-    const uint8_t c = *pos_;
+    uint8_t c;
+    if (reader_.AtEnd()) return JXL_FAILURE("PGX: reached end before space");
+    JXL_RETURN_IF_ERROR(reader_.Peek(&c));
     if (c != ' ') return JXL_FAILURE("PGX: expected space");
-    ++pos_;
-    return true;
+    return reader_.Skip(1);
   }
 
   Status SkipLineBreak() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before line break");
+    uint8_t c;
+    if (reader_.AtEnd()) {
+      return JXL_FAILURE("PGX: reached end before line break");
+    }
+    JXL_RETURN_IF_ERROR(reader_.Peek(&c));
     // Line break can be either "\n" (0a) or "\r\n" (0d 0a).
-    if (*pos_ == '\n') {
-      pos_++;
-      return true;
-    } else if (*pos_ == '\r' && pos_ + 1 != end_ && *(pos_ + 1) == '\n') {
-      pos_ += 2;
+    if (c == '\n') return reader_.Skip(1);
+    if (c == '\r') {
+      Span<const uint8_t> line_break;
+      if (reader_.remaining() < 2) {
+        return JXL_FAILURE("PGX: expected line break");
+      }
+      JXL_RETURN_IF_ERROR(reader_.Read(2, &line_break));
+      if (line_break[1] != '\n') {
+        return JXL_FAILURE("PGX: expected line break");
+      }
       return true;
     }
     return JXL_FAILURE("PGX: expected line break");
   }
 
   Status SkipSingleWhitespace() {
-    if (pos_ == end_) return JXL_FAILURE("PGX: reached end before whitespace");
-    if (!IsWhitespace(*pos_)) return JXL_FAILURE("PGX: expected whitespace");
-    ++pos_;
-    return true;
+    uint8_t c;
+    if (reader_.AtEnd()) {
+      return JXL_FAILURE("PGX: reached end before whitespace");
+    }
+    JXL_RETURN_IF_ERROR(reader_.Peek(&c));
+    if (!IsWhitespace(c)) return JXL_FAILURE("PGX: expected whitespace");
+    return reader_.Skip(1);
   }
 
   Status ParseHeaderPGX(HeaderPGX* header, const uint8_t** pos) {
     JXL_RETURN_IF_ERROR(SkipSpace());
-    if (pos_ + 2 > end_) return JXL_FAILURE("PGX: header too small");
-    if (*pos_ == 'M' && *(pos_ + 1) == 'L') {
+    if (reader_.remaining() < 2) return JXL_FAILURE("PGX: header too small");
+    uint8_t endianness[2];
+    JXL_RETURN_IF_ERROR(reader_.ReadU8(&endianness[0]));
+    JXL_RETURN_IF_ERROR(reader_.ReadU8(&endianness[1]));
+    if (endianness[0] == 'M' && endianness[1] == 'L') {
       header->big_endian = true;
-    } else if (*pos_ == 'L' && *(pos_ + 1) == 'M') {
+    } else if (endianness[0] == 'L' && endianness[1] == 'M') {
       header->big_endian = false;
     } else {
       return JXL_FAILURE("PGX: invalid endianness");
     }
-    pos_ += 2;
     JXL_RETURN_IF_ERROR(SkipSpace());
-    if (pos_ == end_) return JXL_FAILURE("PGX: header too small");
-    if (*pos_ == '+') {
+    if (reader_.AtEnd()) return JXL_FAILURE("PGX: header too small");
+    uint8_t signedness;
+    JXL_RETURN_IF_ERROR(reader_.ReadU8(&signedness));
+    if (signedness == '+') {
       header->is_signed = false;
-    } else if (*pos_ == '-') {
+    } else if (signedness == '-') {
       header->is_signed = true;
     } else {
       return JXL_FAILURE("PGX: invalid signedness");
     }
-    pos_++;
     // Skip optional space
-    if (pos_ < end_ && *pos_ == ' ') pos_++;
+    uint8_t c;
+    if (!reader_.AtEnd()) {
+      JXL_RETURN_IF_ERROR(reader_.Peek(&c));
+      if (c == ' ') {
+        JXL_RETURN_IF_ERROR(reader_.Skip(1));
+      }
+    }
     JXL_RETURN_IF_ERROR(ParseUnsigned(&header->bits_per_sample));
     JXL_RETURN_IF_ERROR(SkipSingleWhitespace());
     JXL_RETURN_IF_ERROR(ParseUnsigned(&header->xsize));
@@ -148,16 +176,15 @@ class Parser {
         !SafeMul(numpixels, bytes_per_pixel, bytes_needed)) {
       return JXL_FAILURE("PGX: image dimensions are too large");
     }
-    if (static_cast<size_t>(end_ - pos_) < bytes_needed) {
+    if (reader_.remaining() < bytes_needed) {
       return JXL_FAILURE("PGX: data too small");
     }
 
-    *pos = pos_;
+    *pos = reader_.current();
     return true;
   }
 
-  const uint8_t* pos_;
-  const uint8_t* const end_;
+  ByteReader reader_;
 };
 
 }  // namespace
