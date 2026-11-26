@@ -12,6 +12,7 @@
 #include <jxl/decode_cxx.h>
 #include <jxl/types.h>
 
+#include <algorithm>
 #include <cinttypes>  // PRIu32
 #include <cstddef>
 #include <cstdint>
@@ -31,6 +32,7 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/exif.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
@@ -60,9 +62,17 @@ struct BoxProcessor {
     }
     Flush();
     static const size_t kBoxOutputChunkSize = 1 << 16;
+    if (box_data_->size() >
+        std::numeric_limits<size_t>::max() - kBoxOutputChunkSize) {
+      fprintf(stderr, "Box output buffer size overflow\n");
+      return false;
+    }
     box_data_->resize(box_data_->size() + kBoxOutputChunkSize);
-    next_out_ = box_data_->data() + total_size_;
-    avail_out_ = box_data_->size() - total_size_;
+    Span<uint8_t> box_span(box_data_->data(), box_data_->size());
+    JXL_ASSIGN_OR_QUIT(Span<uint8_t> tail, box_span.subspan(total_size_),
+                       "Box output buffer subspan out of range");
+    next_out_ = tail.data();
+    avail_out_ = tail.size();
     if (JXL_DEC_SUCCESS !=
         JxlDecoderSetBoxBuffer(dec_, next_out_, avail_out_)) {
       fprintf(stderr, "JxlDecoderSetBoxBuffer failed\n");
@@ -315,12 +325,23 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         return false;
       }
       // Decoded a chunk to JPEG.
-      size_t used_jpeg_output =
-          jpeg_data_chunk.size() - JxlDecoderReleaseJPEGBuffer(dec);
-      jpeg_bytes->insert(jpeg_bytes->end(), jpeg_data_chunk.data(),
-                         jpeg_data_chunk.data() + used_jpeg_output);
+      const size_t remaining = JxlDecoderReleaseJPEGBuffer(dec);
+      if (remaining > jpeg_data_chunk.size()) {
+        fprintf(stderr, "Invalid JPEG output buffer remaining size\n");
+        return false;
+      }
+      const size_t used_jpeg_output = jpeg_data_chunk.size() - remaining;
+      const Bytes chunk_span(jpeg_data_chunk.data(), jpeg_data_chunk.size());
+      JXL_ASSIGN_OR_QUIT(Bytes used_span,
+                         chunk_span.subspan(0, used_jpeg_output),
+                         "JPEG chunk subspan out of range");
+      used_span.AppendTo(*jpeg_bytes);
       if (used_jpeg_output == 0) {
         // Chunk is too small.
+        if (jpeg_data_chunk.size() > std::numeric_limits<size_t>::max() / 2) {
+          fprintf(stderr, "JPEG output chunk size overflow\n");
+          return false;
+        }
         jpeg_data_chunk.resize(jpeg_data_chunk.size() * 2);
       }
       if (JXL_DEC_SUCCESS != JxlDecoderSetJPEGBuffer(dec,
@@ -552,11 +573,31 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         auto callback = [](void* opaque, size_t x, size_t y, size_t num_pixels,
                            const void* pixels) {
           auto* ppf = reinterpret_cast<jxl::extras::PackedPixelFile*>(opaque);
+          if (ppf == nullptr || ppf->frames.empty() || pixels == nullptr) {
+            return;
+          }
           jxl::extras::PackedImage& color = ppf->frames.back().color;
-          uint8_t* pixels_buffer = reinterpret_cast<uint8_t*>(color.pixels());
-          size_t sample_size = color.pixel_stride();
-          memcpy(pixels_buffer + (color.stride * y + sample_size * x), pixels,
-                 num_pixels * sample_size);
+          const size_t sample_size = color.pixel_stride();
+          if (sample_size == 0 || (y > 0 && color.stride == 0) ||
+              (color.stride > 0 && y > color.pixels_size / color.stride) ||
+              x > color.pixels_size / sample_size ||
+              num_pixels > color.pixels_size / sample_size) {
+            return;
+          }
+          const size_t row_off = color.stride * y;
+          const size_t col_off = sample_size * x;
+          const size_t copy_size = num_pixels * sample_size;
+          if (row_off > color.pixels_size ||
+              col_off > color.pixels_size - row_off ||
+              copy_size > color.pixels_size - row_off - col_off) {
+            return;
+          }
+          Span<uint8_t> dst_span(reinterpret_cast<uint8_t*>(color.pixels()),
+                                 color.pixels_size);
+          const Bytes src_span(reinterpret_cast<const uint8_t*>(pixels),
+                               copy_size);
+          std::copy(src_span.begin(), src_span.end(),
+                    dst_span.begin() + row_off + col_off);
         };
         if (JXL_DEC_SUCCESS !=
             JxlDecoderSetImageOutCallback(dec, &format, callback, ppf)) {
@@ -639,8 +680,12 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
     if (ppf->metadata.exif.size() >= 16) {
       uint32_t offset = LoadBE32(ppf->metadata.exif.data());
       if (offset <= ppf->metadata.exif.size() - 16) {
-        std::vector<uint8_t> exif(ppf->metadata.exif.begin() + 4 + offset,
-                                  ppf->metadata.exif.end());
+        const Bytes exif_span(ppf->metadata.exif.data(),
+                              ppf->metadata.exif.size());
+        JXL_ASSIGN_OR_QUIT(Bytes exif_payload,
+                           exif_span.subspan(4 + static_cast<size_t>(offset)),
+                           "Exif payload subspan out of range");
+        std::vector<uint8_t> exif = exif_payload.Copy();
         bool bigendian;
         if (IsExif(exif, &bigendian)) {
           ppf->metadata.exif = std::move(exif);
@@ -662,10 +707,17 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
   }
   if (jpeg_bytes != nullptr) {
     if (!can_reconstruct_jpeg) return false;
-    size_t used_jpeg_output =
-        jpeg_data_chunk.size() - JxlDecoderReleaseJPEGBuffer(dec);
-    jpeg_bytes->insert(jpeg_bytes->end(), jpeg_data_chunk.data(),
-                       jpeg_data_chunk.data() + used_jpeg_output);
+    const size_t remaining = JxlDecoderReleaseJPEGBuffer(dec);
+    if (remaining > jpeg_data_chunk.size()) {
+      fprintf(stderr, "Invalid JPEG output buffer remaining size\n");
+      return false;
+    }
+    const size_t used_jpeg_output = jpeg_data_chunk.size() - remaining;
+    const Bytes chunk_span(jpeg_data_chunk.data(), jpeg_data_chunk.size());
+    JXL_ASSIGN_OR_QUIT(Bytes used_span,
+                       chunk_span.subspan(0, used_jpeg_output),
+                       "JPEG chunk subspan out of range");
+    used_span.AppendTo(*jpeg_bytes);
   }
   if (decoded_bytes) {
     *decoded_bytes = bytes_size - JxlDecoderReleaseInput(dec);
