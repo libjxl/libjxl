@@ -301,6 +301,93 @@ TEST(ANSTest, TestCheckpointingPrefixLZ77) {
   TestCheckpointing(/*ans=*/false, /*lz77=*/true);
 }
 
+void TestLz77MatchDistanceWindow(HistogramParams::LZ77Method method, bool ans) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  std::vector<std::vector<Token>> input_values(1);
+  // Distinct prefix and suffix separated by > kWindowSize disjoint filler
+  // tokens, so any match from suffix to prefix exceeds the decoder window and
+  // no shorter local match exists inside the suffix.
+  constexpr size_t kRunLen = 16;
+  for (size_t i = 0; i < kRunLen; i++) {
+    input_values[0].emplace_back(0, i);
+  }
+  for (size_t i = 0; i < kWindowSize + 32; i++) {
+    input_values[0].emplace_back(0, kRunLen + (i % 5));
+  }
+  for (size_t i = 0; i < kRunLen; i++) {
+    input_values[0].emplace_back(0, i);
+  }
+  const std::vector<Token> original = input_values[0];
+
+  EntropyEncodingData codes;
+  HistogramParams params;
+  params.lz77_method = method;
+  params.force_huffman = !ans;
+
+  BitWriter writer{memory_manager};
+  {
+    auto input_values_copy = input_values;
+    JXL_TEST_ASSIGN_OR_DIE(
+        size_t cost,
+        BuildAndEncodeHistograms(memory_manager, params, 1, input_values_copy,
+                                 &codes, &writer, LayerType::Header, nullptr));
+    (void)cost;
+    ASSERT_TRUE(codes.lz77.enabled);
+    for (size_t i = 0; i < input_values_copy[0].size(); i++) {
+      if (!input_values_copy[0][i].is_lz77_length) continue;
+      ASSERT_LT(i + 1, input_values_copy[0].size());
+      // No image_widths were given, so distance_multiplier == 0 and the
+      // distance symbol encodes dist - 1.
+      size_t dist = static_cast<size_t>(input_values_copy[0][i + 1].value) + 1;
+      EXPECT_LE(dist, kWindowSize)
+          << "encoder emitted match distance " << dist << " at token " << i;
+    }
+    ASSERT_TRUE(WriteTokens(input_values_copy[0], codes, 0, &writer,
+                            LayerType::Header, nullptr));
+    writer.ZeroPadToByte();
+  }
+
+  BitReader br(writer.GetSpan());
+  Status status = true;
+  {
+    BitReaderScopedCloser bc(br, status);
+    std::vector<uint8_t> dec_context_map;
+    ANSCode decoded_codes;
+    ASSERT_TRUE(DecodeHistograms(memory_manager, &br, 1, &decoded_codes,
+                                 &dec_context_map));
+    ASSERT_EQ(dec_context_map, codes.context_map);
+    JXL_TEST_ASSIGN_OR_DIE(ANSSymbolReader reader,
+                           ANSSymbolReader::Create(&decoded_codes, &br));
+    for (size_t i = 0; i < original.size(); i++) {
+      uint32_t read_symbol =
+          reader.ReadHybridUint(original[i].context, &br, dec_context_map);
+      ASSERT_EQ(read_symbol, original[i].value) << "i = " << i;
+    }
+    ASSERT_TRUE(reader.CheckANSFinalState());
+  }
+  EXPECT_TRUE(status);
+}
+
+TEST(ANSTest, Lz77MatchDistanceWithinWindowANS) {
+  TestLz77MatchDistanceWindow(HistogramParams::LZ77Method::kLZ77b3w3f,
+                              /*ans=*/true);
+}
+
+TEST(ANSTest, Lz77MatchDistanceWithinWindowPrefix) {
+  TestLz77MatchDistanceWindow(HistogramParams::LZ77Method::kLZ77b3w3f,
+                              /*ans=*/false);
+}
+
+TEST(ANSTest, Lz77MatchDistanceWithinWindowBucket7Cost) {
+  TestLz77MatchDistanceWindow(HistogramParams::LZ77Method::kLZ77b7w3t,
+                              /*ans=*/true);
+}
+
+TEST(ANSTest, Lz77MatchDistanceWithinWindowOptimal) {
+  TestLz77MatchDistanceWindow(HistogramParams::LZ77Method::kOptc256,
+                              /*ans=*/true);
+}
+
 std::string AnsSimdTestDescription(
     const testing::TestParamInfo<HybridUintConfig>& info) {
   std::stringstream name;

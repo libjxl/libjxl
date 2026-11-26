@@ -362,7 +362,11 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
       for (uint32_t c = 0; c < nb; c++) {
         color[c] = p_in[c][x];
       }
-      const bool new_color = candidate_palette.insert(color).second;
+      const size_t count = ++color_freq_map[color];
+      // candidate_palette is unused in lossless mode
+      // detect new colors via count (save one lookup per pixel)
+      const bool new_color =
+          lossy ? candidate_palette.insert(color).second : count == 1;
       if (new_color) {
         if (implicit_color[color]) {
           implicit_colors_used++;
@@ -373,7 +377,6 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
           }
         }
       }
-      color_freq_map[color] += 1;
     }
   }
 

@@ -68,7 +68,9 @@ JXL_NOINLINE void SwapBuffer(JpegBitWriter* bw) {
   bw->pos = 0;
 }
 
-JXL_INLINE void Reserve(JpegBitWriter* bw, size_t n_bytes) {
+// Default is 16 bytes, which is enough for bit-buffer discharge. That means
+// it is safe to write up to 64 bits.
+JXL_INLINE void Reserve(JpegBitWriter* bw, size_t n_bytes = 16) {
   if (JXL_UNLIKELY((bw->pos + n_bytes) > kJpegBitWriterChunkSize)) {
     SwapBuffer(bw);
   }
@@ -159,7 +161,7 @@ bool JumpToByteBoundary(JpegBitWriter* bw, const uint8_t** pad_bits,
   }
   if ((dangling_bits & ~1) != 0) return false;
 
-  Reserve(bw, 16);
+  Reserve(bw);
 
   while (bw->put_bits <= 56) {
     int c = (bw->put_buffer >> 56) & 0xFF;
@@ -190,6 +192,7 @@ void JpegBitWriterFinish(JpegBitWriter* bw) {
 void DCTCodingStateInit(DCTCodingState* s) {
   s->eob_run_ = 0;
   s->cur_ac_huff_ = nullptr;
+  s->refinement_bits_count_ = 0;
   s->refinement_bits_.clear();
   s->refinement_bits_.reserve(64);
 }
@@ -209,7 +212,7 @@ JXL_INLINE void WriteSymbolBits(int symbol, HuffmanCodeTable* table,
 // bit writer.
 JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
   if (s->eob_run_ > 0) {
-    Reserve(bw, 16);
+    Reserve(bw);
     int nbits = FloorLog2Nonzero<uint32_t>(s->eob_run_);
     int symbol = nbits << 4u;
     WriteSymbol(symbol, s->cur_ac_huff_, bw);
@@ -218,7 +221,7 @@ JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
     }
     s->eob_run_ = 0;
   }
-  const size_t kStride = 124;  // (515 - 16) / 2 / 2
+  const size_t kStride = 124;  // (512 - 16) / 2 / 2
   size_t num_words = s->refinement_bits_count_ >> 4;
   size_t i = 0;
   while (i < num_words) {
@@ -228,7 +231,7 @@ JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
       WriteBits(bw, 16, s->refinement_bits_[i]);
     }
   }
-  Reserve(bw, 16);
+  Reserve(bw);
   size_t tail = s->refinement_bits_count_ & 0xF;
   if (tail) {
     WriteBits(bw, tail, s->refinement_bits_.back());
@@ -538,6 +541,8 @@ bool EncodeDCTBlockSequential(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
   temp2 ^= temp;
 
   int dc_nbits = (temp2 == 0) ? 0 : (FloorLog2Nonzero<uint32_t>(temp2) + 1);
+
+  Reserve(bw, 512);
   WriteSymbol(dc_nbits, dc_huff, bw);
 #if JXL_FALSE
   // If the input is corrupt, this could be triggered. Checking is
@@ -610,6 +615,7 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
       temp2--;
     }
     int nbits = (temp == 0) ? 0 : (FloorLog2Nonzero<uint32_t>(temp) + 1);
+    Reserve(bw);
     WriteSymbol(nbits, dc_huff, bw);
     if (nbits) {
       WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
@@ -640,6 +646,7 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
       continue;
     }
     Flush(coding_state, bw);
+    Reserve(bw, 32);
     while (r > 15) {
       WriteSymbol(0xf0, ac_huff, bw);
       r -= 16;
@@ -652,6 +659,7 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
   }
   if (num_zero_runs > 0) {
     Flush(coding_state, bw);
+    Reserve(bw, 32);
     for (int i = 0; i < num_zero_runs; ++i) {
       WriteSymbol(0xf0, ac_huff, bw);
       r -= 16;
@@ -672,6 +680,7 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
   bool eob_run_allowed = Ss > 0;
   if (Ss == 0) {
     // Emit next bit of DC component.
+    Reserve(bw);
     WriteBits(bw, 1, (coeffs[0] >> Al) & 1);
     ++Ss;
   }
@@ -697,6 +706,7 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
     }
     while (r > 15 && k <= eob) {
       Flush(coding_state, bw);
+      Reserve(bw, 32);
       WriteSymbol(0xf0, ac_huff, bw);
       r -= 16;
       for (size_t i = 0; i < refinement_bits_count; ++i) {
@@ -711,6 +721,7 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
     Flush(coding_state, bw);
     int symbol = (r << 4u) + 1;
     int new_non_zero_bit = (coeffs[kJPEGNaturalOrder[k]] < 0) ? 0 : 1;
+    Reserve(bw, 32);
     WriteSymbol(symbol, ac_huff, bw);
     WriteBits(bw, 1, new_non_zero_bit);
     for (size_t i = 0; i < refinement_bits_count; ++i) {
@@ -859,8 +870,6 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
             }
             const coeff_t* coeffs = &c.coeffs[block_idx << 6];
             bool ok;
-            // compressed size per block cannot be more than 512 bytes
-            Reserve(bw, 512);
             if (kMode == 0) {
               ok = EncodeDCTBlockSequential(coeffs, dc_huff, ac_huff,
                                             num_zero_runs,

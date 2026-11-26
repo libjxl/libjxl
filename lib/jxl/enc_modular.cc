@@ -724,12 +724,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   bool groupwise = enc_state->streaming_mode;
 
-  if (do_color && frame_header.loop_filter.gab && !groupwise) {
-    float w = 0.9908511000000001f;
-    float weights[3] = {w, w, w};
-    JXL_RETURN_IF_ERROR(GaborishInverse(color, Rect(*color), weights, pool));
-  }
-
   if (do_color && metadata.bit_depth.bits_per_sample <= 16 &&
       cparams_.speed_tier < SpeedTier::kCheetah &&
       cparams_.decoding_speed_tier < 2 && !groupwise) {
@@ -738,6 +732,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
         cparams_.color_transform == ColorTransform::kXYB));
     JXL_RETURN_IF_ERROR(PatchDictionaryEncoder::SubtractFrom(
         enc_state->shared.image_features.patches, color));
+  }
+
+  if (do_color && frame_header.loop_filter.gab && !groupwise) {
+    float w = 0.9908511000000001f;
+    float weights[3] = {w, w, w};
+    JXL_RETURN_IF_ERROR(GaborishInverse(color, Rect(*color), weights, pool));
   }
 
   if (cparams_.custom_splines.HasAny()) {
@@ -972,25 +972,34 @@ Status ModularFrameEncoder::ComputeEncodingData(
     // If image is smaller than group_dim, then default squeeze parameters
     // are not going too far. Else, channel size don't turn zero. Thus we only
     // check if tile does not go to zero-dim.
-    size_t shift_cap = 7 + frame_header.group_size_shift;
-    size_t hshift = 0;
-    size_t vshift = 0;
+    int shift_cap = 7 + frame_header.group_size_shift;
+    size_t num_c = gi.channel.size();
+    std::vector<int> hshift(num_c);
+    std::vector<int> vshift(num_c);
+    for (size_t ch = 0; ch < num_c; ++ch) {
+      hshift[ch] = gi.channel[ch].hshift;
+      vshift[ch] = gi.channel[ch].vshift;
+    }
     for (size_t i = 0; i < params.size(); ++i) {
-      if (params[i].horizontal) {
-        hshift++;
-      } else {
-        vshift++;
-      }
-      size_t dc_boost = (std::min(hshift, vshift) >= 3) ? 3 : 0;
-      // In case we squeeze too much, truncate squeeze script.
-      if (std::max(hshift, vshift) > shift_cap + dc_boost) {
-        params.resize(i - 1);
-        t.squeezes = params;
-        break;
+      const SqueezeParams& p = params[i];
+      for (uint32_t ch = p.begin_c; ch < p.begin_c + p.num_c; ++ch) {
+        if (p.horizontal) {
+          if (hshift[ch] >= 0) hshift[ch]++;
+        } else {
+          if (vshift[ch] >= 0) vshift[ch]++;
+        }
+        int dc_boost = (std::min(hshift[ch], vshift[ch]) >= 3) ? 3 : 0;
+        if (std::max(hshift[ch], vshift[ch]) > shift_cap + dc_boost) {
+          params.resize(i);
+          t.squeezes = params;
+          break;
+        }
       }
     }
-    do_transform(gi, t, weighted::Header(), pool);
-    max_bitdepth += 2;
+    if (!params.empty()) {
+      do_transform(gi, t, weighted::Header(), pool);
+      max_bitdepth += 2;
+    }
   }
 
   if (max_bitdepth + 1 > level_max_bitdepth) {
