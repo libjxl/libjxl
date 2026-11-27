@@ -430,6 +430,13 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsEncodedProfile(
                                  dec, target, &ppf->color_encoding)) {
         ppf->color_encoding.color_space = JXL_COLOR_SPACE_UNKNOWN;
+        // We are going to recommend using ICC, but first check it is available.
+        if (ppf->icc.empty()) {
+          fprintf(stderr,
+                  "JxlDecoderGetColorAsEncodedProfile failed and no ICC "
+                  "profile provided\n");
+          return false;
+        }
         ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
       }
 
